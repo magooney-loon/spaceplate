@@ -41,7 +41,7 @@ const createLogger = (prefix: string, enabled: boolean) => ({
 	}
 });
 
-export const log = createLogger('spaceplate', import.meta.env.VITE_GAME_DEBUG_LOGS === 'true');
+export const log = createLogger('spaceplate', import.meta.env.VITE_GAME_ENGINE_LOGS === 'true');
 
 // ─── localStorage helpers ────────────────────────────────────────────────────
 
