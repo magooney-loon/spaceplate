@@ -30,7 +30,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          BASE_PATH: /spaceplate
+          BASE_PATH: /spaceplate/
 
       - uses: actions/upload-pages-artifact@v3
         with:
