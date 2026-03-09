@@ -4,6 +4,12 @@ import { settingsState, log } from './settings.svelte.js';
 
 export type StageType = 'settings' | 'home' | 'galaxy';
 
+export const STAGES: { id: StageType; label: string; icon: string }[] = [
+	{ id: 'home', label: 'Home', icon: 'mdiHome' },
+	{ id: 'galaxy', label: 'Galaxy', icon: 'mdiEarth' },
+	{ id: 'settings', label: 'Settings', icon: 'mdiCog' }
+];
+
 export interface StageState {
 	currentStage: StageType;
 	previousStage: StageType | null;
