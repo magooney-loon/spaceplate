@@ -1,8 +1,13 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
 	import { useProgress } from '@threlte/extras';
+	import { log } from './settings.svelte.js';
 
-	const { active, progress, finishedOnce } = useProgress();
+	const { progress, finishedOnce } = useProgress();
+
+	$effect(() => {
+		if ($finishedOnce) log.info('Assets loaded');
+	});
 </script>
 
 {#if !$finishedOnce}

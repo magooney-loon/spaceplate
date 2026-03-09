@@ -11,7 +11,7 @@
 		KernelSize,
 		VignetteEffect
 	} from 'postprocessing';
-	import { settingsState } from './settings.svelte.js';
+	import { settingsState, log } from './settings.svelte.js';
 
 	const { scene, renderer, camera, size, autoRender, renderStage } = useThrelte();
 
@@ -30,14 +30,12 @@
 
 		// Skip effects for low quality - only basic rendering (no anti-aliasing)
 		if (settingsState.graphics.quality === 'low') {
-			console.log('Graphics quality: LOW - Post-processing and anti-aliasing disabled');
+			log.info('Graphics quality: LOW - Post-processing and anti-aliasing disabled');
 			return;
 		}
 
 		const isHighQuality = settingsState.graphics.quality === 'high';
-		console.log(
-			`Graphics quality: ${settingsState.graphics.quality.toUpperCase()} - Post-processing and SMAA anti-aliasing enabled`
-		);
+		log.info(`Graphics quality: ${settingsState.graphics.quality.toUpperCase()} - Post-processing and SMAA anti-aliasing enabled`);
 
 		const bloomEffect = new BloomEffect({
 			intensity: isHighQuality ? 6 : 4,

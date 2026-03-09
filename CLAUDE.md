@@ -70,6 +70,37 @@ src/
 - `transition:fly` on each HUD component's root element — `transition:fade` on the uiVisible wrapper
 - Separate `{#if}` blocks (not `{:else if}`) for stage HUD routing — ensures transitions fire on switch
 
+### Debug Logging (`settings.svelte.ts`)
+
+All logging goes through `log` — gated by `VITE_GAME_DEBUG_LOGS=true` in `.env`.
+
+```ts
+import { log } from './settings.svelte.js';
+
+log.info('Stage:', stage);   // console.log  — general info
+log.warn('Missing asset');   // console.warn — recoverable issues
+log.error('Failed:', err);   // console.error — failures
+```
+
+**Adding new log channels** (e.g. game events, API calls):
+
+```ts
+// In settings.svelte.ts — add alongside `log`:
+export const logGame = createLogger('game', import.meta.env.VITE_GAME_LOGS === 'true');
+export const logApi  = createLogger('api',  import.meta.env.VITE_API_LOGS  === 'true');
+```
+
+Each channel has its own env var so teams can toggle categories independently.
+
+**Where logs are used in the boilerplate:**
+- `Root.svelte` — SpacetimeDB connect / disconnect / error
+- `Renderer.svelte` — graphics quality applied
+- `Camera.svelte` — camera disposed
+- `Sound.svelte` — each audio file loaded
+- `Loader.svelte` — all assets finished loading
+- `stage.svelte.ts` — every stage transition (`home → galaxy`)
+- `settings.svelte.ts` — quality changes, volume changes, HUD toggle
+
 ---
 
 # SpacetimeDB Rules (All Languages)

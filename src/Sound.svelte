@@ -11,7 +11,7 @@
 <script lang="ts">
 	import { Audio } from '@threlte/extras';
 	import { Audio as ThreeAudio } from 'three';
-	import { settingsState } from './settings.svelte.js';
+	import { settingsState, log } from './settings.svelte.js';
 
 	// Place your audio files in /public/sounds/
 	const OST_URL      = '/sounds/ost.ogg';
@@ -88,13 +88,13 @@
 </script>
 
 <!-- Audio track 1: OST / background music -->
-<Audio src={OST_URL} loop oncreate={(a) => { ostAudio = a; }} />
+<Audio src={OST_URL} loop oncreate={(a) => { ostAudio = a; log.info('Audio loaded: OST'); }} />
 
 <!-- Audio track 2: Ambience -->
-<Audio src={AMBIENCE_URL} loop oncreate={(a) => { ambienceAudio = a; }} />
+<Audio src={AMBIENCE_URL} loop oncreate={(a) => { ambienceAudio = a; log.info('Audio loaded: Ambience'); }} />
 
 <!-- SFX 1: Click -->
-<Audio src={CLICK_URL} oncreate={(a) => { clickAudio = a; }} />
+<Audio src={CLICK_URL} oncreate={(a) => { clickAudio = a; log.info('Audio loaded: Click SFX'); }} />
 
 <!-- SFX 2: Swoosh (stage transitions) -->
-<Audio src={SWOOSH_URL} oncreate={(a) => { swooshAudio = a; }} />
+<Audio src={SWOOSH_URL} oncreate={(a) => { swooshAudio = a; log.info('Audio loaded: Swoosh SFX'); }} />

@@ -3,13 +3,14 @@
 	import { AudioListener } from '@threlte/extras';
 	import { CameraControls, type CameraControlsRef } from '@threlte/extras';
 	import { cameraActions, getCurrentStage } from './stage.svelte.js';
+	import { log } from './settings.svelte.js';
 	import type { PerspectiveCamera } from 'three';
 
 	let controls = $state<CameraControlsRef>();
 
 	const handleCameraCreate = (camera: PerspectiveCamera) => {
 		camera.lookAt(0, 0, 0);
-		return () => { console.log('Camera disposed'); };
+		return () => { log.info('Camera disposed'); };
 	};
 
 	const handleControlsCreate = (controlsRef: CameraControlsRef) => {
