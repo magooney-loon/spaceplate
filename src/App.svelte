@@ -5,6 +5,7 @@
 	import Skybox from './Skybox.svelte';
 	import Camera from './Camera.svelte';
 	import Renderer from './Renderer.svelte';
+	import Sound from './Sound.svelte';
 	import * as THREE from 'three';
 	import { settingsState } from './settings.svelte.js';
 
@@ -38,6 +39,7 @@
 			{#await import('@threlte/studio') then { Studio }}
 				<Studio>
 					<Camera />
+					<Sound />
 					<Skybox />
 					<Renderer />
 					<Scene />
@@ -45,6 +47,7 @@
 			{/await}
 		{:else}
 			<Camera />
+			<Sound />
 			<Skybox />
 			<Renderer />
 			<Scene />

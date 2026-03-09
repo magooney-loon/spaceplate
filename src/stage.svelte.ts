@@ -1,5 +1,6 @@
 import type { CameraControlsRef } from "@threlte/extras";
-import { audioActions, settingsState } from "./settings.svelte.js";
+import { soundActions } from "./sound.svelte.js";
+import { settingsState } from "./settings.svelte.js";
 
 export type StageType = "settings" | "home" | "galaxy";
 
@@ -27,7 +28,7 @@ export const stageActions = {
   setStage(stage: StageType) {
     if (stageState.currentStage === stage) return;
 
-    audioActions.playSwooshSound();
+    soundActions.playSwoosh();
 
     stageState.previousStage = stageState.currentStage;
     stageState.currentStage = stage;
@@ -47,7 +48,7 @@ export const stageActions = {
 
   goBack() {
     if (stageState.previousStage) {
-      audioActions.playSwooshSound();
+      soundActions.playSwoosh();
 
       const previous = stageState.previousStage;
       stageState.previousStage = stageState.currentStage;
