@@ -6,6 +6,7 @@
 	import Camera from './Camera.svelte';
 	import Renderer from './Renderer.svelte';
 	import Sound from './Sound.svelte';
+	import Loader from './Loader.svelte';
 	import * as THREE from 'three';
 	import { settingsState, generalActions } from './settings.svelte.js';
 
@@ -65,4 +66,5 @@
 	</Canvas>
 
 	<SceneHud />
+	<Loader />
 </div>
