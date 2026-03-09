@@ -14,6 +14,9 @@
 
 	let currentAction: CharacterAction = 'idle';
 
+	// Stop all anim sounds when leaving this stage
+	$effect(() => () => soundActions.stopAnimSounds());
+
 	// Configure one-shot animations to play once and hold last frame
 	$effect(() => {
 		for (const key of ['agree', 'headShake'] as CharacterAction[]) {
