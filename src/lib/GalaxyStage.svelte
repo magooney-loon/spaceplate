@@ -36,21 +36,23 @@
 </script>
 
 <!-- Example: Galaxy Stage — animated GLTF character -->
+<T.Group>
+	<T.AmbientLight intensity={0.5} />
+	<T.DirectionalLight position={[10, 5, 5]} castShadow />
 
-<T.AmbientLight intensity={0.5} />
-<T.DirectionalLight position={[10, 5, 5]} castShadow />
+	<GLTF
+		bind:gltf={$gltf}
+		url="https://threejs.org/examples/models/gltf/Xbot.glb"
+		oncreate={(scene) => {
+			scene.traverse((child) => {
+				child.castShadow = true;
+			});
+		}}
+		scale={10}
+	/>
 
-<GLTF
-	bind:gltf={$gltf}
-	url="https://threejs.org/examples/models/gltf/Xbot.glb"
-	oncreate={(scene) => {
-		scene.traverse((child) => {
-			child.castShadow = true;
-		});
-	}}
-/>
-
-<T.Mesh rotation.x={-Math.PI / 2} receiveShadow>
-	<T.CircleGeometry args={[3, 72]} />
-	<T.MeshStandardMaterial color="white" />
-</T.Mesh>
+	<T.Mesh rotation.x={-Math.PI / 2} receiveShadow>
+		<T.CircleGeometry args={[5, 72]} />
+		<T.MeshStandardMaterial color="white" />
+	</T.Mesh>
+</T.Group>
