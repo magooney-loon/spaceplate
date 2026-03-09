@@ -6,7 +6,6 @@
 <!-- Replace this with your actual galaxy/map stage content -->
 
 <T.AmbientLight intensity={0.2} />
-<T.PointLight position={[0, 10, 0]} intensity={2} color="#ffaa44" />
 
 <!-- Example object - replace with your scene content -->
 <T.Mesh position={[0, 7, -14]}>

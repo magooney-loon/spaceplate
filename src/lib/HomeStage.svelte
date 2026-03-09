@@ -6,7 +6,7 @@
 <!-- Replace this with your actual home/main stage content -->
 
 <T.AmbientLight intensity={0.4} />
-<T.DirectionalLight position={[5, 10, 5]} intensity={1.2} />
+<T.DirectionalLight position={[0, 0.2, 0]} intensity={0.5} />
 
 <!-- Example object - replace with your scene content -->
 <T.Mesh position={[0, 0, 0]}>
