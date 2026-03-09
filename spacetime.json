@@ -1,0 +1,8 @@
+{
+  "dev": {
+    "run": "npm run dev"
+  },
+  "database": "spaceplate-j29m7",
+  "module-path": "./spacetimedb",
+  "server": "maincloud"
+}
