@@ -114,7 +114,7 @@ export const cameraActions = {
       case "galaxy":
         // Wide top-down-ish view for the galaxy/map stage
         cameraControls.reset(isAnimated);
-        cameraControls.moveTo(0, 7.2, -12, isAnimated);
+        cameraControls.moveTo(0, 7.2, -54, isAnimated);
         cameraControls.lookInDirectionOf(0, 10, -20, isAnimated);
         cameraControls.zoomTo(0.27, isAnimated);
         break;

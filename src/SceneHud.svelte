@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fade } from 'svelte/transition';
 	import { isSettingsStage, isHomeStage, isGalaxyStage } from './stage.svelte.js';
 	import { settingsState } from './settings.svelte.js';
 	import HomeHud from '$lib/HomeHud.svelte';
@@ -11,13 +12,15 @@
 <WelcomeModal />
 
 {#if settingsState.general.uiVisible}
-	<div style="position: absolute; inset: 0; pointer-events: none;">
+	<div transition:fade={{ duration: 150 }} style="position: absolute; inset: 0; pointer-events: none;">
 		<div style="position: relative; width: 100%; height: 100%; pointer-events: none;">
 			{#if isSettingsStage()}
 				<div style="pointer-events: auto;"><Settings /></div>
-			{:else if isHomeStage()}
+			{/if}
+			{#if isHomeStage()}
 				<div style="pointer-events: auto;"><HomeHud /></div>
-			{:else if isGalaxyStage()}
+			{/if}
+			{#if isGalaxyStage()}
 				<div style="pointer-events: auto;"><GalaxyHud /></div>
 			{/if}
 		</div>
