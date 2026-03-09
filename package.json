@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@types/node": "^25.3.5",
     "rollup-plugin-visualizer": "^7.0.1",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",

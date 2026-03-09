@@ -1,18 +1,4 @@
-// import { setLocale, getLocale } from "$lib/paraglide/runtime";
-import click from "$lib/assets/sound/click.mp3";
-import scan from "$lib/assets/sound/scan.mp3";
-import qBuilding from "$lib/assets/sound/q_building.ogg";
-import qResearch from "$lib/assets/sound/q_research.ogg";
-import qDefense from "$lib/assets/sound/q_defense.ogg";
-import qShipyard from "$lib/assets/sound/q_shipyard.ogg";
-import inbox from "$lib/assets/sound/inbox.ogg";
-import spyBell from "$lib/assets/sound/spy_bell.ogg";
-import attackBell from "$lib/assets/sound/attack_bell.ogg";
-import clockSound from "$lib/assets/sound/clock.ogg";
-import bellSound from "$lib/assets/sound/bell.ogg";
-
 export type QualityLevel = "low" | "mid" | "high";
-export type LocaleCode = "en" | "es" | "de" | "hr" | "zh";
 export type ButtonType = "default" | "fast" | "soft" | "quick" | "disabled";
 
 export interface AudioSettings {
@@ -69,7 +55,6 @@ const saveGraphicsQuality = (quality: QualityLevel) => {
   }
 };
 
-// Welcome modal localStorage utilities
 const WELCOME_MODAL_STORAGE_KEY = "hide-welcome-modal";
 const UI_VISIBLE_STORAGE_KEY = "ui-visible";
 
@@ -105,7 +90,7 @@ const loadUiVisible = (): boolean => {
 
   try {
     const stored = localStorage.getItem(UI_VISIBLE_STORAGE_KEY);
-    return stored !== "false"; // Default to visible
+    return stored !== "false";
   } catch {
     return true;
   }
@@ -139,9 +124,10 @@ export const settingsState = $state<SettingsState>({
   },
 });
 
-// export const getCurrentLocale = () => getLocale();
+// ─── Sound Service 1: Click ──────────────────────────────────────────────────
+// Place your click sound file at /public/sounds/click.mp3
+const CLICK_SOUND_URL = "/sounds/click.mp3";
 
-// Click sound service
 class ClickSoundService {
   private audioContext: AudioContext | null = null;
   private audioBuffer: AudioBuffer | null = null;
@@ -157,8 +143,7 @@ class ClickSoundService {
           .webkitAudioContext
       )();
 
-      // Load click.mp3
-      const response = await fetch(click);
+      const response = await fetch(CLICK_SOUND_URL);
       const arrayBuffer = await response.arrayBuffer();
       this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
       this.isLoaded = true;
@@ -168,21 +153,11 @@ class ClickSoundService {
   }
 
   async playClick(buttonType: ButtonType = "default") {
-    if (!settingsState.audio.effectsEnabled) {
-      return;
-    }
-
-    // Lazy initialize if not loaded yet
-    if (!this.isLoaded) {
-      await this.initialize();
-    }
-
-    if (!this.audioContext || !this.audioBuffer) {
-      return;
-    }
+    if (!settingsState.audio.effectsEnabled) return;
+    if (!this.isLoaded) await this.initialize();
+    if (!this.audioContext || !this.audioBuffer) return;
 
     try {
-      // Resume audio context if needed
       if (this.audioContext.state === "suspended") {
         await this.audioContext.resume();
       }
@@ -194,7 +169,6 @@ class ClickSoundService {
       source.connect(gainNode);
       gainNode.connect(this.audioContext.destination);
 
-      // Configure playback based on button type
       const configs = {
         default: { playbackRate: 1.0, volume: 0.45 },
         fast: { playbackRate: 1.4, volume: 0.35 },
@@ -214,21 +188,11 @@ class ClickSoundService {
   }
 
   async playHover() {
-    if (!settingsState.audio.effectsEnabled) {
-      return;
-    }
-
-    // Lazy initialize if not loaded yet
-    if (!this.isLoaded) {
-      await this.initialize();
-    }
-
-    if (!this.audioContext || !this.audioBuffer) {
-      return;
-    }
+    if (!settingsState.audio.effectsEnabled) return;
+    if (!this.isLoaded) await this.initialize();
+    if (!this.audioContext || !this.audioBuffer) return;
 
     try {
-      // Resume audio context if needed
       if (this.audioContext.state === "suspended") {
         await this.audioContext.resume();
       }
@@ -240,7 +204,6 @@ class ClickSoundService {
       source.connect(gainNode);
       gainNode.connect(this.audioContext.destination);
 
-      // Hover sound config - very subtle
       source.playbackRate.value = 1.2;
       gainNode.gain.value = 0.072;
 
@@ -251,10 +214,9 @@ class ClickSoundService {
   }
 }
 
-// Swoosh sound trigger - reactive state for PositionalAudio component
-export const swooshTrigger = $state({ value: 0 });
-
-export const clickSoundService = new ClickSoundService();
+// ─── Sound Service 2: Scan ───────────────────────────────────────────────────
+// Place your scan sound file at /public/sounds/scan.mp3
+const SCAN_SOUND_URL = "/sounds/scan.mp3";
 
 class ScanSoundService {
   private audioContext: AudioContext | null = null;
@@ -272,7 +234,7 @@ class ScanSoundService {
           .webkitAudioContext
       )();
 
-      const response = await fetch(scan);
+      const response = await fetch(SCAN_SOUND_URL);
       const arrayBuffer = await response.arrayBuffer();
       this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
       this.isLoaded = true;
@@ -282,24 +244,15 @@ class ScanSoundService {
   }
 
   async play() {
-    if (!settingsState.audio.effectsEnabled) {
-      return;
-    }
-
-    if (!this.isLoaded) {
-      await this.initialize();
-    }
-
-    if (!this.audioContext || !this.audioBuffer) {
-      return;
-    }
+    if (!settingsState.audio.effectsEnabled) return;
+    if (!this.isLoaded) await this.initialize();
+    if (!this.audioContext || !this.audioBuffer) return;
 
     try {
       if (this.audioContext.state === "suspended") {
         await this.audioContext.resume();
       }
 
-      // Stop any existing scan sound
       this.sourceNode?.stop();
 
       const source = this.audioContext.createBufferSource();
@@ -310,7 +263,7 @@ class ScanSoundService {
       gainNode.connect(this.audioContext.destination);
 
       source.playbackRate.value = 2.7;
-      gainNode.gain.value = 1.0; // Boost volume
+      gainNode.gain.value = 1.0;
 
       source.start();
       this.sourceNode = source;
@@ -322,305 +275,17 @@ class ScanSoundService {
   stop() {
     try {
       this.sourceNode?.stop();
-    } catch (error) {
+    } catch {
       // Ignore errors if source already stopped
     }
   }
 }
 
+// Swoosh sound trigger — consumed by a PositionalAudio/Audio component in your scene
+export const swooshTrigger = $state({ value: 0 });
+
+export const clickSoundService = new ClickSoundService();
 export const scanSoundService = new ScanSoundService();
-
-// Inbox notification sound service
-class InboxSoundService {
-  private audioContext: AudioContext | null = null;
-  private audioBuffer: AudioBuffer | null = null;
-  private isLoaded = false;
-
-  async initialize() {
-    if (this.isLoaded) return;
-
-    try {
-      this.audioContext = new (
-        window.AudioContext ||
-        (window as Window & { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext
-      )();
-
-      const response = await fetch(inbox);
-      const arrayBuffer = await response.arrayBuffer();
-      this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
-      this.isLoaded = true;
-    } catch (error) {
-      console.warn("Failed to initialize inbox sound service:", error);
-    }
-  }
-
-  async play() {
-    if (!settingsState.audio.effectsEnabled) {
-      return;
-    }
-
-    if (!this.isLoaded) {
-      await this.initialize();
-    }
-
-    if (!this.audioContext || !this.audioBuffer) {
-      return;
-    }
-
-    try {
-      if (this.audioContext.state === "suspended") {
-        await this.audioContext.resume();
-      }
-
-      const source = this.audioContext.createBufferSource();
-      const gainNode = this.audioContext.createGain();
-
-      source.buffer = this.audioBuffer;
-      source.connect(gainNode);
-      gainNode.connect(this.audioContext.destination);
-
-      source.start();
-    } catch (error) {
-      console.warn("Failed to play inbox sound:", error);
-    }
-  }
-}
-
-export const inboxSoundService = new InboxSoundService();
-
-// Fleet notification sound service
-export type FleetSoundType = "espionage" | "attack" | "transport" | "destroy";
-
-class FleetSoundService {
-  private audioContext: AudioContext | null = null;
-  private spyBellBuffer: AudioBuffer | null = null;
-  private attackBellBuffer: AudioBuffer | null = null;
-  private clockBuffer: AudioBuffer | null = null;
-  private bellBuffer: AudioBuffer | null = null;
-  private isLoaded = false;
-
-  async initialize() {
-    if (this.isLoaded) return;
-
-    try {
-      this.audioContext = new (
-        window.AudioContext ||
-        (window as Window & { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext
-      )();
-
-      const [spyResponse, attackResponse, clockResponse, bellResponse] =
-        await Promise.all([
-          fetch(spyBell),
-          fetch(attackBell),
-          fetch(clockSound),
-          fetch(bellSound),
-        ]);
-
-      const [
-        spyArrayBuffer,
-        attackArrayBuffer,
-        clockArrayBuffer,
-        bellArrayBuffer,
-      ] = await Promise.all([
-        spyResponse.arrayBuffer(),
-        attackResponse.arrayBuffer(),
-        clockResponse.arrayBuffer(),
-        bellResponse.arrayBuffer(),
-      ]);
-
-      [
-        this.spyBellBuffer,
-        this.attackBellBuffer,
-        this.clockBuffer,
-        this.bellBuffer,
-      ] = await Promise.all([
-        this.audioContext.decodeAudioData(spyArrayBuffer),
-        this.audioContext.decodeAudioData(attackArrayBuffer),
-        this.audioContext.decodeAudioData(clockArrayBuffer),
-        this.audioContext.decodeAudioData(bellArrayBuffer),
-      ]);
-
-      this.isLoaded = true;
-    } catch (error) {
-      console.warn("Failed to initialize fleet sound service:", error);
-    }
-  }
-
-  async play(type: FleetSoundType) {
-    if (!settingsState.audio.effectsEnabled) {
-      return;
-    }
-
-    if (!this.isLoaded) {
-      await this.initialize();
-    }
-
-    if (!this.audioContext) {
-      return;
-    }
-
-    let buffer: AudioBuffer | null = null;
-    switch (type) {
-      case "espionage":
-        buffer = this.spyBellBuffer;
-        break;
-      case "attack":
-        buffer = this.attackBellBuffer;
-        break;
-      case "transport":
-        buffer = this.clockBuffer;
-        break;
-      case "destroy":
-        buffer = this.bellBuffer;
-        break;
-    }
-
-    if (!buffer) return;
-
-    try {
-      if (this.audioContext.state === "suspended") {
-        await this.audioContext.resume();
-      }
-
-      const source = this.audioContext.createBufferSource();
-      const gainNode = this.audioContext.createGain();
-
-      source.buffer = buffer;
-      source.connect(gainNode);
-      gainNode.connect(this.audioContext.destination);
-
-      gainNode.gain.value = 0.4;
-
-      source.start();
-    } catch (error) {
-      console.warn(`Failed to play fleet ${type} sound:`, error);
-    }
-  }
-}
-
-export const fleetSoundService = new FleetSoundService();
-
-// Queue sound service for buildings, research, and shipyard
-class QueueSoundService {
-  private audioContext: AudioContext | null = null;
-  private qBuildingBuffer: AudioBuffer | null = null;
-  private qResearchBuffer: AudioBuffer | null = null;
-  private qDefenseBuffer: AudioBuffer | null = null;
-  private qShipyardBuffer: AudioBuffer | null = null;
-  private isLoaded = false;
-
-  async initialize() {
-    if (this.isLoaded) return;
-
-    try {
-      this.audioContext = new (
-        window.AudioContext ||
-        (window as Window & { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext
-      )();
-
-      // Load queue sounds
-      const [
-        qBuildingResponse,
-        qResearchResponse,
-        qDefenseResponse,
-        qShipyardResponse,
-      ] = await Promise.all([
-        fetch(qBuilding),
-        fetch(qResearch),
-        fetch(qDefense),
-        fetch(qShipyard),
-      ]);
-
-      const [
-        qBuildingArrayBuffer,
-        qResearchArrayBuffer,
-        qDefenseArrayBuffer,
-        qShipyardArrayBuffer,
-      ] = await Promise.all([
-        qBuildingResponse.arrayBuffer(),
-        qResearchResponse.arrayBuffer(),
-        qDefenseResponse.arrayBuffer(),
-        qShipyardResponse.arrayBuffer(),
-      ]);
-
-      [
-        this.qBuildingBuffer,
-        this.qResearchBuffer,
-        this.qDefenseBuffer,
-        this.qShipyardBuffer,
-      ] = await Promise.all([
-        this.audioContext.decodeAudioData(qBuildingArrayBuffer),
-        this.audioContext.decodeAudioData(qResearchArrayBuffer),
-        this.audioContext.decodeAudioData(qDefenseArrayBuffer),
-        this.audioContext.decodeAudioData(qShipyardArrayBuffer),
-      ]);
-
-      this.isLoaded = true;
-    } catch (error) {
-      console.warn("Failed to initialize queue sound service:", error);
-    }
-  }
-
-  async playQueueSound(type: "building" | "research" | "defense" | "shipyard") {
-    if (!settingsState.audio.effectsEnabled) {
-      return;
-    }
-
-    // Lazy initialize if not loaded yet
-    if (!this.isLoaded) {
-      await this.initialize();
-    }
-
-    if (!this.audioContext) {
-      return;
-    }
-
-    let buffer: AudioBuffer | null = null;
-    switch (type) {
-      case "building":
-        buffer = this.qBuildingBuffer;
-        break;
-      case "research":
-        buffer = this.qResearchBuffer;
-        break;
-      case "defense":
-        buffer = this.qDefenseBuffer;
-        break;
-      case "shipyard":
-        buffer = this.qShipyardBuffer;
-        break;
-    }
-
-    if (!buffer) return;
-
-    try {
-      // Resume audio context if needed
-      if (this.audioContext.state === "suspended") {
-        await this.audioContext.resume();
-      }
-
-      const source = this.audioContext.createBufferSource();
-      const gainNode = this.audioContext.createGain();
-
-      source.buffer = buffer;
-      source.connect(gainNode);
-      gainNode.connect(this.audioContext.destination);
-
-      // Volume settings
-      gainNode.gain.value = 0.3;
-
-      source.start();
-    } catch (error) {
-      console.warn(`Failed to play ${type} queue sound:`, error);
-    }
-  }
-}
-
-// Global queue sound service instance
-export const queueSoundService = new QueueSoundService();
 
 // Audio actions
 export const audioActions = {
@@ -645,7 +310,6 @@ export const audioActions = {
   },
 
   playSwooshSound() {
-    // Increment trigger to signal swoosh sound should play
     swooshTrigger.value++;
   },
 
@@ -656,35 +320,15 @@ export const audioActions = {
   stopScanSound() {
     scanSoundService.stop();
   },
-
-  playQueueSound(type: "building" | "research" | "defense" | "shipyard") {
-    queueSoundService.playQueueSound(type);
-  },
-
-  playInboxSound() {
-    inboxSoundService.play();
-  },
-
-  playFleetSound(type: FleetSoundType) {
-    fleetSoundService.play(type);
-  },
 };
 
 // Graphics actions
 export const graphicsActions = {
   setQuality(quality: QualityLevel) {
     settingsState.graphics.quality = quality;
-
     saveGraphicsQuality(quality);
   },
 };
-
-// Locale actions
-// export const localeActions = {
-//   setLocale(localeCode: LocaleCode) {
-//     setLocale(localeCode);
-//   },
-// };
 
 // Tab actions
 export const tabActions = {
@@ -705,11 +349,9 @@ export const generalActions = {
   },
 };
 
-// Export all actions as a single object for convenience
 export const settingsActions = {
   audio: audioActions,
   graphics: graphicsActions,
-  // locale: localeActions,
   tab: tabActions,
   general: generalActions,
 };

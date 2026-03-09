@@ -2,12 +2,13 @@
 	import { T } from '@threlte/core';
 	import { AudioListener, Audio } from '@threlte/extras';
 	import { CameraControls, type CameraControlsRef } from '@threlte/extras';
-	import ost from '$lib/assets/sound/ost.ogg';
-	import ambience from '$lib/assets/sound/ambience.ogg';
 	import { settingsState } from './settings.svelte.js';
 	import { cameraActions, getCurrentStage } from './stage.svelte.js';
-	import { profileGetters } from '$lib/game/profile.svelte.js';
 	import { Audio as ThreeAudio, type PerspectiveCamera } from 'three';
+
+	// Place your audio files in /public/sounds/ and update these paths
+	const OST_URL = '/sounds/ost.ogg';
+	const AMBIENCE_URL = '/sounds/ambience.ogg';
 
 	let audioRef = $state.raw<ThreeAudio>();
 	let ambienceAudioRef = $state.raw<ThreeAudio>();
@@ -71,28 +72,14 @@
 
 	$effect(() => {
 		if (!controls) return;
-
-		const stage = getCurrentStage();
-
-		// If going to home stage and viewing a moon, use moon camera
-		if (stage === 'home') {
-			const selectedPlanet = profileGetters.selectedPlanet;
-			if (selectedPlanet?.celestialBodyType === 'Moon') {
-				cameraActions.applyCameraForMoon();
-				return;
-			}
-		}
-
-		cameraActions.applyCameraForStage(stage);
+		cameraActions.applyCameraForStage(getCurrentStage());
 	});
 
 	const handleAudioCreate = (audio: ThreeAudio) => {
 		audioRef = audio;
 
 		return () => {
-			if (audio.isPlaying) {
-				audio.stop();
-			}
+			if (audio.isPlaying) audio.stop();
 			audioRef = undefined;
 			started = false;
 		};
@@ -102,9 +89,7 @@
 		ambienceAudioRef = audio;
 
 		return () => {
-			if (audio.isPlaying) {
-				audio.stop();
-			}
+			if (audio.isPlaying) audio.stop();
 			ambienceAudioRef = undefined;
 			ambienceStarted = false;
 		};
@@ -123,16 +108,18 @@
 
 	<CameraControls enabled={false} bind:ref={controls} oncreate={handleControlsCreate} />
 
+	<!-- Audio track 1: OST / background music -->
 	<Audio
-		src={ost}
+		src={OST_URL}
 		loop
 		volume={0.69}
 		autoplay={settingsState.audio.musicEnabled}
 		oncreate={handleAudioCreate}
 	/>
 
+	<!-- Audio track 2: Ambience -->
 	<Audio
-		src={ambience}
+		src={AMBIENCE_URL}
 		loop
 		volume={0.5}
 		autoplay={settingsState.audio.ambienceEnabled}

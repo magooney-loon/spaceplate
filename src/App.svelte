@@ -43,7 +43,7 @@
 	});
 </script>
 
-<div class="h-dvh max-w-screen">
+
 	<Canvas {createRenderer} {dpr}>
 		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 			{#await import('@threlte/extras') then { PerfMonitor }}
@@ -64,4 +64,3 @@
 			<Scene />
 		{/if}
 	</Canvas>
-</div>
