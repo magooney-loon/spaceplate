@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
-	import { interactivity } from '@threlte/extras';
+	import { interactivity, HTML } from '@threlte/extras';
 	import { Spring } from 'svelte/motion';
+	import { soundActions } from '../Sound.svelte';
 
 	interactivity();
 
@@ -27,12 +28,32 @@
 		scale={scale.current}
 		onpointerenter={() => (scale.target = 1.5)}
 		onpointerleave={() => (scale.target = 1)}
-		onclick={() => (colorIndex = (colorIndex + 1) % colors.length)}
+		onclick={() => {
+			colorIndex = (colorIndex + 1) % colors.length;
+			soundActions.playClick();
+		}}
 		castShadow
 	>
 		<T.IcosahedronGeometry args={[1, 1]} />
 		<T.MeshStandardMaterial color={colors[colorIndex]} flatShading />
 	</T.Mesh>
+
+	<!-- Color label above the sphere -->
+	<HTML position.y={3.6} center zIndexRange={[0, 0]}>
+		<div
+			style="
+			color: {colors[colorIndex]};
+			font-size: 69px;
+			font-weight: bold;
+			font-family: monospace;
+			text-shadow: 0 0 6px {colors[colorIndex]}, 0 1px 3px rgba(0,0,0,0.8);
+			white-space: nowrap;
+			pointer-events: none;
+		"
+		>
+			{colors[colorIndex]}
+		</div>
+	</HTML>
 
 	<!-- Ground -->
 	<T.Mesh position.y={-1} position.z={-0.9} rotation.x={-Math.PI / 2} receiveShadow>
