@@ -29,19 +29,40 @@
 		<!-- Audio -->
 		<div style="margin-bottom: 1.5rem;">
 			<label style="display: block; margin-bottom: 0.5rem; opacity: 0.7; font-size: 0.875rem;">Audio</label>
-			<div style="display: flex; flex-direction: column; gap: 0.5rem;">
-				<label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-					<input type="checkbox" checked={settingsState.audio.musicEnabled} onchange={() => audioActions.toggleMusic()} />
-					Music
-				</label>
-				<label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-					<input type="checkbox" checked={settingsState.audio.ambienceEnabled} onchange={() => audioActions.toggleAmbience()} />
-					Ambience
-				</label>
-				<label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-					<input type="checkbox" checked={settingsState.audio.effectsEnabled} onchange={() => audioActions.toggleEffects()} />
-					Sound Effects
-				</label>
+			<div style="display: flex; flex-direction: column; gap: 0.75rem;">
+				<div style="display: flex; flex-direction: column; gap: 0.25rem;">
+					<label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+						<input type="checkbox" checked={settingsState.audio.musicEnabled} onchange={() => audioActions.toggleMusic()} />
+						Music
+					</label>
+					<input type="range" min="0" max="1" step="0.01"
+						value={settingsState.audio.musicVolume}
+						oninput={(e) => audioActions.setMusicVolume(+(e.target as HTMLInputElement).value)}
+						style="width: 100%; accent-color: rgba(255,255,255,0.8);"
+					/>
+				</div>
+				<div style="display: flex; flex-direction: column; gap: 0.25rem;">
+					<label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+						<input type="checkbox" checked={settingsState.audio.ambienceEnabled} onchange={() => audioActions.toggleAmbience()} />
+						Ambience
+					</label>
+					<input type="range" min="0" max="1" step="0.01"
+						value={settingsState.audio.ambienceVolume}
+						oninput={(e) => audioActions.setAmbienceVolume(+(e.target as HTMLInputElement).value)}
+						style="width: 100%; accent-color: rgba(255,255,255,0.8);"
+					/>
+				</div>
+				<div style="display: flex; flex-direction: column; gap: 0.25rem;">
+					<label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+						<input type="checkbox" checked={settingsState.audio.effectsEnabled} onchange={() => audioActions.toggleEffects()} />
+						Sound Effects
+					</label>
+					<input type="range" min="0" max="1" step="0.01"
+						value={settingsState.audio.effectsVolume}
+						oninput={(e) => audioActions.setEffectsVolume(+(e.target as HTMLInputElement).value)}
+						style="width: 100%; accent-color: rgba(255,255,255,0.8);"
+					/>
+				</div>
 			</div>
 		</div>
 

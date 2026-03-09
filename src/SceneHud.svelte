@@ -4,9 +4,12 @@
 	import HomeHud from '$lib/HomeHud.svelte';
 	import GalaxyHud from '$lib/GalaxyHud.svelte';
 	import Settings from '$lib/Settings.svelte';
+	import WelcomeModal from '$lib/WelcomeModal.svelte';
 </script>
 
 <!-- HTML overlay — rendered as a sibling to <Canvas> in App.svelte -->
+<WelcomeModal />
+
 {#if settingsState.general.uiVisible}
 	<div style="position: absolute; inset: 0; pointer-events: none;">
 		<div style="position: relative; width: 100%; height: 100%; pointer-events: none;">

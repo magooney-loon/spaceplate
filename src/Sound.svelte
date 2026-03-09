@@ -32,9 +32,29 @@
 	});
 
 	$effect(() => {
+		if (!ostAudio) return;
+		ostAudio.setVolume(settingsState.audio.musicVolume);
+	});
+
+	$effect(() => {
 		if (!ambienceAudio) return;
 		if (settingsState.audio.ambienceEnabled) ambienceAudio.play();
 		else ambienceAudio.pause();
+	});
+
+	$effect(() => {
+		if (!ambienceAudio) return;
+		ambienceAudio.setVolume(settingsState.audio.ambienceVolume);
+	});
+
+	$effect(() => {
+		if (!clickAudio) return;
+		clickAudio.setVolume(settingsState.audio.effectsVolume);
+	});
+
+	$effect(() => {
+		if (!swooshAudio) return;
+		swooshAudio.setVolume(settingsState.audio.effectsVolume);
 	});
 
 	// ─── One-shot SFX ────────────────────────────────────────────────────────
@@ -49,10 +69,10 @@
 </script>
 
 <!-- Audio track 1: OST / background music -->
-<Audio src={OST_URL} loop volume={0.69} oncreate={(a) => { ostAudio = a; }} />
+<Audio src={OST_URL} loop oncreate={(a) => { ostAudio = a; }} />
 
 <!-- Audio track 2: Ambience -->
-<Audio src={AMBIENCE_URL} loop volume={0.5} oncreate={(a) => { ambienceAudio = a; }} />
+<Audio src={AMBIENCE_URL} loop oncreate={(a) => { ambienceAudio = a; }} />
 
 <!-- SFX 1: Click -->
 <Audio src={CLICK_URL} oncreate={(a) => { clickAudio = a; }} />
