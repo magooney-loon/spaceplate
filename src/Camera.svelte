@@ -23,7 +23,6 @@
 			controls = undefined;
 		};
 	};
-
 </script>
 
 <T.PerspectiveCamera
@@ -35,5 +34,5 @@
 	oncreate={handleCameraCreate}
 >
 	<AudioListener />
-	<CameraControls enabled={false} bind:ref={controls} oncreate={handleControlsCreate} />
+	<CameraControls enabled={true} bind:ref={controls} oncreate={handleControlsCreate} />
 </T.PerspectiveCamera>
