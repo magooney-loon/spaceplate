@@ -10,6 +10,6 @@
 
 <!-- Example object - replace with your scene content -->
 <T.Mesh position={[0, 0, 0]}>
-	<T.IcosahedronGeometry args={[1, 2]} />
+	<T.IcosahedronGeometry args={[1, 9]} />
 	<T.MeshStandardMaterial color="#4488ff" wireframe={false} />
 </T.Mesh>
