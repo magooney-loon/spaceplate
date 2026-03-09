@@ -8,7 +8,8 @@
 		scope: 'stage',
 		state() {
 			return {};
-		}
+		},
+		actions: {}
 	});
 </script>
 
@@ -17,7 +18,7 @@
 		{#each STAGES as stage}
 			<ToolbarButton
 				label={stage.label}
-				icon={stage.icon}
+				icon={stage.icon as any}
 				onclick={() => stageActions.setStage(stage.id)}
 				tooltip="Go to {stage.label} stage"
 				active={stageState.currentStage === stage.id}
