@@ -1,3 +1,77 @@
+# Spaceplate — Svelte 5 + Threlte + SpacetimeDB Boilerplate
+
+## Project Overview
+
+Spaceplate is a boilerplate for real-time 3D web apps. It combines:
+- **Svelte 5** (runes: `$state`, `$derived`, `$effect`, `.svelte.ts` reactive modules)
+- **Threlte** (Three.js for Svelte — `@threlte/core`, `@threlte/extras`)
+- **SpacetimeDB** (real-time relational DB with server-side reducers)
+
+## File Structure
+
+```
+src/
+  App.svelte          — Root: Canvas, SceneHud, Loader siblings
+  Scene.svelte        — 3D stage router (inside Canvas, Threlte context)
+  SceneHud.svelte     — HTML overlay router (sibling to Canvas)
+  Loader.svelte       — Asset loading screen (useProgress, shown until finishedOnce)
+  Camera.svelte       — PerspectiveCamera + AudioListener + CameraControls
+  Skybox.svelte       — Static skybox (stars, nebula GLB, sun)
+  Renderer.svelte     — Post-processing (Bloom, SMAA, Vignette)
+  Sound.svelte        — All Audio components + soundTriggers/soundActions exports
+  stage.svelte.ts     — Stage state machine (home/galaxy/settings) + cameraActions
+  settings.svelte.ts  — Persistent settings state (audio volumes, graphics, general)
+  module_bindings/    — Generated SpacetimeDB client bindings (do not edit)
+
+  lib/
+    HomeStage.svelte   — Example 3D stage 1 (inside Canvas)
+    GalaxyStage.svelte — Example 3D stage 2 (inside Canvas)
+    HomeHud.svelte     — HTML overlay for home stage
+    GalaxyHud.svelte   — HTML overlay for galaxy stage (SpacetimeDB example)
+    Settings.svelte    — Settings overlay
+    WelcomeModal.svelte — First-visit welcome modal
+```
+
+## Architecture Rules
+
+### HUD vs 3D Stage
+- **3D content** (meshes, lights, cameras) belongs inside `<Canvas>` — use `Scene.svelte` → stage components
+- **HTML overlays** (buttons, panels, forms) cannot live inside Canvas — use `SceneHud.svelte` → HUD components
+- HUD components are siblings to Canvas in a `position: relative` wrapper div
+
+### Sound System
+- `Sound.svelte` owns all `<Audio>` Threlte components — never unmounts (no race conditions)
+- `soundTriggers` and `soundActions` are exported from `<script module>` in `Sound.svelte` — shared singleton
+- Import: `import { soundActions } from './Sound.svelte'`
+- Swoosh uses `playPolyphonic` (clone per call → overlapping) — click uses `playOneShot` (stop+restart)
+- `$state.raw<ThreeAudio>()` + `oncreate` — prevents Svelte 5 Proxy wrapping THREE.js class instances
+
+### Stage State Machine (`stage.svelte.ts`)
+- Stages: `"home"` | `"galaxy"` | `"settings"`
+- Use `stageActions.goToHome/goToGalaxy/goToSettings/goBack()`
+- Camera positions are set per-stage in `cameraActions.applyCameraForStage()`
+- `stageState.isTransitioning` — set during animated transitions
+
+### Settings (`settings.svelte.ts`)
+- All settings persist to localStorage automatically
+- Audio: `musicEnabled/Volume`, `ambienceEnabled/Volume`, `effectsEnabled/Volume`
+- Graphics: `quality` (`"low"` | `"mid"` | `"high"`) — affects DPR and renderer power preference
+- General: `hideWelcomeModal`, `uiVisible` (toggled with `Ctrl+H`)
+
+### SpacetimeDB Client
+- Connection is set up in `main.ts` via `SpacetimeDBProvider`
+- Module bindings are in `src/module_bindings/` — regenerate with `pnpm spacetime:generate`
+- Use `useSpacetimeDB()`, `useTable(tables.x)`, `useReducer(reducers.x)` from `spacetimedb/svelte`
+- SpacetimeDB UI lives in HUD components (HTML), not 3D stage components
+
+### Key Svelte 5 Patterns Used
+- `$state.raw<T>()` for Three.js class instances (avoids Proxy breakage)
+- `<script module>` for shared singleton state exported from `.svelte` files
+- `transition:fly` on each HUD component's root element — `transition:fade` on the uiVisible wrapper
+- Separate `{#if}` blocks (not `{:else if}`) for stage HUD routing — ensures transitions fire on switch
+
+---
+
 # SpacetimeDB Rules (All Languages)
 
 ## Migrating from 1.0 to 2.0?
