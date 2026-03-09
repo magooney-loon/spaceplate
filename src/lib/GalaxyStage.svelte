@@ -1,12 +1,5 @@
 <script module lang="ts">
-	export type CharacterAction =
-		| 'idle'
-		| 'walk'
-		| 'run'
-		| 'agree'
-		| 'headShake'
-		| 'sad_pose'
-		| 'sneak_pose';
+	export type CharacterAction = 'idle' | 'walk' | 'run' | 'agree' | 'headShake';
 
 	export const galaxyState = $state({ action: 'idle' as CharacterAction });
 </script>
@@ -14,13 +7,40 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
 	import { GLTF, useGltfAnimations } from '@threlte/extras';
+	import { soundActions } from '../Sound.svelte';
+	import * as THREE from 'three';
 
 	const { gltf, actions } = useGltfAnimations<CharacterAction>();
 
 	let currentAction: CharacterAction = 'idle';
 
+	// Configure one-shot animations to play once and hold last frame
 	$effect(() => {
-		$actions?.['idle']?.play();
+		for (const key of ['agree', 'headShake'] as CharacterAction[]) {
+			const action = $actions[key];
+			if (!action) continue;
+			action.setLoop(THREE.LoopOnce, 1);
+			action.clampWhenFinished = true;
+		}
+	});
+
+	// Return to idle when a one-shot animation finishes
+	$effect(() => {
+		const agreeAction = $actions['agree'];
+		if (!agreeAction) return;
+		const mixer = agreeAction.getMixer();
+		const onFinished = (e: THREE.Event & { action: THREE.AnimationAction }) => {
+			const name = e.action.getClip().name as CharacterAction;
+			if (name === 'agree' || name === 'headShake') galaxyState.action = 'idle';
+		};
+		mixer.addEventListener('finished', onFinished as (e: THREE.Event) => void);
+		return () => mixer.removeEventListener('finished', onFinished as (e: THREE.Event) => void);
+	});
+
+	$effect(() => {
+		if (!$actions?.['idle']) return;
+		$actions['idle'].play();
+		soundActions.playAnimSound('idle');
 	});
 
 	$effect(() => {
@@ -29,16 +49,17 @@
 		const nextAction = $actions[next];
 		if (!nextAction || current === nextAction) return;
 		nextAction.enabled = true;
+		if (next === 'agree' || next === 'headShake') nextAction.reset();
 		if (current) current.crossFadeTo(nextAction, 0.3, true);
 		nextAction.play();
 		currentAction = next;
+		soundActions.playAnimSound(next);
 	});
 </script>
 
 <!-- Example: Galaxy Stage — animated GLTF character -->
 <T.Group>
-	<T.AmbientLight intensity={0.5} />
-	<T.DirectionalLight position={[10, 5, 5]} castShadow />
+	<T.DirectionalLight position={[0, 10, -20]} castShadow />
 
 	<GLTF
 		bind:gltf={$gltf}
@@ -51,8 +72,8 @@
 		scale={10}
 	/>
 
-	<T.Mesh rotation.x={-Math.PI / 2} receiveShadow>
-		<T.CircleGeometry args={[5, 72]} />
+	<T.Mesh position.y={0} position.z={-3.6} rotation.x={-Math.PI / 2} receiveShadow>
+		<T.CircleGeometry args={[9, 72]} />
 		<T.MeshStandardMaterial color="white" />
 	</T.Mesh>
 </T.Group>

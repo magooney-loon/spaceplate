@@ -14,9 +14,7 @@
 		{ key: 'walk', label: 'Walk' },
 		{ key: 'run', label: 'Run' },
 		{ key: 'agree', label: 'Agree' },
-		{ key: 'headShake', label: 'Head Shake' },
-		{ key: 'sad_pose', label: 'Sad' },
-		{ key: 'sneak_pose', label: 'Sneak' }
+		{ key: 'headShake', label: 'Head Shake' }
 	];
 </script>
 

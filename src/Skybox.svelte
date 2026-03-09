@@ -152,7 +152,7 @@
 			falloff={sunFalloff.current}
 			glowInternalRadius={sunGlowInternalRadius.current}
 			glowSharpness={sunGlowSharpness.current}
-			depthTest={false}
+			depthTest={true}
 		/>
 		<T.IcosahedronGeometry args={[3, 3]} />
 	</T.Mesh>
@@ -165,7 +165,7 @@
 				falloff={1.8}
 				glowInternalRadius={8}
 				glowSharpness={0.3}
-				depthTest={false}
+				depthTest={true}
 			/>
 			<T.IcosahedronGeometry args={[4, 2]} />
 		</T.Mesh>
