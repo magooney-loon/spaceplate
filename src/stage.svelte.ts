@@ -27,7 +27,7 @@ export const STAGES: StageConfig[] = [
 		icon: 'mdiEarth',
 		camera(controls, animated) {
 			controls.reset(animated);
-			controls.moveTo(0, 7.2, -54, animated);
+			controls.moveTo(0, 7.2, 0, animated);
 			controls.lookInDirectionOf(0, 10, -20, animated);
 			controls.zoomTo(0.27, animated);
 		}

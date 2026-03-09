@@ -1,14 +1,56 @@
-<script lang="ts">
-	import { T } from '@threlte/core';
+<script module lang="ts">
+	export type CharacterAction =
+		| 'idle'
+		| 'walk'
+		| 'run'
+		| 'agree'
+		| 'headShake'
+		| 'sad_pose'
+		| 'sneak_pose';
+
+	export const galaxyState = $state({ action: 'idle' as CharacterAction });
 </script>
 
-<!-- Example: Galaxy Stage 3D scene -->
-<!-- Replace this with your actual galaxy/map stage content -->
+<script lang="ts">
+	import { T } from '@threlte/core';
+	import { GLTF, useGltfAnimations } from '@threlte/extras';
 
-<T.AmbientLight intensity={0.2} />
+	const { gltf, actions } = useGltfAnimations<CharacterAction>();
 
-<!-- Example object - replace with your scene content -->
-<T.Mesh position={[0, 7, -14]}>
-	<T.TorusGeometry args={[3, 0.4, 16, 60]} />
-	<T.MeshStandardMaterial color="#ff8844" emissive="#441100" emissiveIntensity={0.5} />
+	let currentAction: CharacterAction = 'idle';
+
+	$effect(() => {
+		$actions?.['idle']?.play();
+	});
+
+	$effect(() => {
+		const next = galaxyState.action;
+		const current = $actions[currentAction];
+		const nextAction = $actions[next];
+		if (!nextAction || current === nextAction) return;
+		nextAction.enabled = true;
+		if (current) current.crossFadeTo(nextAction, 0.3, true);
+		nextAction.play();
+		currentAction = next;
+	});
+</script>
+
+<!-- Example: Galaxy Stage — animated GLTF character -->
+
+<T.AmbientLight intensity={0.5} />
+<T.DirectionalLight position={[10, 5, 5]} castShadow />
+
+<GLTF
+	bind:gltf={$gltf}
+	url="https://threejs.org/examples/models/gltf/Xbot.glb"
+	oncreate={(scene) => {
+		scene.traverse((child) => {
+			child.castShadow = true;
+		});
+	}}
+/>
+
+<T.Mesh rotation.x={-Math.PI / 2} receiveShadow>
+	<T.CircleGeometry args={[3, 72]} />
+	<T.MeshStandardMaterial color="white" />
 </T.Mesh>
