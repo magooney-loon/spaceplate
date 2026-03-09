@@ -2,7 +2,7 @@
 	import { T } from '@threlte/core';
 	import { AudioListener } from '@threlte/extras';
 	import { CameraControls, type CameraControlsRef } from '@threlte/extras';
-	import { cameraActions, getCurrentStage } from './stage.svelte.js';
+	import { cameraActions } from './stage.svelte.js';
 	import { log } from './settings.svelte.js';
 	import type { PerspectiveCamera } from 'three';
 
@@ -24,10 +24,6 @@
 		};
 	};
 
-	$effect(() => {
-		if (!controls) return;
-		cameraActions.applyCameraForStage(getCurrentStage());
-	});
 </script>
 
 <T.PerspectiveCamera

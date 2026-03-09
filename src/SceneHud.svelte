@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
-	import { isSettingsStage, isHomeStage, isGalaxyStage } from './stage.svelte.js';
+	import { stageState } from './stage.svelte.js';
 	import { settingsState } from './settings.svelte.js';
 	import HomeHud from '$lib/HomeHud.svelte';
 	import GalaxyHud from '$lib/GalaxyHud.svelte';
@@ -17,13 +17,13 @@
 		style="position: absolute; inset: 0; pointer-events: none;"
 	>
 		<div style="position: relative; width: 100%; height: 100%; pointer-events: none;">
-			{#if isSettingsStage()}
+			{#if stageState.currentStage === 'settings'}
 				<div style="pointer-events: auto;"><Settings /></div>
 			{/if}
-			{#if isHomeStage()}
+			{#if stageState.currentStage === 'home'}
 				<div style="pointer-events: auto;"><HomeHud /></div>
 			{/if}
-			{#if isGalaxyStage()}
+			{#if stageState.currentStage === 'galaxy'}
 				<div style="pointer-events: auto;"><GalaxyHud /></div>
 			{/if}
 		</div>

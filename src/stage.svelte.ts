@@ -4,10 +4,42 @@ import { settingsState, log } from './settings.svelte.js';
 
 export type StageType = 'settings' | 'home' | 'galaxy';
 
-export const STAGES: { id: StageType; label: string; icon: string }[] = [
-	{ id: 'home', label: 'Home', icon: 'mdiHome' },
-	{ id: 'galaxy', label: 'Galaxy', icon: 'mdiEarth' },
-	{ id: 'settings', label: 'Settings', icon: 'mdiCog' }
+export type StageConfig = {
+	id: StageType;
+	label: string;
+	icon: string;
+	camera: (controls: CameraControlsRef, animated: boolean) => void;
+};
+
+export const STAGES: StageConfig[] = [
+	{
+		id: 'home',
+		label: 'Home',
+		icon: 'mdiHome',
+		camera(controls, animated) {
+			controls.reset(animated);
+			controls.moveTo(0, 1.8, 0, animated);
+		}
+	},
+	{
+		id: 'galaxy',
+		label: 'Galaxy',
+		icon: 'mdiEarth',
+		camera(controls, animated) {
+			controls.reset(animated);
+			controls.moveTo(0, 7.2, -54, animated);
+			controls.lookInDirectionOf(0, 10, -20, animated);
+			controls.zoomTo(0.27, animated);
+		}
+	},
+	{
+		id: 'settings',
+		label: 'Settings',
+		icon: 'mdiCog',
+		camera(controls, animated) {
+			controls.reset(animated);
+		}
+	}
 ];
 
 export interface StageState {
@@ -16,7 +48,6 @@ export interface StageState {
 	isTransitioning: boolean;
 }
 
-// Camera control state
 let cameraControls = $state<CameraControlsRef | undefined>(undefined);
 
 export const stageState = $state<StageState>({
@@ -25,10 +56,11 @@ export const stageState = $state<StageState>({
 	isTransitioning: false
 });
 
-export const isSettingsStage = () => stageState.currentStage === 'settings';
-export const isHomeStage = () => stageState.currentStage === 'home';
-export const isGalaxyStage = () => stageState.currentStage === 'galaxy';
-export const canGoBack = () => stageState.previousStage !== null;
+function applyCamera(stage: StageType) {
+	if (!cameraControls) return;
+	const animated = settingsState.graphics.quality !== 'low';
+	STAGES.find((s) => s.id === stage)?.camera(cameraControls, animated);
+}
 
 export const stageActions = {
 	setStage(stage: StageType) {
@@ -39,6 +71,7 @@ export const stageActions = {
 
 		stageState.previousStage = stageState.currentStage;
 		stageState.currentStage = stage;
+		applyCamera(stage);
 	},
 
 	goToSettings() {
@@ -55,35 +88,19 @@ export const stageActions = {
 
 	goBack() {
 		if (stageState.previousStage) {
-			soundActions.playSwoosh();
-
-			const previous = stageState.previousStage;
-			stageState.previousStage = stageState.currentStage;
-			stageState.currentStage = previous;
-
-			cameraActions.applyCameraForStage(previous);
+			this.setStage(stageState.previousStage);
 		}
-	},
-
-	setTransitioning(isTransitioning: boolean) {
-		stageState.isTransitioning = isTransitioning;
 	},
 
 	async transitionTo(stage: StageType, transitionDuration = 300) {
 		if (stageState.currentStage === stage) return;
 
-		const isAnimated = settingsState.graphics.quality !== 'low';
+		const animated = settingsState.graphics.quality !== 'low';
 		stageState.isTransitioning = true;
 
-		if (isAnimated) {
-			await new Promise((resolve) => setTimeout(resolve, transitionDuration / 2));
-		}
-
+		if (animated) await new Promise((r) => setTimeout(r, transitionDuration / 2));
 		this.setStage(stage);
-
-		if (isAnimated) {
-			await new Promise((resolve) => setTimeout(resolve, transitionDuration / 2));
-		}
+		if (animated) await new Promise((r) => setTimeout(r, transitionDuration / 2));
 
 		stageState.isTransitioning = false;
 	}
@@ -92,39 +109,6 @@ export const stageActions = {
 export const cameraActions = {
 	setCameraControls(controls: CameraControlsRef | undefined) {
 		cameraControls = controls;
-		if (controls) {
-			this.applyCameraForStage(stageState.currentStage);
-		}
-	},
-
-	applyCameraForStage(stage: StageType) {
-		if (!cameraControls) return;
-
-		const isAnimated = settingsState.graphics.quality !== 'low';
-
-		switch (stage) {
-			case 'settings':
-				// Default reset position — camera looks at the scene straight on
-				cameraControls.reset(isAnimated);
-				break;
-
-			case 'home':
-				// Slightly elevated view for the home/main stage
-				cameraControls.reset(isAnimated);
-				cameraControls.moveTo(0, 1.8, 0, isAnimated);
-				break;
-
-			case 'galaxy':
-				// Wide top-down-ish view for the galaxy/map stage
-				cameraControls.reset(isAnimated);
-				cameraControls.moveTo(0, 7.2, -54, isAnimated);
-				cameraControls.lookInDirectionOf(0, 10, -20, isAnimated);
-				cameraControls.zoomTo(0.27, isAnimated);
-				break;
-		}
+		if (controls) applyCamera(stageState.currentStage);
 	}
 };
-
-export const getCurrentStage = () => stageState.currentStage;
-export const getPreviousStage = () => stageState.previousStage;
-export const getIsTransitioning = () => stageState.isTransitioning;

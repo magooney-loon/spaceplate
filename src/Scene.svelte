@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { isSettingsStage, isHomeStage, isGalaxyStage } from './stage.svelte.js';
+	import { stageState } from './stage.svelte.js';
 	import HomeStage from '$lib/HomeStage.svelte';
 	import GalaxyStage from '$lib/GalaxyStage.svelte';
 </script>
 
 <!-- 3D stage content only — HTML overlays live in App.svelte -->
-{#if isSettingsStage() || isHomeStage()}
+{#if stageState.currentStage === 'settings' || stageState.currentStage === 'home'}
 	<HomeStage />
-{:else if isGalaxyStage()}
+{:else if stageState.currentStage === 'galaxy'}
 	<GalaxyStage />
 {/if}

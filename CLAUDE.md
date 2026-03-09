@@ -19,7 +19,7 @@ src/
   Skybox.svelte       — Static skybox (stars, nebula GLB, sun)
   Renderer.svelte     — Post-processing (Bloom, SMAA, Vignette)
   Sound.svelte        — All Audio components + soundTriggers/soundActions exports
-  stage.svelte.ts     — Stage state machine (home/galaxy/settings) + cameraActions
+  stage.svelte.ts     — Stage state machine + STAGES config array (camera per stage)
   settings.svelte.ts  — Persistent settings state (audio volumes, graphics, general)
   module_bindings/    — Generated SpacetimeDB client bindings (do not edit)
 
@@ -30,6 +30,9 @@ src/
     GalaxyHud.svelte   — HTML overlay for galaxy stage (SpacetimeDB example)
     Settings.svelte    — Settings overlay
     WelcomeModal.svelte — First-visit welcome modal
+
+  extensions/
+    StageExtension.svelte — Threlte Studio toolbar buttons for stage switching
 ```
 
 ## Architecture Rules
@@ -47,10 +50,39 @@ src/
 - `$state.raw<ThreeAudio>()` + `oncreate` — prevents Svelte 5 Proxy wrapping THREE.js class instances
 
 ### Stage State Machine (`stage.svelte.ts`)
-- Stages: `"home"` | `"galaxy"` | `"settings"`
-- Use `stageActions.goToHome/goToGalaxy/goToSettings/goBack()`
-- Camera positions are set per-stage in `cameraActions.applyCameraForStage()`
-- `stageState.isTransitioning` — set during animated transitions
+- Stages defined in `STAGES: StageConfig[]` — each entry has `id`, `label`, `icon`, and a `camera` function
+- Adding a new stage = one new entry in `STAGES` (+ add its `id` to `StageType`)
+- Camera config lives inside each `StageConfig.camera(controls, animated)` — no separate switch statement
+- `stageActions.setStage(stage)` transitions stage AND applies camera automatically
+- Convenience: `stageActions.goToHome/goToGalaxy/goToSettings/goBack()`
+- Read current stage via `stageState.currentStage` — do NOT use removed helper functions (`isHomeStage` etc.)
+- `stageState.isTransitioning` — set during animated transitions (`stageActions.transitionTo`)
+- `cameraActions.setCameraControls(ref)` — called by `Camera.svelte` on mount/unmount only
+
+### Threlte Studio Extensions (`src/extensions/`)
+- Extensions add custom toolbar items, panes, or controls to the Studio (dev-only, `VITE_GAME_ENGINE=true`)
+- Register via `<Studio extensions={[MyExtension]}>` in `App.svelte`
+- Each extension must call `createExtension({ scope, state })` from `useStudio()` and include `<slot />`
+- **`ToolbarButton` uses `onclick` prop (Svelte 5), NOT `on:click`** — using `on:click` silently does nothing
+- Import from `@threlte/studio/extend`: `useStudio`, `ToolbarItem`, `HorizontalButtonGroup`, `ToolbarButton`
+
+```svelte
+<!-- src/extensions/MyExtension.svelte -->
+<script lang="ts">
+  import { useStudio, ToolbarItem, HorizontalButtonGroup, ToolbarButton } from '@threlte/studio/extend';
+
+  const { createExtension } = useStudio();
+  createExtension({ scope: 'my-extension', state() { return {}; } });
+</script>
+
+<ToolbarItem position="left">
+  <HorizontalButtonGroup>
+    <ToolbarButton label="Do Thing" icon="mdiStar" onclick={() => doThing()} tooltip="Do the thing" />
+  </HorizontalButtonGroup>
+</ToolbarItem>
+
+<slot />
+```
 
 ### Settings (`settings.svelte.ts`)
 - All settings persist to localStorage automatically
