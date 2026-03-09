@@ -26,8 +26,8 @@ src/
   lib/
     HomeStage.svelte   — Example 3D stage 1 (inside Canvas)
     GalaxyStage.svelte — Example 3D stage 2 (inside Canvas)
-    HomeHud.svelte     — HTML overlay for home stage
-    GalaxyHud.svelte   — HTML overlay for galaxy stage (SpacetimeDB example)
+    HomeHud.svelte     — HTML overlay for home stage (SpacetimeDB example)
+    GalaxyHud.svelte   — HTML overlay for galaxy stage
     Settings.svelte    — Settings overlay
     WelcomeModal.svelte — First-visit welcome modal
 
@@ -46,7 +46,9 @@ src/
 - `Sound.svelte` owns all `<Audio>` Threlte components — never unmounts (no race conditions)
 - `soundTriggers` and `soundActions` are exported from `<script module>` in `Sound.svelte` — shared singleton
 - Import: `import { soundActions } from './Sound.svelte'`
-- Swoosh uses `playPolyphonic` (clone per call → overlapping) — click uses `playOneShot` (stop+restart)
+- `soundActions.playSwoosh()` — polyphonic (clone per call → overlapping instances)
+- `soundActions.playClick()` — one-shot (stop+restart)
+- `soundActions.playAnimSound(action)` / `soundActions.stopAnimSounds()` — character animation audio
 - `$state.raw<ThreeAudio>()` + `oncreate` — prevents Svelte 5 Proxy wrapping THREE.js class instances
 
 ### Stage State Machine (`stage.svelte.ts`)
@@ -104,7 +106,7 @@ src/
 
 ### Debug Logging (`settings.svelte.ts`)
 
-All logging goes through `log` — gated by `VITE_GAME_DEBUG_LOGS=true` in `.env`.
+All logging goes through `log` — gated by `VITE_GAME_ENGINE_LOGS=true` in `.env`.
 
 ```ts
 import { log } from './settings.svelte.js';

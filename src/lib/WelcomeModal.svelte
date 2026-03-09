@@ -46,23 +46,6 @@
 				<li>SpacetimeDB client bindings ready to wire up</li>
 			</ul>
 
-			<p style="margin: 0; font-size: 0.8rem; opacity: 0.45; line-height: 1.5;">
-				Open <code
-					style="background: rgba(255,255,255,0.08); padding: 0.1em 0.35em; border-radius: 0.25rem;"
-					>src/</code
-				>
-				to start building. Drop your SpacetimeDB module in
-				<code
-					style="background: rgba(255,255,255,0.08); padding: 0.1em 0.35em; border-radius: 0.25rem;"
-					>backend/</code
-				>
-				and run
-				<code
-					style="background: rgba(255,255,255,0.08); padding: 0.1em 0.35em; border-radius: 0.25rem;"
-					>spacetime publish</code
-				>.
-			</p>
-
 			<div
 				style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 0.25rem;"
 			>

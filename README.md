@@ -29,8 +29,8 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 - **Sound system** — polyphonic + one-shot audio, never unmounts, safe from race conditions
 - **Settings** — persistent audio, graphics quality (DPR + power preference), and UI visibility — all saved to localStorage
 - **Post-processing** — Bloom, SMAA, Vignette via `postprocessing`
-- **SpacetimeDB wiring** — connection setup, generated bindings, example table subscription in `GalaxyHud`
-- **Debug logging** — env-gated log channels (`VITE_GAME_DEBUG_LOGS`)
+- **SpacetimeDB wiring** — connection setup, generated bindings, example table subscription in `HomeHud`
+- **Debug logging** — env-gated log channels (`VITE_GAME_ENGINE_LOGS`)
 
 ---
 
@@ -76,4 +76,4 @@ Copy `.env.example` to `.env.local` and fill in your values.
 | `SPACETIMEDB_DB_NAME` | Same as above, used by the `spacetime` CLI |
 | `SPACETIMEDB_HOST` | Same as above, used by the `spacetime` CLI |
 | `VITE_GAME_ENGINE` | `true` to enable Threlte Studio + PerfMonitor in dev |
-| `VITE_GAME_DEBUG_LOGS` | `true` to enable debug logging |
+| `VITE_GAME_ENGINE_LOGS` | `true` to enable debug logging |
