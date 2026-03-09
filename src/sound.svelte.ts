@@ -4,7 +4,6 @@
 export const soundTriggers = $state({
   swoosh: 0,
   click: 0,
-  scan: 0,
 });
 
 export const soundActions = {
@@ -14,9 +13,5 @@ export const soundActions = {
 
   playClick() {
     soundTriggers.click++;
-  },
-
-  playScan() {
-    soundTriggers.scan++;
   },
 };

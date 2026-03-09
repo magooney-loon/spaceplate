@@ -49,7 +49,7 @@ export const settingsState = $state<SettingsState>({
   activeTab: "account",
   audio: {
     musicEnabled: false,
-    effectsEnabled: false,
+    effectsEnabled: true,
     ambienceEnabled: false,
   },
   graphics: {
