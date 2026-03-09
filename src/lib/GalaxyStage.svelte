@@ -66,7 +66,7 @@
 
 	<GLTF
 		bind:gltf={$gltf}
-		url="https://threejs.org/examples/models/gltf/Xbot.glb"
+		url="/models/stages/galaxy/xbot.glb"
 		oncreate={(scene) => {
 			scene.traverse((child) => {
 				child.castShadow = true;
