@@ -66,7 +66,7 @@
 
 	<GLTF
 		bind:gltf={$gltf}
-		url="/models/stages/galaxy/xbot.glb"
+		url="{import.meta.env.BASE_URL}models/stages/galaxy/xbot.glb"
 		oncreate={(scene) => {
 			scene.traverse((child) => {
 				child.castShadow = true;

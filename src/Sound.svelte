@@ -28,15 +28,16 @@
 	import { settingsState, log } from './settings.svelte.js';
 
 	// Place your audio files in /public/sounds/
-	const OST_URL = '/sounds/ost.ogg';
-	const AMBIENCE_URL = '/sounds/ambience.ogg';
-	const CLICK_URL = '/sounds/click.mp3';
-	const SWOOSH_URL = '/sounds/swoosh.mp3';
-	const ANIM_IDLE_URL = '/sounds/anim_idle.mp3';
-	const ANIM_WALK_URL = '/sounds/anim_walk.mp3';
-	const ANIM_RUN_URL = '/sounds/anim_run.mp3';
-	const ANIM_AGREE_URL = '/sounds/anim_agree.ogg';
-	const ANIM_HEAD_SHAKE_URL = '/sounds/anim_headshake.ogg';
+	const base = import.meta.env.BASE_URL;
+	const OST_URL = `${base}sounds/ost.ogg`;
+	const AMBIENCE_URL = `${base}sounds/ambience.ogg`;
+	const CLICK_URL = `${base}sounds/click.mp3`;
+	const SWOOSH_URL = `${base}sounds/swoosh.mp3`;
+	const ANIM_IDLE_URL = `${base}sounds/anim_idle.mp3`;
+	const ANIM_WALK_URL = `${base}sounds/anim_walk.mp3`;
+	const ANIM_RUN_URL = `${base}sounds/anim_run.mp3`;
+	const ANIM_AGREE_URL = `${base}sounds/anim_agree.ogg`;
+	const ANIM_HEAD_SHAKE_URL = `${base}sounds/anim_headshake.ogg`;
 
 	// $state.raw — prevents Svelte 5 from wrapping class instances in a Proxy
 	let ostAudio = $state.raw<ThreeAudio>();

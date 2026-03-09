@@ -134,7 +134,7 @@
 	<GLTF
 		{dracoLoader}
 		scale={0.5}
-		url="/models/skybox/skybox_nebula-transformed.glb"
+		url="{import.meta.env.BASE_URL}models/skybox/skybox_nebula-transformed.glb"
 		onload={handleNebulaLoad}
 	/>
 </T.Group>
