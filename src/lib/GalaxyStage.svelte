@@ -5,14 +5,19 @@
 </script>
 
 <script lang="ts">
-	import { T } from '@threlte/core';
+	import { T, useTask } from '@threlte/core';
 	import { GLTF, useGltfAnimations } from '@threlte/extras';
+	import { cubicOut } from 'svelte/easing';
 	import { soundActions } from '../Sound.svelte';
 	import * as THREE from 'three';
 
 	const { gltf, actions } = useGltfAnimations<CharacterAction>();
 
 	let currentAction: CharacterAction = 'idle';
+	let introT = $state(0);
+	useTask((delta) => {
+		if (introT < 1) introT = Math.min(1, introT + delta * 2.5);
+	});
 
 	// Stop all anim sounds when leaving this stage
 	$effect(() => () => soundActions.stopAnimSounds());
@@ -61,7 +66,7 @@
 </script>
 
 <!-- Example: Galaxy Stage — animated GLTF character -->
-<T.Group>
+<T.Group scale={cubicOut(introT)}>
 	<T.DirectionalLight position={[0, 10, -20]} castShadow />
 
 	<GLTF

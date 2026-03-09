@@ -5,8 +5,10 @@
 </script>
 
 <!-- 3D stage content only — HTML overlays live in App.svelte -->
-{#if stageState.currentStage === 'settings' || stageState.currentStage === 'home'}
+{#if stageState.currentStage === 'home' || stageState.currentStage === 'settings'}
 	<HomeStage />
-{:else if stageState.currentStage === 'galaxy'}
+{/if}
+
+{#if stageState.currentStage === 'galaxy'}
 	<GalaxyStage />
 {/if}

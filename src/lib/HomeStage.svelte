@@ -2,6 +2,7 @@
 	import { T, useTask } from '@threlte/core';
 	import { interactivity, HTML } from '@threlte/extras';
 	import { Spring } from 'svelte/motion';
+	import { cubicOut } from 'svelte/easing';
 	import { soundActions } from '../Sound.svelte';
 
 	interactivity();
@@ -12,13 +13,15 @@
 	let colorIndex = $state(0);
 
 	let rotation = $state(0);
+	let introT = $state(0);
 	useTask((delta) => {
 		rotation += delta * 0.5;
+		if (introT < 1) introT = Math.min(1, introT + delta * 2.5);
 	});
 </script>
 
 <!-- Example: Home Stage 3D scene -->
-<T.Group>
+<T.Group scale={cubicOut(introT)}>
 	<T.DirectionalLight position={[0, 10, 0]} intensity={0.5} castShadow />
 
 	<!-- Interactive rotating planet — hover to scale, click to change color -->
