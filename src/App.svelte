@@ -1,49 +1,35 @@
 <script lang="ts">
 	import { Canvas } from '@threlte/core';
 	import Scene from './Scene.svelte';
+	import SceneHud from './SceneHud.svelte';
 	import Skybox from './Skybox.svelte';
 	import Camera from './Camera.svelte';
 	import Renderer from './Renderer.svelte';
 	import * as THREE from 'three';
 	import { settingsState } from './settings.svelte.js';
 
-
-	// Create custom renderer with anti-aliasing disabled for better performance
-	// We use SMAA post-processing anti-aliasing instead
+	// Create custom renderer — antialias disabled in favour of SMAA post-processing
 	const createRenderer = (canvas: HTMLCanvasElement): THREE.WebGLRenderer => {
-		// Use low-power mode for low quality (battery saving), high-performance for mid/high
 		const powerPreference =
 			settingsState.graphics.quality === 'low' ? 'low-power' : 'high-performance';
 
-		return new THREE.WebGLRenderer({
-			canvas,
-			antialias: false,
-			powerPreference
-		});
+		return new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference });
 	};
 
 	const dpr = $derived.by(() => {
 		if (typeof window === 'undefined') return 1;
-
 		const deviceDPR = window.devicePixelRatio || 1;
 
 		switch (settingsState.graphics.quality) {
-			case 'low':
-				// Fixed low DPR for maximum performance (25% of pixels on 2x displays)
-				return 1;
-			case 'mid':
-				// Capped DPR for balanced performance (prevents excessive resolution on high-DPI)
-				return Math.min(deviceDPR, 1.5);
-			case 'high':
-				// Native DPR for maximum visual quality
-				return deviceDPR;
-			default:
-				return Math.min(deviceDPR, 1.5);
+			case 'low':  return 1;
+			case 'mid':  return Math.min(deviceDPR, 1.5);
+			case 'high': return deviceDPR;
+			default:     return Math.min(deviceDPR, 1.5);
 		}
 	});
 </script>
 
-
+<div style="position: relative; width: 100%; height: 100%;">
 	<Canvas {createRenderer} {dpr}>
 		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 			{#await import('@threlte/extras') then { PerfMonitor }}
@@ -64,3 +50,6 @@
 			<Scene />
 		{/if}
 	</Canvas>
+
+	<SceneHud />
+</div>
