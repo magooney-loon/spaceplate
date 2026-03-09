@@ -1,63 +1,67 @@
 <script lang="ts">
-import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/svelte';
-import { tables, reducers } from './module_bindings';
+	import { Canvas } from '@threlte/core';
+	import Scene from './Scene.svelte';
+	import Skybox from './Skybox.svelte';
+	import Camera from './Camera.svelte';
+	import Renderer from './Renderer.svelte';
+	import * as THREE from 'three';
+	import { settingsState } from './settings.svelte.js';
 
-const conn = useSpacetimeDB();
 
-// Subscribe to all people in the database
-const [people] = useTable(tables.person);
+	// Create custom renderer with anti-aliasing disabled for better performance
+	// We use SMAA post-processing anti-aliasing instead
+	const createRenderer = (canvas: HTMLCanvasElement): THREE.WebGLRenderer => {
+		// Use low-power mode for low quality (battery saving), high-performance for mid/high
+		const powerPreference =
+			settingsState.graphics.quality === 'low' ? 'low-power' : 'high-performance';
 
-const addReducer = useReducer(reducers.add);
+		return new THREE.WebGLRenderer({
+			canvas,
+			antialias: false,
+			powerPreference
+		});
+	};
 
-let name = $state('');
+	const dpr = $derived.by(() => {
+		if (typeof window === 'undefined') return 1;
 
-function addPerson(e: SubmitEvent) {
-  e.preventDefault();
-  if (!name.trim() || !$conn.isActive) return;
+		const deviceDPR = window.devicePixelRatio || 1;
 
-  // Call the add reducer
-  addReducer({ name: name });
-  name = '';
-}
+		switch (settingsState.graphics.quality) {
+			case 'low':
+				// Fixed low DPR for maximum performance (25% of pixels on 2x displays)
+				return 1;
+			case 'mid':
+				// Capped DPR for balanced performance (prevents excessive resolution on high-DPI)
+				return Math.min(deviceDPR, 1.5);
+			case 'high':
+				// Native DPR for maximum visual quality
+				return deviceDPR;
+			default:
+				return Math.min(deviceDPR, 1.5);
+		}
+	});
 </script>
 
-<div style="padding: 2rem;">
-  <h1>SpacetimeDB Svelte App</h1>
-
-  <div style="margin-bottom: 1rem;">
-    Status:
-    <strong style="color: {$conn.isActive ? 'green' : 'red'}">
-      {$conn.isActive ? 'Connected' : 'Disconnected'}
-    </strong>
-  </div>
-
-  <form onsubmit={addPerson} style="margin-bottom: 2rem;">
-    <input
-      type="text"
-      placeholder="Enter name"
-      bind:value={name}
-      style="padding: 0.5rem; margin-right: 0.5rem;"
-      disabled={!$conn.isActive}
-    />
-    <button
-      type="submit"
-      style="padding: 0.5rem 1rem;"
-      disabled={!$conn.isActive}
-    >
-      Add Person
-    </button>
-  </form>
-
-  <div>
-    <h2>People ({$people.length})</h2>
-    {#if $people.length === 0}
-      <p>No people yet. Add someone above!</p>
-    {:else}
-      <ul>
-        {#each $people as person}
-          <li>{person.name}</li>
-        {/each}
-      </ul>
-    {/if}
-  </div>
+<div class="h-dvh max-w-screen">
+	<Canvas {createRenderer} {dpr}>
+		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
+			{#await import('@threlte/extras') then { PerfMonitor }}
+				<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} />
+			{/await}
+			{#await import('@threlte/studio') then { Studio }}
+				<Studio>
+					<Camera />
+					<Skybox />
+					<Renderer />
+					<Scene />
+				</Studio>
+			{/await}
+		{:else}
+			<Camera />
+			<Skybox />
+			<Renderer />
+			<Scene />
+		{/if}
+	</Canvas>
 </div>
