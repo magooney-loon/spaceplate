@@ -99,6 +99,7 @@
 		ostAudio = a;
 		log.info('Audio loaded: OST');
 	}}
+	userData={{ hideInTree: true, selectable: false }}
 />
 
 <!-- Audio track 2: Ambience -->
@@ -109,6 +110,7 @@
 		ambienceAudio = a;
 		log.info('Audio loaded: Ambience');
 	}}
+	userData={{ hideInTree: true, selectable: false }}
 />
 
 <!-- SFX 1: Click -->
@@ -118,6 +120,7 @@
 		clickAudio = a;
 		log.info('Audio loaded: Click SFX');
 	}}
+	userData={{ hideInTree: true, selectable: false }}
 />
 
 <!-- SFX 2: Swoosh (stage transitions) -->
@@ -127,4 +130,5 @@
 		swooshAudio = a;
 		log.info('Audio loaded: Swoosh SFX');
 	}}
+	userData={{ hideInTree: true, selectable: false }}
 />
