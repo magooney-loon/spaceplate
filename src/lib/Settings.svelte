@@ -66,6 +66,15 @@
 			</div>
 		</div>
 
+		<!-- Keybinds -->
+		<div style="margin-bottom: 1.5rem;">
+			<label style="display: block; margin-bottom: 0.5rem; opacity: 0.7; font-size: 0.875rem;">Keybinds</label>
+			<div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; opacity: 0.6;">
+				<span>Toggle HUD</span>
+				<kbd style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); border-radius: 0.25rem; padding: 0.15rem 0.5rem; font-family: monospace;">Ctrl+H</kbd>
+			</div>
+		</div>
+
 		<button
 			onclick={() => stageActions.goBack()}
 			style="width: 100%; padding: 0.6rem; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 0.5rem; cursor: pointer;"

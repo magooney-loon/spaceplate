@@ -1,26 +1,45 @@
+<script module>
+	// Module-level: shared across all imports, not per-instance
+	export const soundTriggers = $state({ swoosh: 0, click: 0 });
+
+	export const soundActions = {
+		playSwoosh() { soundTriggers.swoosh++; },
+		playClick()  { soundTriggers.click++; },
+	};
+</script>
+
 <script lang="ts">
 	import { Audio } from '@threlte/extras';
 	import { Audio as ThreeAudio } from 'three';
 	import { settingsState } from './settings.svelte.js';
-	import { soundTriggers } from './sound.svelte.js';
 
 	// Place your audio files in /public/sounds/
 	const OST_URL      = '/sounds/ost.ogg';
 	const AMBIENCE_URL = '/sounds/ambience.ogg';
-	const CLICK_URL  = '/sounds/click.mp3';
-	const SWOOSH_URL = '/sounds/swoosh.mp3';
+	const CLICK_URL    = '/sounds/click.mp3';
+	const SWOOSH_URL   = '/sounds/swoosh.mp3';
 
 	// $state.raw — prevents Svelte 5 from wrapping class instances in a Proxy
 	let ostAudio      = $state.raw<ThreeAudio>();
 	let ambienceAudio = $state.raw<ThreeAudio>();
-	let clickAudio  = $state.raw<ThreeAudio>();
-	let swooshAudio = $state.raw<ThreeAudio>();
+	let clickAudio    = $state.raw<ThreeAudio>();
+	let swooshAudio   = $state.raw<ThreeAudio>();
 
-	// Stop + replay a one-shot so it can fire multiple times in a row
+	// ─── Playback helpers ─────────────────────────────────────────────────────
+
+	// Stop + replay — restarts the sound each call (good for clicks)
 	const playOneShot = (audio: ThreeAudio | undefined) => {
 		if (!audio) return;
 		if (audio.isPlaying) audio.stop();
 		audio.play();
+	};
+
+	// Clone + play — allows multiple overlapping instances (good for swoosh)
+	const playPolyphonic = (audio: ThreeAudio | undefined) => {
+		if (!audio?.buffer) return;
+		const clone = audio.clone() as ThreeAudio;
+		clone.setVolume(audio.getVolume());
+		clone.play();
 	};
 
 	// ─── Looping tracks ───────────────────────────────────────────────────────
@@ -64,7 +83,7 @@
 	});
 
 	$effect(() => {
-		if (soundTriggers.swoosh > 0 && settingsState.audio.effectsEnabled) playOneShot(swooshAudio);
+		if (soundTriggers.swoosh > 0 && settingsState.audio.effectsEnabled) playPolyphonic(swooshAudio);
 	});
 </script>
 

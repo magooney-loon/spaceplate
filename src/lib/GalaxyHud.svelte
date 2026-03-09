@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { stageActions } from '../stage.svelte.js';
-	import { soundActions } from '../sound.svelte.js';
+	import { soundActions } from '../Sound.svelte';
 
 	const btn = (fn: () => void) => () => { soundActions.playClick(); fn(); };
 </script>

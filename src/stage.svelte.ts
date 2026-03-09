@@ -1,5 +1,5 @@
 import type { CameraControlsRef } from "@threlte/extras";
-import { soundActions } from "./sound.svelte.js";
+import { soundActions } from "./Sound.svelte";
 import { settingsState } from "./settings.svelte.js";
 
 export type StageType = "settings" | "home" | "galaxy";

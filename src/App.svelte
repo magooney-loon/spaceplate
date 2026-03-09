@@ -7,7 +7,15 @@
 	import Renderer from './Renderer.svelte';
 	import Sound from './Sound.svelte';
 	import * as THREE from 'three';
-	import { settingsState } from './settings.svelte.js';
+	import { settingsState, generalActions } from './settings.svelte.js';
+
+	function handleKeydown(e: KeyboardEvent) {
+		// Ctrl+H — toggle HUD visibility
+		if (e.ctrlKey && e.key === 'h') {
+			e.preventDefault();
+			generalActions.toggleUiVisible();
+		}
+	}
 
 	// Create custom renderer — antialias disabled in favour of SMAA post-processing
 	const createRenderer = (canvas: HTMLCanvasElement): THREE.WebGLRenderer => {
@@ -29,6 +37,8 @@
 		}
 	});
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div style="position: relative; width: 100%; height: 100%;">
 	<Canvas {createRenderer} {dpr}>
