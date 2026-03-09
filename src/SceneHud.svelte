@@ -12,7 +12,10 @@
 <WelcomeModal />
 
 {#if settingsState.general.uiVisible}
-	<div transition:fade={{ duration: 150 }} style="position: absolute; inset: 0; pointer-events: none;">
+	<div
+		transition:fade={{ duration: 150 }}
+		style="position: absolute; inset: 0; pointer-events: none;"
+	>
 		<div style="position: relative; width: 100%; height: 100%; pointer-events: none;">
 			{#if isSettingsStage()}
 				<div style="pointer-events: auto;"><Settings /></div>

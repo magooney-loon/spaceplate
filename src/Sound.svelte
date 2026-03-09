@@ -3,8 +3,12 @@
 	export const soundTriggers = $state({ swoosh: 0, click: 0 });
 
 	export const soundActions = {
-		playSwoosh() { soundTriggers.swoosh++; },
-		playClick()  { soundTriggers.click++; },
+		playSwoosh() {
+			soundTriggers.swoosh++;
+		},
+		playClick() {
+			soundTriggers.click++;
+		}
 	};
 </script>
 
@@ -14,16 +18,16 @@
 	import { settingsState, log } from './settings.svelte.js';
 
 	// Place your audio files in /public/sounds/
-	const OST_URL      = '/sounds/ost.ogg';
+	const OST_URL = '/sounds/ost.ogg';
 	const AMBIENCE_URL = '/sounds/ambience.ogg';
-	const CLICK_URL    = '/sounds/click.mp3';
-	const SWOOSH_URL   = '/sounds/swoosh.mp3';
+	const CLICK_URL = '/sounds/click.mp3';
+	const SWOOSH_URL = '/sounds/swoosh.mp3';
 
 	// $state.raw — prevents Svelte 5 from wrapping class instances in a Proxy
-	let ostAudio      = $state.raw<ThreeAudio>();
+	let ostAudio = $state.raw<ThreeAudio>();
 	let ambienceAudio = $state.raw<ThreeAudio>();
-	let clickAudio    = $state.raw<ThreeAudio>();
-	let swooshAudio   = $state.raw<ThreeAudio>();
+	let clickAudio = $state.raw<ThreeAudio>();
+	let swooshAudio = $state.raw<ThreeAudio>();
 
 	// ─── Playback helpers ─────────────────────────────────────────────────────
 
@@ -88,13 +92,39 @@
 </script>
 
 <!-- Audio track 1: OST / background music -->
-<Audio src={OST_URL} loop oncreate={(a) => { ostAudio = a; log.info('Audio loaded: OST'); }} />
+<Audio
+	src={OST_URL}
+	loop
+	oncreate={(a) => {
+		ostAudio = a;
+		log.info('Audio loaded: OST');
+	}}
+/>
 
 <!-- Audio track 2: Ambience -->
-<Audio src={AMBIENCE_URL} loop oncreate={(a) => { ambienceAudio = a; log.info('Audio loaded: Ambience'); }} />
+<Audio
+	src={AMBIENCE_URL}
+	loop
+	oncreate={(a) => {
+		ambienceAudio = a;
+		log.info('Audio loaded: Ambience');
+	}}
+/>
 
 <!-- SFX 1: Click -->
-<Audio src={CLICK_URL} oncreate={(a) => { clickAudio = a; log.info('Audio loaded: Click SFX'); }} />
+<Audio
+	src={CLICK_URL}
+	oncreate={(a) => {
+		clickAudio = a;
+		log.info('Audio loaded: Click SFX');
+	}}
+/>
 
 <!-- SFX 2: Swoosh (stage transitions) -->
-<Audio src={SWOOSH_URL} oncreate={(a) => { swooshAudio = a; log.info('Audio loaded: Swoosh SFX'); }} />
+<Audio
+	src={SWOOSH_URL}
+	oncreate={(a) => {
+		swooshAudio = a;
+		log.info('Audio loaded: Swoosh SFX');
+	}}
+/>

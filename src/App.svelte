@@ -31,10 +31,14 @@
 		const deviceDPR = window.devicePixelRatio || 1;
 
 		switch (settingsState.graphics.quality) {
-			case 'low':  return 1;
-			case 'mid':  return Math.min(deviceDPR, 1.5);
-			case 'high': return deviceDPR;
-			default:     return Math.min(deviceDPR, 1.5);
+			case 'low':
+				return 1;
+			case 'mid':
+				return Math.min(deviceDPR, 1.5);
+			case 'high':
+				return deviceDPR;
+			default:
+				return Math.min(deviceDPR, 1.5);
 		}
 	});
 </script>

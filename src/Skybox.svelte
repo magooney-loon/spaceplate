@@ -11,10 +11,14 @@
 	// ─── Quality-based star counts ────────────────────────────────────────────
 	const starCounts = $derived.by(() => {
 		switch (settingsState.graphics.quality) {
-			case 'low':  return { stars1: 200, stars2: 180 };
-			case 'mid':  return { stars1: 450, stars2: 350 };
-			case 'high': return { stars1: 720, stars2: 540 };
-			default:     return { stars1: 450, stars2: 350 };
+			case 'low':
+				return { stars1: 200, stars2: 180 };
+			case 'mid':
+				return { stars1: 450, stars2: 350 };
+			case 'high':
+				return { stars1: 720, stars2: 540 };
+			default:
+				return { stars1: 450, stars2: 350 };
 		}
 	});
 
@@ -22,29 +26,29 @@
 	const sunSettings = $derived.by(() => {
 		const q = settingsState.graphics.quality;
 		return {
-			glowColor:  q === 'high' ? '#FF9500' : '#FFCC00',
-			coreColor:  q === 'high' ? '#FFE4B3' : '#FFFFFF',
-			scale:      0.33,
-			opacity:    0.38,
-			falloff:    q === 'low' ? 1.5 : q === 'mid' ? 2.2 : 3.0,
+			glowColor: q === 'high' ? '#FF9500' : '#FFCC00',
+			coreColor: q === 'high' ? '#FFE4B3' : '#FFFFFF',
+			scale: 0.33,
+			opacity: 0.38,
+			falloff: q === 'low' ? 1.5 : q === 'mid' ? 2.2 : 3.0,
 			glowInternalRadius: q === 'low' ? 9 : q === 'mid' ? 5 : 7,
-			glowSharpness:      q === 'low' ? 0.4 : q === 'mid' ? 0.6 : 0.8,
+			glowSharpness: q === 'low' ? 0.4 : q === 'mid' ? 0.6 : 0.8
 		};
 	});
 
 	// Tween sun properties for smooth quality-change transitions
-	let sunScale              = new Tween(0.33, { duration: 1000, easing: cubicInOut });
-	let sunOpacity            = new Tween(0.38, { duration: 1000, easing: cubicInOut });
-	let sunFalloff            = new Tween(2.2,  { duration: 1000, easing: cubicInOut });
-	let sunGlowInternalRadius = new Tween(5,    { duration: 1000, easing: cubicInOut });
-	let sunGlowSharpness      = new Tween(0.6,  { duration: 1000, easing: cubicInOut });
+	let sunScale = new Tween(0.33, { duration: 1000, easing: cubicInOut });
+	let sunOpacity = new Tween(0.38, { duration: 1000, easing: cubicInOut });
+	let sunFalloff = new Tween(2.2, { duration: 1000, easing: cubicInOut });
+	let sunGlowInternalRadius = new Tween(5, { duration: 1000, easing: cubicInOut });
+	let sunGlowSharpness = new Tween(0.6, { duration: 1000, easing: cubicInOut });
 
 	$effect(() => {
-		sunScale.target              = sunSettings.scale;
-		sunOpacity.target            = sunSettings.opacity;
-		sunFalloff.target            = sunSettings.falloff;
+		sunScale.target = sunSettings.scale;
+		sunOpacity.target = sunSettings.opacity;
+		sunFalloff.target = sunSettings.falloff;
 		sunGlowInternalRadius.target = sunSettings.glowInternalRadius;
-		sunGlowSharpness.target      = sunSettings.glowSharpness;
+		sunGlowSharpness.target = sunSettings.glowSharpness;
 	});
 
 	// ─── Nebula material opacity ──────────────────────────────────────────────

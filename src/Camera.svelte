@@ -10,7 +10,9 @@
 
 	const handleCameraCreate = (camera: PerspectiveCamera) => {
 		camera.lookAt(0, 0, 0);
-		return () => { log.info('Camera disposed'); };
+		return () => {
+			log.info('Camera disposed');
+		};
 	};
 
 	const handleControlsCreate = (controlsRef: CameraControlsRef) => {
