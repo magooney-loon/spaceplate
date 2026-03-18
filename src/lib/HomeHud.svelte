@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
-	import { stageActions } from '../stage.svelte.js';
-	import { soundActions } from '../Sound.svelte';
+	import { stageActions } from '$core/stage.svelte.js';
+	import { soundActions } from '$core/Sound.svelte';
 	import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/svelte';
 	import { tables, reducers } from '../module_bindings';
 

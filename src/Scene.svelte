@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { stageState } from './stage.svelte.js';
+	import { stageState } from '$core/stage.svelte.js';
 	import HomeStage from '$lib/HomeStage.svelte';
 	import GalaxyStage from '$lib/GalaxyStage.svelte';
 </script>

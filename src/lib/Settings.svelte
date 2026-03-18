@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
-	import { stageActions } from '../stage.svelte.js';
-	import { settingsState, graphicsActions, audioActions } from '../settings.svelte.js';
-	import type { QualityLevel } from '../settings.svelte.js';
+	import { stageActions } from '$core/stage.svelte.js';
+	import {
+		settingsState,
+		graphicsActions,
+		audioActions,
+		type QualityLevel
+	} from '$core/settings.svelte.js';
 </script>
 
 <!-- Example: Settings overlay -->
@@ -21,7 +25,7 @@
 		<div style="margin-bottom: 1.5rem;">
 			<p style="margin: 0 0 0.5rem; opacity: 0.7; font-size: 0.875rem;">Graphics Quality</p>
 			<div style="display: flex; gap: 0.5rem;">
-				{#each ['low', 'mid', 'high'] as QualityLevel[] as level}
+				{#each ['low', 'high'] as QualityLevel[] as level}
 					<button
 						onclick={() => graphicsActions.setQuality(level)}
 						style="flex: 1; padding: 0.4rem; border-radius: 0.375rem; border: 1px solid rgba(255,255,255,{settingsState

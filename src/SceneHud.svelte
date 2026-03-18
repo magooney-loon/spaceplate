@@ -1,16 +1,13 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
-	import { stageState } from './stage.svelte.js';
-	import { settingsState } from './settings.svelte.js';
+	import { stageState } from '$core/stage.svelte.js';
+	import { settingsState } from '$core/settings.svelte.js';
 	import HomeHud from '$lib/HomeHud.svelte';
 	import GalaxyHud from '$lib/GalaxyHud.svelte';
 	import Settings from '$lib/Settings.svelte';
-	import WelcomeModal from '$lib/WelcomeModal.svelte';
 </script>
 
 <!-- HTML overlay — rendered as a sibling to <Canvas> in App.svelte -->
-<WelcomeModal />
-
 {#if settingsState.general.uiVisible}
 	<div
 		transition:fade={{ duration: 150 }}

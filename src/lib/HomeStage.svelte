@@ -3,7 +3,7 @@
 	import { interactivity, HTML } from '@threlte/extras';
 	import { Spring } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
-	import { soundActions } from '../Sound.svelte';
+	import { soundActions } from '$core/Sound.svelte';
 
 	interactivity();
 

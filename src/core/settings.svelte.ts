@@ -1,4 +1,4 @@
-export type QualityLevel = 'low' | 'mid' | 'high';
+export type QualityLevel = 'low' | 'high';
 
 export interface AudioSettings {
 	musicEnabled: boolean;
@@ -14,7 +14,6 @@ export interface GraphicsSettings {
 }
 
 export interface GeneralSettings {
-	hideWelcomeModal: boolean;
 	uiVisible: boolean;
 }
 
@@ -46,7 +45,6 @@ export const log = createLogger('spaceplate', import.meta.env.VITE_GAME_ENGINE_L
 // ─── localStorage helpers ────────────────────────────────────────────────────
 
 const GRAPHICS_KEY = 'graphics-quality';
-const WELCOME_MODAL_KEY = 'hide-welcome-modal';
 const UI_VISIBLE_KEY = 'ui-visible';
 const MUSIC_VOLUME_KEY = 'music-volume';
 const AMBIENCE_VOLUME_KEY = 'ambience-volume';
@@ -69,10 +67,10 @@ const toStorage = (key: string, value: string): void => {
 };
 
 const loadQuality = (): QualityLevel => {
-	const v = fromStorage(GRAPHICS_KEY, 'mid');
-	return (['low', 'mid', 'high'] as QualityLevel[]).includes(v as QualityLevel)
+	const v = fromStorage(GRAPHICS_KEY, 'high');
+	return (['low', 'high'] as QualityLevel[]).includes(v as QualityLevel)
 		? (v as QualityLevel)
-		: 'mid';
+		: 'high';
 };
 
 const loadVolume = (key: string, fallback: number): number => {
@@ -95,7 +93,6 @@ export const settingsState = $state<SettingsState>({
 		quality: loadQuality()
 	},
 	general: {
-		hideWelcomeModal: fromStorage(WELCOME_MODAL_KEY, 'false') === 'true',
 		uiVisible: fromStorage(UI_VISIBLE_KEY, 'true') !== 'false'
 	}
 });
@@ -141,10 +138,6 @@ export const graphicsActions = {
 };
 
 export const generalActions = {
-	setHideWelcomeModal(hide: boolean) {
-		settingsState.general.hideWelcomeModal = hide;
-		toStorage(WELCOME_MODAL_KEY, String(hide));
-	},
 	toggleUiVisible() {
 		settingsState.general.uiVisible = !settingsState.general.uiVisible;
 		toStorage(UI_VISIBLE_KEY, String(settingsState.general.uiVisible));

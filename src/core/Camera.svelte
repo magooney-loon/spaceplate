@@ -2,8 +2,8 @@
 	import { T } from '@threlte/core';
 	import { AudioListener } from '@threlte/extras';
 	import { CameraControls, type CameraControlsRef } from '@threlte/extras';
-	import { cameraActions } from './stage.svelte.js';
-	import { log } from './settings.svelte.js';
+	import { cameraActions } from '$core/stage.svelte.js';
+	import { log } from '$core/settings.svelte.js';
 	import type { PerspectiveCamera } from 'three';
 
 	let controls = $state<CameraControlsRef>();

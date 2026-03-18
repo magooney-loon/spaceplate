@@ -1,6 +1,11 @@
 <script lang="ts">
-	import { useStudio, ToolbarItem, HorizontalButtonGroup, ToolbarButton } from '@threlte/studio/extend';
-	import { stageActions, stageState, STAGES } from '../stage.svelte.js';
+	import {
+		useStudio,
+		ToolbarItem,
+		HorizontalButtonGroup,
+		ToolbarButton
+	} from '@threlte/studio/extend';
+	import { stageActions, stageState, STAGES } from '$core/stage.svelte.js';
 
 	const { createExtension } = useStudio();
 

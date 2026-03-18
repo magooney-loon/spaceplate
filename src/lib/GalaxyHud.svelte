@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
-	import { stageActions } from '../stage.svelte.js';
-	import { soundActions } from '../Sound.svelte';
+	import { stageActions } from '$core/stage.svelte.js';
+	import { soundActions } from '$core/Sound.svelte';
 	import { galaxyState, type CharacterAction } from './GalaxyStage.svelte';
 
 	const btn = (fn: () => void) => () => {

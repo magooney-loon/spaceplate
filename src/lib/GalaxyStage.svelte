@@ -8,7 +8,7 @@
 	import { T, useTask } from '@threlte/core';
 	import { GLTF, useGltfAnimations } from '@threlte/extras';
 	import { cubicOut } from 'svelte/easing';
-	import { soundActions } from '../Sound.svelte';
+	import { soundActions } from '$core/Sound.svelte';
 	import * as THREE from 'three';
 
 	const { gltf, actions } = useGltfAnimations<CharacterAction>();

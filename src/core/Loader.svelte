@@ -3,12 +3,14 @@
 	import { Tween } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
 	import { useProgress } from '@threlte/extras';
-	import { log } from './settings.svelte.js';
+	import { log } from '$core/settings.svelte.js';
 
 	const { progress, finishedOnce, active, item, loaded, total } = useProgress();
 
 	const tweened = new Tween(0, { duration: 600, easing: cubicOut });
-	$effect(() => { tweened.target = $progress; });
+	$effect(() => {
+		tweened.target = $progress;
+	});
 
 	$effect(() => {
 		if ($finishedOnce) log.info('Assets loaded');
@@ -37,7 +39,8 @@
 			style="width: 200px; height: 2px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden;"
 		>
 			<div
-				style="height: 100%; background: white; border-radius: 999px; width: {tweened.current * 100}%;"
+				style="height: 100%; background: white; border-radius: 999px; width: {tweened.current *
+					100}%;"
 			></div>
 		</div>
 

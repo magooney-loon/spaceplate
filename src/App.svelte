@@ -2,13 +2,13 @@
 	import { Canvas } from '@threlte/core';
 	import Scene from './Scene.svelte';
 	import SceneHud from './SceneHud.svelte';
-	import Skybox from './Skybox.svelte';
-	import Camera from './Camera.svelte';
-	import Renderer from './Renderer.svelte';
-	import Sound from './Sound.svelte';
-	import Loader from './Loader.svelte';
+	import Skybox from '$core/Skybox.svelte';
+	import Camera from '$core/Camera.svelte';
+	import Renderer from '$core/Renderer.svelte';
+	import Sound from '$core/Sound.svelte';
+	import Loader from '$core/Loader.svelte';
 	import * as THREE from 'three';
-	import { settingsState, generalActions } from './settings.svelte.js';
+	import { settingsState, generalActions } from '$core/settings.svelte.js';
 
 	function handleKeydown(e: KeyboardEvent) {
 		// Ctrl+H — toggle HUD visibility
@@ -33,12 +33,10 @@
 		switch (settingsState.graphics.quality) {
 			case 'low':
 				return 1;
-			case 'mid':
-				return Math.min(deviceDPR, 1.5);
 			case 'high':
 				return deviceDPR;
 			default:
-				return Math.min(deviceDPR, 1.5);
+				return deviceDPR;
 		}
 	});
 </script>
@@ -51,8 +49,8 @@
 			{#await import('@threlte/extras') then { PerfMonitor }}
 				<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} />
 			{/await}
-			{#await Promise.all([import('@threlte/studio'), import('./extensions/StageExtension.svelte')]) then [{ Studio }, { default: StageExtension }]}
-				<Studio extensions={[StageExtension]}>
+			{#await Promise.all( [import('@threlte/studio'), import('./extensions/StageExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte')] ) then [{ Studio }, { default: StageExtension }, { default: PostProcessingExtension }]}
+				<Studio extensions={[StageExtension, PostProcessingExtension]}>
 					<Camera />
 					<Sound />
 					<Skybox />

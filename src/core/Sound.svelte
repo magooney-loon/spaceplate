@@ -25,7 +25,7 @@
 <script lang="ts">
 	import { Audio } from '@threlte/extras';
 	import { Audio as ThreeAudio } from 'three';
-	import { settingsState, log } from './settings.svelte.js';
+	import { settingsState, log } from '$core/settings.svelte.js';
 
 	// Place your audio files in /public/sounds/
 	const base = import.meta.env.BASE_URL;
@@ -114,7 +114,13 @@
 	// ─── Animation sounds — single effect handles stop-then-play atomically ──
 
 	$effect(() => {
-		const animAudios = [animIdleAudio, animWalkAudio, animRunAudio, animAgreeAudio, animHeadShakeAudio];
+		const animAudios = [
+			animIdleAudio,
+			animWalkAudio,
+			animRunAudio,
+			animAgreeAudio,
+			animHeadShakeAudio
+		];
 		const vol = settingsState.audio.effectsVolume;
 
 		// Keep volumes in sync

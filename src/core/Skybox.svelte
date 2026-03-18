@@ -2,7 +2,7 @@
 	import { T } from '@threlte/core';
 	import { Stars as StarsComponent, FakeGlowMaterial, GLTF, useDraco } from '@threlte/extras';
 	import * as THREE from 'three';
-	import { settingsState } from './settings.svelte.js';
+	import { settingsState } from '$core/settings.svelte.js';
 	import { Tween } from 'svelte/motion';
 	import { cubicInOut } from 'svelte/easing';
 
@@ -13,12 +13,10 @@
 		switch (settingsState.graphics.quality) {
 			case 'low':
 				return { stars1: 200, stars2: 180 };
-			case 'mid':
-				return { stars1: 450, stars2: 350 };
 			case 'high':
 				return { stars1: 720, stars2: 540 };
 			default:
-				return { stars1: 450, stars2: 350 };
+				return { stars1: 720, stars2: 540 };
 		}
 	});
 
@@ -30,9 +28,9 @@
 			coreColor: q === 'high' ? '#FFE4B3' : '#FFFFFF',
 			scale: 0.33,
 			opacity: 0.38,
-			falloff: q === 'low' ? 1.5 : q === 'mid' ? 2.2 : 3.0,
-			glowInternalRadius: q === 'low' ? 9 : q === 'mid' ? 5 : 7,
-			glowSharpness: q === 'low' ? 0.4 : q === 'mid' ? 0.6 : 0.8
+			falloff: q === 'low' ? 1.5 : 3.0,
+			glowInternalRadius: q === 'low' ? 9 : 7,
+			glowSharpness: q === 'low' ? 0.4 : 0.8
 		};
 	});
 
