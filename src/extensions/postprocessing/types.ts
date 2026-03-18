@@ -99,6 +99,7 @@ export type ExtensionActions = {
 	setBloomMipmapBlur: (value: boolean) => void;
 	setBloomRadius: (value: number) => void;
 	setBloomLevels: (value: number) => void;
+	setBloomResolutionScale: (value: number) => void;
 	resetBloom: () => void;
 
 	// SMAA

@@ -142,6 +142,9 @@
 			setBloomLevels: ({ state }, value: number) => {
 				state.bloom.levels = value;
 			},
+			setBloomResolutionScale: ({ state }, value: number) => {
+				state.bloom.resolutionScale = value;
+			},
 			resetBloom: ({ state }) => {
 				state.bloom = structuredClone(defaultBloomState);
 			},

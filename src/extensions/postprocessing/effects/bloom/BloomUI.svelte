@@ -12,6 +12,7 @@
 		mipmapBlur: boolean;
 		radius: number;
 		levels: number;
+		resolutionScale: number;
 	};
 
 	export let actions: Record<string, (...args: any[]) => void>;
@@ -105,6 +106,14 @@
 			max={16}
 			step={1}
 			on:change={(e) => actions.setBloomLevels(e.detail.value)}
+		/>
+		<Slider
+			value={state.resolutionScale}
+			label="Resolution Scale"
+			min={0.1}
+			max={1}
+			step={0.1}
+			on:change={(e) => actions.setBloomResolutionScale(e.detail.value)}
 		/>
 		<List
 			value={state.kernelSize}

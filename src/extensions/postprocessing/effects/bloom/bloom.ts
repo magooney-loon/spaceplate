@@ -10,6 +10,7 @@ export interface BloomState {
 	mipmapBlur: boolean;
 	radius: number;
 	levels: number;
+	resolutionScale: number;
 	[key: string]: unknown;
 }
 
@@ -22,7 +23,8 @@ export const defaultBloomState: BloomState = {
 	blendFunction: 28 as BlendFunction,
 	mipmapBlur: true,
 	radius: 0.85,
-	levels: 8
+	levels: 8,
+	resolutionScale: 0.5
 };
 
 export function createBloomActions(state: BloomState) {
@@ -54,6 +56,9 @@ export function createBloomActions(state: BloomState) {
 		setBloomLevels: (value: number) => {
 			state.levels = value;
 		},
+		setBloomResolutionScale: (value: number) => {
+			state.resolutionScale = value;
+		},
 		resetBloom: () => {
 			state.intensity = defaultBloomState.intensity;
 			state.luminanceThreshold = defaultBloomState.luminanceThreshold;
@@ -63,6 +68,7 @@ export function createBloomActions(state: BloomState) {
 			state.mipmapBlur = defaultBloomState.mipmapBlur;
 			state.radius = defaultBloomState.radius;
 			state.levels = defaultBloomState.levels;
+			state.resolutionScale = defaultBloomState.resolutionScale;
 		}
 	};
 }
