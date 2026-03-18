@@ -56,33 +56,31 @@
 	} from './effects';
 
 	// Import UI components
-	import {
-		BloomUI,
-		SMAAUI,
-		FXAAUI,
-		VignetteUI,
-		PixelationUI,
-		GlitchUI,
-		NoiseUI,
-		ChromaticAberrationUI,
-		BrightnessContrastUI,
-		HueSaturationUI,
-		SepiaUI,
-		DotScreenUI,
-		ScanlineUI,
-		ShockWaveUI,
-		ASCIIUI,
-		ToneMappingUI,
-		GridUI,
-		TiltShiftUI,
-		LensDistortionUI,
-		ColorDepthUI,
-		DepthOfFieldUI,
-		GodRaysUI,
-		SSAOUI,
-		OutlineUI,
-		DepthEffectUI
-	} from './effects/ui';
+	import { BloomUI } from './effects/bloom';
+	import { SMAAUI } from './effects/smaa';
+	import { FXAAUI } from './effects/fxaa';
+	import { VignetteUI } from './effects/vignette';
+	import { PixelationUI } from './effects/pixelation';
+	import { GlitchUI } from './effects/glitch';
+	import { NoiseUI } from './effects/noise';
+	import { ChromaticAberrationUI } from './effects/chromaticAberration';
+	import { BrightnessContrastUI } from './effects/brightnessContrast';
+	import { HueSaturationUI } from './effects/hueSaturation';
+	import { SepiaUI } from './effects/sepia';
+	import { DotScreenUI } from './effects/dotScreen';
+	import { ScanlineUI } from './effects/scanline';
+	import { ShockWaveUI } from './effects/shockWave';
+	import { ASCIIUI } from './effects/ascii';
+	import { ToneMappingUI } from './effects/toneMapping';
+	import { GridUI } from './effects/grid';
+	import { TiltShiftUI } from './effects/tiltShift';
+	import { LensDistortionUI } from './effects/lensDistortion';
+	import { ColorDepthUI } from './effects/colorDepth';
+	import { DepthOfFieldUI } from './effects/depthOfField';
+	import { GodRaysUI } from './effects/godRays';
+	import { SSAOUI } from './effects/ssao';
+	import { OutlineUI } from './effects/outline';
+	import { DepthEffectUI } from './effects/depthEffect';
 
 	const { createExtension } = useStudio();
 
