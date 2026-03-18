@@ -7,24 +7,24 @@
 
 	const ext = createExtension({
 		scope: extensionScope,
-		state: ({ persist }) => ({
-			enabled: persist(false),
-			minPolarAngle: persist(0),
-			maxPolarAngle: persist(Math.PI),
-			minAzimuthAngle: persist(-Infinity),
-			maxAzimuthAngle: persist(Infinity),
-			minDistance: persist(0.01),
-			maxDistance: persist(500),
-			minZoom: persist(0),
-			maxZoom: persist(100),
-			smoothTime: persist(0.25),
-			draggingSmoothTime: persist(0.08),
-			maxSpeed: persist(1.0),
-			azimuthRotateSpeed: persist(1.0),
-			polarRotateSpeed: persist(1.0),
-			dollySpeed: persist(1.0),
-			truckSpeed: persist(1.0),
-			dollyToCursor: persist(false)
+		state: () => ({
+			enabled: false,
+			minPolarAngle: 0,
+			maxPolarAngle: Math.PI,
+			minAzimuthAngle: -Infinity,
+			maxAzimuthAngle: Infinity,
+			minDistance: 0.01,
+			maxDistance: 500,
+			minZoom: 0,
+			maxZoom: 100,
+			smoothTime: 0.25,
+			draggingSmoothTime: 0.08,
+			maxSpeed: 1.0,
+			azimuthRotateSpeed: 1.0,
+			polarRotateSpeed: 1.0,
+			dollySpeed: 1.0,
+			truckSpeed: 1.0,
+			dollyToCursor: false
 		}),
 		actions: {
 			toggleEnabled({ state }) {
@@ -109,78 +109,139 @@
 		{#if state.enabled}
 			<Folder title="Rotation Limits" expanded={false}>
 				<Slider
-					bind:value={state.minPolarAngle}
+					value={state.minPolarAngle}
 					label="Min Polar Angle"
 					min={0}
 					max={Math.PI}
 					step={0.01}
+					on:change={(e) => ext.setMinPolarAngle(e.detail)}
 				/>
 				<Slider
-					bind:value={state.maxPolarAngle}
+					value={state.maxPolarAngle}
 					label="Max Polar Angle"
 					min={0}
 					max={Math.PI}
 					step={0.01}
+					on:change={(e) => ext.setMaxPolarAngle(e.detail)}
 				/>
 				<Slider
-					bind:value={state.minAzimuthAngle}
+					value={state.minAzimuthAngle}
 					label="Min Azimuth"
 					min={-Math.PI}
 					max={Math.PI}
 					step={0.01}
+					on:change={(e) => ext.setMinAzimuthAngle(e.detail)}
 				/>
 				<Slider
-					bind:value={state.maxAzimuthAngle}
+					value={state.maxAzimuthAngle}
 					label="Max Azimuth"
 					min={-Math.PI}
 					max={Math.PI}
 					step={0.01}
+					on:change={(e) => ext.setMaxAzimuthAngle(e.detail)}
 				/>
 			</Folder>
 
 			<Folder title="Distance Limits" expanded={false}>
 				<Slider
-					bind:value={state.minDistance}
+					value={state.minDistance}
 					label="Min Distance"
 					min={0.01}
 					max={100}
 					step={0.1}
+					on:change={(e) => ext.setMinDistance(e.detail)}
 				/>
-				<Slider bind:value={state.maxDistance} label="Max Distance" min={1} max={1000} step={1} />
-				<Slider bind:value={state.minZoom} label="Min Zoom" min={0} max={10} step={0.1} />
-				<Slider bind:value={state.maxZoom} label="Max Zoom" min={0.1} max={100} step={0.1} />
+				<Slider
+					value={state.maxDistance}
+					label="Max Distance"
+					min={1}
+					max={1000}
+					step={1}
+					on:change={(e) => ext.setMaxDistance(e.detail)}
+				/>
+				<Slider
+					value={state.minZoom}
+					label="Min Zoom"
+					min={0}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setMinZoom(e.detail)}
+				/>
+				<Slider
+					value={state.maxZoom}
+					label="Max Zoom"
+					min={0.1}
+					max={100}
+					step={0.1}
+					on:change={(e) => ext.setMaxZoom(e.detail)}
+				/>
 			</Folder>
 
 			<Folder title="Speed" expanded={false}>
-				<Slider bind:value={state.smoothTime} label="Smooth Time" min={0} max={2} step={0.01} />
 				<Slider
-					bind:value={state.draggingSmoothTime}
+					value={state.smoothTime}
+					label="Smooth Time"
+					min={0}
+					max={2}
+					step={0.01}
+					on:change={(e) => ext.setSmoothTime(e.detail)}
+				/>
+				<Slider
+					value={state.draggingSmoothTime}
 					label="Drag Smooth Time"
 					min={0}
 					max={1}
 					step={0.01}
+					on:change={(e) => ext.setDraggingSmoothTime(e.detail)}
 				/>
-				<Slider bind:value={state.maxSpeed} label="Max Speed" min={0.1} max={10} step={0.1} />
 				<Slider
-					bind:value={state.azimuthRotateSpeed}
+					value={state.maxSpeed}
+					label="Max Speed"
+					min={0.1}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setMaxSpeed(e.detail)}
+				/>
+				<Slider
+					value={state.azimuthRotateSpeed}
 					label="Azimuth Speed"
 					min={0.1}
 					max={5}
 					step={0.1}
+					on:change={(e) => ext.setAzimuthRotateSpeed(e.detail)}
 				/>
 				<Slider
-					bind:value={state.polarRotateSpeed}
+					value={state.polarRotateSpeed}
 					label="Polar Speed"
 					min={0.1}
 					max={5}
 					step={0.1}
+					on:change={(e) => ext.setPolarRotateSpeed(e.detail)}
 				/>
-				<Slider bind:value={state.dollySpeed} label="Dolly Speed" min={0.1} max={5} step={0.1} />
-				<Slider bind:value={state.truckSpeed} label="Truck Speed" min={0.1} max={5} step={0.1} />
+				<Slider
+					value={state.dollySpeed}
+					label="Dolly Speed"
+					min={0.1}
+					max={5}
+					step={0.1}
+					on:change={(e) => ext.setDollySpeed(e.detail)}
+				/>
+				<Slider
+					value={state.truckSpeed}
+					label="Truck Speed"
+					min={0.1}
+					max={5}
+					step={0.1}
+					on:change={(e) => ext.setTruckSpeed(e.detail)}
+				/>
 			</Folder>
 
 			<Folder title="Options" expanded={false}>
-				<Checkbox bind:value={state.dollyToCursor} label="Dolly to Cursor" />
+				<Checkbox
+					value={state.dollyToCursor}
+					label="Dolly to Cursor"
+					on:change={(e) => ext.setDollyToCursor(e.detail)}
+				/>
 			</Folder>
 
 			<Button title="Reset All" on:click={() => ext.resetAll()} />

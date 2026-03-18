@@ -240,6 +240,9 @@
 			setGlitchStrength: ({ state }, v) => {
 				state.glitch.strength = v;
 			},
+			setGlitchRatio: ({ state }, v) => {
+				state.glitch.ratio = v;
+			},
 			toggleNoise: ({ state }) => {
 				state.noise.enabled = !state.noise.enabled;
 			},
@@ -400,33 +403,41 @@
 <ToolbarItem position="right">
 	<DropDownPane icon="mdiImageFilterHdr" title="Post Processing">
 		<Folder title="Bloom" expanded={true}>
-			<Checkbox bind:value={ext.state.bloom.enabled} label="Enabled" />
+			<Checkbox
+				value={ext.state.bloom.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleBloom()}
+			/>
 			{#if ext.state.bloom.enabled}
 				<Slider
-					bind:value={ext.state.bloom.intensity}
+					value={ext.state.bloom.intensity}
 					label="Intensity"
 					min={0}
 					max={20}
 					step={0.1}
+					on:change={(e) => ext.setBloomIntensity(e.detail.value)}
 				/>
 				<Slider
-					bind:value={ext.state.bloom.luminanceThreshold}
+					value={ext.state.bloom.luminanceThreshold}
 					label="Threshold"
 					min={0}
 					max={1}
 					step={0.01}
+					on:change={(e) => ext.setBloomThreshold(e.detail.value)}
 				/>
 				<Slider
-					bind:value={ext.state.bloom.luminanceSmoothing}
+					value={ext.state.bloom.luminanceSmoothing}
 					label="Smoothing"
 					min={0}
 					max={1}
 					step={0.01}
+					on:change={(e) => ext.setBloomSmoothing(e.detail.value)}
 				/>
 				<List
-					bind:value={ext.state.bloom.kernelSize}
+					value={ext.state.bloom.kernelSize}
 					label="Kernel Size"
 					options={kernelSizeOptions}
+					on:change={(e) => ext.setBloomKernelSize(e.detail)}
 				/>
 				<Button
 					title="Reset"
@@ -441,9 +452,14 @@
 		</Folder>
 
 		<Folder title="SMAA" expanded={false}>
-			<Checkbox bind:value={ext.state.smaa.enabled} label="Enabled" />
+			<Checkbox value={ext.state.smaa.enabled} label="Enabled" on:change={() => ext.toggleSMAA()} />
 			{#if ext.state.smaa.enabled}
-				<List bind:value={ext.state.smaa.preset} label="Preset" options={smaaPresetOptions} />
+				<List
+					value={ext.state.smaa.preset}
+					label="Preset"
+					options={smaaPresetOptions}
+					on:change={(e) => ext.setSMAAPreset(e.detail)}
+				/>
 				<Button
 					title="Reset"
 					on:click={() => {
@@ -454,35 +470,45 @@
 		</Folder>
 
 		<Folder title="Vignette" expanded={false}>
-			<Checkbox bind:value={ext.state.vignette.enabled} label="Enabled" />
+			<Checkbox
+				value={ext.state.vignette.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleVignette()}
+			/>
 			{#if ext.state.vignette.enabled}
-				<Slider bind:value={ext.state.vignette.offset} label="Offset" min={0} max={1} step={0.01} />
 				<Slider
-					bind:value={ext.state.vignette.darkness}
+					value={ext.state.vignette.offset}
+					label="Offset"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setVignetteOffset(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.vignette.darkness}
 					label="Darkness"
 					min={0}
 					max={2}
 					step={0.01}
-				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.vignette.offset = 0.2;
-						ext.state.vignette.darkness = 0.75;
-					}}
+					on:change={(e) => ext.setVignetteDarkness(e.detail.value)}
 				/>
 			{/if}
 		</Folder>
 
 		<Folder title="Pixelation" expanded={false}>
-			<Checkbox bind:value={ext.state.pixelation.enabled} label="Enabled" />
+			<Checkbox
+				value={ext.state.pixelation.enabled}
+				label="Enabled"
+				on:change={() => ext.togglePixelation()}
+			/>
 			{#if ext.state.pixelation.enabled}
 				<Slider
-					bind:value={ext.state.pixelation.granularity}
+					value={ext.state.pixelation.granularity}
 					label="Granularity"
 					min={1}
 					max={16}
 					step={0.5}
+					on:change={(e) => ext.setPixelationGranularity(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -494,24 +520,44 @@
 		</Folder>
 
 		<Folder title="Glitch" expanded={false}>
-			<Checkbox bind:value={ext.state.glitch.enabled} label="Enabled" />
+			<Checkbox
+				value={ext.state.glitch.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleGlitch()}
+			/>
 			{#if ext.state.glitch.enabled}
-				<Slider bind:value={ext.state.glitch.delay} label="Delay" min={0.5} max={10} step={0.1} />
 				<Slider
-					bind:value={ext.state.glitch.duration}
+					value={ext.state.glitch.delay}
+					label="Delay"
+					min={0.5}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setGlitchDelay(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.glitch.duration}
 					label="Duration"
 					min={0.1}
 					max={2}
 					step={0.1}
+					on:change={(e) => ext.setGlitchDuration(e.detail.value)}
 				/>
 				<Slider
-					bind:value={ext.state.glitch.strength}
+					value={ext.state.glitch.strength}
 					label="Strength"
 					min={0.1}
 					max={2}
 					step={0.05}
+					on:change={(e) => ext.setGlitchStrength(e.detail.value)}
 				/>
-				<Slider bind:value={ext.state.glitch.ratio} label="Ratio" min={0} max={1} step={0.05} />
+				<Slider
+					value={ext.state.glitch.ratio}
+					label="Ratio"
+					min={0}
+					max={1}
+					step={0.05}
+					on:change={(e) => ext.setGlitchRatio(e.detail.value)}
+				/>
 				<Button
 					title="Reset"
 					on:click={() => {
@@ -525,14 +571,10 @@
 		</Folder>
 
 		<Folder title="Noise" expanded={false}>
-			<Checkbox bind:value={ext.state.noise.enabled} label="Enabled" />
+			<Checkbox value={ext.state.noise.enabled} label="Enabled" />
 			{#if ext.state.noise.enabled}
-				<Checkbox bind:value={ext.state.noise.premultiply} label="Premultiply" />
-				<List
-					bind:value={ext.state.noise.blendFunction}
-					label="Blend"
-					options={blendFunctionOptions}
-				/>
+				<Checkbox value={ext.state.noise.premultiply} label="Premultiply" />
+				<List value={ext.state.noise.blendFunction} label="Blend" options={blendFunctionOptions} />
 				<Button
 					title="Reset"
 					on:click={() => {
@@ -544,21 +586,21 @@
 		</Folder>
 
 		<Folder title="Chromatic Aberration" expanded={false}>
-			<Checkbox bind:value={ext.state.chromaticAberration.enabled} label="Enabled" />
+			<Checkbox value={ext.state.chromaticAberration.enabled} label="Enabled" />
 			{#if ext.state.chromaticAberration.enabled}
 				<Slider
-					bind:value={ext.state.chromaticAberration.offset}
+					value={ext.state.chromaticAberration.offset}
 					label="Offset"
 					min={0}
 					max={0.05}
 					step={0.001}
 				/>
 				<Checkbox
-					bind:value={ext.state.chromaticAberration.radialModulation}
+					value={ext.state.chromaticAberration.radialModulation}
 					label="Radial Modulation"
 				/>
 				<Slider
-					bind:value={ext.state.chromaticAberration.modulationOffset}
+					value={ext.state.chromaticAberration.modulationOffset}
 					label="Modulation"
 					min={0}
 					max={1}
@@ -576,18 +618,18 @@
 		</Folder>
 
 		<Folder title="Tone Mapping" expanded={false}>
-			<Checkbox bind:value={ext.state.toneMapping.enabled} label="Enabled" />
+			<Checkbox value={ext.state.toneMapping.enabled} label="Enabled" />
 			{#if ext.state.toneMapping.enabled}
-				<List bind:value={ext.state.toneMapping.mode} label="Mode" options={toneMappingOptions} />
+				<List value={ext.state.toneMapping.mode} label="Mode" options={toneMappingOptions} />
 				<Slider
-					bind:value={ext.state.toneMapping.whitePoint}
+					value={ext.state.toneMapping.whitePoint}
 					label="White Point"
 					min={0.1}
 					max={10}
 					step={0.1}
 				/>
 				<Slider
-					bind:value={ext.state.toneMapping.middleGrey}
+					value={ext.state.toneMapping.middleGrey}
 					label="Middle Grey"
 					min={0}
 					max={2}
@@ -605,24 +647,24 @@
 		</Folder>
 
 		<Folder title="FXAA" expanded={false}>
-			<Checkbox bind:value={ext.state.fxaa.enabled} label="Enabled" />
+			<Checkbox value={ext.state.fxaa.enabled} label="Enabled" />
 			{#if ext.state.fxaa.enabled}
 				<Slider
-					bind:value={ext.state.fxaa.minEdgeThreshold}
+					value={ext.state.fxaa.minEdgeThreshold}
 					label="Min Edge"
 					min={0}
 					max={1}
 					step={0.01}
 				/>
 				<Slider
-					bind:value={ext.state.fxaa.maxEdgeThreshold}
+					value={ext.state.fxaa.maxEdgeThreshold}
 					label="Max Edge"
 					min={0}
 					max={1}
 					step={0.01}
 				/>
 				<Slider
-					bind:value={ext.state.fxaa.subpixelQuality}
+					value={ext.state.fxaa.subpixelQuality}
 					label="Subpixel Quality"
 					min={0}
 					max={1}
@@ -640,16 +682,10 @@
 		</Folder>
 
 		<Folder title="Grid" expanded={false}>
-			<Checkbox bind:value={ext.state.grid.enabled} label="Enabled" />
+			<Checkbox value={ext.state.grid.enabled} label="Enabled" />
 			{#if ext.state.grid.enabled}
-				<Slider bind:value={ext.state.grid.scale} label="Scale" min={0.1} max={10} step={0.1} />
-				<Slider
-					bind:value={ext.state.grid.lineWidth}
-					label="Line Width"
-					min={0}
-					max={1}
-					step={0.01}
-				/>
+				<Slider value={ext.state.grid.scale} label="Scale" min={0.1} max={10} step={0.1} />
+				<Slider value={ext.state.grid.lineWidth} label="Line Width" min={0} max={1} step={0.01} />
 				<Button
 					title="Reset"
 					on:click={() => {
@@ -661,38 +697,26 @@
 		</Folder>
 
 		<Folder title="Tilt Shift" expanded={false}>
-			<Checkbox bind:value={ext.state.tiltShift.enabled} label="Enabled" />
+			<Checkbox value={ext.state.tiltShift.enabled} label="Enabled" />
 			{#if ext.state.tiltShift.enabled}
+				<Slider value={ext.state.tiltShift.offset} label="Offset" min={-1} max={1} step={0.01} />
 				<Slider
-					bind:value={ext.state.tiltShift.offset}
-					label="Offset"
-					min={-1}
-					max={1}
-					step={0.01}
-				/>
-				<Slider
-					bind:value={ext.state.tiltShift.rotation}
+					value={ext.state.tiltShift.rotation}
 					label="Rotation"
 					min={-3.14}
 					max={3.14}
 					step={0.01}
 				/>
 				<Slider
-					bind:value={ext.state.tiltShift.focusArea}
+					value={ext.state.tiltShift.focusArea}
 					label="Focus Area"
 					min={0}
 					max={1}
 					step={0.01}
 				/>
-				<Slider
-					bind:value={ext.state.tiltShift.feather}
-					label="Feather"
-					min={0}
-					max={1}
-					step={0.01}
-				/>
+				<Slider value={ext.state.tiltShift.feather} label="Feather" min={0} max={1} step={0.01} />
 				<List
-					bind:value={ext.state.tiltShift.kernelSize}
+					value={ext.state.tiltShift.kernelSize}
 					label="Kernel Size"
 					options={kernelSizeOptions}
 				/>
@@ -710,43 +734,37 @@
 		</Folder>
 
 		<Folder title="Lens Distortion" expanded={false}>
-			<Checkbox bind:value={ext.state.lensDistortion.enabled} label="Enabled" />
+			<Checkbox value={ext.state.lensDistortion.enabled} label="Enabled" />
 			{#if ext.state.lensDistortion.enabled}
 				<Slider
-					bind:value={ext.state.lensDistortion.distortionX}
+					value={ext.state.lensDistortion.distortionX}
 					label="Distortion X"
 					min={-1}
 					max={1}
 					step={0.01}
 				/>
 				<Slider
-					bind:value={ext.state.lensDistortion.distortionY}
+					value={ext.state.lensDistortion.distortionY}
 					label="Distortion Y"
 					min={-1}
 					max={1}
 					step={0.01}
 				/>
 				<Slider
-					bind:value={ext.state.lensDistortion.principalX}
+					value={ext.state.lensDistortion.principalX}
 					label="Principal X"
 					min={-1}
 					max={1}
 					step={0.01}
 				/>
 				<Slider
-					bind:value={ext.state.lensDistortion.principalY}
+					value={ext.state.lensDistortion.principalY}
 					label="Principal Y"
 					min={-1}
 					max={1}
 					step={0.01}
 				/>
-				<Slider
-					bind:value={ext.state.lensDistortion.skew}
-					label="Skew"
-					min={0}
-					max={1}
-					step={0.01}
-				/>
+				<Slider value={ext.state.lensDistortion.skew} label="Skew" min={0} max={1} step={0.01} />
 				<Button
 					title="Reset"
 					on:click={() => {
