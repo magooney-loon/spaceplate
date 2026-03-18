@@ -36,6 +36,7 @@
 			soundActions.playClick();
 		}}
 		castShadow
+		position={[ 0, 1.5, 0 ]}
 	>
 		<T.IcosahedronGeometry args={[1, 1]} />
 		<T.MeshStandardMaterial color={colors[colorIndex]} flatShading />

@@ -2,7 +2,7 @@
 	import { T } from '@threlte/core';
 	import { AudioListener } from '@threlte/extras';
 	import { CameraControls, type CameraControlsRef } from '@threlte/extras';
-	import { cameraActions } from '$core/stage.svelte.js';
+
 	import { log } from '$core/settings.svelte.js';
 	import type { PerspectiveCamera } from 'three';
 
@@ -12,15 +12,6 @@
 		camera.lookAt(0, 0, 0);
 		return () => {
 			log.info('Camera disposed');
-		};
-	};
-
-	const handleControlsCreate = (controlsRef: CameraControlsRef) => {
-		controls = controlsRef;
-		cameraActions.setCameraControls(controlsRef);
-		return () => {
-			cameraActions.setCameraControls(undefined);
-			controls = undefined;
 		};
 	};
 </script>
@@ -34,5 +25,5 @@
 	oncreate={handleCameraCreate}
 >
 	<AudioListener />
-	<CameraControls enabled={true} bind:ref={controls} oncreate={handleControlsCreate} />
+	<CameraControls enabled={true} bind:ref={controls} />
 </T.PerspectiveCamera>
