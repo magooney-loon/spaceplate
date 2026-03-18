@@ -17,7 +17,32 @@
 	const smaaPresetOptions = [
 		{ value: 0, text: 'Low' },
 		{ value: 1, text: 'Medium' },
-		{ value: 2, text: 'Ultra' }
+		{ value: 2, text: 'High' },
+		{ value: 3, text: 'Ultra' }
+	];
+
+	const smaaEdgeDetectionOptions = [
+		{ value: 0, text: 'Depth' },
+		{ value: 1, text: 'Luma' },
+		{ value: 2, text: 'Color' }
+	];
+
+	const smaaPredicationOptions = [
+		{ value: 0, text: 'Disabled' },
+		{ value: 1, text: 'Depth' },
+		{ value: 2, text: 'Custom' }
+	];
+
+	const vignetteTechniqueOptions = [
+		{ value: 0, text: 'Default' },
+		{ value: 1, text: 'Eskil' }
+	];
+
+	const glitchModeOptions = [
+		{ value: 0, text: 'Disabled' },
+		{ value: 1, text: 'Sporadic' },
+		{ value: 2, text: 'Constant Mild' },
+		{ value: 3, text: 'Constant Wild' }
 	];
 
 	const toneMappingOptions = [
@@ -75,14 +100,20 @@
 		state: () => ({
 			bloom: {
 				enabled: false,
-				intensity: 6,
-				luminanceThreshold: 0.01,
-				luminanceSmoothing: 0.08,
-				kernelSize: 4 as KernelSize
+				intensity: 1.0,
+				luminanceThreshold: 1.0,
+				luminanceSmoothing: 0.03,
+				kernelSize: 4 as KernelSize,
+				blendFunction: 28 as BlendFunction,
+				mipmapBlur: true,
+				radius: 0.85,
+				levels: 8
 			},
 			smaa: {
 				enabled: false,
-				preset: 2
+				preset: 2,
+				edgeDetectionMode: 2,
+				predicationMode: 0
 			},
 			fxaa: {
 				enabled: false,
@@ -92,61 +123,73 @@
 			},
 			vignette: {
 				enabled: false,
-				offset: 0.2,
-				darkness: 0.75
+				offset: 0.5,
+				darkness: 0.5,
+				technique: 0
 			},
 			pixelation: {
 				enabled: false,
-				granularity: 4.5
+				granularity: 30.0
 			},
 			glitch: {
 				enabled: false,
 				delay: 2.5,
 				duration: 0.8,
 				strength: 0.65,
-				ratio: 0.85
+				ratio: 0.85,
+				columns: 0.05,
+				mode: 1
 			},
 			noise: {
 				enabled: false,
-				premultiply: true,
+				premultiply: false,
 				blendFunction: 28 as BlendFunction
 			},
 			chromaticAberration: {
 				enabled: false,
 				radialModulation: false,
-				modulationOffset: 0.5,
-				offset: 0.005
+				modulationOffset: 0.15,
+				offsetX: 0.01,
+				offsetY: 0.01,
+				blendFunction: 0 as BlendFunction
 			},
 			brightnessContrast: {
 				enabled: false,
 				brightness: 0,
-				contrast: 0
+				contrast: 0,
+				blendFunction: 0 as BlendFunction
 			},
 			hueSaturation: {
 				enabled: false,
 				hue: 0,
-				saturation: 0
+				saturation: 0,
+				blendFunction: 0 as BlendFunction
 			},
 			sepia: {
 				enabled: false,
-				intensity: 1
+				intensity: 1.0,
+				blendFunction: 0 as BlendFunction
 			},
 			dotScreen: {
 				enabled: false,
 				angle: 1.57,
-				scale: 1
+				scale: 1.0,
+				blendFunction: 0 as BlendFunction
 			},
 			scanline: {
 				enabled: false,
-				density: 1.5,
-				opacity: 0.5
+				density: 1.25,
+				opacity: 0.5,
+				scrollSpeed: 0,
+				blendFunction: 25 as BlendFunction
 			},
 			shockWave: {
 				enabled: false,
-				speed: 5,
-				maxStrength: 1.5,
+				speed: 2.0,
+				maxStrength: 1.0,
 				distortion: 0.5,
-				size: 0.5
+				size: 0.5,
+				amplitude: 0.05
 			},
 			ascii: {
 				enabled: false,
@@ -157,12 +200,18 @@
 				enabled: false,
 				mode: 11 as ToneMappingMode,
 				whitePoint: 4.0,
-				middleGrey: 0.6
+				middleGrey: 0.6,
+				blendFunction: 0 as BlendFunction,
+				resolution: 256,
+				minLuminance: 0.01,
+				averageLuminance: 1.0,
+				adaptationRate: 1.0
 			},
 			grid: {
 				enabled: false,
 				scale: 1.0,
-				lineWidth: 0.0
+				lineWidth: 0.0,
+				blendFunction: 25 as BlendFunction
 			},
 			tiltShift: {
 				enabled: false,
@@ -170,7 +219,8 @@
 				rotation: 0.0,
 				focusArea: 0.4,
 				feather: 0.3,
-				kernelSize: 3 as KernelSize
+				kernelSize: 3 as KernelSize,
+				blendFunction: 0 as BlendFunction
 			},
 			lensDistortion: {
 				enabled: false,
@@ -181,6 +231,57 @@
 				focalLengthX: 1.0,
 				focalLengthY: 1.0,
 				skew: 0.0
+			},
+			colorDepth: {
+				enabled: false,
+				bits: 16,
+				blendFunction: 0 as BlendFunction
+			},
+			depthOfField: {
+				enabled: false,
+				focusDistance: 3.0,
+				focusRange: 2.0,
+				bokehScale: 1.0,
+				blendFunction: 0 as BlendFunction
+			},
+			godRays: {
+				enabled: false,
+				samples: 60,
+				density: 0.96,
+				decay: 0.9,
+				weight: 0.4,
+				exposure: 0.6,
+				clampMax: 1.0,
+				blur: true,
+				kernelSize: 2 as KernelSize,
+				blendFunction: 28 as BlendFunction
+			},
+			ssao: {
+				enabled: false,
+				samples: 9,
+				rings: 7,
+				radius: 0.1825,
+				intensity: 1.0,
+				bias: 0.025,
+				fade: 0.01,
+				luminanceInfluence: 0.7,
+				blendFunction: 7 as BlendFunction
+			},
+			outline: {
+				enabled: false,
+				edgeStrength: 1.0,
+				visibleEdgeColor: 0xffffff,
+				hiddenEdgeColor: 0x22090a,
+				pulseSpeed: 0.0,
+				xRay: true,
+				blur: false,
+				kernelSize: 1 as KernelSize,
+				blendFunction: 22 as BlendFunction
+			},
+			depthEffect: {
+				enabled: false,
+				inverted: false,
+				blendFunction: 0 as BlendFunction
 			}
 		}),
 		actions: {
@@ -199,11 +300,29 @@
 			setBloomKernelSize: ({ state }, v) => {
 				state.bloom.kernelSize = v;
 			},
+			setBloomBlendFunction: ({ state }, v) => {
+				state.bloom.blendFunction = v;
+			},
+			setBloomMipmapBlur: ({ state }, v) => {
+				state.bloom.mipmapBlur = v;
+			},
+			setBloomRadius: ({ state }, v) => {
+				state.bloom.radius = v;
+			},
+			setBloomLevels: ({ state }, v) => {
+				state.bloom.levels = v;
+			},
 			toggleSMAA: ({ state }) => {
 				state.smaa.enabled = !state.smaa.enabled;
 			},
 			setSMAAPreset: ({ state }, v) => {
 				state.smaa.preset = v;
+			},
+			setSMAEEdgeDetectionMode: ({ state }, v) => {
+				state.smaa.edgeDetectionMode = v;
+			},
+			setSMAAPredicationMode: ({ state }, v) => {
+				state.smaa.predicationMode = v;
 			},
 			toggleFXAA: ({ state }) => {
 				state.fxaa.enabled = !state.fxaa.enabled;
@@ -221,6 +340,9 @@
 			},
 			setVignetteDarkness: ({ state }, v) => {
 				state.vignette.darkness = v;
+			},
+			setVignetteTechnique: ({ state }, v) => {
+				state.vignette.technique = v;
 			},
 			togglePixelation: ({ state }) => {
 				state.pixelation.enabled = !state.pixelation.enabled;
@@ -243,6 +365,12 @@
 			setGlitchRatio: ({ state }, v) => {
 				state.glitch.ratio = v;
 			},
+			setGlitchColumns: ({ state }, v) => {
+				state.glitch.columns = v;
+			},
+			setGlitchMode: ({ state }, v) => {
+				state.glitch.mode = v;
+			},
 			toggleNoise: ({ state }) => {
 				state.noise.enabled = !state.noise.enabled;
 			},
@@ -250,11 +378,21 @@
 				state.chromaticAberration.enabled = !state.chromaticAberration.enabled;
 			},
 			setChromaticAberrationOffset: ({ state }, v) => {
-				state.chromaticAberration.offset = v;
+				state.chromaticAberration.offsetX = v;
+				state.chromaticAberration.offsetY = v;
+			},
+			setChromaticAberrationOffsetX: ({ state }, v) => {
+				state.chromaticAberration.offsetX = v;
+			},
+			setChromaticAberrationOffsetY: ({ state }, v) => {
+				state.chromaticAberration.offsetY = v;
 			},
 			setChromaticAberrationModulation: ({ state }, radial, offset) => {
 				state.chromaticAberration.radialModulation = radial;
 				state.chromaticAberration.modulationOffset = offset;
+			},
+			setChromaticAberrationBlendFunction: ({ state }, v) => {
+				state.chromaticAberration.blendFunction = v;
 			},
 			toggleBrightnessContrast: ({ state }) => {
 				state.brightnessContrast.enabled = !state.brightnessContrast.enabled;
@@ -265,6 +403,9 @@
 			setContrast: ({ state }, v) => {
 				state.brightnessContrast.contrast = v;
 			},
+			setBrightnessContrastBlendFunction: ({ state }, v) => {
+				state.brightnessContrast.blendFunction = v;
+			},
 			toggleHueSaturation: ({ state }) => {
 				state.hueSaturation.enabled = !state.hueSaturation.enabled;
 			},
@@ -274,11 +415,17 @@
 			setSaturation: ({ state }, v) => {
 				state.hueSaturation.saturation = v;
 			},
+			setHueSaturationBlendFunction: ({ state }, v) => {
+				state.hueSaturation.blendFunction = v;
+			},
 			toggleSepia: ({ state }) => {
 				state.sepia.enabled = !state.sepia.enabled;
 			},
 			setSepiaIntensity: ({ state }, v) => {
 				state.sepia.intensity = v;
+			},
+			setSepiaBlendFunction: ({ state }, v) => {
+				state.sepia.blendFunction = v;
 			},
 			toggleDotScreen: ({ state }) => {
 				state.dotScreen.enabled = !state.dotScreen.enabled;
@@ -289,6 +436,9 @@
 			setDotScreenScale: ({ state }, v) => {
 				state.dotScreen.scale = v;
 			},
+			setDotScreenBlendFunction: ({ state }, v) => {
+				state.dotScreen.blendFunction = v;
+			},
 			toggleScanline: ({ state }) => {
 				state.scanline.enabled = !state.scanline.enabled;
 			},
@@ -298,8 +448,29 @@
 			setScanlineOpacity: ({ state }, v) => {
 				state.scanline.opacity = v;
 			},
+			setScanlineScrollSpeed: ({ state }, v) => {
+				state.scanline.scrollSpeed = v;
+			},
+			setScanlineBlendFunction: ({ state }, v) => {
+				state.scanline.blendFunction = v;
+			},
 			toggleShockWave: ({ state }) => {
 				state.shockWave.enabled = !state.shockWave.enabled;
+			},
+			setShockWaveSpeed: ({ state }, v) => {
+				state.shockWave.speed = v;
+			},
+			setShockWaveMaxStrength: ({ state }, v) => {
+				state.shockWave.maxStrength = v;
+			},
+			setShockWaveDistortion: ({ state }, v) => {
+				state.shockWave.distortion = v;
+			},
+			setShockWaveSize: ({ state }, v) => {
+				state.shockWave.size = v;
+			},
+			setShockWaveAmplitude: ({ state }, v) => {
+				state.shockWave.amplitude = v;
 			},
 			toggleASCII: ({ state }) => {
 				state.ascii.enabled = !state.ascii.enabled;
@@ -319,6 +490,24 @@
 			setToneMappingWhitePoint: ({ state }, v) => {
 				state.toneMapping.whitePoint = v;
 			},
+			setToneMappingMiddleGrey: ({ state }, v) => {
+				state.toneMapping.middleGrey = v;
+			},
+			setToneMappingResolution: ({ state }, v) => {
+				state.toneMapping.resolution = v;
+			},
+			setToneMappingMinLuminance: ({ state }, v) => {
+				state.toneMapping.minLuminance = v;
+			},
+			setToneMappingAverageLuminance: ({ state }, v) => {
+				state.toneMapping.averageLuminance = v;
+			},
+			setToneMappingAdaptationRate: ({ state }, v) => {
+				state.toneMapping.adaptationRate = v;
+			},
+			setToneMappingBlendFunction: ({ state }, v) => {
+				state.toneMapping.blendFunction = v;
+			},
 			toggleGrid: ({ state }) => {
 				state.grid.enabled = !state.grid.enabled;
 			},
@@ -327,6 +516,9 @@
 			},
 			setGridLineWidth: ({ state }, v) => {
 				state.grid.lineWidth = v;
+			},
+			setGridBlendFunction: ({ state }, v) => {
+				state.grid.blendFunction = v;
 			},
 			toggleTiltShift: ({ state }) => {
 				state.tiltShift.enabled = !state.tiltShift.enabled;
@@ -337,6 +529,15 @@
 			setTiltShiftFocusArea: ({ state }, v) => {
 				state.tiltShift.focusArea = v;
 			},
+			setTiltShiftFeather: ({ state }, v) => {
+				state.tiltShift.feather = v;
+			},
+			setTiltShiftKernelSize: ({ state }, v) => {
+				state.tiltShift.kernelSize = v;
+			},
+			setTiltShiftBlendFunction: ({ state }, v) => {
+				state.tiltShift.blendFunction = v;
+			},
 			toggleLensDistortion: ({ state }) => {
 				state.lensDistortion.enabled = !state.lensDistortion.enabled;
 			},
@@ -346,48 +547,209 @@
 			setLensDistortionY: ({ state }, v) => {
 				state.lensDistortion.distortionY = v;
 			},
+			setLensPrincipalX: ({ state }, v) => {
+				state.lensDistortion.principalX = v;
+			},
+			setLensPrincipalY: ({ state }, v) => {
+				state.lensDistortion.principalY = v;
+			},
+			setLensFocalLengthX: ({ state }, v) => {
+				state.lensDistortion.focalLengthX = v;
+			},
+			setLensFocalLengthY: ({ state }, v) => {
+				state.lensDistortion.focalLengthY = v;
+			},
+			setLensSkew: ({ state }, v) => {
+				state.lensDistortion.skew = v;
+			},
+			toggleColorDepth: ({ state }) => {
+				state.colorDepth.enabled = !state.colorDepth.enabled;
+			},
+			setColorDepthBits: ({ state }, v) => {
+				state.colorDepth.bits = v;
+			},
+			setColorDepthBlendFunction: ({ state }, v) => {
+				state.colorDepth.blendFunction = v;
+			},
+			toggleDepthOfField: ({ state }) => {
+				state.depthOfField.enabled = !state.depthOfField.enabled;
+			},
+			setDepthOfFieldFocusDistance: ({ state }, v) => {
+				state.depthOfField.focusDistance = v;
+			},
+			setDepthOfFieldFocusRange: ({ state }, v) => {
+				state.depthOfField.focusRange = v;
+			},
+			setDepthOfFieldBokehScale: ({ state }, v) => {
+				state.depthOfField.bokehScale = v;
+			},
+			setDepthOfFieldBlendFunction: ({ state }, v) => {
+				state.depthOfField.blendFunction = v;
+			},
+			toggleGodRays: ({ state }) => {
+				state.godRays.enabled = !state.godRays.enabled;
+			},
+			setGodRaysSamples: ({ state }, v) => {
+				state.godRays.samples = v;
+			},
+			setGodRaysDensity: ({ state }, v) => {
+				state.godRays.density = v;
+			},
+			setGodRaysDecay: ({ state }, v) => {
+				state.godRays.decay = v;
+			},
+			setGodRaysWeight: ({ state }, v) => {
+				state.godRays.weight = v;
+			},
+			setGodRaysExposure: ({ state }, v) => {
+				state.godRays.exposure = v;
+			},
+			setGodRaysClampMax: ({ state }, v) => {
+				state.godRays.clampMax = v;
+			},
+			setGodRaysBlur: ({ state }, v) => {
+				state.godRays.blur = v;
+			},
+			setGodRaysKernelSize: ({ state }, v) => {
+				state.godRays.kernelSize = v;
+			},
+			setGodRaysBlendFunction: ({ state }, v) => {
+				state.godRays.blendFunction = v;
+			},
+			toggleSSAO: ({ state }) => {
+				state.ssao.enabled = !state.ssao.enabled;
+			},
+			setSSAOSamples: ({ state }, v) => {
+				state.ssao.samples = v;
+			},
+			setSSAORings: ({ state }, v) => {
+				state.ssao.rings = v;
+			},
+			setSSAORadius: ({ state }, v) => {
+				state.ssao.radius = v;
+			},
+			setSSAOIntensity: ({ state }, v) => {
+				state.ssao.intensity = v;
+			},
+			setSSAOBias: ({ state }, v) => {
+				state.ssao.bias = v;
+			},
+			setSSAOFade: ({ state }, v) => {
+				state.ssao.fade = v;
+			},
+			setSSAOLuminanceInfluence: ({ state }, v) => {
+				state.ssao.luminanceInfluence = v;
+			},
+			setSSAOBlendFunction: ({ state }, v) => {
+				state.ssao.blendFunction = v;
+			},
+			toggleOutline: ({ state }) => {
+				state.outline.enabled = !state.outline.enabled;
+			},
+			setOutlineEdgeStrength: ({ state }, v) => {
+				state.outline.edgeStrength = v;
+			},
+			setOutlineVisibleEdgeColor: ({ state }, v) => {
+				state.outline.visibleEdgeColor = v;
+			},
+			setOutlineHiddenEdgeColor: ({ state }, v) => {
+				state.outline.hiddenEdgeColor = v;
+			},
+			setOutlinePulseSpeed: ({ state }, v) => {
+				state.outline.pulseSpeed = v;
+			},
+			setOutlineXRay: ({ state }, v) => {
+				state.outline.xRay = v;
+			},
+			setOutlineBlur: ({ state }, v) => {
+				state.outline.blur = v;
+			},
+			setOutlineKernelSize: ({ state }, v) => {
+				state.outline.kernelSize = v;
+			},
+			setOutlineBlendFunction: ({ state }, v) => {
+				state.outline.blendFunction = v;
+			},
+			toggleDepthEffect: ({ state }) => {
+				state.depthEffect.enabled = !state.depthEffect.enabled;
+			},
+			setDepthEffectInverted: ({ state }, v) => {
+				state.depthEffect.inverted = v;
+			},
+			setDepthEffectBlendFunction: ({ state }, v) => {
+				state.depthEffect.blendFunction = v;
+			},
 			resetAll: ({ state }) => {
-				state.bloom.intensity = 6;
-				state.bloom.luminanceThreshold = 0.01;
-				state.bloom.luminanceSmoothing = 0.08;
+				state.bloom.intensity = 1.0;
+				state.bloom.luminanceThreshold = 1.0;
+				state.bloom.luminanceSmoothing = 0.03;
 				state.bloom.kernelSize = 4 as KernelSize;
+				state.bloom.blendFunction = 28 as BlendFunction;
+				state.bloom.mipmapBlur = true;
+				state.bloom.radius = 0.85;
+				state.bloom.levels = 8;
 				state.smaa.preset = 2;
+				state.smaa.edgeDetectionMode = 2;
+				state.smaa.predicationMode = 0;
 				state.fxaa.minEdgeThreshold = 0.05;
 				state.fxaa.maxEdgeThreshold = 0.12;
 				state.fxaa.subpixelQuality = 0.75;
-				state.vignette.offset = 0.2;
-				state.vignette.darkness = 0.75;
-				state.pixelation.granularity = 4.5;
+				state.vignette.offset = 0.5;
+				state.vignette.darkness = 0.5;
+				state.vignette.technique = 0;
+				state.pixelation.granularity = 30.0;
 				state.glitch.delay = 2.5;
 				state.glitch.duration = 0.8;
 				state.glitch.strength = 0.65;
 				state.glitch.ratio = 0.85;
-				state.noise.premultiply = true;
+				state.glitch.columns = 0.05;
+				state.glitch.mode = 1;
+				state.noise.premultiply = false;
 				state.noise.blendFunction = 28 as BlendFunction;
 				state.chromaticAberration.radialModulation = false;
-				state.chromaticAberration.modulationOffset = 0.5;
-				state.chromaticAberration.offset = 0.005;
+				state.chromaticAberration.modulationOffset = 0.15;
+				state.chromaticAberration.offsetX = 0.01;
+				state.chromaticAberration.offsetY = 0.01;
+				state.chromaticAberration.blendFunction = 0 as BlendFunction;
 				state.brightnessContrast.brightness = 0;
 				state.brightnessContrast.contrast = 0;
+				state.brightnessContrast.blendFunction = 0 as BlendFunction;
 				state.hueSaturation.hue = 0;
 				state.hueSaturation.saturation = 0;
-				state.sepia.intensity = 1;
+				state.hueSaturation.blendFunction = 0 as BlendFunction;
+				state.sepia.intensity = 1.0;
+				state.sepia.blendFunction = 0 as BlendFunction;
 				state.dotScreen.angle = 1.57;
-				state.dotScreen.scale = 1;
-				state.scanline.density = 1.5;
+				state.dotScreen.scale = 1.0;
+				state.dotScreen.blendFunction = 0 as BlendFunction;
+				state.scanline.density = 1.25;
 				state.scanline.opacity = 0.5;
+				state.scanline.scrollSpeed = 0;
+				state.scanline.blendFunction = 25 as BlendFunction;
+				state.shockWave.speed = 2.0;
+				state.shockWave.maxStrength = 1.0;
+				state.shockWave.distortion = 0.5;
+				state.shockWave.size = 0.5;
+				state.shockWave.amplitude = 0.05;
 				state.ascii.cellSize = 16;
 				state.ascii.inverted = false;
 				state.toneMapping.mode = 11 as ToneMappingMode;
 				state.toneMapping.whitePoint = 4.0;
 				state.toneMapping.middleGrey = 0.6;
+				state.toneMapping.blendFunction = 0 as BlendFunction;
+				state.toneMapping.resolution = 256;
+				state.toneMapping.minLuminance = 0.01;
+				state.toneMapping.averageLuminance = 1.0;
+				state.toneMapping.adaptationRate = 1.0;
 				state.grid.scale = 1.0;
 				state.grid.lineWidth = 0.0;
+				state.grid.blendFunction = 25 as BlendFunction;
 				state.tiltShift.offset = 0.0;
 				state.tiltShift.rotation = 0.0;
 				state.tiltShift.focusArea = 0.4;
 				state.tiltShift.feather = 0.3;
 				state.tiltShift.kernelSize = 3 as KernelSize;
+				state.tiltShift.blendFunction = 0 as BlendFunction;
 				state.lensDistortion.distortionX = 0.0;
 				state.lensDistortion.distortionY = 0.0;
 				state.lensDistortion.principalX = 0.0;
@@ -395,6 +757,39 @@
 				state.lensDistortion.focalLengthX = 1.0;
 				state.lensDistortion.focalLengthY = 1.0;
 				state.lensDistortion.skew = 0.0;
+				state.colorDepth.bits = 16;
+				state.colorDepth.blendFunction = 0 as BlendFunction;
+				state.depthOfField.focusDistance = 3.0;
+				state.depthOfField.focusRange = 2.0;
+				state.depthOfField.bokehScale = 1.0;
+				state.depthOfField.blendFunction = 0 as BlendFunction;
+				state.godRays.samples = 60;
+				state.godRays.density = 0.96;
+				state.godRays.decay = 0.9;
+				state.godRays.weight = 0.4;
+				state.godRays.exposure = 0.6;
+				state.godRays.clampMax = 1.0;
+				state.godRays.blur = true;
+				state.godRays.kernelSize = 2 as KernelSize;
+				state.godRays.blendFunction = 28 as BlendFunction;
+				state.ssao.samples = 9;
+				state.ssao.rings = 7;
+				state.ssao.radius = 0.1825;
+				state.ssao.intensity = 1.0;
+				state.ssao.bias = 0.025;
+				state.ssao.fade = 0.01;
+				state.ssao.luminanceInfluence = 0.7;
+				state.ssao.blendFunction = 7 as BlendFunction;
+				state.outline.edgeStrength = 1.0;
+				state.outline.visibleEdgeColor = 0xffffff;
+				state.outline.hiddenEdgeColor = 0x22090a;
+				state.outline.pulseSpeed = 0.0;
+				state.outline.xRay = true;
+				state.outline.blur = false;
+				state.outline.kernelSize = 1 as KernelSize;
+				state.outline.blendFunction = 22 as BlendFunction;
+				state.depthEffect.inverted = false;
+				state.depthEffect.blendFunction = 0 as BlendFunction;
 			}
 		}
 	});
@@ -433,19 +828,46 @@
 					step={0.01}
 					on:change={(e) => ext.setBloomSmoothing(e.detail.value)}
 				/>
+				<Slider
+					value={ext.state.bloom.radius}
+					label="Radius"
+					min={0}
+					max={2}
+					step={0.05}
+					on:change={(e) => ext.setBloomRadius(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.bloom.levels}
+					label="Levels"
+					min={1}
+					max={16}
+					step={1}
+					on:change={(e) => ext.setBloomLevels(e.detail.value)}
+				/>
 				<List
 					value={ext.state.bloom.kernelSize}
 					label="Kernel Size"
 					options={kernelSizeOptions}
 					on:change={(e) => ext.setBloomKernelSize(e.detail)}
 				/>
+				<Checkbox value={ext.state.bloom.mipmapBlur} label="Mipmap Blur" />
+				<List
+					value={ext.state.bloom.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setBloomBlendFunction(e.detail)}
+				/>
 				<Button
 					title="Reset"
 					on:click={() => {
-						ext.state.bloom.intensity = 6;
-						ext.state.bloom.luminanceThreshold = 0.01;
-						ext.state.bloom.luminanceSmoothing = 0.08;
+						ext.state.bloom.intensity = 1.0;
+						ext.state.bloom.luminanceThreshold = 1.0;
+						ext.state.bloom.luminanceSmoothing = 0.03;
+						ext.state.bloom.radius = 0.85;
+						ext.state.bloom.levels = 8;
 						ext.state.bloom.kernelSize = 4 as KernelSize;
+						ext.state.bloom.mipmapBlur = true;
+						ext.state.bloom.blendFunction = 28 as BlendFunction;
 					}}
 				/>
 			{/if}
@@ -460,10 +882,77 @@
 					options={smaaPresetOptions}
 					on:change={(e) => ext.setSMAAPreset(e.detail)}
 				/>
+				<List
+					value={ext.state.smaa.edgeDetectionMode}
+					label="Edge Detection"
+					options={smaaEdgeDetectionOptions}
+					on:change={(e) => ext.setSMAEEdgeDetectionMode(e.detail)}
+				/>
+				<List
+					value={ext.state.smaa.predicationMode}
+					label="Predication"
+					options={smaaPredicationOptions}
+					on:change={(e) => ext.setSMAAPredicationMode(e.detail)}
+				/>
 				<Button
 					title="Reset"
 					on:click={() => {
 						ext.state.smaa.preset = 2;
+						ext.state.smaa.edgeDetectionMode = 2;
+						ext.state.smaa.predicationMode = 0;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="FXAA" expanded={false}>
+			<Checkbox value={ext.state.fxaa.enabled} label="Enabled" on:change={() => ext.toggleFXAA()} />
+			{#if ext.state.fxaa.enabled}
+				<Slider
+					value={ext.state.fxaa.minEdgeThreshold}
+					label="Min Edge"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) =>
+						ext.setFXAAEdgeThreshold(
+							e.detail.value,
+							ext.state.fxaa.maxEdgeThreshold,
+							ext.state.fxaa.subpixelQuality
+						)}
+				/>
+				<Slider
+					value={ext.state.fxaa.maxEdgeThreshold}
+					label="Max Edge"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) =>
+						ext.setFXAAEdgeThreshold(
+							ext.state.fxaa.minEdgeThreshold,
+							e.detail.value,
+							ext.state.fxaa.subpixelQuality
+						)}
+				/>
+				<Slider
+					value={ext.state.fxaa.subpixelQuality}
+					label="Subpixel Quality"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) =>
+						ext.setFXAAEdgeThreshold(
+							ext.state.fxaa.minEdgeThreshold,
+							ext.state.fxaa.maxEdgeThreshold,
+							e.detail.value
+						)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.fxaa.minEdgeThreshold = 0.05;
+						ext.state.fxaa.maxEdgeThreshold = 0.12;
+						ext.state.fxaa.subpixelQuality = 0.75;
 					}}
 				/>
 			{/if}
@@ -480,7 +969,7 @@
 					value={ext.state.vignette.offset}
 					label="Offset"
 					min={0}
-					max={1}
+					max={2}
 					step={0.01}
 					on:change={(e) => ext.setVignetteOffset(e.detail.value)}
 				/>
@@ -491,6 +980,20 @@
 					max={2}
 					step={0.01}
 					on:change={(e) => ext.setVignetteDarkness(e.detail.value)}
+				/>
+				<List
+					value={ext.state.vignette.technique}
+					label="Technique"
+					options={vignetteTechniqueOptions}
+					on:change={(e) => ext.setVignetteTechnique(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.vignette.offset = 0.5;
+						ext.state.vignette.darkness = 0.5;
+						ext.state.vignette.technique = 0;
+					}}
 				/>
 			{/if}
 		</Folder>
@@ -506,14 +1009,14 @@
 					value={ext.state.pixelation.granularity}
 					label="Granularity"
 					min={1}
-					max={16}
-					step={0.5}
+					max={100}
+					step={1}
 					on:change={(e) => ext.setPixelationGranularity(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
 					on:click={() => {
-						ext.state.pixelation.granularity = 4.5;
+						ext.state.pixelation.granularity = 30.0;
 					}}
 				/>
 			{/if}
@@ -526,10 +1029,16 @@
 				on:change={() => ext.toggleGlitch()}
 			/>
 			{#if ext.state.glitch.enabled}
+				<List
+					value={ext.state.glitch.mode}
+					label="Mode"
+					options={glitchModeOptions}
+					on:change={(e) => ext.setGlitchMode(e.detail)}
+				/>
 				<Slider
 					value={ext.state.glitch.delay}
 					label="Delay"
-					min={0.5}
+					min={0.1}
 					max={10}
 					step={0.1}
 					on:change={(e) => ext.setGlitchDelay(e.detail.value)}
@@ -558,6 +1067,14 @@
 					step={0.05}
 					on:change={(e) => ext.setGlitchRatio(e.detail.value)}
 				/>
+				<Slider
+					value={ext.state.glitch.columns}
+					label="Columns"
+					min={0.01}
+					max={0.5}
+					step={0.01}
+					on:change={(e) => ext.setGlitchColumns(e.detail.value)}
+				/>
 				<Button
 					title="Reset"
 					on:click={() => {
@@ -565,20 +1082,31 @@
 						ext.state.glitch.duration = 0.8;
 						ext.state.glitch.strength = 0.65;
 						ext.state.glitch.ratio = 0.85;
+						ext.state.glitch.columns = 0.05;
+						ext.state.glitch.mode = 1;
 					}}
 				/>
 			{/if}
 		</Folder>
 
 		<Folder title="Noise" expanded={false}>
-			<Checkbox value={ext.state.noise.enabled} label="Enabled" />
+			<Checkbox
+				value={ext.state.noise.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleNoise()}
+			/>
 			{#if ext.state.noise.enabled}
 				<Checkbox value={ext.state.noise.premultiply} label="Premultiply" />
-				<List value={ext.state.noise.blendFunction} label="Blend" options={blendFunctionOptions} />
+				<List
+					value={ext.state.noise.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setNoiseBlendFunction(e.detail)}
+				/>
 				<Button
 					title="Reset"
 					on:click={() => {
-						ext.state.noise.premultiply = true;
+						ext.state.noise.premultiply = false;
 						ext.state.noise.blendFunction = 28 as BlendFunction;
 					}}
 				/>
@@ -586,14 +1114,27 @@
 		</Folder>
 
 		<Folder title="Chromatic Aberration" expanded={false}>
-			<Checkbox value={ext.state.chromaticAberration.enabled} label="Enabled" />
+			<Checkbox
+				value={ext.state.chromaticAberration.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleChromaticAberration()}
+			/>
 			{#if ext.state.chromaticAberration.enabled}
 				<Slider
-					value={ext.state.chromaticAberration.offset}
-					label="Offset"
+					value={ext.state.chromaticAberration.offsetX}
+					label="Offset X"
 					min={0}
-					max={0.05}
+					max={0.1}
 					step={0.001}
+					on:change={(e) => ext.setChromaticAberrationOffsetX(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.chromaticAberration.offsetY}
+					label="Offset Y"
+					min={0}
+					max={0.1}
+					step={0.001}
+					on:change={(e) => ext.setChromaticAberrationOffsetY(e.detail.value)}
 				/>
 				<Checkbox
 					value={ext.state.chromaticAberration.radialModulation}
@@ -605,28 +1146,337 @@
 					min={0}
 					max={1}
 					step={0.01}
+					on:change={(e) =>
+						ext.setChromaticAberrationModulation(
+							ext.state.chromaticAberration.radialModulation,
+							e.detail.value
+						)}
+				/>
+				<List
+					value={ext.state.chromaticAberration.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setChromaticAberrationBlendFunction(e.detail)}
 				/>
 				<Button
 					title="Reset"
 					on:click={() => {
+						ext.state.chromaticAberration.offsetX = 0.01;
+						ext.state.chromaticAberration.offsetY = 0.01;
 						ext.state.chromaticAberration.radialModulation = false;
-						ext.state.chromaticAberration.modulationOffset = 0.5;
-						ext.state.chromaticAberration.offset = 0.005;
+						ext.state.chromaticAberration.modulationOffset = 0.15;
+						ext.state.chromaticAberration.blendFunction = 0 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Brightness & Contrast" expanded={false}>
+			<Checkbox
+				value={ext.state.brightnessContrast.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleBrightnessContrast()}
+			/>
+			{#if ext.state.brightnessContrast.enabled}
+				<Slider
+					value={ext.state.brightnessContrast.brightness}
+					label="Brightness"
+					min={-1}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setBrightness(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.brightnessContrast.contrast}
+					label="Contrast"
+					min={-1}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setContrast(e.detail.value)}
+				/>
+				<List
+					value={ext.state.brightnessContrast.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setBrightnessContrastBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.brightnessContrast.brightness = 0;
+						ext.state.brightnessContrast.contrast = 0;
+						ext.state.brightnessContrast.blendFunction = 0 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Hue & Saturation" expanded={false}>
+			<Checkbox
+				value={ext.state.hueSaturation.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleHueSaturation()}
+			/>
+			{#if ext.state.hueSaturation.enabled}
+				<Slider
+					value={ext.state.hueSaturation.hue}
+					label="Hue"
+					min={-3.14}
+					max={3.14}
+					step={0.01}
+					on:change={(e) => ext.setHue(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.hueSaturation.saturation}
+					label="Saturation"
+					min={-1}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setSaturation(e.detail.value)}
+				/>
+				<List
+					value={ext.state.hueSaturation.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setHueSaturationBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.hueSaturation.hue = 0;
+						ext.state.hueSaturation.saturation = 0;
+						ext.state.hueSaturation.blendFunction = 0 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Sepia" expanded={false}>
+			<Checkbox
+				value={ext.state.sepia.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleSepia()}
+			/>
+			{#if ext.state.sepia.enabled}
+				<Slider
+					value={ext.state.sepia.intensity}
+					label="Intensity"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setSepiaIntensity(e.detail.value)}
+				/>
+				<List
+					value={ext.state.sepia.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setSepiaBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.sepia.intensity = 1.0;
+						ext.state.sepia.blendFunction = 0 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Dot Screen" expanded={false}>
+			<Checkbox
+				value={ext.state.dotScreen.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleDotScreen()}
+			/>
+			{#if ext.state.dotScreen.enabled}
+				<Slider
+					value={ext.state.dotScreen.angle}
+					label="Angle"
+					min={0}
+					max={6.28}
+					step={0.01}
+					on:change={(e) => ext.setDotScreenAngle(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.dotScreen.scale}
+					label="Scale"
+					min={0.1}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setDotScreenScale(e.detail.value)}
+				/>
+				<List
+					value={ext.state.dotScreen.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setDotScreenBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.dotScreen.angle = 1.57;
+						ext.state.dotScreen.scale = 1.0;
+						ext.state.dotScreen.blendFunction = 0 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Scanline" expanded={false}>
+			<Checkbox
+				value={ext.state.scanline.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleScanline()}
+			/>
+			{#if ext.state.scanline.enabled}
+				<Slider
+					value={ext.state.scanline.density}
+					label="Density"
+					min={0.5}
+					max={5}
+					step={0.1}
+					on:change={(e) => ext.setScanlineDensity(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.scanline.opacity}
+					label="Opacity"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setScanlineOpacity(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.scanline.scrollSpeed}
+					label="Scroll Speed"
+					min={0}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setScanlineScrollSpeed(e.detail.value)}
+				/>
+				<List
+					value={ext.state.scanline.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setScanlineBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.scanline.density = 1.25;
+						ext.state.scanline.opacity = 0.5;
+						ext.state.scanline.scrollSpeed = 0;
+						ext.state.scanline.blendFunction = 25 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Shock Wave" expanded={false}>
+			<Checkbox
+				value={ext.state.shockWave.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleShockWave()}
+			/>
+			{#if ext.state.shockWave.enabled}
+				<Slider
+					value={ext.state.shockWave.speed}
+					label="Speed"
+					min={0.1}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setShockWaveSpeed(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.shockWave.maxStrength}
+					label="Max Strength"
+					min={0.1}
+					max={5}
+					step={0.1}
+					on:change={(e) => ext.setShockWaveMaxStrength(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.shockWave.distortion}
+					label="Distortion"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setShockWaveDistortion(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.shockWave.size}
+					label="Size"
+					min={0.1}
+					max={2}
+					step={0.01}
+					on:change={(e) => ext.setShockWaveSize(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.shockWave.amplitude}
+					label="Amplitude"
+					min={0}
+					max={0.5}
+					step={0.01}
+					on:change={(e) => ext.setShockWaveAmplitude(e.detail.value)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.shockWave.speed = 2.0;
+						ext.state.shockWave.maxStrength = 1.0;
+						ext.state.shockWave.distortion = 0.5;
+						ext.state.shockWave.size = 0.5;
+						ext.state.shockWave.amplitude = 0.05;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="ASCII" expanded={false}>
+			<Checkbox
+				value={ext.state.ascii.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleASCII()}
+			/>
+			{#if ext.state.ascii.enabled}
+				<Slider
+					value={ext.state.ascii.cellSize}
+					label="Cell Size"
+					min={4}
+					max={64}
+					step={1}
+					on:change={(e) => ext.setASCIICellSize(e.detail.value)}
+				/>
+				<Checkbox value={ext.state.ascii.inverted} label="Inverted" />
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.ascii.cellSize = 16;
+						ext.state.ascii.inverted = false;
 					}}
 				/>
 			{/if}
 		</Folder>
 
 		<Folder title="Tone Mapping" expanded={false}>
-			<Checkbox value={ext.state.toneMapping.enabled} label="Enabled" />
+			<Checkbox
+				value={ext.state.toneMapping.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleToneMapping()}
+			/>
 			{#if ext.state.toneMapping.enabled}
-				<List value={ext.state.toneMapping.mode} label="Mode" options={toneMappingOptions} />
+				<List
+					value={ext.state.toneMapping.mode}
+					label="Mode"
+					options={toneMappingOptions}
+					on:change={(e) => ext.setToneMappingMode(e.detail)}
+				/>
 				<Slider
 					value={ext.state.toneMapping.whitePoint}
 					label="White Point"
 					min={0.1}
-					max={10}
+					max={16}
 					step={0.1}
+					on:change={(e) => ext.setToneMappingWhitePoint(e.detail.value)}
 				/>
 				<Slider
 					value={ext.state.toneMapping.middleGrey}
@@ -634,6 +1484,45 @@
 					min={0}
 					max={2}
 					step={0.01}
+					on:change={(e) => ext.setToneMappingMiddleGrey(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.toneMapping.resolution}
+					label="Resolution"
+					min={64}
+					max={1024}
+					step={64}
+					on:change={(e) => ext.setToneMappingResolution(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.toneMapping.minLuminance}
+					label="Min Luminance"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setToneMappingMinLuminance(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.toneMapping.averageLuminance}
+					label="Average Luminance"
+					min={0.1}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setToneMappingAverageLuminance(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.toneMapping.adaptationRate}
+					label="Adaptation Rate"
+					min={0.01}
+					max={10}
+					step={0.01}
+					on:change={(e) => ext.setToneMappingAdaptationRate(e.detail.value)}
+				/>
+				<List
+					value={ext.state.toneMapping.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setToneMappingBlendFunction(e.detail)}
 				/>
 				<Button
 					title="Reset"
@@ -641,71 +1530,76 @@
 						ext.state.toneMapping.mode = 11 as ToneMappingMode;
 						ext.state.toneMapping.whitePoint = 4.0;
 						ext.state.toneMapping.middleGrey = 0.6;
-					}}
-				/>
-			{/if}
-		</Folder>
-
-		<Folder title="FXAA" expanded={false}>
-			<Checkbox value={ext.state.fxaa.enabled} label="Enabled" />
-			{#if ext.state.fxaa.enabled}
-				<Slider
-					value={ext.state.fxaa.minEdgeThreshold}
-					label="Min Edge"
-					min={0}
-					max={1}
-					step={0.01}
-				/>
-				<Slider
-					value={ext.state.fxaa.maxEdgeThreshold}
-					label="Max Edge"
-					min={0}
-					max={1}
-					step={0.01}
-				/>
-				<Slider
-					value={ext.state.fxaa.subpixelQuality}
-					label="Subpixel Quality"
-					min={0}
-					max={1}
-					step={0.01}
-				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.fxaa.minEdgeThreshold = 0.05;
-						ext.state.fxaa.maxEdgeThreshold = 0.12;
-						ext.state.fxaa.subpixelQuality = 0.75;
+						ext.state.toneMapping.resolution = 256;
+						ext.state.toneMapping.minLuminance = 0.01;
+						ext.state.toneMapping.averageLuminance = 1.0;
+						ext.state.toneMapping.adaptationRate = 1.0;
+						ext.state.toneMapping.blendFunction = 0 as BlendFunction;
 					}}
 				/>
 			{/if}
 		</Folder>
 
 		<Folder title="Grid" expanded={false}>
-			<Checkbox value={ext.state.grid.enabled} label="Enabled" />
+			<Checkbox value={ext.state.grid.enabled} label="Enabled" on:change={() => ext.toggleGrid()} />
 			{#if ext.state.grid.enabled}
-				<Slider value={ext.state.grid.scale} label="Scale" min={0.1} max={10} step={0.1} />
-				<Slider value={ext.state.grid.lineWidth} label="Line Width" min={0} max={1} step={0.01} />
+				<Slider
+					value={ext.state.grid.scale}
+					label="Scale"
+					min={0.1}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setGridScale(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.grid.lineWidth}
+					label="Line Width"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setGridLineWidth(e.detail.value)}
+				/>
+				<List
+					value={ext.state.grid.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setGridBlendFunction(e.detail)}
+				/>
 				<Button
 					title="Reset"
 					on:click={() => {
 						ext.state.grid.scale = 1.0;
 						ext.state.grid.lineWidth = 0.0;
+						ext.state.grid.blendFunction = 25 as BlendFunction;
 					}}
 				/>
 			{/if}
 		</Folder>
 
 		<Folder title="Tilt Shift" expanded={false}>
-			<Checkbox value={ext.state.tiltShift.enabled} label="Enabled" />
+			<Checkbox
+				value={ext.state.tiltShift.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleTiltShift()}
+			/>
 			{#if ext.state.tiltShift.enabled}
-				<Slider value={ext.state.tiltShift.offset} label="Offset" min={-1} max={1} step={0.01} />
+				<Slider
+					value={ext.state.tiltShift.offset}
+					label="Offset"
+					min={-1}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setTiltShiftOffset(e.detail.value)}
+				/>
 				<Slider
 					value={ext.state.tiltShift.rotation}
 					label="Rotation"
 					min={-3.14}
 					max={3.14}
 					step={0.01}
+					on:change={(e) => {
+						ext.state.tiltShift.rotation = e.detail.value;
+					}}
 				/>
 				<Slider
 					value={ext.state.tiltShift.focusArea}
@@ -713,12 +1607,27 @@
 					min={0}
 					max={1}
 					step={0.01}
+					on:change={(e) => ext.setTiltShiftFocusArea(e.detail.value)}
 				/>
-				<Slider value={ext.state.tiltShift.feather} label="Feather" min={0} max={1} step={0.01} />
+				<Slider
+					value={ext.state.tiltShift.feather}
+					label="Feather"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setTiltShiftFeather(e.detail.value)}
+				/>
 				<List
 					value={ext.state.tiltShift.kernelSize}
 					label="Kernel Size"
 					options={kernelSizeOptions}
+					on:change={(e) => ext.setTiltShiftKernelSize(e.detail)}
+				/>
+				<List
+					value={ext.state.tiltShift.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setTiltShiftBlendFunction(e.detail)}
 				/>
 				<Button
 					title="Reset"
@@ -728,13 +1637,18 @@
 						ext.state.tiltShift.focusArea = 0.4;
 						ext.state.tiltShift.feather = 0.3;
 						ext.state.tiltShift.kernelSize = 3 as KernelSize;
+						ext.state.tiltShift.blendFunction = 0 as BlendFunction;
 					}}
 				/>
 			{/if}
 		</Folder>
 
 		<Folder title="Lens Distortion" expanded={false}>
-			<Checkbox value={ext.state.lensDistortion.enabled} label="Enabled" />
+			<Checkbox
+				value={ext.state.lensDistortion.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleLensDistortion()}
+			/>
 			{#if ext.state.lensDistortion.enabled}
 				<Slider
 					value={ext.state.lensDistortion.distortionX}
@@ -742,6 +1656,7 @@
 					min={-1}
 					max={1}
 					step={0.01}
+					on:change={(e) => ext.setLensDistortionX(e.detail.value)}
 				/>
 				<Slider
 					value={ext.state.lensDistortion.distortionY}
@@ -749,6 +1664,7 @@
 					min={-1}
 					max={1}
 					step={0.01}
+					on:change={(e) => ext.setLensDistortionY(e.detail.value)}
 				/>
 				<Slider
 					value={ext.state.lensDistortion.principalX}
@@ -756,6 +1672,7 @@
 					min={-1}
 					max={1}
 					step={0.01}
+					on:change={(e) => ext.setLensPrincipalX(e.detail.value)}
 				/>
 				<Slider
 					value={ext.state.lensDistortion.principalY}
@@ -763,8 +1680,32 @@
 					min={-1}
 					max={1}
 					step={0.01}
+					on:change={(e) => ext.setLensPrincipalY(e.detail.value)}
 				/>
-				<Slider value={ext.state.lensDistortion.skew} label="Skew" min={0} max={1} step={0.01} />
+				<Slider
+					value={ext.state.lensDistortion.focalLengthX}
+					label="Focal Length X"
+					min={0.1}
+					max={5}
+					step={0.01}
+					on:change={(e) => ext.setLensFocalLengthX(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.lensDistortion.focalLengthY}
+					label="Focal Length Y"
+					min={0.1}
+					max={5}
+					step={0.01}
+					on:change={(e) => ext.setLensFocalLengthY(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.lensDistortion.skew}
+					label="Skew"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setLensSkew(e.detail.value)}
+				/>
 				<Button
 					title="Reset"
 					on:click={() => {
@@ -775,6 +1716,329 @@
 						ext.state.lensDistortion.focalLengthX = 1.0;
 						ext.state.lensDistortion.focalLengthY = 1.0;
 						ext.state.lensDistortion.skew = 0.0;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Color Depth" expanded={false}>
+			<Checkbox
+				value={ext.state.colorDepth.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleColorDepth()}
+			/>
+			{#if ext.state.colorDepth.enabled}
+				<Slider
+					value={ext.state.colorDepth.bits}
+					label="Bits"
+					min={1}
+					max={32}
+					step={1}
+					on:change={(e) => ext.setColorDepthBits(e.detail.value)}
+				/>
+				<List
+					value={ext.state.colorDepth.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setColorDepthBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.colorDepth.bits = 16;
+						ext.state.colorDepth.blendFunction = 0 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Depth of Field" expanded={false}>
+			<Checkbox
+				value={ext.state.depthOfField.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleDepthOfField()}
+			/>
+			{#if ext.state.depthOfField.enabled}
+				<Slider
+					value={ext.state.depthOfField.focusDistance}
+					label="Focus Distance"
+					min={0.1}
+					max={100}
+					step={0.1}
+					on:change={(e) => ext.setDepthOfFieldFocusDistance(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.depthOfField.focusRange}
+					label="Focus Range"
+					min={0.1}
+					max={50}
+					step={0.1}
+					on:change={(e) => ext.setDepthOfFieldFocusRange(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.depthOfField.bokehScale}
+					label="Bokeh Scale"
+					min={0.1}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setDepthOfFieldBokehScale(e.detail.value)}
+				/>
+				<List
+					value={ext.state.depthOfField.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setDepthOfFieldBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.depthOfField.focusDistance = 3.0;
+						ext.state.depthOfField.focusRange = 2.0;
+						ext.state.depthOfField.bokehScale = 1.0;
+						ext.state.depthOfField.blendFunction = 0 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="God Rays" expanded={false}>
+			<Checkbox
+				value={ext.state.godRays.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleGodRays()}
+			/>
+			{#if ext.state.godRays.enabled}
+				<Slider
+					value={ext.state.godRays.samples}
+					label="Samples"
+					min={1}
+					max={120}
+					step={1}
+					on:change={(e) => ext.setGodRaysSamples(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.godRays.density}
+					label="Density"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setGodRaysDensity(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.godRays.decay}
+					label="Decay"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setGodRaysDecay(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.godRays.weight}
+					label="Weight"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setGodRaysWeight(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.godRays.exposure}
+					label="Exposure"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setGodRaysExposure(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.godRays.clampMax}
+					label="Clamp Max"
+					min={0.1}
+					max={5}
+					step={0.01}
+					on:change={(e) => ext.setGodRaysClampMax(e.detail.value)}
+				/>
+				<Checkbox value={ext.state.godRays.blur} label="Blur" />
+				<List
+					value={ext.state.godRays.kernelSize}
+					label="Kernel Size"
+					options={kernelSizeOptions}
+					on:change={(e) => ext.setGodRaysKernelSize(e.detail)}
+				/>
+				<List
+					value={ext.state.godRays.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setGodRaysBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.godRays.samples = 60;
+						ext.state.godRays.density = 0.96;
+						ext.state.godRays.decay = 0.9;
+						ext.state.godRays.weight = 0.4;
+						ext.state.godRays.exposure = 0.6;
+						ext.state.godRays.clampMax = 1.0;
+						ext.state.godRays.blur = true;
+						ext.state.godRays.kernelSize = 2 as KernelSize;
+						ext.state.godRays.blendFunction = 28 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="SSAO" expanded={false}>
+			<Checkbox value={ext.state.ssao.enabled} label="Enabled" on:change={() => ext.toggleSSAO()} />
+			{#if ext.state.ssao.enabled}
+				<Slider
+					value={ext.state.ssao.samples}
+					label="Samples"
+					min={1}
+					max={32}
+					step={1}
+					on:change={(e) => ext.setSSAOSamples(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.rings}
+					label="Rings"
+					min={1}
+					max={16}
+					step={1}
+					on:change={(e) => ext.setSSAORings(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.radius}
+					label="Radius"
+					min={0}
+					max={1}
+					step={0.001}
+					on:change={(e) => ext.setSSAORadius(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.intensity}
+					label="Intensity"
+					min={0}
+					max={5}
+					step={0.1}
+					on:change={(e) => ext.setSSAOIntensity(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.bias}
+					label="Bias"
+					min={0}
+					max={0.1}
+					step={0.001}
+					on:change={(e) => ext.setSSAOBias(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.fade}
+					label="Fade"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setSSAOFade(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.luminanceInfluence}
+					label="Luminance Influence"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setSSAOLuminanceInfluence(e.detail.value)}
+				/>
+				<List
+					value={ext.state.ssao.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setSSAOBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.ssao.samples = 9;
+						ext.state.ssao.rings = 7;
+						ext.state.ssao.radius = 0.1825;
+						ext.state.ssao.intensity = 1.0;
+						ext.state.ssao.bias = 0.025;
+						ext.state.ssao.fade = 0.01;
+						ext.state.ssao.luminanceInfluence = 0.7;
+						ext.state.ssao.blendFunction = 7 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Outline" expanded={false}>
+			<Checkbox
+				value={ext.state.outline.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleOutline()}
+			/>
+			{#if ext.state.outline.enabled}
+				<Slider
+					value={ext.state.outline.edgeStrength}
+					label="Edge Strength"
+					min={0}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setOutlineEdgeStrength(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.outline.pulseSpeed}
+					label="Pulse Speed"
+					min={0}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setOutlinePulseSpeed(e.detail.value)}
+				/>
+				<Checkbox value={ext.state.outline.xRay} label="X-Ray" />
+				<Checkbox value={ext.state.outline.blur} label="Blur" />
+				<List
+					value={ext.state.outline.kernelSize}
+					label="Kernel Size"
+					options={kernelSizeOptions}
+					on:change={(e) => ext.setOutlineKernelSize(e.detail)}
+				/>
+				<List
+					value={ext.state.outline.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setOutlineBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.outline.edgeStrength = 1.0;
+						ext.state.outline.visibleEdgeColor = 0xffffff;
+						ext.state.outline.hiddenEdgeColor = 0x22090a;
+						ext.state.outline.pulseSpeed = 0.0;
+						ext.state.outline.xRay = true;
+						ext.state.outline.blur = false;
+						ext.state.outline.kernelSize = 1 as KernelSize;
+						ext.state.outline.blendFunction = 22 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Depth Effect" expanded={false}>
+			<Checkbox
+				value={ext.state.depthEffect.enabled}
+				label="Enabled"
+				on:change={() => ext.toggleDepthEffect()}
+			/>
+			{#if ext.state.depthEffect.enabled}
+				<Checkbox value={ext.state.depthEffect.inverted} label="Inverted" />
+				<List
+					value={ext.state.depthEffect.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setDepthEffectBlendFunction(e.detail)}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						ext.state.depthEffect.inverted = false;
+						ext.state.depthEffect.blendFunction = 0 as BlendFunction;
 					}}
 				/>
 			{/if}
