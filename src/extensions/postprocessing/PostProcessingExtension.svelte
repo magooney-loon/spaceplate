@@ -185,11 +185,14 @@
 			},
 			shockWave: {
 				enabled: false,
-				speed: 2.0,
-				maxStrength: 1.0,
-				distortion: 0.5,
-				size: 0.5,
-				amplitude: 0.05
+				speed: 1.25,
+				maxRadius: 0.5,
+				waveSize: 0.2,
+				amplitude: 0.05,
+				epicenterX: 0,
+				epicenterY: 0,
+				epicenterZ: 0,
+				triggered: false
 			},
 			ascii: {
 				enabled: false,
@@ -460,17 +463,23 @@
 			setShockWaveSpeed: ({ state }, v) => {
 				state.shockWave.speed = v;
 			},
-			setShockWaveMaxStrength: ({ state }, v) => {
-				state.shockWave.maxStrength = v;
+			setShockWaveMaxRadius: ({ state }, v) => {
+				state.shockWave.maxRadius = v;
 			},
-			setShockWaveDistortion: ({ state }, v) => {
-				state.shockWave.distortion = v;
-			},
-			setShockWaveSize: ({ state }, v) => {
-				state.shockWave.size = v;
+			setShockWaveWaveSize: ({ state }, v) => {
+				state.shockWave.waveSize = v;
 			},
 			setShockWaveAmplitude: ({ state }, v) => {
 				state.shockWave.amplitude = v;
+			},
+			setShockWaveEpicenter: ({ state }, x, y, z) => {
+				state.shockWave.epicenterX = x;
+				state.shockWave.epicenterY = y;
+				state.shockWave.epicenterZ = z;
+			},
+			triggerShockWave: ({ state }) => {
+				// This will be handled by the renderer
+				state.shockWave.triggered = true;
 			},
 			toggleASCII: ({ state }) => {
 				state.ascii.enabled = !state.ascii.enabled;
@@ -726,11 +735,13 @@
 				state.scanline.opacity = 0.5;
 				state.scanline.scrollSpeed = 0;
 				state.scanline.blendFunction = 25 as BlendFunction;
-				state.shockWave.speed = 2.0;
-				state.shockWave.maxStrength = 1.0;
-				state.shockWave.distortion = 0.5;
-				state.shockWave.size = 0.5;
+				state.shockWave.speed = 1.25;
+				state.shockWave.maxRadius = 0.5;
+				state.shockWave.waveSize = 0.2;
 				state.shockWave.amplitude = 0.05;
+				state.shockWave.epicenterX = 0;
+				state.shockWave.epicenterY = 0;
+				state.shockWave.epicenterZ = 0;
 				state.ascii.cellSize = 16;
 				state.ascii.inverted = false;
 				state.toneMapping.mode = 11 as ToneMappingMode;
@@ -1381,50 +1392,42 @@
 				<Slider
 					value={ext.state.shockWave.speed}
 					label="Speed"
-					min={0.1}
+					min={0}
 					max={10}
-					step={0.1}
+					step={0.01}
 					on:change={(e) => ext.setShockWaveSpeed(e.detail.value)}
 				/>
 				<Slider
-					value={ext.state.shockWave.maxStrength}
-					label="Max Strength"
-					min={0.1}
-					max={5}
-					step={0.1}
-					on:change={(e) => ext.setShockWaveMaxStrength(e.detail.value)}
-				/>
-				<Slider
-					value={ext.state.shockWave.distortion}
-					label="Distortion"
+					value={ext.state.shockWave.maxRadius}
+					label="Max Radius"
 					min={0}
-					max={1}
+					max={10}
 					step={0.01}
-					on:change={(e) => ext.setShockWaveDistortion(e.detail.value)}
+					on:change={(e) => ext.setShockWaveMaxRadius(e.detail.value)}
 				/>
 				<Slider
-					value={ext.state.shockWave.size}
-					label="Size"
-					min={0.1}
+					value={ext.state.shockWave.waveSize}
+					label="Wave Size"
+					min={0}
 					max={2}
 					step={0.01}
-					on:change={(e) => ext.setShockWaveSize(e.detail.value)}
+					on:change={(e) => ext.setShockWaveWaveSize(e.detail.value)}
 				/>
 				<Slider
 					value={ext.state.shockWave.amplitude}
 					label="Amplitude"
 					min={0}
-					max={0.5}
-					step={0.01}
+					max={0.25}
+					step={0.001}
 					on:change={(e) => ext.setShockWaveAmplitude(e.detail.value)}
 				/>
+				<Button title="Explode!" on:click={() => ext.triggerShockWave()} />
 				<Button
 					title="Reset"
 					on:click={() => {
-						ext.state.shockWave.speed = 2.0;
-						ext.state.shockWave.maxStrength = 1.0;
-						ext.state.shockWave.distortion = 0.5;
-						ext.state.shockWave.size = 0.5;
+						ext.state.shockWave.speed = 1.25;
+						ext.state.shockWave.maxRadius = 0.5;
+						ext.state.shockWave.waveSize = 0.2;
 						ext.state.shockWave.amplitude = 0.05;
 					}}
 				/>

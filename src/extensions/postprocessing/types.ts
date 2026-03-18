@@ -116,10 +116,13 @@ export type ScanlineState = {
 export type ShockWaveState = {
 	enabled: boolean;
 	speed: number;
-	maxStrength: number;
-	distortion: number;
-	size: number;
+	maxRadius: number;
+	waveSize: number;
 	amplitude: number;
+	epicenterX: number;
+	epicenterY: number;
+	epicenterZ: number;
+	triggered: boolean;
 	[key: string]: unknown;
 };
 
@@ -324,10 +327,11 @@ export type ExtensionActions = {
 	setScanlineBlendFunction: (value: BlendFunction) => void;
 	toggleShockWave: () => void;
 	setShockWaveSpeed: (value: number) => void;
-	setShockWaveMaxStrength: (value: number) => void;
-	setShockWaveDistortion: (value: number) => void;
-	setShockWaveSize: (value: number) => void;
+	setShockWaveMaxRadius: (value: number) => void;
+	setShockWaveWaveSize: (value: number) => void;
 	setShockWaveAmplitude: (value: number) => void;
+	setShockWaveEpicenter: (x: number, y: number, z: number) => void;
+	triggerShockWave: () => void;
 	toggleASCII: () => void;
 	setASCIICellSize: (value: number) => void;
 	setASCIIInverted: (value: boolean) => void;
