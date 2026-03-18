@@ -27,7 +27,9 @@
 			"$root": ["./src"],
 			"$root/*": ["./src/*"],
 			"$core": ["./src/core"],
-			"$core/*": ["./src/core/*"]
+			"$core/*": ["./src/core/*"],
+			"$extensions": ["./src/extensions"],
+			"$extensions/*": ["./src/extensions/*"]
 		}
 	},
 	"include": ["src", "vite.config.ts"]

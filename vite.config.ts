@@ -16,12 +16,16 @@ export default defineConfig({
 			gzipSize: true
 		})
 	],
+	ssr: {
+		noExternal: ['camera-controls']
+	},
 	resolve: {
 		alias: {
 			$lib: path.resolve(__dirname, './src/lib'),
 			$root: path.resolve(__dirname, './src'),
 			$bindings: path.resolve(__dirname, './src/module_bindings'),
-			$core: path.resolve(__dirname, './src/core')
+			$core: path.resolve(__dirname, './src/core'),
+			$extensions: path.resolve(__dirname, './src/extensions')
 		}
 	}
 });

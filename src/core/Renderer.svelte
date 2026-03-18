@@ -29,7 +29,9 @@
 		LensDistortionEffect
 	} from 'postprocessing';
 	import { settingsState, log } from '$core/settings.svelte.js';
-	import { postProcessingState } from '$core/postprocessing.svelte.js';
+	import { usePostProcessing } from '$extensions/postprocessing/usePostProcessing';
+
+	const { state: postProcessingState } = usePostProcessing();
 
 	const { scene, renderer, camera, size, autoRender, renderStage } = useThrelte();
 

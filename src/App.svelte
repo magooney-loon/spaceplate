@@ -48,8 +48,8 @@
 		{#await import('@threlte/extras') then { PerfMonitor }}
 			<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} />
 		{/await}
-		{#await Promise.all( [import('@threlte/studio'), import('./extensions/StageExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte')] ) then [{ Studio }, { default: StageExtension }, { default: PostProcessingExtension }]}
-			<Studio extensions={[StageExtension, PostProcessingExtension]}>
+		{#await Promise.all( [import('@threlte/studio'), import('./extensions/StageExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/camera/CameraControlsExtension.svelte')] ) then [{ Studio }, { default: StageExtension }, { default: PostProcessingExtension }, { default: CameraControlsExtension }]}
+			<Studio extensions={[StageExtension, PostProcessingExtension, CameraControlsExtension]}>
 				<Camera />
 				<Sound />
 				<Skybox />
