@@ -2,9 +2,62 @@
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
 	import { Folder, Slider, Checkbox, List, Button, Separator } from 'svelte-tweakpane-ui';
 	import type { KernelSize, BlendFunction, ToneMappingMode } from 'postprocessing';
+	import {
+		// Bloom
+		defaultBloomState,
+		// SMAA
+		defaultSMAAState,
+		// FXAA
+		defaultFXAAState,
+		// Vignette
+		defaultVignetteState,
+		// Pixelation
+		defaultPixelationState,
+		// Glitch
+		defaultGlitchState,
+		// Noise
+		defaultNoiseState,
+		// Chromatic Aberration
+		defaultChromaticAberrationState,
+		// Brightness Contrast
+		defaultBrightnessContrastState,
+		// Hue Saturation
+		defaultHueSaturationState,
+		// Sepia
+		defaultSepiaState,
+		// Dot Screen
+		defaultDotScreenState,
+		// Scanline
+		defaultScanlineState,
+		// Shock Wave
+		defaultShockWaveState,
+		// ASCII
+		defaultASCIIState,
+		// Tone Mapping
+		defaultToneMappingState,
+		// Grid
+		defaultGridState,
+		// Tilt Shift
+		defaultTiltShiftState,
+		// Lens Distortion
+		defaultLensDistortionState,
+		// Color Depth
+		defaultColorDepthState,
+		// Depth of Field
+		defaultDepthOfFieldState,
+		// God Rays
+		defaultGodRaysState,
+		// SSAO
+		defaultSSAOState,
+		// Outline
+		defaultOutlineState,
+		// Depth Effect
+		defaultDepthEffectState
+	} from './effects';
 
 	const { createExtension } = useStudio();
 
+	// Option dropdowns
 	const kernelSizeOptions = [
 		{ value: 0 as KernelSize, text: 'Very Small' },
 		{ value: 1 as KernelSize, text: 'Small' },
@@ -98,891 +151,570 @@
 	const ext = createExtension({
 		scope: 'postprocessing',
 		state: () => ({
-			bloom: {
-				enabled: false,
-				intensity: 1.0,
-				luminanceThreshold: 1.0,
-				luminanceSmoothing: 0.03,
-				kernelSize: 4 as KernelSize,
-				blendFunction: 28 as BlendFunction,
-				mipmapBlur: true,
-				radius: 0.85,
-				levels: 8
-			},
-			smaa: {
-				enabled: false,
-				preset: 2,
-				edgeDetectionMode: 2,
-				predicationMode: 0
-			},
-			fxaa: {
-				enabled: false,
-				minEdgeThreshold: 0.05,
-				maxEdgeThreshold: 0.12,
-				subpixelQuality: 0.75
-			},
-			vignette: {
-				enabled: false,
-				offset: 0.5,
-				darkness: 0.5,
-				technique: 0
-			},
-			pixelation: {
-				enabled: false,
-				granularity: 30.0
-			},
-			glitch: {
-				enabled: false,
-				delay: 2.5,
-				duration: 0.8,
-				strength: 0.65,
-				ratio: 0.85,
-				columns: 0.05,
-				mode: 1
-			},
-			noise: {
-				enabled: false,
-				premultiply: false,
-				blendFunction: 28 as BlendFunction
-			},
-			chromaticAberration: {
-				enabled: false,
-				radialModulation: false,
-				modulationOffset: 0.15,
-				offsetX: 0.01,
-				offsetY: 0.01,
-				blendFunction: 0 as BlendFunction
-			},
-			brightnessContrast: {
-				enabled: false,
-				brightness: 0,
-				contrast: 0,
-				blendFunction: 0 as BlendFunction
-			},
-			hueSaturation: {
-				enabled: false,
-				hue: 0,
-				saturation: 0,
-				blendFunction: 0 as BlendFunction
-			},
-			sepia: {
-				enabled: false,
-				intensity: 1.0,
-				blendFunction: 0 as BlendFunction
-			},
-			dotScreen: {
-				enabled: false,
-				angle: 1.57,
-				scale: 1.0,
-				blendFunction: 0 as BlendFunction
-			},
-			scanline: {
-				enabled: false,
-				density: 1.25,
-				opacity: 0.5,
-				scrollSpeed: 0,
-				blendFunction: 25 as BlendFunction
-			},
-			shockWave: {
-				enabled: false,
-				speed: 1.25,
-				maxRadius: 0.5,
-				waveSize: 0.2,
-				amplitude: 0.05,
-				epicenterX: 0,
-				epicenterY: 0,
-				epicenterZ: 0,
-				triggered: false
-			},
-			ascii: {
-				enabled: false,
-				cellSize: 16,
-				inverted: false
-			},
-			toneMapping: {
-				enabled: false,
-				mode: 11 as ToneMappingMode,
-				whitePoint: 4.0,
-				middleGrey: 0.6,
-				blendFunction: 0 as BlendFunction,
-				resolution: 256,
-				minLuminance: 0.01,
-				averageLuminance: 1.0,
-				adaptationRate: 1.0
-			},
-			grid: {
-				enabled: false,
-				scale: 1.0,
-				lineWidth: 0.0,
-				blendFunction: 25 as BlendFunction
-			},
-			tiltShift: {
-				enabled: false,
-				offset: 0.0,
-				rotation: 0.0,
-				focusArea: 0.4,
-				feather: 0.3,
-				kernelSize: 3 as KernelSize,
-				blendFunction: 0 as BlendFunction
-			},
-			lensDistortion: {
-				enabled: false,
-				distortionX: 0.0,
-				distortionY: 0.0,
-				principalX: 0.0,
-				principalY: 0.0,
-				focalLengthX: 1.0,
-				focalLengthY: 1.0,
-				skew: 0.0
-			},
-			colorDepth: {
-				enabled: false,
-				bits: 16,
-				blendFunction: 0 as BlendFunction
-			},
-			depthOfField: {
-				enabled: false,
-				focusDistance: 3.0,
-				focusRange: 2.0,
-				bokehScale: 1.0,
-				blendFunction: 0 as BlendFunction
-			},
-			godRays: {
-				enabled: false,
-				samples: 60,
-				density: 0.96,
-				decay: 0.9,
-				weight: 0.4,
-				exposure: 0.6,
-				clampMax: 1.0,
-				blur: true,
-				kernelSize: 1 as KernelSize,
-				blendFunction: 28 as BlendFunction,
-				sunX: 0,
-				sunY: 5,
-				sunZ: 0,
-				sunColor: 0xffddaa
-			},
-			ssao: {
-				enabled: false,
-				samples: 9,
-				rings: 7,
-				radius: 0.1825,
-				intensity: 1.0,
-				bias: 0.025,
-				fade: 0.01,
-				luminanceInfluence: 0.7,
-				blendFunction: 7 as BlendFunction
-			},
-			outline: {
-				enabled: false,
-				edgeStrength: 1.0,
-				visibleEdgeColor: 0xffffff,
-				hiddenEdgeColor: 0x22090a,
-				pulseSpeed: 0.0,
-				xRay: true,
-				blur: false,
-				kernelSize: 1 as KernelSize,
-				blendFunction: 22 as BlendFunction
-			},
-			depthEffect: {
-				enabled: false,
-				inverted: false,
-				blendFunction: 0 as BlendFunction
-			}
+			bloom: structuredClone(defaultBloomState),
+			smaa: structuredClone(defaultSMAAState),
+			fxaa: structuredClone(defaultFXAAState),
+			vignette: structuredClone(defaultVignetteState),
+			pixelation: structuredClone(defaultPixelationState),
+			glitch: structuredClone(defaultGlitchState),
+			noise: structuredClone(defaultNoiseState),
+			chromaticAberration: structuredClone(defaultChromaticAberrationState),
+			brightnessContrast: structuredClone(defaultBrightnessContrastState),
+			hueSaturation: structuredClone(defaultHueSaturationState),
+			sepia: structuredClone(defaultSepiaState),
+			dotScreen: structuredClone(defaultDotScreenState),
+			scanline: structuredClone(defaultScanlineState),
+			shockWave: structuredClone(defaultShockWaveState),
+			ascii: structuredClone(defaultASCIIState),
+			toneMapping: structuredClone(defaultToneMappingState),
+			grid: structuredClone(defaultGridState),
+			tiltShift: structuredClone(defaultTiltShiftState),
+			lensDistortion: structuredClone(defaultLensDistortionState),
+			colorDepth: structuredClone(defaultColorDepthState),
+			depthOfField: structuredClone(defaultDepthOfFieldState),
+			godRays: structuredClone(defaultGodRaysState),
+			ssao: structuredClone(defaultSSAOState),
+			outline: structuredClone(defaultOutlineState),
+			depthEffect: structuredClone(defaultDepthEffectState)
 		}),
 		actions: {
+			// Bloom actions
 			toggleBloom: ({ state }) => {
 				state.bloom.enabled = !state.bloom.enabled;
 			},
-			setBloomIntensity: ({ state }, v) => {
-				state.bloom.intensity = v;
+			setBloomIntensity: ({ state }, value: number) => {
+				state.bloom.intensity = value;
 			},
-			setBloomThreshold: ({ state }, v) => {
-				state.bloom.luminanceThreshold = v;
+			setBloomThreshold: ({ state }, value: number) => {
+				state.bloom.luminanceThreshold = value;
 			},
-			setBloomSmoothing: ({ state }, v) => {
-				state.bloom.luminanceSmoothing = v;
+			setBloomSmoothing: ({ state }, value: number) => {
+				state.bloom.luminanceSmoothing = value;
 			},
-			setBloomKernelSize: ({ state }, v) => {
-				state.bloom.kernelSize = v;
+			setBloomKernelSize: ({ state }, value: KernelSize) => {
+				state.bloom.kernelSize = value;
 			},
-			setBloomBlendFunction: ({ state }, v) => {
-				state.bloom.blendFunction = v;
+			setBloomBlendFunction: ({ state }, value: BlendFunction) => {
+				state.bloom.blendFunction = value;
 			},
-			setBloomMipmapBlur: ({ state }, v) => {
-				state.bloom.mipmapBlur = v;
+			setBloomMipmapBlur: ({ state }, value: boolean) => {
+				state.bloom.mipmapBlur = value;
 			},
-			setBloomRadius: ({ state }, v) => {
-				state.bloom.radius = v;
+			setBloomRadius: ({ state }, value: number) => {
+				state.bloom.radius = value;
 			},
-			setBloomLevels: ({ state }, v) => {
-				state.bloom.levels = v;
+			setBloomLevels: ({ state }, value: number) => {
+				state.bloom.levels = value;
 			},
+			resetBloom: ({ state }) => {
+				state.bloom = structuredClone(defaultBloomState);
+			},
+			// SMAA actions
 			toggleSMAA: ({ state }) => {
 				state.smaa.enabled = !state.smaa.enabled;
 			},
-			setSMAAPreset: ({ state }, v) => {
-				state.smaa.preset = v;
+			setSMAAPreset: ({ state }, value: 0 | 1 | 2 | 3) => {
+				state.smaa.preset = value;
 			},
-			setSMAEEdgeDetectionMode: ({ state }, v) => {
-				state.smaa.edgeDetectionMode = v;
+			setSMAEEdgeDetectionMode: ({ state }, value: 0 | 1 | 2) => {
+				state.smaa.edgeDetectionMode = value;
 			},
-			setSMAAPredicationMode: ({ state }, v) => {
-				state.smaa.predicationMode = v;
+			setSMAAPredicationMode: ({ state }, value: 0 | 1 | 2) => {
+				state.smaa.predicationMode = value;
 			},
+			resetSMAA: ({ state }) => {
+				state.smaa = structuredClone(defaultSMAAState);
+			},
+			// FXAA actions
 			toggleFXAA: ({ state }) => {
 				state.fxaa.enabled = !state.fxaa.enabled;
 			},
-			setFXAAEdgeThreshold: ({ state }, min, max, quality) => {
+			setFXAAEdgeThreshold: ({ state }, min: number, max: number, quality: number) => {
 				state.fxaa.minEdgeThreshold = min;
 				state.fxaa.maxEdgeThreshold = max;
 				state.fxaa.subpixelQuality = quality;
 			},
+			resetFXAA: ({ state }) => {
+				state.fxaa = structuredClone(defaultFXAAState);
+			},
+			// Vignette actions
 			toggleVignette: ({ state }) => {
 				state.vignette.enabled = !state.vignette.enabled;
 			},
-			setVignetteOffset: ({ state }, v) => {
-				state.vignette.offset = v;
+			setVignetteOffset: ({ state }, value: number) => {
+				state.vignette.offset = value;
 			},
-			setVignetteDarkness: ({ state }, v) => {
-				state.vignette.darkness = v;
+			setVignetteDarkness: ({ state }, value: number) => {
+				state.vignette.darkness = value;
 			},
-			setVignetteTechnique: ({ state }, v) => {
-				state.vignette.technique = v;
+			setVignetteTechnique: ({ state }, value: 0 | 1) => {
+				state.vignette.technique = value;
 			},
+			resetVignette: ({ state }) => {
+				state.vignette = structuredClone(defaultVignetteState);
+			},
+			// Pixelation actions
 			togglePixelation: ({ state }) => {
 				state.pixelation.enabled = !state.pixelation.enabled;
 			},
-			setPixelationGranularity: ({ state }, v) => {
-				state.pixelation.granularity = v;
+			setPixelationGranularity: ({ state }, value: number) => {
+				state.pixelation.granularity = value;
 			},
+			resetPixelation: ({ state }) => {
+				state.pixelation = structuredClone(defaultPixelationState);
+			},
+			// Glitch actions
 			toggleGlitch: ({ state }) => {
 				state.glitch.enabled = !state.glitch.enabled;
 			},
-			setGlitchDelay: ({ state }, v) => {
-				state.glitch.delay = v;
+			setGlitchDelay: ({ state }, value: number) => {
+				state.glitch.delay = value;
 			},
-			setGlitchDuration: ({ state }, v) => {
-				state.glitch.duration = v;
+			setGlitchDuration: ({ state }, value: number) => {
+				state.glitch.duration = value;
 			},
-			setGlitchStrength: ({ state }, v) => {
-				state.glitch.strength = v;
+			setGlitchStrength: ({ state }, value: number) => {
+				state.glitch.strength = value;
 			},
-			setGlitchRatio: ({ state }, v) => {
-				state.glitch.ratio = v;
+			setGlitchRatio: ({ state }, value: number) => {
+				state.glitch.ratio = value;
 			},
-			setGlitchColumns: ({ state }, v) => {
-				state.glitch.columns = v;
+			setGlitchColumns: ({ state }, value: number) => {
+				state.glitch.columns = value;
 			},
-			setGlitchMode: ({ state }, v) => {
-				state.glitch.mode = v;
+			setGlitchMode: ({ state }, value: 0 | 1 | 2 | 3) => {
+				state.glitch.mode = value;
 			},
+			resetGlitch: ({ state }) => {
+				state.glitch = structuredClone(defaultGlitchState);
+			},
+			// Noise actions
 			toggleNoise: ({ state }) => {
 				state.noise.enabled = !state.noise.enabled;
 			},
+			setNoiseBlendFunction: ({ state }, value: BlendFunction) => {
+				state.noise.blendFunction = value;
+			},
+			resetNoise: ({ state }) => {
+				state.noise = structuredClone(defaultNoiseState);
+			},
+			// Chromatic Aberration actions
 			toggleChromaticAberration: ({ state }) => {
 				state.chromaticAberration.enabled = !state.chromaticAberration.enabled;
 			},
-			setChromaticAberrationOffset: ({ state }, v) => {
-				state.chromaticAberration.offsetX = v;
-				state.chromaticAberration.offsetY = v;
+			setChromaticAberrationOffsetX: ({ state }, value: number) => {
+				state.chromaticAberration.offsetX = value;
 			},
-			setChromaticAberrationOffsetX: ({ state }, v) => {
-				state.chromaticAberration.offsetX = v;
+			setChromaticAberrationOffsetY: ({ state }, value: number) => {
+				state.chromaticAberration.offsetY = value;
 			},
-			setChromaticAberrationOffsetY: ({ state }, v) => {
-				state.chromaticAberration.offsetY = v;
-			},
-			setChromaticAberrationModulation: ({ state }, radial, offset) => {
+			setChromaticAberrationModulation: ({ state }, radial: boolean, offset: number) => {
 				state.chromaticAberration.radialModulation = radial;
 				state.chromaticAberration.modulationOffset = offset;
 			},
-			setChromaticAberrationBlendFunction: ({ state }, v) => {
-				state.chromaticAberration.blendFunction = v;
+			setChromaticAberrationBlendFunction: ({ state }, value: BlendFunction) => {
+				state.chromaticAberration.blendFunction = value;
 			},
+			resetChromaticAberration: ({ state }) => {
+				state.chromaticAberration = structuredClone(defaultChromaticAberrationState);
+			},
+			// Brightness Contrast actions
 			toggleBrightnessContrast: ({ state }) => {
 				state.brightnessContrast.enabled = !state.brightnessContrast.enabled;
 			},
-			setBrightness: ({ state }, v) => {
-				state.brightnessContrast.brightness = v;
+			setBrightness: ({ state }, value: number) => {
+				state.brightnessContrast.brightness = value;
 			},
-			setContrast: ({ state }, v) => {
-				state.brightnessContrast.contrast = v;
+			setContrast: ({ state }, value: number) => {
+				state.brightnessContrast.contrast = value;
 			},
-			setBrightnessContrastBlendFunction: ({ state }, v) => {
-				state.brightnessContrast.blendFunction = v;
+			setBrightnessContrastBlendFunction: ({ state }, value: BlendFunction) => {
+				state.brightnessContrast.blendFunction = value;
 			},
+			resetBrightnessContrast: ({ state }) => {
+				state.brightnessContrast = structuredClone(defaultBrightnessContrastState);
+			},
+			// Hue Saturation actions
 			toggleHueSaturation: ({ state }) => {
 				state.hueSaturation.enabled = !state.hueSaturation.enabled;
 			},
-			setHue: ({ state }, v) => {
-				state.hueSaturation.hue = v;
+			setHue: ({ state }, value: number) => {
+				state.hueSaturation.hue = value;
 			},
-			setSaturation: ({ state }, v) => {
-				state.hueSaturation.saturation = v;
+			setSaturation: ({ state }, value: number) => {
+				state.hueSaturation.saturation = value;
 			},
-			setHueSaturationBlendFunction: ({ state }, v) => {
-				state.hueSaturation.blendFunction = v;
+			setHueSaturationBlendFunction: ({ state }, value: BlendFunction) => {
+				state.hueSaturation.blendFunction = value;
 			},
+			resetHueSaturation: ({ state }) => {
+				state.hueSaturation = structuredClone(defaultHueSaturationState);
+			},
+			// Sepia actions
 			toggleSepia: ({ state }) => {
 				state.sepia.enabled = !state.sepia.enabled;
 			},
-			setSepiaIntensity: ({ state }, v) => {
-				state.sepia.intensity = v;
+			setSepiaIntensity: ({ state }, value: number) => {
+				state.sepia.intensity = value;
 			},
-			setSepiaBlendFunction: ({ state }, v) => {
-				state.sepia.blendFunction = v;
+			setSepiaBlendFunction: ({ state }, value: BlendFunction) => {
+				state.sepia.blendFunction = value;
 			},
+			resetSepia: ({ state }) => {
+				state.sepia = structuredClone(defaultSepiaState);
+			},
+			// Dot Screen actions
 			toggleDotScreen: ({ state }) => {
 				state.dotScreen.enabled = !state.dotScreen.enabled;
 			},
-			setDotScreenAngle: ({ state }, v) => {
-				state.dotScreen.angle = v;
+			setDotScreenAngle: ({ state }, value: number) => {
+				state.dotScreen.angle = value;
 			},
-			setDotScreenScale: ({ state }, v) => {
-				state.dotScreen.scale = v;
+			setDotScreenScale: ({ state }, value: number) => {
+				state.dotScreen.scale = value;
 			},
-			setDotScreenBlendFunction: ({ state }, v) => {
-				state.dotScreen.blendFunction = v;
+			setDotScreenBlendFunction: ({ state }, value: BlendFunction) => {
+				state.dotScreen.blendFunction = value;
 			},
+			resetDotScreen: ({ state }) => {
+				state.dotScreen = structuredClone(defaultDotScreenState);
+			},
+			// Scanline actions
 			toggleScanline: ({ state }) => {
 				state.scanline.enabled = !state.scanline.enabled;
 			},
-			setScanlineDensity: ({ state }, v) => {
-				state.scanline.density = v;
+			setScanlineDensity: ({ state }, value: number) => {
+				state.scanline.density = value;
 			},
-			setScanlineOpacity: ({ state }, v) => {
-				state.scanline.opacity = v;
+			setScanlineOpacity: ({ state }, value: number) => {
+				state.scanline.opacity = value;
 			},
-			setScanlineScrollSpeed: ({ state }, v) => {
-				state.scanline.scrollSpeed = v;
+			setScanlineScrollSpeed: ({ state }, value: number) => {
+				state.scanline.scrollSpeed = value;
 			},
-			setScanlineBlendFunction: ({ state }, v) => {
-				state.scanline.blendFunction = v;
+			setScanlineBlendFunction: ({ state }, value: BlendFunction) => {
+				state.scanline.blendFunction = value;
 			},
+			resetScanline: ({ state }) => {
+				state.scanline = structuredClone(defaultScanlineState);
+			},
+			// Shock Wave actions
 			toggleShockWave: ({ state }) => {
 				state.shockWave.enabled = !state.shockWave.enabled;
 			},
-			setShockWaveSpeed: ({ state }, v) => {
-				state.shockWave.speed = v;
+			setShockWaveSpeed: ({ state }, value: number) => {
+				state.shockWave.speed = value;
 			},
-			setShockWaveMaxRadius: ({ state }, v) => {
-				state.shockWave.maxRadius = v;
+			setShockWaveMaxRadius: ({ state }, value: number) => {
+				state.shockWave.maxRadius = value;
 			},
-			setShockWaveWaveSize: ({ state }, v) => {
-				state.shockWave.waveSize = v;
+			setShockWaveWaveSize: ({ state }, value: number) => {
+				state.shockWave.waveSize = value;
 			},
-			setShockWaveAmplitude: ({ state }, v) => {
-				state.shockWave.amplitude = v;
+			setShockWaveAmplitude: ({ state }, value: number) => {
+				state.shockWave.amplitude = value;
 			},
-			setShockWaveEpicenter: ({ state }, x, y, z) => {
+			setShockWaveEpicenter: ({ state }, x: number, y: number, z: number) => {
 				state.shockWave.epicenterX = x;
 				state.shockWave.epicenterY = y;
 				state.shockWave.epicenterZ = z;
 			},
 			triggerShockWave: ({ state }) => {
-				// This will be handled by the renderer
 				state.shockWave.triggered = true;
 			},
+			resetShockWave: ({ state }) => {
+				state.shockWave = structuredClone(defaultShockWaveState);
+			},
+			// ASCII actions
 			toggleASCII: ({ state }) => {
 				state.ascii.enabled = !state.ascii.enabled;
 			},
-			setASCIICellSize: ({ state }, v) => {
-				state.ascii.cellSize = v;
+			setASCIICellSize: ({ state }, value: number) => {
+				state.ascii.cellSize = value;
 			},
-			setASCIIInverted: ({ state }, v) => {
-				state.ascii.inverted = v;
+			setASCIIInverted: ({ state }, value: boolean) => {
+				state.ascii.inverted = value;
 			},
+			resetASCII: ({ state }) => {
+				state.ascii = structuredClone(defaultASCIIState);
+			},
+			// Tone Mapping actions
 			toggleToneMapping: ({ state }) => {
 				state.toneMapping.enabled = !state.toneMapping.enabled;
 			},
-			setToneMappingMode: ({ state }, v) => {
-				state.toneMapping.mode = v;
+			setToneMappingMode: ({ state }, value: ToneMappingMode) => {
+				state.toneMapping.mode = value;
 			},
-			setToneMappingWhitePoint: ({ state }, v) => {
-				state.toneMapping.whitePoint = v;
+			setToneMappingWhitePoint: ({ state }, value: number) => {
+				state.toneMapping.whitePoint = value;
 			},
-			setToneMappingMiddleGrey: ({ state }, v) => {
-				state.toneMapping.middleGrey = v;
+			setToneMappingMiddleGrey: ({ state }, value: number) => {
+				state.toneMapping.middleGrey = value;
 			},
-			setToneMappingResolution: ({ state }, v) => {
-				state.toneMapping.resolution = v;
+			setToneMappingResolution: ({ state }, value: number) => {
+				state.toneMapping.resolution = value;
 			},
-			setToneMappingMinLuminance: ({ state }, v) => {
-				state.toneMapping.minLuminance = v;
+			setToneMappingMinLuminance: ({ state }, value: number) => {
+				state.toneMapping.minLuminance = value;
 			},
-			setToneMappingAverageLuminance: ({ state }, v) => {
-				state.toneMapping.averageLuminance = v;
+			setToneMappingAverageLuminance: ({ state }, value: number) => {
+				state.toneMapping.averageLuminance = value;
 			},
-			setToneMappingAdaptationRate: ({ state }, v) => {
-				state.toneMapping.adaptationRate = v;
+			setToneMappingAdaptationRate: ({ state }, value: number) => {
+				state.toneMapping.adaptationRate = value;
 			},
-			setToneMappingBlendFunction: ({ state }, v) => {
-				state.toneMapping.blendFunction = v;
+			setToneMappingBlendFunction: ({ state }, value: BlendFunction) => {
+				state.toneMapping.blendFunction = value;
 			},
+			resetToneMapping: ({ state }) => {
+				state.toneMapping = structuredClone(defaultToneMappingState);
+			},
+			// Grid actions
 			toggleGrid: ({ state }) => {
 				state.grid.enabled = !state.grid.enabled;
 			},
-			setGridScale: ({ state }, v) => {
-				state.grid.scale = v;
+			setGridScale: ({ state }, value: number) => {
+				state.grid.scale = value;
 			},
-			setGridLineWidth: ({ state }, v) => {
-				state.grid.lineWidth = v;
+			setGridLineWidth: ({ state }, value: number) => {
+				state.grid.lineWidth = value;
 			},
-			setGridBlendFunction: ({ state }, v) => {
-				state.grid.blendFunction = v;
+			setGridBlendFunction: ({ state }, value: BlendFunction) => {
+				state.grid.blendFunction = value;
 			},
+			resetGrid: ({ state }) => {
+				state.grid = structuredClone(defaultGridState);
+			},
+			// Tilt Shift actions
 			toggleTiltShift: ({ state }) => {
 				state.tiltShift.enabled = !state.tiltShift.enabled;
 			},
-			setTiltShiftOffset: ({ state }, v) => {
-				state.tiltShift.offset = v;
+			setTiltShiftOffset: ({ state }, value: number) => {
+				state.tiltShift.offset = value;
 			},
-			setTiltShiftFocusArea: ({ state }, v) => {
-				state.tiltShift.focusArea = v;
+			setTiltShiftFocusArea: ({ state }, value: number) => {
+				state.tiltShift.focusArea = value;
 			},
-			setTiltShiftFeather: ({ state }, v) => {
-				state.tiltShift.feather = v;
+			setTiltShiftFeather: ({ state }, value: number) => {
+				state.tiltShift.feather = value;
 			},
-			setTiltShiftKernelSize: ({ state }, v) => {
-				state.tiltShift.kernelSize = v;
+			setTiltShiftKernelSize: ({ state }, value: KernelSize) => {
+				state.tiltShift.kernelSize = value;
 			},
-			setTiltShiftBlendFunction: ({ state }, v) => {
-				state.tiltShift.blendFunction = v;
+			setTiltShiftBlendFunction: ({ state }, value: BlendFunction) => {
+				state.tiltShift.blendFunction = value;
 			},
+			resetTiltShift: ({ state }) => {
+				state.tiltShift = structuredClone(defaultTiltShiftState);
+			},
+			// Lens Distortion actions
 			toggleLensDistortion: ({ state }) => {
 				state.lensDistortion.enabled = !state.lensDistortion.enabled;
 			},
-			setLensDistortionX: ({ state }, v) => {
-				state.lensDistortion.distortionX = v;
+			setLensDistortionX: ({ state }, value: number) => {
+				state.lensDistortion.distortionX = value;
 			},
-			setLensDistortionY: ({ state }, v) => {
-				state.lensDistortion.distortionY = v;
+			setLensDistortionY: ({ state }, value: number) => {
+				state.lensDistortion.distortionY = value;
 			},
-			setLensPrincipalX: ({ state }, v) => {
-				state.lensDistortion.principalX = v;
+			setLensPrincipalX: ({ state }, value: number) => {
+				state.lensDistortion.principalX = value;
 			},
-			setLensPrincipalY: ({ state }, v) => {
-				state.lensDistortion.principalY = v;
+			setLensPrincipalY: ({ state }, value: number) => {
+				state.lensDistortion.principalY = value;
 			},
-			setLensFocalLengthX: ({ state }, v) => {
-				state.lensDistortion.focalLengthX = v;
+			setLensFocalLengthX: ({ state }, value: number) => {
+				state.lensDistortion.focalLengthX = value;
 			},
-			setLensFocalLengthY: ({ state }, v) => {
-				state.lensDistortion.focalLengthY = v;
+			setLensFocalLengthY: ({ state }, value: number) => {
+				state.lensDistortion.focalLengthY = value;
 			},
-			setLensSkew: ({ state }, v) => {
-				state.lensDistortion.skew = v;
+			setLensSkew: ({ state }, value: number) => {
+				state.lensDistortion.skew = value;
 			},
+			resetLensDistortion: ({ state }) => {
+				state.lensDistortion = structuredClone(defaultLensDistortionState);
+			},
+			// Color Depth actions
 			toggleColorDepth: ({ state }) => {
 				state.colorDepth.enabled = !state.colorDepth.enabled;
 			},
-			setColorDepthBits: ({ state }, v) => {
-				state.colorDepth.bits = v;
+			setColorDepthBits: ({ state }, value: number) => {
+				state.colorDepth.bits = value;
 			},
-			setColorDepthBlendFunction: ({ state }, v) => {
-				state.colorDepth.blendFunction = v;
+			setColorDepthBlendFunction: ({ state }, value: BlendFunction) => {
+				state.colorDepth.blendFunction = value;
 			},
+			resetColorDepth: ({ state }) => {
+				state.colorDepth = structuredClone(defaultColorDepthState);
+			},
+			// Depth of Field actions
 			toggleDepthOfField: ({ state }) => {
 				state.depthOfField.enabled = !state.depthOfField.enabled;
 			},
-			setDepthOfFieldFocusDistance: ({ state }, v) => {
-				state.depthOfField.focusDistance = v;
+			setDepthOfFieldFocusDistance: ({ state }, value: number) => {
+				state.depthOfField.focusDistance = value;
 			},
-			setDepthOfFieldFocusRange: ({ state }, v) => {
-				state.depthOfField.focusRange = v;
+			setDepthOfFieldFocusRange: ({ state }, value: number) => {
+				state.depthOfField.focusRange = value;
 			},
-			setDepthOfFieldBokehScale: ({ state }, v) => {
-				state.depthOfField.bokehScale = v;
+			setDepthOfFieldBokehScale: ({ state }, value: number) => {
+				state.depthOfField.bokehScale = value;
 			},
-			setDepthOfFieldBlendFunction: ({ state }, v) => {
-				state.depthOfField.blendFunction = v;
+			setDepthOfFieldBlendFunction: ({ state }, value: BlendFunction) => {
+				state.depthOfField.blendFunction = value;
 			},
+			resetDepthOfField: ({ state }) => {
+				state.depthOfField = structuredClone(defaultDepthOfFieldState);
+			},
+			// God Rays actions
 			toggleGodRays: ({ state }) => {
 				state.godRays.enabled = !state.godRays.enabled;
 			},
-			setGodRaysSamples: ({ state }, v) => {
-				state.godRays.samples = v;
+			setGodRaysSamples: ({ state }, value: number) => {
+				state.godRays.samples = value;
 			},
-			setGodRaysDensity: ({ state }, v) => {
-				state.godRays.density = v;
+			setGodRaysDensity: ({ state }, value: number) => {
+				state.godRays.density = value;
 			},
-			setGodRaysDecay: ({ state }, v) => {
-				state.godRays.decay = v;
+			setGodRaysDecay: ({ state }, value: number) => {
+				state.godRays.decay = value;
 			},
-			setGodRaysWeight: ({ state }, v) => {
-				state.godRays.weight = v;
+			setGodRaysWeight: ({ state }, value: number) => {
+				state.godRays.weight = value;
 			},
-			setGodRaysExposure: ({ state }, v) => {
-				state.godRays.exposure = v;
+			setGodRaysExposure: ({ state }, value: number) => {
+				state.godRays.exposure = value;
 			},
-			setGodRaysClampMax: ({ state }, v) => {
-				state.godRays.clampMax = v;
+			setGodRaysClampMax: ({ state }, value: number) => {
+				state.godRays.clampMax = value;
 			},
-			setGodRaysBlur: ({ state }, v) => {
-				state.godRays.blur = v;
+			setGodRaysBlur: ({ state }, value: boolean) => {
+				state.godRays.blur = value;
 			},
-			setGodRaysKernelSize: ({ state }, v) => {
-				state.godRays.kernelSize = v;
+			setGodRaysKernelSize: ({ state }, value: KernelSize) => {
+				state.godRays.kernelSize = value;
 			},
-			setGodRaysBlendFunction: ({ state }, v) => {
-				state.godRays.blendFunction = v;
+			setGodRaysBlendFunction: ({ state }, value: BlendFunction) => {
+				state.godRays.blendFunction = value;
 			},
-			setGodRaysSunX: ({ state }, v) => {
-				state.godRays.sunX = v;
+			setGodRaysSunX: ({ state }, value: number) => {
+				state.godRays.sunX = value;
 			},
-			setGodRaysSunY: ({ state }, v) => {
-				state.godRays.sunY = v;
+			setGodRaysSunY: ({ state }, value: number) => {
+				state.godRays.sunY = value;
 			},
-			setGodRaysSunZ: ({ state }, v) => {
-				state.godRays.sunZ = v;
+			setGodRaysSunZ: ({ state }, value: number) => {
+				state.godRays.sunZ = value;
 			},
-			setGodRaysSunColor: ({ state }, v) => {
-				state.godRays.sunColor = v;
+			setGodRaysSunColor: ({ state }, value: number) => {
+				state.godRays.sunColor = value;
 			},
+			resetGodRays: ({ state }) => {
+				state.godRays = structuredClone(defaultGodRaysState);
+			},
+			// SSAO actions
 			toggleSSAO: ({ state }) => {
 				state.ssao.enabled = !state.ssao.enabled;
 			},
-			setSSAOSamples: ({ state }, v) => {
-				state.ssao.samples = v;
+			setSSAOSamples: ({ state }, value: number) => {
+				state.ssao.samples = value;
 			},
-			setSSAORings: ({ state }, v) => {
-				state.ssao.rings = v;
+			setSSAORings: ({ state }, value: number) => {
+				state.ssao.rings = value;
 			},
-			setSSAORadius: ({ state }, v) => {
-				state.ssao.radius = v;
+			setSSAORadius: ({ state }, value: number) => {
+				state.ssao.radius = value;
 			},
-			setSSAOIntensity: ({ state }, v) => {
-				state.ssao.intensity = v;
+			setSSAOIntensity: ({ state }, value: number) => {
+				state.ssao.intensity = value;
 			},
-			setSSAOBias: ({ state }, v) => {
-				state.ssao.bias = v;
+			setSSAOBias: ({ state }, value: number) => {
+				state.ssao.bias = value;
 			},
-			setSSAOFade: ({ state }, v) => {
-				state.ssao.fade = v;
+			setSSAOFade: ({ state }, value: number) => {
+				state.ssao.fade = value;
 			},
-			setSSAOLuminanceInfluence: ({ state }, v) => {
-				state.ssao.luminanceInfluence = v;
+			setSSAOLuminanceInfluence: ({ state }, value: number) => {
+				state.ssao.luminanceInfluence = value;
 			},
-			setSSAOBlendFunction: ({ state }, v) => {
-				state.ssao.blendFunction = v;
+			setSSAOBlendFunction: ({ state }, value: BlendFunction) => {
+				state.ssao.blendFunction = value;
 			},
+			resetSSAO: ({ state }) => {
+				state.ssao = structuredClone(defaultSSAOState);
+			},
+			// Outline actions
 			toggleOutline: ({ state }) => {
 				state.outline.enabled = !state.outline.enabled;
 			},
-			setOutlineEdgeStrength: ({ state }, v) => {
-				state.outline.edgeStrength = v;
+			setOutlineEdgeStrength: ({ state }, value: number) => {
+				state.outline.edgeStrength = value;
 			},
-			setOutlineVisibleEdgeColor: ({ state }, v) => {
-				state.outline.visibleEdgeColor = v;
+			setOutlineVisibleEdgeColor: ({ state }, value: number) => {
+				state.outline.visibleEdgeColor = value;
 			},
-			setOutlineHiddenEdgeColor: ({ state }, v) => {
-				state.outline.hiddenEdgeColor = v;
+			setOutlineHiddenEdgeColor: ({ state }, value: number) => {
+				state.outline.hiddenEdgeColor = value;
 			},
-			setOutlinePulseSpeed: ({ state }, v) => {
-				state.outline.pulseSpeed = v;
+			setOutlinePulseSpeed: ({ state }, value: number) => {
+				state.outline.pulseSpeed = value;
 			},
-			setOutlineXRay: ({ state }, v) => {
-				state.outline.xRay = v;
+			setOutlineXRay: ({ state }, value: boolean) => {
+				state.outline.xRay = value;
 			},
-			setOutlineBlur: ({ state }, v) => {
-				state.outline.blur = v;
+			setOutlineBlur: ({ state }, value: boolean) => {
+				state.outline.blur = value;
 			},
-			setOutlineKernelSize: ({ state }, v) => {
-				state.outline.kernelSize = v;
+			setOutlineKernelSize: ({ state }, value: KernelSize) => {
+				state.outline.kernelSize = value;
 			},
-			setOutlineBlendFunction: ({ state }, v) => {
-				state.outline.blendFunction = v;
+			setOutlineBlendFunction: ({ state }, value: BlendFunction) => {
+				state.outline.blendFunction = value;
 			},
+			resetOutline: ({ state }) => {
+				state.outline = structuredClone(defaultOutlineState);
+			},
+			// Depth Effect actions
 			toggleDepthEffect: ({ state }) => {
 				state.depthEffect.enabled = !state.depthEffect.enabled;
 			},
-			setDepthEffectInverted: ({ state }, v) => {
-				state.depthEffect.inverted = v;
+			setDepthEffectInverted: ({ state }, value: boolean) => {
+				state.depthEffect.inverted = value;
 			},
-			setDepthEffectBlendFunction: ({ state }, v) => {
-				state.depthEffect.blendFunction = v;
-			},
-			resetBloom: ({ state }) => {
-				state.bloom.intensity = 1.0;
-				state.bloom.luminanceThreshold = 1.0;
-				state.bloom.luminanceSmoothing = 0.03;
-				state.bloom.kernelSize = 4 as KernelSize;
-				state.bloom.blendFunction = 28 as BlendFunction;
-				state.bloom.mipmapBlur = true;
-				state.bloom.radius = 0.85;
-				state.bloom.levels = 8;
-			},
-			resetSMAA: ({ state }) => {
-				state.smaa.preset = 2;
-				state.smaa.edgeDetectionMode = 2;
-				state.smaa.predicationMode = 0;
-			},
-			resetFXAA: ({ state }) => {
-				state.fxaa.minEdgeThreshold = 0.05;
-				state.fxaa.maxEdgeThreshold = 0.12;
-				state.fxaa.subpixelQuality = 0.75;
-			},
-			resetVignette: ({ state }) => {
-				state.vignette.offset = 0.5;
-				state.vignette.darkness = 0.5;
-				state.vignette.technique = 0;
-			},
-			resetPixelation: ({ state }) => {
-				state.pixelation.granularity = 30.0;
-			},
-			resetGlitch: ({ state }) => {
-				state.glitch.delay = 2.5;
-				state.glitch.duration = 0.8;
-				state.glitch.strength = 0.65;
-				state.glitch.ratio = 0.85;
-				state.glitch.columns = 0.05;
-				state.glitch.mode = 1;
-			},
-			resetNoise: ({ state }) => {
-				state.noise.premultiply = false;
-				state.noise.blendFunction = 28 as BlendFunction;
-			},
-			resetChromaticAberration: ({ state }) => {
-				state.chromaticAberration.offsetX = 0.01;
-				state.chromaticAberration.offsetY = 0.01;
-				state.chromaticAberration.radialModulation = false;
-				state.chromaticAberration.modulationOffset = 0.15;
-				state.chromaticAberration.blendFunction = 0 as BlendFunction;
-			},
-			resetBrightnessContrast: ({ state }) => {
-				state.brightnessContrast.brightness = 0;
-				state.brightnessContrast.contrast = 0;
-				state.brightnessContrast.blendFunction = 0 as BlendFunction;
-			},
-			resetHueSaturation: ({ state }) => {
-				state.hueSaturation.hue = 0;
-				state.hueSaturation.saturation = 0;
-				state.hueSaturation.blendFunction = 0 as BlendFunction;
-			},
-			resetSepia: ({ state }) => {
-				state.sepia.intensity = 1.0;
-				state.sepia.blendFunction = 0 as BlendFunction;
-			},
-			resetDotScreen: ({ state }) => {
-				state.dotScreen.angle = 1.57;
-				state.dotScreen.scale = 1.0;
-				state.dotScreen.blendFunction = 0 as BlendFunction;
-			},
-			resetScanline: ({ state }) => {
-				state.scanline.density = 1.25;
-				state.scanline.opacity = 0.5;
-				state.scanline.scrollSpeed = 0;
-				state.scanline.blendFunction = 25 as BlendFunction;
-			},
-			resetShockWave: ({ state }) => {
-				state.shockWave.speed = 1.25;
-				state.shockWave.maxRadius = 0.5;
-				state.shockWave.waveSize = 0.2;
-				state.shockWave.amplitude = 0.05;
-				state.shockWave.epicenterX = 0;
-				state.shockWave.epicenterY = 0;
-				state.shockWave.epicenterZ = 0;
-			},
-			resetASCII: ({ state }) => {
-				state.ascii.cellSize = 16;
-				state.ascii.inverted = false;
-			},
-			resetToneMapping: ({ state }) => {
-				state.toneMapping.mode = 11 as ToneMappingMode;
-				state.toneMapping.whitePoint = 4.0;
-				state.toneMapping.middleGrey = 0.6;
-				state.toneMapping.blendFunction = 0 as BlendFunction;
-				state.toneMapping.resolution = 256;
-				state.toneMapping.minLuminance = 0.01;
-				state.toneMapping.averageLuminance = 1.0;
-				state.toneMapping.adaptationRate = 1.0;
-			},
-			resetGrid: ({ state }) => {
-				state.grid.scale = 1.0;
-				state.grid.lineWidth = 0.0;
-				state.grid.blendFunction = 25 as BlendFunction;
-			},
-			resetTiltShift: ({ state }) => {
-				state.tiltShift.offset = 0.0;
-				state.tiltShift.rotation = 0.0;
-				state.tiltShift.focusArea = 0.4;
-				state.tiltShift.feather = 0.3;
-				state.tiltShift.kernelSize = 3 as KernelSize;
-				state.tiltShift.blendFunction = 0 as BlendFunction;
-			},
-			resetLensDistortion: ({ state }) => {
-				state.lensDistortion.distortionX = 0.0;
-				state.lensDistortion.distortionY = 0.0;
-				state.lensDistortion.principalX = 0.0;
-				state.lensDistortion.principalY = 0.0;
-				state.lensDistortion.focalLengthX = 1.0;
-				state.lensDistortion.focalLengthY = 1.0;
-				state.lensDistortion.skew = 0.0;
-			},
-			resetColorDepth: ({ state }) => {
-				state.colorDepth.bits = 16;
-				state.colorDepth.blendFunction = 0 as BlendFunction;
-			},
-			resetDepthOfField: ({ state }) => {
-				state.depthOfField.focusDistance = 3.0;
-				state.depthOfField.focusRange = 2.0;
-				state.depthOfField.bokehScale = 1.0;
-				state.depthOfField.blendFunction = 0 as BlendFunction;
-			},
-			resetGodRays: ({ state }) => {
-				state.godRays.samples = 60;
-				state.godRays.density = 0.96;
-				state.godRays.decay = 0.9;
-				state.godRays.weight = 0.4;
-				state.godRays.exposure = 0.6;
-				state.godRays.clampMax = 1.0;
-				state.godRays.blur = true;
-				state.godRays.kernelSize = 1 as KernelSize;
-				state.godRays.blendFunction = 28 as BlendFunction;
-				state.godRays.sunX = 0;
-				state.godRays.sunY = 5;
-				state.godRays.sunZ = 0;
-				state.godRays.sunColor = 0xffddaa;
-			},
-			resetSSAO: ({ state }) => {
-				state.ssao.samples = 9;
-				state.ssao.rings = 7;
-				state.ssao.radius = 0.1825;
-				state.ssao.intensity = 1.0;
-				state.ssao.bias = 0.025;
-				state.ssao.fade = 0.01;
-				state.ssao.luminanceInfluence = 0.7;
-				state.ssao.blendFunction = 7 as BlendFunction;
-			},
-			resetOutline: ({ state }) => {
-				state.outline.edgeStrength = 1.0;
-				state.outline.visibleEdgeColor = 0xffffff;
-				state.outline.hiddenEdgeColor = 0x22090a;
-				state.outline.pulseSpeed = 0.0;
-				state.outline.xRay = true;
-				state.outline.blur = false;
-				state.outline.kernelSize = 1 as KernelSize;
-				state.outline.blendFunction = 22 as BlendFunction;
+			setDepthEffectBlendFunction: ({ state }, value: BlendFunction) => {
+				state.depthEffect.blendFunction = value;
 			},
 			resetDepthEffect: ({ state }) => {
-				state.depthEffect.inverted = false;
-				state.depthEffect.blendFunction = 0 as BlendFunction;
+				state.depthEffect = structuredClone(defaultDepthEffectState);
 			},
+			// Global reset
 			resetAll: ({ state }) => {
-				state.bloom.intensity = 1.0;
-				state.bloom.luminanceThreshold = 1.0;
-				state.bloom.luminanceSmoothing = 0.03;
-				state.bloom.kernelSize = 4 as KernelSize;
-				state.bloom.blendFunction = 28 as BlendFunction;
-				state.bloom.mipmapBlur = true;
-				state.bloom.radius = 0.85;
-				state.bloom.levels = 8;
-				state.smaa.preset = 2;
-				state.smaa.edgeDetectionMode = 2;
-				state.smaa.predicationMode = 0;
-				state.fxaa.minEdgeThreshold = 0.05;
-				state.fxaa.maxEdgeThreshold = 0.12;
-				state.fxaa.subpixelQuality = 0.75;
-				state.vignette.offset = 0.5;
-				state.vignette.darkness = 0.5;
-				state.vignette.technique = 0;
-				state.pixelation.granularity = 30.0;
-				state.glitch.delay = 2.5;
-				state.glitch.duration = 0.8;
-				state.glitch.strength = 0.65;
-				state.glitch.ratio = 0.85;
-				state.glitch.columns = 0.05;
-				state.glitch.mode = 1;
-				state.noise.premultiply = false;
-				state.noise.blendFunction = 28 as BlendFunction;
-				state.chromaticAberration.radialModulation = false;
-				state.chromaticAberration.modulationOffset = 0.15;
-				state.chromaticAberration.offsetX = 0.01;
-				state.chromaticAberration.offsetY = 0.01;
-				state.chromaticAberration.blendFunction = 0 as BlendFunction;
-				state.brightnessContrast.brightness = 0;
-				state.brightnessContrast.contrast = 0;
-				state.brightnessContrast.blendFunction = 0 as BlendFunction;
-				state.hueSaturation.hue = 0;
-				state.hueSaturation.saturation = 0;
-				state.hueSaturation.blendFunction = 0 as BlendFunction;
-				state.sepia.intensity = 1.0;
-				state.sepia.blendFunction = 0 as BlendFunction;
-				state.dotScreen.angle = 1.57;
-				state.dotScreen.scale = 1.0;
-				state.dotScreen.blendFunction = 0 as BlendFunction;
-				state.scanline.density = 1.25;
-				state.scanline.opacity = 0.5;
-				state.scanline.scrollSpeed = 0;
-				state.scanline.blendFunction = 25 as BlendFunction;
-				state.shockWave.speed = 1.25;
-				state.shockWave.maxRadius = 0.5;
-				state.shockWave.waveSize = 0.2;
-				state.shockWave.amplitude = 0.05;
-				state.shockWave.epicenterX = 0;
-				state.shockWave.epicenterY = 0;
-				state.shockWave.epicenterZ = 0;
-				state.ascii.cellSize = 16;
-				state.ascii.inverted = false;
-				state.toneMapping.mode = 11 as ToneMappingMode;
-				state.toneMapping.whitePoint = 4.0;
-				state.toneMapping.middleGrey = 0.6;
-				state.toneMapping.blendFunction = 0 as BlendFunction;
-				state.toneMapping.resolution = 256;
-				state.toneMapping.minLuminance = 0.01;
-				state.toneMapping.averageLuminance = 1.0;
-				state.toneMapping.adaptationRate = 1.0;
-				state.grid.scale = 1.0;
-				state.grid.lineWidth = 0.0;
-				state.grid.blendFunction = 25 as BlendFunction;
-				state.tiltShift.offset = 0.0;
-				state.tiltShift.rotation = 0.0;
-				state.tiltShift.focusArea = 0.4;
-				state.tiltShift.feather = 0.3;
-				state.tiltShift.kernelSize = 3 as KernelSize;
-				state.tiltShift.blendFunction = 0 as BlendFunction;
-				state.lensDistortion.distortionX = 0.0;
-				state.lensDistortion.distortionY = 0.0;
-				state.lensDistortion.principalX = 0.0;
-				state.lensDistortion.principalY = 0.0;
-				state.lensDistortion.focalLengthX = 1.0;
-				state.lensDistortion.focalLengthY = 1.0;
-				state.lensDistortion.skew = 0.0;
-				state.colorDepth.bits = 16;
-				state.colorDepth.blendFunction = 0 as BlendFunction;
-				state.depthOfField.focusDistance = 3.0;
-				state.depthOfField.focusRange = 2.0;
-				state.depthOfField.bokehScale = 1.0;
-				state.depthOfField.blendFunction = 0 as BlendFunction;
-				state.godRays.samples = 60;
-				state.godRays.density = 0.96;
-				state.godRays.decay = 0.9;
-				state.godRays.weight = 0.4;
-				state.godRays.exposure = 0.6;
-				state.godRays.clampMax = 1.0;
-				state.godRays.blur = true;
-				state.godRays.kernelSize = 2 as KernelSize;
-				state.godRays.blendFunction = 28 as BlendFunction;
-				state.ssao.samples = 9;
-				state.ssao.rings = 7;
-				state.ssao.radius = 0.1825;
-				state.ssao.intensity = 1.0;
-				state.ssao.bias = 0.025;
-				state.ssao.fade = 0.01;
-				state.ssao.luminanceInfluence = 0.7;
-				state.ssao.blendFunction = 7 as BlendFunction;
-				state.outline.edgeStrength = 1.0;
-				state.outline.visibleEdgeColor = 0xffffff;
-				state.outline.hiddenEdgeColor = 0x22090a;
-				state.outline.pulseSpeed = 0.0;
-				state.outline.xRay = true;
-				state.outline.blur = false;
-				state.outline.kernelSize = 1 as KernelSize;
-				state.outline.blendFunction = 22 as BlendFunction;
-				state.depthEffect.inverted = false;
-				state.depthEffect.blendFunction = 0 as BlendFunction;
+				state.bloom = structuredClone(defaultBloomState);
+				state.smaa = structuredClone(defaultSMAAState);
+				state.fxaa = structuredClone(defaultFXAAState);
+				state.vignette = structuredClone(defaultVignetteState);
+				state.pixelation = structuredClone(defaultPixelationState);
+				state.glitch = structuredClone(defaultGlitchState);
+				state.noise = structuredClone(defaultNoiseState);
+				state.chromaticAberration = structuredClone(defaultChromaticAberrationState);
+				state.brightnessContrast = structuredClone(defaultBrightnessContrastState);
+				state.hueSaturation = structuredClone(defaultHueSaturationState);
+				state.sepia = structuredClone(defaultSepiaState);
+				state.dotScreen = structuredClone(defaultDotScreenState);
+				state.scanline = structuredClone(defaultScanlineState);
+				state.shockWave = structuredClone(defaultShockWaveState);
+				state.ascii = structuredClone(defaultASCIIState);
+				state.toneMapping = structuredClone(defaultToneMappingState);
+				state.grid = structuredClone(defaultGridState);
+				state.tiltShift = structuredClone(defaultTiltShiftState);
+				state.lensDistortion = structuredClone(defaultLensDistortionState);
+				state.colorDepth = structuredClone(defaultColorDepthState);
+				state.depthOfField = structuredClone(defaultDepthOfFieldState);
+				state.godRays = structuredClone(defaultGodRaysState);
+				state.ssao = structuredClone(defaultSSAOState);
+				state.outline = structuredClone(defaultOutlineState);
+				state.depthEffect = structuredClone(defaultDepthEffectState);
 			}
 		}
 	});
@@ -990,6 +722,7 @@
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiImageFilterHdr" title="Post Processing">
+		<!-- Bloom -->
 		<Folder title="Bloom" expanded={true}>
 			<Checkbox
 				value={ext.state.bloom.enabled}
@@ -1054,6 +787,7 @@
 			{/if}
 		</Folder>
 
+		<!-- SMAA -->
 		<Folder title="SMAA" expanded={false}>
 			<Checkbox value={ext.state.smaa.enabled} label="Enabled" on:change={() => ext.toggleSMAA()} />
 			{#if ext.state.smaa.enabled}
@@ -1079,6 +813,7 @@
 			{/if}
 		</Folder>
 
+		<!-- FXAA -->
 		<Folder title="FXAA" expanded={false}>
 			<Checkbox value={ext.state.fxaa.enabled} label="Enabled" on:change={() => ext.toggleFXAA()} />
 			{#if ext.state.fxaa.enabled}
@@ -1125,6 +860,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Vignette -->
 		<Folder title="Vignette" expanded={false}>
 			<Checkbox
 				value={ext.state.vignette.enabled}
@@ -1158,6 +894,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Pixelation -->
 		<Folder title="Pixelation" expanded={false}>
 			<Checkbox
 				value={ext.state.pixelation.enabled}
@@ -1177,6 +914,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Glitch -->
 		<Folder title="Glitch" expanded={false}>
 			<Checkbox
 				value={ext.state.glitch.enabled}
@@ -1234,6 +972,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Noise -->
 		<Folder title="Noise" expanded={false}>
 			<Checkbox
 				value={ext.state.noise.enabled}
@@ -1252,6 +991,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Chromatic Aberration -->
 		<Folder title="Chromatic Aberration" expanded={false}>
 			<Checkbox
 				value={ext.state.chromaticAberration.enabled}
@@ -1301,6 +1041,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Brightness & Contrast -->
 		<Folder title="Brightness & Contrast" expanded={false}>
 			<Checkbox
 				value={ext.state.brightnessContrast.enabled}
@@ -1334,6 +1075,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Hue & Saturation -->
 		<Folder title="Hue & Saturation" expanded={false}>
 			<Checkbox
 				value={ext.state.hueSaturation.enabled}
@@ -1367,6 +1109,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Sepia -->
 		<Folder title="Sepia" expanded={false}>
 			<Checkbox
 				value={ext.state.sepia.enabled}
@@ -1392,6 +1135,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Dot Screen -->
 		<Folder title="Dot Screen" expanded={false}>
 			<Checkbox
 				value={ext.state.dotScreen.enabled}
@@ -1425,6 +1169,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Scanline -->
 		<Folder title="Scanline" expanded={false}>
 			<Checkbox
 				value={ext.state.scanline.enabled}
@@ -1466,6 +1211,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Shock Wave -->
 		<Folder title="Shock Wave" expanded={false}>
 			<Checkbox
 				value={ext.state.shockWave.enabled}
@@ -1510,6 +1256,7 @@
 			{/if}
 		</Folder>
 
+		<!-- ASCII -->
 		<Folder title="ASCII" expanded={false}>
 			<Checkbox
 				value={ext.state.ascii.enabled}
@@ -1530,6 +1277,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Tone Mapping -->
 		<Folder title="Tone Mapping" expanded={false}>
 			<Checkbox
 				value={ext.state.toneMapping.enabled}
@@ -1601,6 +1349,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Grid -->
 		<Folder title="Grid" expanded={false}>
 			<Checkbox value={ext.state.grid.enabled} label="Enabled" on:change={() => ext.toggleGrid()} />
 			{#if ext.state.grid.enabled}
@@ -1630,6 +1379,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Tilt Shift -->
 		<Folder title="Tilt Shift" expanded={false}>
 			<Checkbox
 				value={ext.state.tiltShift.enabled}
@@ -1687,6 +1437,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Lens Distortion -->
 		<Folder title="Lens Distortion" expanded={false}>
 			<Checkbox
 				value={ext.state.lensDistortion.enabled}
@@ -1754,6 +1505,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Color Depth -->
 		<Folder title="Color Depth" expanded={false}>
 			<Checkbox
 				value={ext.state.colorDepth.enabled}
@@ -1779,6 +1531,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Depth of Field -->
 		<Folder title="Depth of Field" expanded={false}>
 			<Checkbox
 				value={ext.state.depthOfField.enabled}
@@ -1820,6 +1573,7 @@
 			{/if}
 		</Folder>
 
+		<!-- God Rays -->
 		<Folder title="God Rays" expanded={false}>
 			<Checkbox
 				value={ext.state.godRays.enabled}
@@ -1925,6 +1679,7 @@
 			{/if}
 		</Folder>
 
+		<!-- SSAO -->
 		<Folder title="SSAO" expanded={false}>
 			<Checkbox value={ext.state.ssao.enabled} label="Enabled" on:change={() => ext.toggleSSAO()} />
 			{#if ext.state.ssao.enabled}
@@ -1994,6 +1749,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Outline -->
 		<Folder title="Outline" expanded={false}>
 			<Checkbox
 				value={ext.state.outline.enabled}
@@ -2035,6 +1791,7 @@
 			{/if}
 		</Folder>
 
+		<!-- Depth Effect -->
 		<Folder title="Depth Effect" expanded={false}>
 			<Checkbox
 				value={ext.state.depthEffect.enabled}
