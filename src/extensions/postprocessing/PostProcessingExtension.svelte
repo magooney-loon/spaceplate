@@ -6,12 +6,12 @@
 	const { createExtension } = useStudio();
 
 	const kernelSizeOptions = [
-		{ value: 1 as KernelSize, text: 'Very Small' },
-		{ value: 2 as KernelSize, text: 'Small' },
-		{ value: 3 as KernelSize, text: 'Medium' },
-		{ value: 4 as KernelSize, text: 'Large' },
-		{ value: 5 as KernelSize, text: 'Very Large' },
-		{ value: 6 as KernelSize, text: 'Huge' }
+		{ value: 0 as KernelSize, text: 'Very Small' },
+		{ value: 1 as KernelSize, text: 'Small' },
+		{ value: 2 as KernelSize, text: 'Medium' },
+		{ value: 3 as KernelSize, text: 'Large' },
+		{ value: 4 as KernelSize, text: 'Very Large' },
+		{ value: 5 as KernelSize, text: 'Huge' }
 	];
 
 	const smaaPresetOptions = [
@@ -256,7 +256,7 @@
 				exposure: 0.6,
 				clampMax: 1.0,
 				blur: true,
-				kernelSize: 2 as KernelSize,
+				kernelSize: 1 as KernelSize,
 				blendFunction: 28 as BlendFunction,
 				sunX: 0,
 				sunY: 5,
@@ -839,7 +839,7 @@
 				state.godRays.exposure = 0.6;
 				state.godRays.clampMax = 1.0;
 				state.godRays.blur = true;
-				state.godRays.kernelSize = 2 as KernelSize;
+				state.godRays.kernelSize = 1 as KernelSize;
 				state.godRays.blendFunction = 28 as BlendFunction;
 				state.godRays.sunX = 0;
 				state.godRays.sunY = 5;

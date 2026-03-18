@@ -75,6 +75,7 @@
 	let depthEffect: DepthEffect | null = null;
 	let shockWaveEffect: ShockWaveEffect | null = null;
 	let godRaysSun: THREE.Mesh | null = null;
+	let isUpdatingEffects = false;
 
 	const disposeEffect = (effect: any) => {
 		if (effect && effect.dispose) {
@@ -83,6 +84,7 @@
 	};
 
 	const removeAllEffects = () => {
+		isUpdatingEffects = true;
 		composer.removeAllPasses();
 		disposeEffect(smaaPass);
 		disposeEffect(mainPass);
@@ -274,10 +276,10 @@
 				weight: s.godRays.weight,
 				exposure: s.godRays.exposure,
 				clampMax: s.godRays.clampMax,
-				blur: s.godRays.blur,
 				kernelSize: s.godRays.kernelSize,
 				blendFunction: s.godRays.blendFunction as BlendFunction
 			});
+			godRaysEffect.blur = s.godRays.blur;
 			mainEffects.push(godRaysEffect);
 		}
 
@@ -438,6 +440,7 @@
 			mainEffects.length + secondaryEffects.length,
 			'effects'
 		);
+		isUpdatingEffects = false;
 	});
 
 	$effect(() => {
@@ -480,7 +483,9 @@
 
 	useTask(
 		(delta) => {
-			composer.render(delta);
+			if (composer && !isUpdatingEffects) {
+				composer.render(delta);
+			}
 		},
 		{ stage: renderStage, autoInvalidate: false }
 	);
