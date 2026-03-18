@@ -848,14 +848,14 @@
 					value={ext.state.bloom.kernelSize}
 					label="Kernel Size"
 					options={kernelSizeOptions}
-					on:change={(e) => ext.setBloomKernelSize(e.detail)}
+					on:change={(e) => ext.setBloomKernelSize(e.detail.value)}
 				/>
 				<Checkbox value={ext.state.bloom.mipmapBlur} label="Mipmap Blur" />
 				<List
 					value={ext.state.bloom.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setBloomBlendFunction(e.detail)}
+					on:change={(e) => ext.setBloomBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -880,19 +880,19 @@
 					value={ext.state.smaa.preset}
 					label="Preset"
 					options={smaaPresetOptions}
-					on:change={(e) => ext.setSMAAPreset(e.detail)}
+					on:change={(e) => ext.setSMAAPreset(e.detail.value)}
 				/>
 				<List
 					value={ext.state.smaa.edgeDetectionMode}
 					label="Edge Detection"
 					options={smaaEdgeDetectionOptions}
-					on:change={(e) => ext.setSMAEEdgeDetectionMode(e.detail)}
+					on:change={(e) => ext.setSMAEEdgeDetectionMode(e.detail.value)}
 				/>
 				<List
 					value={ext.state.smaa.predicationMode}
 					label="Predication"
 					options={smaaPredicationOptions}
-					on:change={(e) => ext.setSMAAPredicationMode(e.detail)}
+					on:change={(e) => ext.setSMAAPredicationMode(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -985,7 +985,7 @@
 					value={ext.state.vignette.technique}
 					label="Technique"
 					options={vignetteTechniqueOptions}
-					on:change={(e) => ext.setVignetteTechnique(e.detail)}
+					on:change={(e) => ext.setVignetteTechnique(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1033,7 +1033,7 @@
 					value={ext.state.glitch.mode}
 					label="Mode"
 					options={glitchModeOptions}
-					on:change={(e) => ext.setGlitchMode(e.detail)}
+					on:change={(e) => ext.setGlitchMode(e.detail.value)}
 				/>
 				<Slider
 					value={ext.state.glitch.delay}
@@ -1101,7 +1101,7 @@
 					value={ext.state.noise.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setNoiseBlendFunction(e.detail)}
+					on:change={(e) => ext.setNoiseBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1156,7 +1156,7 @@
 					value={ext.state.chromaticAberration.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setChromaticAberrationBlendFunction(e.detail)}
+					on:change={(e) => ext.setChromaticAberrationBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1198,7 +1198,7 @@
 					value={ext.state.brightnessContrast.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setBrightnessContrastBlendFunction(e.detail)}
+					on:change={(e) => ext.setBrightnessContrastBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1238,7 +1238,7 @@
 					value={ext.state.hueSaturation.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setHueSaturationBlendFunction(e.detail)}
+					on:change={(e) => ext.setHueSaturationBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1270,7 +1270,7 @@
 					value={ext.state.sepia.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setSepiaBlendFunction(e.detail)}
+					on:change={(e) => ext.setSepiaBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1309,7 +1309,7 @@
 					value={ext.state.dotScreen.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setDotScreenBlendFunction(e.detail)}
+					on:change={(e) => ext.setDotScreenBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1357,7 +1357,7 @@
 					value={ext.state.scanline.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setScanlineBlendFunction(e.detail)}
+					on:change={(e) => ext.setScanlineBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1468,7 +1468,7 @@
 					value={ext.state.toneMapping.mode}
 					label="Mode"
 					options={toneMappingOptions}
-					on:change={(e) => ext.setToneMappingMode(e.detail)}
+					on:change={(e) => ext.setToneMappingMode(e.detail.value)}
 				/>
 				<Slider
 					value={ext.state.toneMapping.whitePoint}
@@ -1522,7 +1522,7 @@
 					value={ext.state.toneMapping.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setToneMappingBlendFunction(e.detail)}
+					on:change={(e) => ext.setToneMappingBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1563,7 +1563,7 @@
 					value={ext.state.grid.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setGridBlendFunction(e.detail)}
+					on:change={(e) => ext.setGridBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1621,13 +1621,13 @@
 					value={ext.state.tiltShift.kernelSize}
 					label="Kernel Size"
 					options={kernelSizeOptions}
-					on:change={(e) => ext.setTiltShiftKernelSize(e.detail)}
+					on:change={(e) => ext.setTiltShiftKernelSize(e.detail.value)}
 				/>
 				<List
 					value={ext.state.tiltShift.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setTiltShiftBlendFunction(e.detail)}
+					on:change={(e) => ext.setTiltShiftBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1740,7 +1740,7 @@
 					value={ext.state.colorDepth.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setColorDepthBlendFunction(e.detail)}
+					on:change={(e) => ext.setColorDepthBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1787,7 +1787,7 @@
 					value={ext.state.depthOfField.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setDepthOfFieldBlendFunction(e.detail)}
+					on:change={(e) => ext.setDepthOfFieldBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1861,13 +1861,13 @@
 					value={ext.state.godRays.kernelSize}
 					label="Kernel Size"
 					options={kernelSizeOptions}
-					on:change={(e) => ext.setGodRaysKernelSize(e.detail)}
+					on:change={(e) => ext.setGodRaysKernelSize(e.detail.value)}
 				/>
 				<List
 					value={ext.state.godRays.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setGodRaysBlendFunction(e.detail)}
+					on:change={(e) => ext.setGodRaysBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1949,7 +1949,7 @@
 					value={ext.state.ssao.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setSSAOBlendFunction(e.detail)}
+					on:change={(e) => ext.setSSAOBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -1996,13 +1996,13 @@
 					value={ext.state.outline.kernelSize}
 					label="Kernel Size"
 					options={kernelSizeOptions}
-					on:change={(e) => ext.setOutlineKernelSize(e.detail)}
+					on:change={(e) => ext.setOutlineKernelSize(e.detail.value)}
 				/>
 				<List
 					value={ext.state.outline.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setOutlineBlendFunction(e.detail)}
+					on:change={(e) => ext.setOutlineBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
@@ -2032,7 +2032,7 @@
 					value={ext.state.depthEffect.blendFunction}
 					label="Blend Function"
 					options={blendFunctionOptions}
-					on:change={(e) => ext.setDepthEffectBlendFunction(e.detail)}
+					on:change={(e) => ext.setDepthEffectBlendFunction(e.detail.value)}
 				/>
 				<Button
 					title="Reset"
