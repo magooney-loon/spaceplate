@@ -38,6 +38,54 @@ export interface NoiseState {
 	blendFunction: BlendFunction;
 }
 
+export interface ChromaticAberrationState {
+	enabled: boolean;
+	offset: number;
+}
+
+export interface BrightnessContrastState {
+	enabled: boolean;
+	brightness: number;
+	contrast: number;
+}
+
+export interface HueSaturationState {
+	enabled: boolean;
+	hue: number;
+	saturation: number;
+}
+
+export interface SepiaState {
+	enabled: boolean;
+	intensity: number;
+}
+
+export interface DotScreenState {
+	enabled: boolean;
+	angle: number;
+	scale: number;
+}
+
+export interface ScanlineState {
+	enabled: boolean;
+	density: number;
+	opacity: number;
+}
+
+export interface ShockWaveState {
+	enabled: boolean;
+	speed: number;
+	maxStrength: number;
+	distortion: number;
+	size: number;
+}
+
+export interface ASCIIState {
+	enabled: boolean;
+	cellSize: number;
+	inverted: boolean;
+}
+
 export interface PostProcessingState {
 	bloom: BloomState;
 	smaa: SMAAState;
@@ -45,22 +93,30 @@ export interface PostProcessingState {
 	pixelation: PixelationState;
 	glitch: GlitchState;
 	noise: NoiseState;
+	chromaticAberration: ChromaticAberrationState;
+	brightnessContrast: BrightnessContrastState;
+	hueSaturation: HueSaturationState;
+	sepia: SepiaState;
+	dotScreen: DotScreenState;
+	scanline: ScanlineState;
+	shockWave: ShockWaveState;
+	ascii: ASCIIState;
 }
 
 export const postProcessingState = $state<PostProcessingState>({
 	bloom: {
-		enabled: true,
+		enabled: false,
 		intensity: 6,
 		luminanceThreshold: 0.01,
 		luminanceSmoothing: 0.08,
 		kernelSize: 4 as KernelSize
 	},
 	smaa: {
-		enabled: true,
+		enabled: false,
 		preset: 2
 	},
 	vignette: {
-		enabled: true,
+		enabled: false,
 		offset: 0.2,
 		darkness: 0.75
 	},
@@ -79,5 +135,45 @@ export const postProcessingState = $state<PostProcessingState>({
 		enabled: false,
 		premultiply: true,
 		blendFunction: 28 as BlendFunction
+	},
+	chromaticAberration: {
+		enabled: false,
+		offset: 0.005
+	},
+	brightnessContrast: {
+		enabled: false,
+		brightness: 0,
+		contrast: 0
+	},
+	hueSaturation: {
+		enabled: false,
+		hue: 0,
+		saturation: 0
+	},
+	sepia: {
+		enabled: false,
+		intensity: 1
+	},
+	dotScreen: {
+		enabled: false,
+		angle: 1.57,
+		scale: 1
+	},
+	scanline: {
+		enabled: false,
+		density: 1.5,
+		opacity: 0.5
+	},
+	shockWave: {
+		enabled: false,
+		speed: 5,
+		maxStrength: 1.5,
+		distortion: 0.5,
+		size: 0.5
+	},
+	ascii: {
+		enabled: false,
+		cellSize: 16,
+		inverted: false
 	}
 });

@@ -101,13 +101,10 @@
 				<Button
 					title="Reset"
 					on:click={() => {
-						postProcessingState.bloom = {
-							enabled: true,
-							intensity: 6,
-							luminanceThreshold: 0.01,
-							luminanceSmoothing: 0.08,
-							kernelSize: 4 as KernelSize
-						};
+						postProcessingState.bloom.intensity = 6;
+						postProcessingState.bloom.luminanceThreshold = 0.01;
+						postProcessingState.bloom.luminanceSmoothing = 0.08;
+						postProcessingState.bloom.kernelSize = 4 as KernelSize;
 					}}
 				/>
 			{/if}
@@ -124,7 +121,7 @@
 				<Button
 					title="Reset"
 					on:click={() => {
-						postProcessingState.smaa = { enabled: true, preset: 2 };
+						postProcessingState.smaa.preset = 2;
 					}}
 				/>
 			{/if}
@@ -150,7 +147,8 @@
 				<Button
 					title="Reset"
 					on:click={() => {
-						postProcessingState.vignette = { enabled: true, offset: 0.2, darkness: 0.75 };
+						postProcessingState.vignette.offset = 0.2;
+						postProcessingState.vignette.darkness = 0.75;
 					}}
 				/>
 			{/if}
@@ -169,7 +167,7 @@
 				<Button
 					title="Reset"
 					on:click={() => {
-						postProcessingState.pixelation = { enabled: false, granularity: 4.5 };
+						postProcessingState.pixelation.granularity = 4.5;
 					}}
 				/>
 			{/if}
@@ -209,13 +207,10 @@
 				<Button
 					title="Reset"
 					on:click={() => {
-						postProcessingState.glitch = {
-							enabled: false,
-							delay: 2.5,
-							duration: 0.8,
-							strength: 0.65,
-							ratio: 0.85
-						};
+						postProcessingState.glitch.delay = 2.5;
+						postProcessingState.glitch.duration = 0.8;
+						postProcessingState.glitch.strength = 0.65;
+						postProcessingState.glitch.ratio = 0.85;
 					}}
 				/>
 			{/if}
@@ -233,11 +228,168 @@
 				<Button
 					title="Reset"
 					on:click={() => {
-						postProcessingState.noise = {
-							enabled: false,
-							premultiply: true,
-							blendFunction: 28 as BlendFunction
-						};
+						postProcessingState.noise.premultiply = true;
+						postProcessingState.noise.blendFunction = 28 as BlendFunction;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Chromatic Aberration" expanded={false}>
+			<Checkbox bind:value={postProcessingState.chromaticAberration.enabled} label="Enabled" />
+			{#if postProcessingState.chromaticAberration.enabled}
+				<Slider
+					bind:value={postProcessingState.chromaticAberration.offset}
+					label="Offset"
+					min={0}
+					max={0.05}
+					step={0.001}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						postProcessingState.chromaticAberration.offset = 0.005;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Brightness / Contrast" expanded={false}>
+			<Checkbox bind:value={postProcessingState.brightnessContrast.enabled} label="Enabled" />
+			{#if postProcessingState.brightnessContrast.enabled}
+				<Slider
+					bind:value={postProcessingState.brightnessContrast.brightness}
+					label="Brightness"
+					min={-1}
+					max={1}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.brightnessContrast.contrast}
+					label="Contrast"
+					min={-1}
+					max={1}
+					step={0.01}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						postProcessingState.brightnessContrast.brightness = 0;
+						postProcessingState.brightnessContrast.contrast = 0;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Hue / Saturation" expanded={false}>
+			<Checkbox bind:value={postProcessingState.hueSaturation.enabled} label="Enabled" />
+			{#if postProcessingState.hueSaturation.enabled}
+				<Slider
+					bind:value={postProcessingState.hueSaturation.hue}
+					label="Hue"
+					min={-1}
+					max={1}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.hueSaturation.saturation}
+					label="Saturation"
+					min={-1}
+					max={1}
+					step={0.01}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						postProcessingState.hueSaturation.hue = 0;
+						postProcessingState.hueSaturation.saturation = 0;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Sepia" expanded={false}>
+			<Checkbox bind:value={postProcessingState.sepia.enabled} label="Enabled" />
+			{#if postProcessingState.sepia.enabled}
+				<Slider
+					bind:value={postProcessingState.sepia.intensity}
+					label="Intensity"
+					min={0}
+					max={1}
+					step={0.01}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						postProcessingState.sepia.intensity = 1;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Dot Screen" expanded={false}>
+			<Checkbox bind:value={postProcessingState.dotScreen.enabled} label="Enabled" />
+			{#if postProcessingState.dotScreen.enabled}
+				<Slider
+					bind:value={postProcessingState.dotScreen.angle}
+					label="Angle"
+					min={0}
+					max={3.14}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.dotScreen.scale}
+					label="Scale"
+					min={0.1}
+					max={5}
+					step={0.1}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						postProcessingState.dotScreen.angle = 1.57;
+						postProcessingState.dotScreen.scale = 1;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Scanline" expanded={false}>
+			<Checkbox bind:value={postProcessingState.scanline.enabled} label="Enabled" />
+			{#if postProcessingState.scanline.enabled}
+				<Slider
+					bind:value={postProcessingState.scanline.density}
+					label="Density"
+					min={0.5}
+					max={5}
+					step={0.1}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						postProcessingState.scanline.density = 1.5;
+						postProcessingState.scanline.opacity = 0.5;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="ASCII" expanded={false}>
+			<Checkbox bind:value={postProcessingState.ascii.enabled} label="Enabled" />
+			{#if postProcessingState.ascii.enabled}
+				<Slider
+					bind:value={postProcessingState.ascii.cellSize}
+					label="Cell Size"
+					min={4}
+					max={64}
+					step={2}
+				/>
+				<Checkbox bind:value={postProcessingState.ascii.inverted} label="Inverted" />
+				<Button
+					title="Reset"
+					on:click={() => {
+						postProcessingState.ascii.cellSize = 16;
+						postProcessingState.ascii.inverted = false;
 					}}
 				/>
 			{/if}
@@ -248,28 +400,32 @@
 		<Button
 			title="Reset All"
 			on:click={() => {
-				postProcessingState.bloom = {
-					enabled: true,
-					intensity: 6,
-					luminanceThreshold: 0.01,
-					luminanceSmoothing: 0.08,
-					kernelSize: 4 as KernelSize
-				};
-				postProcessingState.smaa = { enabled: true, preset: 2 };
-				postProcessingState.vignette = { enabled: true, offset: 0.2, darkness: 0.75 };
-				postProcessingState.pixelation = { enabled: false, granularity: 4.5 };
-				postProcessingState.glitch = {
-					enabled: false,
-					delay: 2.5,
-					duration: 0.8,
-					strength: 0.65,
-					ratio: 0.85
-				};
-				postProcessingState.noise = {
-					enabled: false,
-					premultiply: true,
-					blendFunction: 28 as BlendFunction
-				};
+				postProcessingState.bloom.intensity = 6;
+				postProcessingState.bloom.luminanceThreshold = 0.01;
+				postProcessingState.bloom.luminanceSmoothing = 0.08;
+				postProcessingState.bloom.kernelSize = 4 as KernelSize;
+				postProcessingState.smaa.preset = 2;
+				postProcessingState.vignette.offset = 0.2;
+				postProcessingState.vignette.darkness = 0.75;
+				postProcessingState.pixelation.granularity = 4.5;
+				postProcessingState.glitch.delay = 2.5;
+				postProcessingState.glitch.duration = 0.8;
+				postProcessingState.glitch.strength = 0.65;
+				postProcessingState.glitch.ratio = 0.85;
+				postProcessingState.noise.premultiply = true;
+				postProcessingState.noise.blendFunction = 28 as BlendFunction;
+				postProcessingState.chromaticAberration.offset = 0.005;
+				postProcessingState.brightnessContrast.brightness = 0;
+				postProcessingState.brightnessContrast.contrast = 0;
+				postProcessingState.hueSaturation.hue = 0;
+				postProcessingState.hueSaturation.saturation = 0;
+				postProcessingState.sepia.intensity = 1;
+				postProcessingState.dotScreen.angle = 1.57;
+				postProcessingState.dotScreen.scale = 1;
+				postProcessingState.scanline.density = 1.5;
+				postProcessingState.scanline.opacity = 0.5;
+				postProcessingState.ascii.cellSize = 16;
+				postProcessingState.ascii.inverted = false;
 			}}
 		/>
 	</DropDownPane>

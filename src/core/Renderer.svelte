@@ -14,7 +14,14 @@
 		GlitchEffect,
 		GlitchMode,
 		NoiseEffect,
-		BlendFunction
+		BlendFunction,
+		ChromaticAberrationEffect,
+		BrightnessContrastEffect,
+		HueSaturationEffect,
+		SepiaEffect,
+		DotScreenEffect,
+		ScanlineEffect,
+		ASCIIEffect
 	} from 'postprocessing';
 	import { settingsState, log } from '$core/settings.svelte.js';
 	import { postProcessingState } from '$core/postprocessing.svelte.js';
@@ -37,36 +44,68 @@
 			return;
 		}
 
-		const { bloom, smaa, vignette, pixelation, glitch, noise } = postProcessingState;
+		const s = postProcessingState;
 
 		const mainEffects: any[] = [];
 
-		if (bloom.enabled) {
+		if (s.bloom.enabled) {
 			mainEffects.push(
 				new BloomEffect({
-					intensity: bloom.intensity,
-					luminanceThreshold: bloom.luminanceThreshold,
+					intensity: s.bloom.intensity,
+					luminanceThreshold: s.bloom.luminanceThreshold,
 					height: 1024,
 					width: 1024,
-					luminanceSmoothing: bloom.luminanceSmoothing,
+					luminanceSmoothing: s.bloom.luminanceSmoothing,
 					mipmapBlur: true,
-					kernelSize: bloom.kernelSize
+					kernelSize: s.bloom.kernelSize
 				})
 			);
 		}
 
-		if (smaa.enabled) {
-			mainEffects.push(new SMAAEffect({ preset: smaa.preset as SMAAPreset }));
+		if (s.smaa.enabled) {
+			mainEffects.push(new SMAAEffect({ preset: s.smaa.preset as SMAAPreset }));
 		}
 
-		if (vignette.enabled) {
+		if (s.vignette.enabled) {
 			mainEffects.push(
 				new VignetteEffect({
 					eskil: false,
-					offset: vignette.offset,
-					darkness: vignette.darkness
+					offset: s.vignette.offset,
+					darkness: s.vignette.darkness
 				})
 			);
+		}
+
+		if (s.chromaticAberration.enabled) {
+			mainEffects.push(
+				new ChromaticAberrationEffect({
+					offset: new THREE.Vector2(s.chromaticAberration.offset, s.chromaticAberration.offset),
+					radialModulation: false,
+					modulationOffset: 0
+				})
+			);
+		}
+
+		if (s.brightnessContrast.enabled) {
+			mainEffects.push(
+				new BrightnessContrastEffect({
+					brightness: s.brightnessContrast.brightness,
+					contrast: s.brightnessContrast.contrast
+				})
+			);
+		}
+
+		if (s.hueSaturation.enabled) {
+			mainEffects.push(
+				new HueSaturationEffect({
+					hue: s.hueSaturation.hue,
+					saturation: s.hueSaturation.saturation
+				})
+			);
+		}
+
+		if (s.sepia.enabled) {
+			mainEffects.push(new SepiaEffect({ intensity: s.sepia.intensity }));
 		}
 
 		if (mainEffects.length > 0) {
@@ -76,26 +115,52 @@
 
 		const secondaryEffects: any[] = [];
 
-		if (pixelation.enabled) {
-			secondaryEffects.push(new PixelationEffect(pixelation.granularity));
+		if (s.pixelation.enabled) {
+			secondaryEffects.push(new PixelationEffect(s.pixelation.granularity));
 		}
 
-		if (glitch.enabled) {
+		if (s.dotScreen.enabled) {
+			secondaryEffects.push(
+				new DotScreenEffect({
+					angle: s.dotScreen.angle,
+					scale: s.dotScreen.scale
+				})
+			);
+		}
+
+		if (s.scanline.enabled) {
+			secondaryEffects.push(
+				new ScanlineEffect({
+					density: s.scanline.density
+				})
+			);
+		}
+
+		if (s.noise.enabled) {
+			secondaryEffects.push(
+				new NoiseEffect({
+					premultiply: s.noise.premultiply,
+					blendFunction: s.noise.blendFunction as BlendFunction
+				})
+			);
+		}
+
+		if (s.glitch.enabled) {
 			glitchEffect = new GlitchEffect({
-				delay: new THREE.Vector2(glitch.delay, glitch.delay * 2),
-				duration: new THREE.Vector2(glitch.duration * 0.5, glitch.duration),
-				strength: new THREE.Vector2(glitch.strength * 0.5, glitch.strength),
-				ratio: glitch.ratio
+				delay: new THREE.Vector2(s.glitch.delay, s.glitch.delay * 2),
+				duration: new THREE.Vector2(s.glitch.duration * 0.5, s.glitch.duration),
+				strength: new THREE.Vector2(s.glitch.strength * 0.5, s.glitch.strength),
+				ratio: s.glitch.ratio
 			});
 			glitchEffect.mode = GlitchMode.SPORADIC;
 			secondaryEffects.push(glitchEffect);
 		}
 
-		if (noise.enabled) {
+		if (s.ascii.enabled) {
 			secondaryEffects.push(
-				new NoiseEffect({
-					premultiply: noise.premultiply,
-					blendFunction: noise.blendFunction as BlendFunction
+				new ASCIIEffect({
+					cellSize: s.ascii.cellSize,
+					inverted: s.ascii.inverted
 				})
 			);
 		}
@@ -109,26 +174,6 @@
 	};
 
 	$effect(() => {
-		postProcessingState.bloom.enabled;
-		postProcessingState.bloom.intensity;
-		postProcessingState.bloom.luminanceThreshold;
-		postProcessingState.bloom.luminanceSmoothing;
-		postProcessingState.bloom.kernelSize;
-		postProcessingState.smaa.enabled;
-		postProcessingState.smaa.preset;
-		postProcessingState.vignette.enabled;
-		postProcessingState.vignette.offset;
-		postProcessingState.vignette.darkness;
-		postProcessingState.pixelation.enabled;
-		postProcessingState.pixelation.granularity;
-		postProcessingState.glitch.enabled;
-		postProcessingState.glitch.delay;
-		postProcessingState.glitch.duration;
-		postProcessingState.glitch.strength;
-		postProcessingState.glitch.ratio;
-		postProcessingState.noise.enabled;
-		postProcessingState.noise.premultiply;
-		postProcessingState.noise.blendFunction;
 		setupEffectComposer();
 	});
 
