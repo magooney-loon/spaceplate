@@ -74,6 +74,7 @@
 	let outlineEffect: OutlineEffect | null = null;
 	let depthEffect: DepthEffect | null = null;
 	let shockWaveEffect: ShockWaveEffect | null = null;
+	let godRaysSun: THREE.Mesh | null = null;
 
 	const disposeEffect = (effect: any) => {
 		if (effect && effect.dispose) {
@@ -113,6 +114,12 @@
 		disposeEffect(outlineEffect);
 		disposeEffect(depthEffect);
 		disposeEffect(shockWaveEffect);
+		if (godRaysSun) {
+			scene.remove(godRaysSun);
+			godRaysSun.geometry.dispose();
+			(godRaysSun.material as THREE.Material).dispose();
+			godRaysSun = null;
+		}
 		outlineEffect = null;
 		depthEffect = null;
 		shockWaveEffect = null;
@@ -248,7 +255,19 @@
 		}
 
 		if (s.godRays.enabled) {
-			godRaysEffect = new GodRaysEffect($camera, undefined, {
+			if (!godRaysSun) {
+				const sunGeometry = new THREE.SphereGeometry(0.75, 32, 32);
+				const sunMaterial = new THREE.MeshBasicMaterial({
+					color: s.godRays.sunColor,
+					transparent: true,
+					fog: false
+				});
+				godRaysSun = new THREE.Mesh(sunGeometry, sunMaterial);
+				scene.add(godRaysSun);
+			}
+			godRaysSun.position.set(s.godRays.sunX, s.godRays.sunY, s.godRays.sunZ);
+			(godRaysSun.material as THREE.MeshBasicMaterial).color.setHex(s.godRays.sunColor);
+			godRaysEffect = new GodRaysEffect($camera, godRaysSun, {
 				samples: s.godRays.samples,
 				density: s.godRays.density,
 				decay: s.godRays.decay,
@@ -442,6 +461,14 @@
 			effect.waveSize = s.shockWave.waveSize;
 			effect.amplitude = s.shockWave.amplitude;
 			effect.position.set(s.shockWave.epicenterX, s.shockWave.epicenterY, s.shockWave.epicenterZ);
+		}
+	});
+
+	$effect(() => {
+		const sun = godRaysSun;
+		if (sun) {
+			sun.position.set(s.godRays.sunX, s.godRays.sunY, s.godRays.sunZ);
+			(sun.material as THREE.MeshBasicMaterial).color.setHex(s.godRays.sunColor);
 		}
 	});
 

@@ -257,7 +257,11 @@
 				clampMax: 1.0,
 				blur: true,
 				kernelSize: 2 as KernelSize,
-				blendFunction: 28 as BlendFunction
+				blendFunction: 28 as BlendFunction,
+				sunX: 0,
+				sunY: 5,
+				sunZ: 0,
+				sunColor: 0xffddaa
 			},
 			ssao: {
 				enabled: false,
@@ -625,6 +629,18 @@
 			setGodRaysBlendFunction: ({ state }, v) => {
 				state.godRays.blendFunction = v;
 			},
+			setGodRaysSunX: ({ state }, v) => {
+				state.godRays.sunX = v;
+			},
+			setGodRaysSunY: ({ state }, v) => {
+				state.godRays.sunY = v;
+			},
+			setGodRaysSunZ: ({ state }, v) => {
+				state.godRays.sunZ = v;
+			},
+			setGodRaysSunColor: ({ state }, v) => {
+				state.godRays.sunColor = v;
+			},
 			toggleSSAO: ({ state }) => {
 				state.ssao.enabled = !state.ssao.enabled;
 			},
@@ -825,6 +841,10 @@
 				state.godRays.blur = true;
 				state.godRays.kernelSize = 2 as KernelSize;
 				state.godRays.blendFunction = 28 as BlendFunction;
+				state.godRays.sunX = 0;
+				state.godRays.sunY = 5;
+				state.godRays.sunZ = 0;
+				state.godRays.sunColor = 0xffddaa;
 			},
 			resetSSAO: ({ state }) => {
 				state.ssao.samples = 9;
@@ -1867,6 +1887,39 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setGodRaysBlendFunction(e.detail.value)}
+				/>
+				<Separator />
+				<Slider
+					value={ext.state.godRays.sunX}
+					label="Sun X"
+					min={-50}
+					max={50}
+					step={0.1}
+					on:change={(e) => ext.setGodRaysSunX(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.godRays.sunY}
+					label="Sun Y"
+					min={-50}
+					max={50}
+					step={0.1}
+					on:change={(e) => ext.setGodRaysSunY(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.godRays.sunZ}
+					label="Sun Z"
+					min={-50}
+					max={50}
+					step={0.1}
+					on:change={(e) => ext.setGodRaysSunZ(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.godRays.sunColor}
+					label="Sun Color"
+					min={0}
+					max={0xffffff}
+					step={1}
+					on:change={(e) => ext.setGodRaysSunColor(Math.floor(e.detail.value))}
 				/>
 				<Button title="Reset" on:click={ext.resetGodRays} />
 			{/if}

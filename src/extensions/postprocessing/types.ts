@@ -204,6 +204,10 @@ export type GodRaysState = {
 	blur: boolean;
 	kernelSize: KernelSize;
 	blendFunction: BlendFunction;
+	sunX: number;
+	sunY: number;
+	sunZ: number;
+	sunColor: number;
 	[key: string]: unknown;
 };
 
@@ -380,6 +384,10 @@ export type ExtensionActions = {
 	setGodRaysBlur: (value: boolean) => void;
 	setGodRaysKernelSize: (value: KernelSize) => void;
 	setGodRaysBlendFunction: (value: BlendFunction) => void;
+	setGodRaysSunX: (value: number) => void;
+	setGodRaysSunY: (value: number) => void;
+	setGodRaysSunZ: (value: number) => void;
+	setGodRaysSunColor: (value: number) => void;
 	toggleSSAO: () => void;
 	setSSAOSamples: (value: number) => void;
 	setSSAORings: (value: number) => void;
