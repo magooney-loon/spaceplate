@@ -33,5 +33,5 @@
 
 <T.PerspectiveCamera {position} {fov} {near} {far} makeDefault oncreate={handleCameraCreate}>
 	<AudioListener />
-	<CameraControls enabled={true} bind:ref={controlsRef} oncreate={handleControlsCreate} />
+	<CameraControls enabled={false} bind:ref={controlsRef} oncreate={handleControlsCreate} />
 </T.PerspectiveCamera>

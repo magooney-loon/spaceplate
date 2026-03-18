@@ -27,7 +27,6 @@
 	<!-- Interactive rotating planet — hover to scale, click to change color -->
 	<T.Mesh
 		rotation.y={rotation}
-		position.y={1.5}
 		scale={scale.current}
 		onpointerenter={() => (scale.target = 1.5)}
 		onpointerleave={() => (scale.target = 1)}
@@ -36,18 +35,18 @@
 			soundActions.playClick();
 		}}
 		castShadow
-		position={[ 0, 1.5, 0 ]}
+		position={[0, 0, 0]}
 	>
 		<T.IcosahedronGeometry args={[1, 1]} />
 		<T.MeshStandardMaterial color={colors[colorIndex]} flatShading />
 	</T.Mesh>
 
 	<!-- Color label above the sphere -->
-	<HTML position.y={3.6} center zIndexRange={[0, 0]}>
+	<HTML position.y={1.8} center transform zIndexRange={[0, 0]}>
 		<div
 			style="
 			color: {colors[colorIndex]};
-			font-size: 69px;
+			font-size: 0.9rem;
 			font-weight: bold;
 			font-family: monospace;
 			text-shadow: 0 0 6px {colors[colorIndex]}, 0 1px 3px rgba(0,0,0,0.8);
@@ -60,7 +59,7 @@
 	</HTML>
 
 	<!-- Ground -->
-	<T.Mesh position.y={-1} position.z={-0.9} rotation.x={-Math.PI / 2} receiveShadow>
+	<T.Mesh position={[0, -1.8, -0.9]} rotation.x={-Math.PI / 2} receiveShadow>
 		<T.CircleGeometry args={[2, 40]} />
 		<T.MeshStandardMaterial color="white" />
 	</T.Mesh>

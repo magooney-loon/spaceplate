@@ -400,7 +400,7 @@
 	});
 </script>
 
-<ToolbarItem position="right">
+<ToolbarItem position="left">
 	<DropDownPane icon="mdiImageFilterHdr" title="Post Processing">
 		<Folder title="Bloom" expanded={true}>
 			<Checkbox
