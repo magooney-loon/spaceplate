@@ -27,8 +27,8 @@
 			dollyToCursor: false
 		}),
 		actions: {
-			toggleEnabled({ state }) {
-				state.enabled = !state.enabled;
+			setEnabled({ state }, value: boolean) {
+				state.enabled = value;
 			},
 			setMinPolarAngle({ state }, value: number) {
 				state.minPolarAngle = value;
@@ -104,7 +104,7 @@
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiCameraControl" title="Camera Controls">
-		<Checkbox value={state.enabled} label="Enabled" on:change={() => ext.toggleEnabled()} />
+		<Checkbox value={state.enabled} label="Enabled" on:change={(e) => ext.setEnabled(e.detail)} />
 
 		{#if state.enabled}
 			<Folder title="Rotation Limits" expanded={false}>
@@ -114,7 +114,7 @@
 					min={0}
 					max={Math.PI}
 					step={0.01}
-					on:change={(e) => ext.setMinPolarAngle(e.detail)}
+					on:change={(e) => ext.setMinPolarAngle(e.detail.value)}
 				/>
 				<Slider
 					value={state.maxPolarAngle}
@@ -122,7 +122,7 @@
 					min={0}
 					max={Math.PI}
 					step={0.01}
-					on:change={(e) => ext.setMaxPolarAngle(e.detail)}
+					on:change={(e) => ext.setMaxPolarAngle(e.detail.value)}
 				/>
 				<Slider
 					value={state.minAzimuthAngle}
@@ -130,7 +130,7 @@
 					min={-Math.PI}
 					max={Math.PI}
 					step={0.01}
-					on:change={(e) => ext.setMinAzimuthAngle(e.detail)}
+					on:change={(e) => ext.setMinAzimuthAngle(e.detail.value)}
 				/>
 				<Slider
 					value={state.maxAzimuthAngle}
@@ -138,7 +138,7 @@
 					min={-Math.PI}
 					max={Math.PI}
 					step={0.01}
-					on:change={(e) => ext.setMaxAzimuthAngle(e.detail)}
+					on:change={(e) => ext.setMaxAzimuthAngle(e.detail.value)}
 				/>
 			</Folder>
 
@@ -149,7 +149,7 @@
 					min={0.01}
 					max={100}
 					step={0.1}
-					on:change={(e) => ext.setMinDistance(e.detail)}
+					on:change={(e) => ext.setMinDistance(e.detail.value)}
 				/>
 				<Slider
 					value={state.maxDistance}
@@ -157,7 +157,7 @@
 					min={1}
 					max={1000}
 					step={1}
-					on:change={(e) => ext.setMaxDistance(e.detail)}
+					on:change={(e) => ext.setMaxDistance(e.detail.value)}
 				/>
 				<Slider
 					value={state.minZoom}
@@ -165,7 +165,7 @@
 					min={0}
 					max={10}
 					step={0.1}
-					on:change={(e) => ext.setMinZoom(e.detail)}
+					on:change={(e) => ext.setMinZoom(e.detail.value)}
 				/>
 				<Slider
 					value={state.maxZoom}
@@ -173,7 +173,7 @@
 					min={0.1}
 					max={100}
 					step={0.1}
-					on:change={(e) => ext.setMaxZoom(e.detail)}
+					on:change={(e) => ext.setMaxZoom(e.detail.value)}
 				/>
 			</Folder>
 
@@ -184,7 +184,7 @@
 					min={0}
 					max={2}
 					step={0.01}
-					on:change={(e) => ext.setSmoothTime(e.detail)}
+					on:change={(e) => ext.setSmoothTime(e.detail.value)}
 				/>
 				<Slider
 					value={state.draggingSmoothTime}
@@ -192,7 +192,7 @@
 					min={0}
 					max={1}
 					step={0.01}
-					on:change={(e) => ext.setDraggingSmoothTime(e.detail)}
+					on:change={(e) => ext.setDraggingSmoothTime(e.detail.value)}
 				/>
 				<Slider
 					value={state.maxSpeed}
@@ -200,7 +200,7 @@
 					min={0.1}
 					max={10}
 					step={0.1}
-					on:change={(e) => ext.setMaxSpeed(e.detail)}
+					on:change={(e) => ext.setMaxSpeed(e.detail.value)}
 				/>
 				<Slider
 					value={state.azimuthRotateSpeed}
@@ -208,7 +208,7 @@
 					min={0.1}
 					max={5}
 					step={0.1}
-					on:change={(e) => ext.setAzimuthRotateSpeed(e.detail)}
+					on:change={(e) => ext.setAzimuthRotateSpeed(e.detail.value)}
 				/>
 				<Slider
 					value={state.polarRotateSpeed}
@@ -216,7 +216,7 @@
 					min={0.1}
 					max={5}
 					step={0.1}
-					on:change={(e) => ext.setPolarRotateSpeed(e.detail)}
+					on:change={(e) => ext.setPolarRotateSpeed(e.detail.value)}
 				/>
 				<Slider
 					value={state.dollySpeed}
@@ -224,7 +224,7 @@
 					min={0.1}
 					max={5}
 					step={0.1}
-					on:change={(e) => ext.setDollySpeed(e.detail)}
+					on:change={(e) => ext.setDollySpeed(e.detail.value)}
 				/>
 				<Slider
 					value={state.truckSpeed}
@@ -232,7 +232,7 @@
 					min={0.1}
 					max={5}
 					step={0.1}
-					on:change={(e) => ext.setTruckSpeed(e.detail)}
+					on:change={(e) => ext.setTruckSpeed(e.detail.value)}
 				/>
 			</Folder>
 
