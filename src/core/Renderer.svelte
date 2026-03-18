@@ -426,23 +426,22 @@
 	});
 
 	$effect(() => {
-		if (shockWaveEffect && s.shockWave.triggered) {
-			shockWaveEffect.explode();
+		const triggered = s.shockWave.triggered;
+		const effect = shockWaveEffect;
+		if (effect && triggered) {
+			effect.explode();
 			s.shockWave.triggered = false;
 		}
 	});
 
 	$effect(() => {
-		if (shockWaveEffect) {
-			shockWaveEffect.speed = s.shockWave.speed;
-			shockWaveEffect.maxRadius = s.shockWave.maxRadius;
-			shockWaveEffect.waveSize = s.shockWave.waveSize;
-			shockWaveEffect.amplitude = s.shockWave.amplitude;
-			shockWaveEffect.position.set(
-				s.shockWave.epicenterX,
-				s.shockWave.epicenterY,
-				s.shockWave.epicenterZ
-			);
+		const effect = shockWaveEffect;
+		if (effect) {
+			effect.speed = s.shockWave.speed;
+			effect.maxRadius = s.shockWave.maxRadius;
+			effect.waveSize = s.shockWave.waveSize;
+			effect.amplitude = s.shockWave.amplitude;
+			effect.position.set(s.shockWave.epicenterX, s.shockWave.epicenterY, s.shockWave.epicenterZ);
 		}
 	});
 
