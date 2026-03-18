@@ -8,6 +8,7 @@
 		RenderPass,
 		SMAAEffect,
 		SMAAPreset,
+		FXAAEffect,
 		BloomEffect,
 		VignetteEffect,
 		PixelationEffect,
@@ -21,7 +22,11 @@
 		SepiaEffect,
 		DotScreenEffect,
 		ScanlineEffect,
-		ASCIIEffect
+		ASCIIEffect,
+		ToneMappingEffect,
+		GridEffect,
+		TiltShiftEffect,
+		LensDistortionEffect
 	} from 'postprocessing';
 	import { settingsState, log } from '$core/settings.svelte.js';
 	import { postProcessingState } from '$core/postprocessing.svelte.js';
@@ -46,7 +51,21 @@
 
 		const s = postProcessingState;
 
+		if (s.smaa.enabled) {
+			composer.addPass(
+				new EffectPass($camera, new SMAAEffect({ preset: s.smaa.preset as SMAAPreset }))
+			);
+		}
+
 		const mainEffects: any[] = [];
+
+		if (s.fxaa.enabled) {
+			const fxaa = new FXAAEffect();
+			fxaa.minEdgeThreshold = s.fxaa.minEdgeThreshold;
+			fxaa.maxEdgeThreshold = s.fxaa.maxEdgeThreshold;
+			fxaa.subpixelQuality = s.fxaa.subpixelQuality;
+			mainEffects.push(fxaa);
+		}
 
 		if (s.bloom.enabled) {
 			mainEffects.push(
@@ -62,8 +81,14 @@
 			);
 		}
 
-		if (s.smaa.enabled) {
-			mainEffects.push(new SMAAEffect({ preset: s.smaa.preset as SMAAPreset }));
+		if (s.toneMapping.enabled) {
+			mainEffects.push(
+				new ToneMappingEffect({
+					mode: s.toneMapping.mode,
+					whitePoint: s.toneMapping.whitePoint,
+					middleGrey: s.toneMapping.middleGrey
+				})
+			);
 		}
 
 		if (s.vignette.enabled) {
@@ -80,8 +105,8 @@
 			mainEffects.push(
 				new ChromaticAberrationEffect({
 					offset: new THREE.Vector2(s.chromaticAberration.offset, s.chromaticAberration.offset),
-					radialModulation: false,
-					modulationOffset: 0
+					radialModulation: s.chromaticAberration.radialModulation,
+					modulationOffset: s.chromaticAberration.modulationOffset
 				})
 			);
 		}
@@ -156,6 +181,44 @@
 			secondaryEffects.push(glitchEffect);
 		}
 
+		if (s.grid.enabled) {
+			secondaryEffects.push(
+				new GridEffect({
+					scale: s.grid.scale,
+					lineWidth: s.grid.lineWidth
+				})
+			);
+		}
+
+		if (s.tiltShift.enabled) {
+			secondaryEffects.push(
+				new TiltShiftEffect({
+					offset: s.tiltShift.offset,
+					rotation: s.tiltShift.rotation,
+					focusArea: s.tiltShift.focusArea,
+					feather: s.tiltShift.feather,
+					kernelSize: s.tiltShift.kernelSize
+				})
+			);
+		}
+
+		if (s.lensDistortion.enabled) {
+			secondaryEffects.push(
+				new LensDistortionEffect({
+					distortion: new THREE.Vector2(s.lensDistortion.distortionX, s.lensDistortion.distortionY),
+					principalPoint: new THREE.Vector2(
+						s.lensDistortion.principalX,
+						s.lensDistortion.principalY
+					),
+					focalLength: new THREE.Vector2(
+						s.lensDistortion.focalLengthX,
+						s.lensDistortion.focalLengthY
+					),
+					skew: s.lensDistortion.skew
+				})
+			);
+		}
+
 		if (s.ascii.enabled) {
 			secondaryEffects.push(
 				new ASCIIEffect({
@@ -170,7 +233,11 @@
 			composer.addPass(secondaryPass);
 		}
 
-		log.info('Post-processing:', mainEffects.length + secondaryEffects.length, 'effects active');
+		const passCount =
+			(s.smaa.enabled ? 1 : 0) +
+			(mainEffects.length > 0 ? 1 : 0) +
+			(secondaryEffects.length > 0 ? 1 : 0);
+		log.info('Post-processing:', passCount, 'pass(es) with effects');
 	};
 
 	$effect(() => {

@@ -2,7 +2,7 @@
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
 	import { Folder, Slider, Checkbox, List, Button, Separator } from 'svelte-tweakpane-ui';
 	import { postProcessingState } from '$core/postprocessing.svelte.js';
-	import type { KernelSize, BlendFunction } from 'postprocessing';
+	import type { KernelSize, BlendFunction, ToneMappingMode } from 'postprocessing';
 
 	const { createExtension } = useStudio();
 
@@ -27,6 +27,19 @@
 		{ value: 0, text: 'Low' },
 		{ value: 1, text: 'Medium' },
 		{ value: 2, text: 'Ultra' }
+	];
+
+	const toneMappingOptions = [
+		{ value: 0 as ToneMappingMode, text: 'Linear' },
+		{ value: 1 as ToneMappingMode, text: 'Reinhard' },
+		{ value: 2 as ToneMappingMode, text: 'Reinhard2' },
+		{ value: 3 as ToneMappingMode, text: 'Reinhard2 Adaptive' },
+		{ value: 4 as ToneMappingMode, text: 'Uncharted2' },
+		{ value: 5 as ToneMappingMode, text: 'Optimized Cineon' },
+		{ value: 6 as ToneMappingMode, text: 'Cineon' },
+		{ value: 11 as ToneMappingMode, text: 'ACES Filmic' },
+		{ value: 12 as ToneMappingMode, text: 'AGX' },
+		{ value: 13 as ToneMappingMode, text: 'Neutral' }
 	];
 
 	const blendFunctionOptions = [
@@ -245,75 +258,81 @@
 					max={0.05}
 					step={0.001}
 				/>
+				<Checkbox
+					bind:value={postProcessingState.chromaticAberration.radialModulation}
+					label="Radial Modulation"
+				/>
+				<Slider
+					bind:value={postProcessingState.chromaticAberration.modulationOffset}
+					label="Modulation"
+					min={0}
+					max={1}
+					step={0.01}
+				/>
 				<Button
 					title="Reset"
 					on:click={() => {
+						postProcessingState.chromaticAberration.radialModulation = false;
+						postProcessingState.chromaticAberration.modulationOffset = 0.5;
 						postProcessingState.chromaticAberration.offset = 0.005;
 					}}
 				/>
 			{/if}
 		</Folder>
 
-		<Folder title="Brightness / Contrast" expanded={false}>
-			<Checkbox bind:value={postProcessingState.brightnessContrast.enabled} label="Enabled" />
-			{#if postProcessingState.brightnessContrast.enabled}
-				<Slider
-					bind:value={postProcessingState.brightnessContrast.brightness}
-					label="Brightness"
-					min={-1}
-					max={1}
-					step={0.01}
+		<Folder title="Tone Mapping" expanded={false}>
+			<Checkbox bind:value={postProcessingState.toneMapping.enabled} label="Enabled" />
+			{#if postProcessingState.toneMapping.enabled}
+				<List
+					bind:value={postProcessingState.toneMapping.mode}
+					label="Mode"
+					options={toneMappingOptions}
 				/>
 				<Slider
-					bind:value={postProcessingState.brightnessContrast.contrast}
-					label="Contrast"
-					min={-1}
-					max={1}
-					step={0.01}
-				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						postProcessingState.brightnessContrast.brightness = 0;
-						postProcessingState.brightnessContrast.contrast = 0;
-					}}
-				/>
-			{/if}
-		</Folder>
-
-		<Folder title="Hue / Saturation" expanded={false}>
-			<Checkbox bind:value={postProcessingState.hueSaturation.enabled} label="Enabled" />
-			{#if postProcessingState.hueSaturation.enabled}
-				<Slider
-					bind:value={postProcessingState.hueSaturation.hue}
-					label="Hue"
-					min={-1}
-					max={1}
-					step={0.01}
+					bind:value={postProcessingState.toneMapping.whitePoint}
+					label="White Point"
+					min={0.1}
+					max={10}
+					step={0.1}
 				/>
 				<Slider
-					bind:value={postProcessingState.hueSaturation.saturation}
-					label="Saturation"
-					min={-1}
-					max={1}
+					bind:value={postProcessingState.toneMapping.middleGrey}
+					label="Middle Grey"
+					min={0}
+					max={2}
 					step={0.01}
 				/>
 				<Button
 					title="Reset"
 					on:click={() => {
-						postProcessingState.hueSaturation.hue = 0;
-						postProcessingState.hueSaturation.saturation = 0;
+						postProcessingState.toneMapping.mode = 11 as ToneMappingMode;
+						postProcessingState.toneMapping.whitePoint = 4.0;
+						postProcessingState.toneMapping.middleGrey = 0.6;
 					}}
 				/>
 			{/if}
 		</Folder>
 
-		<Folder title="Sepia" expanded={false}>
-			<Checkbox bind:value={postProcessingState.sepia.enabled} label="Enabled" />
-			{#if postProcessingState.sepia.enabled}
+		<Folder title="FXAA" expanded={false}>
+			<Checkbox bind:value={postProcessingState.fxaa.enabled} label="Enabled" />
+			{#if postProcessingState.fxaa.enabled}
 				<Slider
-					bind:value={postProcessingState.sepia.intensity}
-					label="Intensity"
+					bind:value={postProcessingState.fxaa.minEdgeThreshold}
+					label="Min Edge"
+					min={0}
+					max={1}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.fxaa.maxEdgeThreshold}
+					label="Max Edge"
+					min={0}
+					max={1}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.fxaa.subpixelQuality}
+					label="Subpixel Quality"
 					min={0}
 					max={1}
 					step={0.01}
@@ -321,75 +340,138 @@
 				<Button
 					title="Reset"
 					on:click={() => {
-						postProcessingState.sepia.intensity = 1;
+						postProcessingState.fxaa.minEdgeThreshold = 0.05;
+						postProcessingState.fxaa.maxEdgeThreshold = 0.12;
+						postProcessingState.fxaa.subpixelQuality = 0.75;
 					}}
 				/>
 			{/if}
 		</Folder>
 
-		<Folder title="Dot Screen" expanded={false}>
-			<Checkbox bind:value={postProcessingState.dotScreen.enabled} label="Enabled" />
-			{#if postProcessingState.dotScreen.enabled}
+		<Folder title="Grid" expanded={false}>
+			<Checkbox bind:value={postProcessingState.grid.enabled} label="Enabled" />
+			{#if postProcessingState.grid.enabled}
 				<Slider
-					bind:value={postProcessingState.dotScreen.angle}
-					label="Angle"
+					bind:value={postProcessingState.grid.scale}
+					label="Scale"
+					min={0.1}
+					max={10}
+					step={0.1}
+				/>
+				<Slider
+					bind:value={postProcessingState.grid.lineWidth}
+					label="Line Width"
 					min={0}
+					max={1}
+					step={0.01}
+				/>
+				<Button
+					title="Reset"
+					on:click={() => {
+						postProcessingState.grid.scale = 1.0;
+						postProcessingState.grid.lineWidth = 0.0;
+					}}
+				/>
+			{/if}
+		</Folder>
+
+		<Folder title="Tilt Shift" expanded={false}>
+			<Checkbox bind:value={postProcessingState.tiltShift.enabled} label="Enabled" />
+			{#if postProcessingState.tiltShift.enabled}
+				<Slider
+					bind:value={postProcessingState.tiltShift.offset}
+					label="Offset"
+					min={-1}
+					max={1}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.tiltShift.rotation}
+					label="Rotation"
+					min={-3.14}
 					max={3.14}
 					step={0.01}
 				/>
 				<Slider
-					bind:value={postProcessingState.dotScreen.scale}
-					label="Scale"
-					min={0.1}
-					max={5}
-					step={0.1}
+					bind:value={postProcessingState.tiltShift.focusArea}
+					label="Focus Area"
+					min={0}
+					max={1}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.tiltShift.feather}
+					label="Feather"
+					min={0}
+					max={1}
+					step={0.01}
+				/>
+				<List
+					bind:value={postProcessingState.tiltShift.kernelSize}
+					label="Kernel Size"
+					options={kernelSizeOptions}
 				/>
 				<Button
 					title="Reset"
 					on:click={() => {
-						postProcessingState.dotScreen.angle = 1.57;
-						postProcessingState.dotScreen.scale = 1;
+						postProcessingState.tiltShift.offset = 0.0;
+						postProcessingState.tiltShift.rotation = 0.0;
+						postProcessingState.tiltShift.focusArea = 0.4;
+						postProcessingState.tiltShift.feather = 0.3;
+						postProcessingState.tiltShift.kernelSize = 3 as KernelSize;
 					}}
 				/>
 			{/if}
 		</Folder>
 
-		<Folder title="Scanline" expanded={false}>
-			<Checkbox bind:value={postProcessingState.scanline.enabled} label="Enabled" />
-			{#if postProcessingState.scanline.enabled}
+		<Folder title="Lens Distortion" expanded={false}>
+			<Checkbox bind:value={postProcessingState.lensDistortion.enabled} label="Enabled" />
+			{#if postProcessingState.lensDistortion.enabled}
 				<Slider
-					bind:value={postProcessingState.scanline.density}
-					label="Density"
-					min={0.5}
-					max={5}
-					step={0.1}
+					bind:value={postProcessingState.lensDistortion.distortionX}
+					label="Distortion X"
+					min={-1}
+					max={1}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.lensDistortion.distortionY}
+					label="Distortion Y"
+					min={-1}
+					max={1}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.lensDistortion.principalX}
+					label="Principal X"
+					min={-1}
+					max={1}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.lensDistortion.principalY}
+					label="Principal Y"
+					min={-1}
+					max={1}
+					step={0.01}
+				/>
+				<Slider
+					bind:value={postProcessingState.lensDistortion.skew}
+					label="Skew"
+					min={0}
+					max={1}
+					step={0.01}
 				/>
 				<Button
 					title="Reset"
 					on:click={() => {
-						postProcessingState.scanline.density = 1.5;
-						postProcessingState.scanline.opacity = 0.5;
-					}}
-				/>
-			{/if}
-		</Folder>
-
-		<Folder title="ASCII" expanded={false}>
-			<Checkbox bind:value={postProcessingState.ascii.enabled} label="Enabled" />
-			{#if postProcessingState.ascii.enabled}
-				<Slider
-					bind:value={postProcessingState.ascii.cellSize}
-					label="Cell Size"
-					min={4}
-					max={64}
-					step={2}
-				/>
-				<Checkbox bind:value={postProcessingState.ascii.inverted} label="Inverted" />
-				<Button
-					title="Reset"
-					on:click={() => {
-						postProcessingState.ascii.cellSize = 16;
-						postProcessingState.ascii.inverted = false;
+						postProcessingState.lensDistortion.distortionX = 0.0;
+						postProcessingState.lensDistortion.distortionY = 0.0;
+						postProcessingState.lensDistortion.principalX = 0.0;
+						postProcessingState.lensDistortion.principalY = 0.0;
+						postProcessingState.lensDistortion.focalLengthX = 1.0;
+						postProcessingState.lensDistortion.focalLengthY = 1.0;
+						postProcessingState.lensDistortion.skew = 0.0;
 					}}
 				/>
 			{/if}
@@ -405,6 +487,9 @@
 				postProcessingState.bloom.luminanceSmoothing = 0.08;
 				postProcessingState.bloom.kernelSize = 4 as KernelSize;
 				postProcessingState.smaa.preset = 2;
+				postProcessingState.fxaa.minEdgeThreshold = 0.05;
+				postProcessingState.fxaa.maxEdgeThreshold = 0.12;
+				postProcessingState.fxaa.subpixelQuality = 0.75;
 				postProcessingState.vignette.offset = 0.2;
 				postProcessingState.vignette.darkness = 0.75;
 				postProcessingState.pixelation.granularity = 4.5;
@@ -414,6 +499,8 @@
 				postProcessingState.glitch.ratio = 0.85;
 				postProcessingState.noise.premultiply = true;
 				postProcessingState.noise.blendFunction = 28 as BlendFunction;
+				postProcessingState.chromaticAberration.radialModulation = false;
+				postProcessingState.chromaticAberration.modulationOffset = 0.5;
 				postProcessingState.chromaticAberration.offset = 0.005;
 				postProcessingState.brightnessContrast.brightness = 0;
 				postProcessingState.brightnessContrast.contrast = 0;
@@ -426,6 +513,23 @@
 				postProcessingState.scanline.opacity = 0.5;
 				postProcessingState.ascii.cellSize = 16;
 				postProcessingState.ascii.inverted = false;
+				postProcessingState.toneMapping.mode = 11 as ToneMappingMode;
+				postProcessingState.toneMapping.whitePoint = 4.0;
+				postProcessingState.toneMapping.middleGrey = 0.6;
+				postProcessingState.grid.scale = 1.0;
+				postProcessingState.grid.lineWidth = 0.0;
+				postProcessingState.tiltShift.offset = 0.0;
+				postProcessingState.tiltShift.rotation = 0.0;
+				postProcessingState.tiltShift.focusArea = 0.4;
+				postProcessingState.tiltShift.feather = 0.3;
+				postProcessingState.tiltShift.kernelSize = 3 as KernelSize;
+				postProcessingState.lensDistortion.distortionX = 0.0;
+				postProcessingState.lensDistortion.distortionY = 0.0;
+				postProcessingState.lensDistortion.principalX = 0.0;
+				postProcessingState.lensDistortion.principalY = 0.0;
+				postProcessingState.lensDistortion.focalLengthX = 1.0;
+				postProcessingState.lensDistortion.focalLengthY = 1.0;
+				postProcessingState.lensDistortion.skew = 0.0;
 			}}
 		/>
 	</DropDownPane>

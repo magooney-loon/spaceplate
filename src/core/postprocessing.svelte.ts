@@ -1,4 +1,4 @@
-import type { KernelSize, BlendFunction } from 'postprocessing';
+import type { KernelSize, BlendFunction, ToneMappingMode } from 'postprocessing';
 
 export interface BloomState {
 	enabled: boolean;
@@ -11,6 +11,13 @@ export interface BloomState {
 export interface SMAAState {
 	enabled: boolean;
 	preset: 0 | 1 | 2;
+}
+
+export interface FXAAState {
+	enabled: boolean;
+	minEdgeThreshold: number;
+	maxEdgeThreshold: number;
+	subpixelQuality: number;
 }
 
 export interface VignetteState {
@@ -40,6 +47,8 @@ export interface NoiseState {
 
 export interface ChromaticAberrationState {
 	enabled: boolean;
+	radialModulation: boolean;
+	modulationOffset: number;
 	offset: number;
 }
 
@@ -86,9 +95,43 @@ export interface ASCIIState {
 	inverted: boolean;
 }
 
+export interface ToneMappingState {
+	enabled: boolean;
+	mode: ToneMappingMode;
+	whitePoint: number;
+	middleGrey: number;
+}
+
+export interface GridState {
+	enabled: boolean;
+	scale: number;
+	lineWidth: number;
+}
+
+export interface TiltShiftState {
+	enabled: boolean;
+	offset: number;
+	rotation: number;
+	focusArea: number;
+	feather: number;
+	kernelSize: KernelSize;
+}
+
+export interface LensDistortionState {
+	enabled: boolean;
+	distortionX: number;
+	distortionY: number;
+	principalX: number;
+	principalY: number;
+	focalLengthX: number;
+	focalLengthY: number;
+	skew: number;
+}
+
 export interface PostProcessingState {
 	bloom: BloomState;
 	smaa: SMAAState;
+	fxaa: FXAAState;
 	vignette: VignetteState;
 	pixelation: PixelationState;
 	glitch: GlitchState;
@@ -101,6 +144,10 @@ export interface PostProcessingState {
 	scanline: ScanlineState;
 	shockWave: ShockWaveState;
 	ascii: ASCIIState;
+	toneMapping: ToneMappingState;
+	grid: GridState;
+	tiltShift: TiltShiftState;
+	lensDistortion: LensDistortionState;
 }
 
 export const postProcessingState = $state<PostProcessingState>({
@@ -114,6 +161,12 @@ export const postProcessingState = $state<PostProcessingState>({
 	smaa: {
 		enabled: false,
 		preset: 2
+	},
+	fxaa: {
+		enabled: false,
+		minEdgeThreshold: 0.05,
+		maxEdgeThreshold: 0.12,
+		subpixelQuality: 0.75
 	},
 	vignette: {
 		enabled: false,
@@ -138,6 +191,8 @@ export const postProcessingState = $state<PostProcessingState>({
 	},
 	chromaticAberration: {
 		enabled: false,
+		radialModulation: false,
+		modulationOffset: 0.5,
 		offset: 0.005
 	},
 	brightnessContrast: {
@@ -175,5 +230,34 @@ export const postProcessingState = $state<PostProcessingState>({
 		enabled: false,
 		cellSize: 16,
 		inverted: false
+	},
+	toneMapping: {
+		enabled: false,
+		mode: 11 as ToneMappingMode,
+		whitePoint: 4.0,
+		middleGrey: 0.6
+	},
+	grid: {
+		enabled: false,
+		scale: 1.0,
+		lineWidth: 0.0
+	},
+	tiltShift: {
+		enabled: false,
+		offset: 0.0,
+		rotation: 0.0,
+		focusArea: 0.4,
+		feather: 0.3,
+		kernelSize: 3 as KernelSize
+	},
+	lensDistortion: {
+		enabled: false,
+		distortionX: 0.0,
+		distortionY: 0.0,
+		principalX: 0.0,
+		principalY: 0.0,
+		focalLengthX: 1.0,
+		focalLengthY: 1.0,
+		skew: 0.0
 	}
 });
