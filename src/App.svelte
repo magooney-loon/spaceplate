@@ -43,30 +43,28 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div style="position: relative; width: 100%; height: 100%;">
-	<Canvas {createRenderer} {dpr}>
-		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-			{#await import('@threlte/extras') then { PerfMonitor }}
-				<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} />
-			{/await}
-			{#await Promise.all( [import('@threlte/studio'), import('./extensions/StageExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte')] ) then [{ Studio }, { default: StageExtension }, { default: PostProcessingExtension }]}
-				<Studio extensions={[StageExtension, PostProcessingExtension]}>
-					<Camera />
-					<Sound />
-					<Skybox />
-					<Renderer />
-					<Scene />
-				</Studio>
-			{/await}
-		{:else}
-			<Camera />
-			<Sound />
-			<Skybox />
-			<Renderer />
-			<Scene />
-		{/if}
-	</Canvas>
+<Canvas {createRenderer} {dpr}>
+	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
+		{#await import('@threlte/extras') then { PerfMonitor }}
+			<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} />
+		{/await}
+		{#await Promise.all( [import('@threlte/studio'), import('./extensions/StageExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte')] ) then [{ Studio }, { default: StageExtension }, { default: PostProcessingExtension }]}
+			<Studio extensions={[StageExtension, PostProcessingExtension]}>
+				<Camera />
+				<Sound />
+				<Skybox />
+				<Renderer />
+				<Scene />
+			</Studio>
+		{/await}
+	{:else}
+		<Camera />
+		<Sound />
+		<Skybox />
+		<Renderer />
+		<Scene />
+	{/if}
+</Canvas>
 
-	<SceneHud />
-	<Loader />
-</div>
+<SceneHud />
+<Loader />
