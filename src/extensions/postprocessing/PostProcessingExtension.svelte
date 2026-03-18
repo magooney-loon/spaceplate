@@ -688,6 +688,168 @@
 			setDepthEffectBlendFunction: ({ state }, v) => {
 				state.depthEffect.blendFunction = v;
 			},
+			resetBloom: ({ state }) => {
+				state.bloom.intensity = 1.0;
+				state.bloom.luminanceThreshold = 1.0;
+				state.bloom.luminanceSmoothing = 0.03;
+				state.bloom.kernelSize = 4 as KernelSize;
+				state.bloom.blendFunction = 28 as BlendFunction;
+				state.bloom.mipmapBlur = true;
+				state.bloom.radius = 0.85;
+				state.bloom.levels = 8;
+			},
+			resetSMAA: ({ state }) => {
+				state.smaa.preset = 2;
+				state.smaa.edgeDetectionMode = 2;
+				state.smaa.predicationMode = 0;
+			},
+			resetFXAA: ({ state }) => {
+				state.fxaa.minEdgeThreshold = 0.05;
+				state.fxaa.maxEdgeThreshold = 0.12;
+				state.fxaa.subpixelQuality = 0.75;
+			},
+			resetVignette: ({ state }) => {
+				state.vignette.offset = 0.5;
+				state.vignette.darkness = 0.5;
+				state.vignette.technique = 0;
+			},
+			resetPixelation: ({ state }) => {
+				state.pixelation.granularity = 30.0;
+			},
+			resetGlitch: ({ state }) => {
+				state.glitch.delay = 2.5;
+				state.glitch.duration = 0.8;
+				state.glitch.strength = 0.65;
+				state.glitch.ratio = 0.85;
+				state.glitch.columns = 0.05;
+				state.glitch.mode = 1;
+			},
+			resetNoise: ({ state }) => {
+				state.noise.premultiply = false;
+				state.noise.blendFunction = 28 as BlendFunction;
+			},
+			resetChromaticAberration: ({ state }) => {
+				state.chromaticAberration.offsetX = 0.01;
+				state.chromaticAberration.offsetY = 0.01;
+				state.chromaticAberration.radialModulation = false;
+				state.chromaticAberration.modulationOffset = 0.15;
+				state.chromaticAberration.blendFunction = 0 as BlendFunction;
+			},
+			resetBrightnessContrast: ({ state }) => {
+				state.brightnessContrast.brightness = 0;
+				state.brightnessContrast.contrast = 0;
+				state.brightnessContrast.blendFunction = 0 as BlendFunction;
+			},
+			resetHueSaturation: ({ state }) => {
+				state.hueSaturation.hue = 0;
+				state.hueSaturation.saturation = 0;
+				state.hueSaturation.blendFunction = 0 as BlendFunction;
+			},
+			resetSepia: ({ state }) => {
+				state.sepia.intensity = 1.0;
+				state.sepia.blendFunction = 0 as BlendFunction;
+			},
+			resetDotScreen: ({ state }) => {
+				state.dotScreen.angle = 1.57;
+				state.dotScreen.scale = 1.0;
+				state.dotScreen.blendFunction = 0 as BlendFunction;
+			},
+			resetScanline: ({ state }) => {
+				state.scanline.density = 1.25;
+				state.scanline.opacity = 0.5;
+				state.scanline.scrollSpeed = 0;
+				state.scanline.blendFunction = 25 as BlendFunction;
+			},
+			resetShockWave: ({ state }) => {
+				state.shockWave.speed = 1.25;
+				state.shockWave.maxRadius = 0.5;
+				state.shockWave.waveSize = 0.2;
+				state.shockWave.amplitude = 0.05;
+				state.shockWave.epicenterX = 0;
+				state.shockWave.epicenterY = 0;
+				state.shockWave.epicenterZ = 0;
+			},
+			resetASCII: ({ state }) => {
+				state.ascii.cellSize = 16;
+				state.ascii.inverted = false;
+			},
+			resetToneMapping: ({ state }) => {
+				state.toneMapping.mode = 11 as ToneMappingMode;
+				state.toneMapping.whitePoint = 4.0;
+				state.toneMapping.middleGrey = 0.6;
+				state.toneMapping.blendFunction = 0 as BlendFunction;
+				state.toneMapping.resolution = 256;
+				state.toneMapping.minLuminance = 0.01;
+				state.toneMapping.averageLuminance = 1.0;
+				state.toneMapping.adaptationRate = 1.0;
+			},
+			resetGrid: ({ state }) => {
+				state.grid.scale = 1.0;
+				state.grid.lineWidth = 0.0;
+				state.grid.blendFunction = 25 as BlendFunction;
+			},
+			resetTiltShift: ({ state }) => {
+				state.tiltShift.offset = 0.0;
+				state.tiltShift.rotation = 0.0;
+				state.tiltShift.focusArea = 0.4;
+				state.tiltShift.feather = 0.3;
+				state.tiltShift.kernelSize = 3 as KernelSize;
+				state.tiltShift.blendFunction = 0 as BlendFunction;
+			},
+			resetLensDistortion: ({ state }) => {
+				state.lensDistortion.distortionX = 0.0;
+				state.lensDistortion.distortionY = 0.0;
+				state.lensDistortion.principalX = 0.0;
+				state.lensDistortion.principalY = 0.0;
+				state.lensDistortion.focalLengthX = 1.0;
+				state.lensDistortion.focalLengthY = 1.0;
+				state.lensDistortion.skew = 0.0;
+			},
+			resetColorDepth: ({ state }) => {
+				state.colorDepth.bits = 16;
+				state.colorDepth.blendFunction = 0 as BlendFunction;
+			},
+			resetDepthOfField: ({ state }) => {
+				state.depthOfField.focusDistance = 3.0;
+				state.depthOfField.focusRange = 2.0;
+				state.depthOfField.bokehScale = 1.0;
+				state.depthOfField.blendFunction = 0 as BlendFunction;
+			},
+			resetGodRays: ({ state }) => {
+				state.godRays.samples = 60;
+				state.godRays.density = 0.96;
+				state.godRays.decay = 0.9;
+				state.godRays.weight = 0.4;
+				state.godRays.exposure = 0.6;
+				state.godRays.clampMax = 1.0;
+				state.godRays.blur = true;
+				state.godRays.kernelSize = 2 as KernelSize;
+				state.godRays.blendFunction = 28 as BlendFunction;
+			},
+			resetSSAO: ({ state }) => {
+				state.ssao.samples = 9;
+				state.ssao.rings = 7;
+				state.ssao.radius = 0.1825;
+				state.ssao.intensity = 1.0;
+				state.ssao.bias = 0.025;
+				state.ssao.fade = 0.01;
+				state.ssao.luminanceInfluence = 0.7;
+				state.ssao.blendFunction = 7 as BlendFunction;
+			},
+			resetOutline: ({ state }) => {
+				state.outline.edgeStrength = 1.0;
+				state.outline.visibleEdgeColor = 0xffffff;
+				state.outline.hiddenEdgeColor = 0x22090a;
+				state.outline.pulseSpeed = 0.0;
+				state.outline.xRay = true;
+				state.outline.blur = false;
+				state.outline.kernelSize = 1 as KernelSize;
+				state.outline.blendFunction = 22 as BlendFunction;
+			},
+			resetDepthEffect: ({ state }) => {
+				state.depthEffect.inverted = false;
+				state.depthEffect.blendFunction = 0 as BlendFunction;
+			},
 			resetAll: ({ state }) => {
 				state.bloom.intensity = 1.0;
 				state.bloom.luminanceThreshold = 1.0;
@@ -868,19 +1030,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setBloomBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.bloom.intensity = 1.0;
-						ext.state.bloom.luminanceThreshold = 1.0;
-						ext.state.bloom.luminanceSmoothing = 0.03;
-						ext.state.bloom.radius = 0.85;
-						ext.state.bloom.levels = 8;
-						ext.state.bloom.kernelSize = 4 as KernelSize;
-						ext.state.bloom.mipmapBlur = true;
-						ext.state.bloom.blendFunction = 28 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetBloom} />
 			{/if}
 		</Folder>
 
@@ -905,14 +1055,7 @@
 					options={smaaPredicationOptions}
 					on:change={(e) => ext.setSMAAPredicationMode(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.smaa.preset = 2;
-						ext.state.smaa.edgeDetectionMode = 2;
-						ext.state.smaa.predicationMode = 0;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetSMAA} />
 			{/if}
 		</Folder>
 
@@ -958,14 +1101,7 @@
 							e.detail.value
 						)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.fxaa.minEdgeThreshold = 0.05;
-						ext.state.fxaa.maxEdgeThreshold = 0.12;
-						ext.state.fxaa.subpixelQuality = 0.75;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetFXAA} />
 			{/if}
 		</Folder>
 
@@ -998,14 +1134,7 @@
 					options={vignetteTechniqueOptions}
 					on:change={(e) => ext.setVignetteTechnique(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.vignette.offset = 0.5;
-						ext.state.vignette.darkness = 0.5;
-						ext.state.vignette.technique = 0;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetVignette} />
 			{/if}
 		</Folder>
 
@@ -1024,12 +1153,7 @@
 					step={1}
 					on:change={(e) => ext.setPixelationGranularity(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.pixelation.granularity = 30.0;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetPixelation} />
 			{/if}
 		</Folder>
 
@@ -1086,17 +1210,7 @@
 					step={0.01}
 					on:change={(e) => ext.setGlitchColumns(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.glitch.delay = 2.5;
-						ext.state.glitch.duration = 0.8;
-						ext.state.glitch.strength = 0.65;
-						ext.state.glitch.ratio = 0.85;
-						ext.state.glitch.columns = 0.05;
-						ext.state.glitch.mode = 1;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetGlitch} />
 			{/if}
 		</Folder>
 
@@ -1114,13 +1228,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setNoiseBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.noise.premultiply = false;
-						ext.state.noise.blendFunction = 28 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetNoise} />
 			{/if}
 		</Folder>
 
@@ -1169,16 +1277,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setChromaticAberrationBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.chromaticAberration.offsetX = 0.01;
-						ext.state.chromaticAberration.offsetY = 0.01;
-						ext.state.chromaticAberration.radialModulation = false;
-						ext.state.chromaticAberration.modulationOffset = 0.15;
-						ext.state.chromaticAberration.blendFunction = 0 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetChromaticAberration} />
 			{/if}
 		</Folder>
 
@@ -1211,14 +1310,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setBrightnessContrastBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.brightnessContrast.brightness = 0;
-						ext.state.brightnessContrast.contrast = 0;
-						ext.state.brightnessContrast.blendFunction = 0 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetBrightnessContrast} />
 			{/if}
 		</Folder>
 
@@ -1251,14 +1343,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setHueSaturationBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.hueSaturation.hue = 0;
-						ext.state.hueSaturation.saturation = 0;
-						ext.state.hueSaturation.blendFunction = 0 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetHueSaturation} />
 			{/if}
 		</Folder>
 
@@ -1283,13 +1368,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setSepiaBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.sepia.intensity = 1.0;
-						ext.state.sepia.blendFunction = 0 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetSepia} />
 			{/if}
 		</Folder>
 
@@ -1322,14 +1401,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setDotScreenBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.dotScreen.angle = 1.57;
-						ext.state.dotScreen.scale = 1.0;
-						ext.state.dotScreen.blendFunction = 0 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetDotScreen} />
 			{/if}
 		</Folder>
 
@@ -1370,15 +1442,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setScanlineBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.scanline.density = 1.25;
-						ext.state.scanline.opacity = 0.5;
-						ext.state.scanline.scrollSpeed = 0;
-						ext.state.scanline.blendFunction = 25 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetScanline} />
 			{/if}
 		</Folder>
 
@@ -1422,15 +1486,7 @@
 					on:change={(e) => ext.setShockWaveAmplitude(e.detail.value)}
 				/>
 				<Button title="Explode!" on:click={() => ext.triggerShockWave()} />
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.shockWave.speed = 1.25;
-						ext.state.shockWave.maxRadius = 0.5;
-						ext.state.shockWave.waveSize = 0.2;
-						ext.state.shockWave.amplitude = 0.05;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetShockWave} />
 			{/if}
 		</Folder>
 
@@ -1450,13 +1506,7 @@
 					on:change={(e) => ext.setASCIICellSize(e.detail.value)}
 				/>
 				<Checkbox value={ext.state.ascii.inverted} label="Inverted" />
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.ascii.cellSize = 16;
-						ext.state.ascii.inverted = false;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetASCII} />
 			{/if}
 		</Folder>
 
@@ -1527,19 +1577,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setToneMappingBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.toneMapping.mode = 11 as ToneMappingMode;
-						ext.state.toneMapping.whitePoint = 4.0;
-						ext.state.toneMapping.middleGrey = 0.6;
-						ext.state.toneMapping.resolution = 256;
-						ext.state.toneMapping.minLuminance = 0.01;
-						ext.state.toneMapping.averageLuminance = 1.0;
-						ext.state.toneMapping.adaptationRate = 1.0;
-						ext.state.toneMapping.blendFunction = 0 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetToneMapping} />
 			{/if}
 		</Folder>
 
@@ -1568,14 +1606,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setGridBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.grid.scale = 1.0;
-						ext.state.grid.lineWidth = 0.0;
-						ext.state.grid.blendFunction = 25 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetGrid} />
 			{/if}
 		</Folder>
 
@@ -1632,17 +1663,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setTiltShiftBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.tiltShift.offset = 0.0;
-						ext.state.tiltShift.rotation = 0.0;
-						ext.state.tiltShift.focusArea = 0.4;
-						ext.state.tiltShift.feather = 0.3;
-						ext.state.tiltShift.kernelSize = 3 as KernelSize;
-						ext.state.tiltShift.blendFunction = 0 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetTiltShift} />
 			{/if}
 		</Folder>
 
@@ -1709,18 +1730,7 @@
 					step={0.01}
 					on:change={(e) => ext.setLensSkew(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.lensDistortion.distortionX = 0.0;
-						ext.state.lensDistortion.distortionY = 0.0;
-						ext.state.lensDistortion.principalX = 0.0;
-						ext.state.lensDistortion.principalY = 0.0;
-						ext.state.lensDistortion.focalLengthX = 1.0;
-						ext.state.lensDistortion.focalLengthY = 1.0;
-						ext.state.lensDistortion.skew = 0.0;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetLensDistortion} />
 			{/if}
 		</Folder>
 
@@ -1745,13 +1755,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setColorDepthBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.colorDepth.bits = 16;
-						ext.state.colorDepth.blendFunction = 0 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetColorDepth} />
 			{/if}
 		</Folder>
 
@@ -1792,15 +1796,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setDepthOfFieldBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.depthOfField.focusDistance = 3.0;
-						ext.state.depthOfField.focusRange = 2.0;
-						ext.state.depthOfField.bokehScale = 1.0;
-						ext.state.depthOfField.blendFunction = 0 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetDepthOfField} />
 			{/if}
 		</Folder>
 
@@ -1872,20 +1868,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setGodRaysBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.godRays.samples = 60;
-						ext.state.godRays.density = 0.96;
-						ext.state.godRays.decay = 0.9;
-						ext.state.godRays.weight = 0.4;
-						ext.state.godRays.exposure = 0.6;
-						ext.state.godRays.clampMax = 1.0;
-						ext.state.godRays.blur = true;
-						ext.state.godRays.kernelSize = 2 as KernelSize;
-						ext.state.godRays.blendFunction = 28 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetGodRays} />
 			{/if}
 		</Folder>
 
@@ -1954,19 +1937,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setSSAOBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.ssao.samples = 9;
-						ext.state.ssao.rings = 7;
-						ext.state.ssao.radius = 0.1825;
-						ext.state.ssao.intensity = 1.0;
-						ext.state.ssao.bias = 0.025;
-						ext.state.ssao.fade = 0.01;
-						ext.state.ssao.luminanceInfluence = 0.7;
-						ext.state.ssao.blendFunction = 7 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetSSAO} />
 			{/if}
 		</Folder>
 
@@ -2007,19 +1978,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setOutlineBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.outline.edgeStrength = 1.0;
-						ext.state.outline.visibleEdgeColor = 0xffffff;
-						ext.state.outline.hiddenEdgeColor = 0x22090a;
-						ext.state.outline.pulseSpeed = 0.0;
-						ext.state.outline.xRay = true;
-						ext.state.outline.blur = false;
-						ext.state.outline.kernelSize = 1 as KernelSize;
-						ext.state.outline.blendFunction = 22 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetOutline} />
 			{/if}
 		</Folder>
 
@@ -2037,13 +1996,7 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setDepthEffectBlendFunction(e.detail.value)}
 				/>
-				<Button
-					title="Reset"
-					on:click={() => {
-						ext.state.depthEffect.inverted = false;
-						ext.state.depthEffect.blendFunction = 0 as BlendFunction;
-					}}
-				/>
+				<Button title="Reset" on:click={ext.resetDepthEffect} />
 			{/if}
 		</Folder>
 
