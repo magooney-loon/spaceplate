@@ -2,7 +2,12 @@ export const extensionScope = 'camera-controls';
 
 export interface CameraControlsState {
 	[key: string]: unknown;
-	enabled: boolean;
+	positionX: number;
+	positionY: number;
+	positionZ: number;
+	fov: number;
+	near: number;
+	far: number;
 	minPolarAngle: number;
 	maxPolarAngle: number;
 	minAzimuthAngle: number;
@@ -22,7 +27,12 @@ export interface CameraControlsState {
 }
 
 export type CameraControlsActions = {
-	toggleEnabled: () => void;
+	setPositionX: (value: number) => void;
+	setPositionY: (value: number) => void;
+	setPositionZ: (value: number) => void;
+	setFov: (value: number) => void;
+	setNear: (value: number) => void;
+	setFar: (value: number) => void;
 	setMinPolarAngle: (value: number) => void;
 	setMaxPolarAngle: (value: number) => void;
 	setMinAzimuthAngle: (value: number) => void;

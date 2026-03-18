@@ -6,9 +6,20 @@
 	import type { PerspectiveCamera } from 'three';
 
 	let controlsRef = $state<any>(null);
-	const { state: cameraState } = useCameraControls();
+	const ext = useCameraControls();
+
+	// Create derived values for reactive camera properties
+	const position = $derived([ext.state.positionX, ext.state.positionY, ext.state.positionZ] as [
+		number,
+		number,
+		number
+	]);
+	const fov = $derived(ext.state.fov);
+	const near = $derived(ext.state.near);
+	const far = $derived(ext.state.far);
 
 	const handleCameraCreate = (camera: PerspectiveCamera) => {
+		camera.position.set(position[0], position[1], position[2]);
 		camera.lookAt(0, 0, 0);
 		return () => {
 			log.info('Camera disposed');
@@ -18,39 +29,9 @@
 	const handleControlsCreate = (ref: any) => {
 		controlsRef = ref;
 	};
-
-	$effect(() => {
-		if (!controlsRef) return;
-
-		const state = cameraState;
-		controlsRef.enabled = state.enabled;
-		controlsRef.minPolarAngle = state.minPolarAngle;
-		controlsRef.maxPolarAngle = state.maxPolarAngle;
-		controlsRef.minAzimuthAngle = state.minAzimuthAngle;
-		controlsRef.maxAzimuthAngle = state.maxAzimuthAngle;
-		controlsRef.minDistance = state.minDistance;
-		controlsRef.maxDistance = state.maxDistance;
-		controlsRef.minZoom = state.minZoom;
-		controlsRef.maxZoom = state.maxZoom;
-		controlsRef.smoothTime = state.smoothTime;
-		controlsRef.draggingSmoothTime = state.draggingSmoothTime;
-		controlsRef.maxSpeed = state.maxSpeed;
-		controlsRef.azimuthRotateSpeed = state.azimuthRotateSpeed;
-		controlsRef.polarRotateSpeed = state.polarRotateSpeed;
-		controlsRef.dollySpeed = state.dollySpeed;
-		controlsRef.truckSpeed = state.truckSpeed;
-		controlsRef.dollyToCursor = state.dollyToCursor;
-	});
 </script>
 
-<T.PerspectiveCamera
-	position={[0, 0, 10]}
-	fov={60}
-	near={0.001}
-	far={144}
-	makeDefault
-	oncreate={handleCameraCreate}
->
+<T.PerspectiveCamera {position} {fov} {near} {far} makeDefault oncreate={handleCameraCreate}>
 	<AudioListener />
-	<CameraControls enabled={false} bind:ref={controlsRef} oncreate={handleControlsCreate} />
+	<CameraControls enabled={true} bind:ref={controlsRef} oncreate={handleControlsCreate} />
 </T.PerspectiveCamera>
