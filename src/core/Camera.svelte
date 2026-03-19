@@ -5,9 +5,9 @@
 
 <T.PerspectiveCamera
 	makeDefault
-	position={[10, 10, 10]}
+	position={[0, 0, 10]}
 	oncreate={(ref) => {
-		ref.lookAt(0, 1, 0);
+		ref.lookAt(0, 0, 0);
 	}}
 >
 	<AudioListener />

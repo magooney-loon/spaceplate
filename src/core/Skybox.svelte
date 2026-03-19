@@ -18,7 +18,7 @@
 </script>
 
 <!-- Background stars — Layer 1 (inner, faster) -->
-<T.Group>
+<T.Group userData={{ hideInTree: true, selectable: false }}>
 	<StarsComponent
 		count={starCounts.stars1}
 		radius={10}
@@ -33,7 +33,7 @@
 </T.Group>
 
 <!-- Background stars — Layer 2 (outer, slower for depth parallax) -->
-<T.Group>
+<T.Group userData={{ hideInTree: true, selectable: false }}>
 	<StarsComponent
 		count={starCounts.stars2}
 		radius={10}
