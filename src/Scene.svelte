@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { stageState } from '$core/stage.svelte.js';
-	import HomeStage from '$lib/HomeStage.svelte';
-	import GalaxyStage from '$lib/GalaxyStage.svelte';
+	import { sceneState } from '$core/SceneManager.svelte.ts';
+	import MainMenu from '$scenes/MainMenu.svelte';
+	import DemoScene from '$scenes/DemoScene.svelte';
 </script>
 
-<!-- 3D stage content only — HTML overlays live in App.svelte -->
-{#if stageState.currentStage === 'home' || stageState.currentStage === 'settings'}
-	<HomeStage />
+<!-- 3D scene content based on current scene -->
+{#if sceneState.currentScene === 'mainMenu' || sceneState.currentScene === 'settings'}
+	<MainMenu />
 {/if}
 
-{#if stageState.currentStage === 'galaxy'}
-	<GalaxyStage />
+{#if sceneState.currentScene === 'demoScene'}
+	<DemoScene />
 {/if}

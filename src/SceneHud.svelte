@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
-	import { stageState } from '$core/stage.svelte.js';
+	import { sceneState } from '$core/SceneManager.svelte.ts';
 	import { settingsState } from '$core/settings.svelte.js';
-	import HomeHud from '$lib/HomeHud.svelte';
-	import GalaxyHud from '$lib/GalaxyHud.svelte';
-	import Settings from '$lib/Settings.svelte';
+	import MainMenuHud from '$scenes/MainMenuHud.svelte';
+	import DemoSceneHud from '$scenes/DemoSceneHud.svelte';
+	import SettingsHud from '$scenes/SettingsHud.svelte';
 </script>
 
 <!-- HTML overlay — rendered as a sibling to <Canvas> in App.svelte -->
@@ -14,14 +14,16 @@
 		style="position: absolute; inset: 0; pointer-events: none;"
 	>
 		<div style="position: relative; width: 100%; height: 100%; pointer-events: none;">
-			{#if stageState.currentStage === 'settings'}
-				<div style="pointer-events: auto;"><Settings /></div>
+			{#if sceneState.currentScene === 'mainMenu'}
+				<MainMenuHud />
 			{/if}
-			{#if stageState.currentStage === 'home'}
-				<div style="pointer-events: auto;"><HomeHud /></div>
+
+			{#if sceneState.currentScene === 'demoScene'}
+				<DemoSceneHud />
 			{/if}
-			{#if stageState.currentStage === 'galaxy'}
-				<div style="pointer-events: auto;"><GalaxyHud /></div>
+
+			{#if sceneState.currentScene === 'settings'}
+				<SettingsHud />
 			{/if}
 		</div>
 	</div>

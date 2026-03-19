@@ -5,12 +5,12 @@
 		HorizontalButtonGroup,
 		ToolbarButton
 	} from '@threlte/studio/extend';
-	import { stageActions, stageState, STAGES } from '$core/stage.svelte.js';
+	import { sceneActions, sceneState, SCENES } from '$core/SceneManager.svelte.ts';
 
 	const { createExtension } = useStudio();
 
 	createExtension({
-		scope: 'stage',
+		scope: 'scene-manager',
 		state() {
 			return {};
 		},
@@ -20,13 +20,13 @@
 
 <ToolbarItem position="left">
 	<HorizontalButtonGroup>
-		{#each STAGES as stage}
+		{#each SCENES as scene}
 			<ToolbarButton
-				label={stage.label}
-				icon={stage.icon as any}
-				onclick={() => stageActions.setStage(stage.id)}
-				tooltip="Go to {stage.label} stage"
-				active={stageState.currentStage === stage.id}
+				label={scene.label}
+				icon={scene.icon as any}
+				onclick={() => sceneActions.setScene(scene.id)}
+				tooltip="Go to {scene.label}"
+				active={sceneState.currentScene === scene.id}
 			/>
 		{/each}
 	</HorizontalButtonGroup>

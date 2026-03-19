@@ -29,7 +29,9 @@
 			"$core": ["./src/core"],
 			"$core/*": ["./src/core/*"],
 			"$extensions": ["./src/extensions"],
-			"$extensions/*": ["./src/extensions/*"]
+			"$extensions/*": ["./src/extensions/*"],
+			"$scenes": ["./src/scenes"],
+			"$scenes/*": ["./src/scenes/*"]
 		}
 	},
 	"include": ["src", "vite.config.ts"]

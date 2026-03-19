@@ -25,7 +25,8 @@ export default defineConfig({
 			$root: path.resolve(__dirname, './src'),
 			$bindings: path.resolve(__dirname, './src/module_bindings'),
 			$core: path.resolve(__dirname, './src/core'),
-			$extensions: path.resolve(__dirname, './src/extensions')
+			$extensions: path.resolve(__dirname, './src/extensions'),
+			$scenes: path.resolve(__dirname, './src/scenes')
 		}
 	}
 });
