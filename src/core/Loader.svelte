@@ -7,13 +7,15 @@
 
 	const { progress, finishedOnce, active, item, loaded, total } = useProgress();
 
+	const isFinished = $derived($finishedOnce || ($total === 0 && !$active));
+
 	const tweened = new Tween(0, { duration: 600, easing: cubicOut });
 	$effect(() => {
-		tweened.target = $progress;
+		tweened.target = $total === 0 ? 1 : $progress;
 	});
 
 	$effect(() => {
-		if ($finishedOnce) logEngine.info('Assets loaded');
+		if (isFinished) logEngine.info('Assets loaded');
 	});
 
 	function truncatePath(path: string | undefined): string {
@@ -23,7 +25,7 @@
 	}
 </script>
 
-{#if !$finishedOnce}
+{#if !isFinished}
 	<div
 		transition:fade={{ duration: 400 }}
 		class="absolute inset-0 z-200 flex flex-col items-center justify-center bg-black text-white"
