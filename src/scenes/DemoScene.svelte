@@ -37,6 +37,7 @@
 
 		if (bouncingSphere) {
 			bouncingSphere.position.z = Math.sin(time * 2) * 18;
+			bouncingSphere.position.y = Math.sin(time * 1) * 1.5 + 2;
 			bouncingSphere.rotation.x += delta;
 		}
 	});
