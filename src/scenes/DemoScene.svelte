@@ -1,55 +1,90 @@
 <script lang="ts">
-	import { T } from '@threlte/core';
-	import { PositionalAudio } from '@threlte/extras';
+	import { T, useTask } from '@threlte/core';
+	import { PositionalAudio, HTML, interactivity } from '@threlte/extras';
 	import { useGameTasks } from '$core/tasks';
 	import { useSound } from '$extensions/sound/useSound';
 	import { settingsState, BASE_URL } from '$core/settings.svelte.js';
+	import { Spring } from 'svelte/motion';
+	import { cubicOut } from 'svelte/easing';
 	import * as THREE from 'three';
+
+	interactivity();
 
 	const { createPhysicsTask } = useGameTasks();
 	const { state: soundState } = useSound();
 
-	// Demo scene objects
-	let rotatingCube = $state.raw<THREE.Mesh>();
+	const scale = new Spring(1);
+	const colors = ['#4488ff', '#ff4466', '#44ff88', '#ff8844', '#aa44ff', '#ffdd44'];
+	let colorIndex = $state(0);
+
+	let rotatingIco = $state.raw<THREE.Mesh>();
 	let bouncingSphere = $state.raw<THREE.Mesh>();
 	let time = $state(0);
+	let introT = $state(0);
+	let rotation = $state(0);
 
-	// Physics task - runs before render, only in demo scene
+	useTask((delta) => {
+		rotation += delta * 0.5;
+		if (introT < 1) introT = Math.min(1, introT + delta * 2.5);
+	});
+
 	createPhysicsTask((delta) => {
 		time += delta;
 
-		// Rotate cube
-		if (rotatingCube) {
-			rotatingCube.rotation.x += delta * 0.5;
-			rotatingCube.rotation.y += delta * 0.3;
+		if (rotatingIco) {
+			rotatingIco.rotation.y += delta * 0.5;
 		}
 
-		// Bounce sphere
 		if (bouncingSphere) {
-			bouncingSphere.position.y = Math.sin(time * 2) * 1.5;
+			bouncingSphere.position.z = Math.sin(time * 2) * 18;
 			bouncingSphere.rotation.x += delta;
 		}
 	});
 
-	const SWOOSH_URL = `${BASE_URL}sounds/swoosh.mp3`;
+	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 </script>
 
-<!-- Demo Scene 3D Content -->
-<T.Group position={[0, 2, 0]}>
-	<!-- Rotating Cube -->
-	<T.Mesh bind:ref={rotatingCube} position={[0, 0, 0]}>
-		<T.BoxGeometry args={[1, 1, 1]} />
-		<T.MeshStandardMaterial color="#4a90d9" />
+<T.Group scale={cubicOut(introT)}>
+	<T.DirectionalLight position={[0, 10, 0]} intensity={0.5} castShadow />
+
+	<T.Mesh
+		bind:ref={rotatingIco}
+		rotation.y={rotation}
+		position.y={1.5}
+		scale={scale.current}
+		onpointerenter={() => (scale.target = 1.5)}
+		onpointerleave={() => (scale.target = 1)}
+		onclick={() => {
+			colorIndex = (colorIndex + 1) % colors.length;
+		}}
+		castShadow
+	>
+		<T.IcosahedronGeometry args={[1, 1]} />
+		<T.MeshStandardMaterial color={colors[colorIndex]} flatShading />
 	</T.Mesh>
 
-	<!-- Bouncing Sphere with Positional Audio -->
-	<T.Mesh bind:ref={bouncingSphere} position={[2, 0, 0]}>
-		<T.SphereGeometry args={[0.5, 32, 32]} />
-		<T.MeshStandardMaterial color="#d94a4a" />
+	<HTML position.y={3.6} center zIndexRange={[0, 0]}>
+		<div
+			style="
+			color: {colors[colorIndex]};
+			font-size: 42px;
+			font-weight: bold;
+			font-family: monospace;
+			text-shadow: 0 0 6px {colors[colorIndex]}, 0 1px 3px rgba(0,0,0,0.8);
+			white-space: nowrap;
+			pointer-events: none;
+		"
+		>
+			{colors[colorIndex]}
+		</div>
+	</HTML>
 
-		<!-- Positional audio that moves with the sphere -->
+	<T.Mesh bind:ref={bouncingSphere} position={[2.5, 0, 0]} castShadow>
+		<T.SphereGeometry args={[0.5, 32, 32]} />
+		<T.MeshStandardMaterial color="#d94a4a" flatShading />
+
 		<PositionalAudio
-			src={SWOOSH_URL}
+			src={POS_URL}
 			volume={settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0}
 			refDistance={soundState.refDistance}
 			maxDistance={soundState.maxDistance}
@@ -60,12 +95,8 @@
 		/>
 	</T.Mesh>
 
-	<!-- Ground Plane -->
-	<T.Mesh position={[0, -2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-		<T.PlaneGeometry args={[10, 10]} />
-		<T.MeshStandardMaterial color="#333333" />
+	<T.Mesh position.y={-1} position.z={-0.9} rotation.x={-Math.PI / 2} receiveShadow>
+		<T.CircleGeometry args={[2, 40]} />
+		<T.MeshStandardMaterial color="white" />
 	</T.Mesh>
-
-	<!-- Lighting -->
-	<T.DirectionalLight position={[3, 10, 7]} intensity={Math.PI} />
 </T.Group>
