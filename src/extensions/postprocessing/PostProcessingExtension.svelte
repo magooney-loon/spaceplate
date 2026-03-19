@@ -107,7 +107,8 @@
 				blendFunction: 28 as BlendFunction,
 				mipmapBlur: true,
 				radius: 0.85,
-				levels: 8
+				levels: 8,
+				resolutionScale: 0.5
 			},
 			smaa: {
 				enabled: false,
@@ -138,7 +139,9 @@
 				strength: 0.65,
 				ratio: 0.85,
 				columns: 0.05,
-				mode: 1
+				mode: 1,
+				blendFunction: 0 as BlendFunction,
+				dtSize: 64
 			},
 			noise: {
 				enabled: false,
@@ -245,7 +248,8 @@
 				focusDistance: 3.0,
 				focusRange: 2.0,
 				bokehScale: 1.0,
-				blendFunction: 0 as BlendFunction
+				blendFunction: 0 as BlendFunction,
+				resolutionScale: 0.5
 			},
 			godRays: {
 				enabled: false,
@@ -261,7 +265,8 @@
 				sunX: 0,
 				sunY: 5,
 				sunZ: 0,
-				sunColor: 0xffddaa
+				sunColor: 0xffddaa,
+				resolutionScale: 0.5
 			},
 			ssao: {
 				enabled: false,
@@ -272,7 +277,15 @@
 				bias: 0.025,
 				fade: 0.01,
 				luminanceInfluence: 0.7,
-				blendFunction: 7 as BlendFunction
+				blendFunction: 7 as BlendFunction,
+				worldDistanceThreshold: 0.97,
+				worldDistanceFalloff: 0.03,
+				worldProximityThreshold: 0.0005,
+				worldProximityFalloff: 0.001,
+				minRadiusScale: 0.1,
+				color: 0x000000,
+				depthAwareUpsampling: true,
+				resolutionScale: 1.0
 			},
 			outline: {
 				enabled: false,
@@ -283,7 +296,10 @@
 				xRay: true,
 				blur: false,
 				kernelSize: 1 as KernelSize,
-				blendFunction: 22 as BlendFunction
+				blendFunction: 22 as BlendFunction,
+				patternScale: 1.0,
+				multisampling: 0,
+				resolutionScale: 0.5
 			},
 			depthEffect: {
 				enabled: false,
@@ -318,6 +334,9 @@
 			},
 			setBloomLevels: ({ state }, v) => {
 				state.bloom.levels = v;
+			},
+			setBloomResolutionScale: ({ state }, v) => {
+				state.bloom.resolutionScale = v;
 			},
 			toggleSMAA: ({ state }) => {
 				state.smaa.enabled = !state.smaa.enabled;
@@ -377,6 +396,12 @@
 			},
 			setGlitchMode: ({ state }, v) => {
 				state.glitch.mode = v;
+			},
+			setGlitchBlendFunction: ({ state }, v) => {
+				state.glitch.blendFunction = v;
+			},
+			setGlitchDtSize: ({ state }, v) => {
+				state.glitch.dtSize = v;
 			},
 			toggleNoise: ({ state }) => {
 				state.noise.enabled = !state.noise.enabled;
@@ -599,6 +624,9 @@
 			setDepthOfFieldBlendFunction: ({ state }, v) => {
 				state.depthOfField.blendFunction = v;
 			},
+			setDepthOfFieldResolutionScale: ({ state }, v) => {
+				state.depthOfField.resolutionScale = v;
+			},
 			toggleGodRays: ({ state }) => {
 				state.godRays.enabled = !state.godRays.enabled;
 			},
@@ -641,6 +669,9 @@
 			setGodRaysSunColor: ({ state }, v) => {
 				state.godRays.sunColor = v;
 			},
+			setGodRaysResolutionScale: ({ state }, v) => {
+				state.godRays.resolutionScale = v;
+			},
 			toggleSSAO: ({ state }) => {
 				state.ssao.enabled = !state.ssao.enabled;
 			},
@@ -667,6 +698,30 @@
 			},
 			setSSAOBlendFunction: ({ state }, v) => {
 				state.ssao.blendFunction = v;
+			},
+			setSSAOWorldDistanceThreshold: ({ state }, v) => {
+				state.ssao.worldDistanceThreshold = v;
+			},
+			setSSAOWorldDistanceFalloff: ({ state }, v) => {
+				state.ssao.worldDistanceFalloff = v;
+			},
+			setSSAOWorldProximityThreshold: ({ state }, v) => {
+				state.ssao.worldProximityThreshold = v;
+			},
+			setSSAOWorldProximityFalloff: ({ state }, v) => {
+				state.ssao.worldProximityFalloff = v;
+			},
+			setSSAOMinRadiusScale: ({ state }, v) => {
+				state.ssao.minRadiusScale = v;
+			},
+			setSSAOColor: ({ state }, v) => {
+				state.ssao.color = v;
+			},
+			setSSAODepthAwareUpsampling: ({ state }, v) => {
+				state.ssao.depthAwareUpsampling = v;
+			},
+			setSSAOResolutionScale: ({ state }, v) => {
+				state.ssao.resolutionScale = v;
 			},
 			toggleOutline: ({ state }) => {
 				state.outline.enabled = !state.outline.enabled;
@@ -695,6 +750,15 @@
 			setOutlineBlendFunction: ({ state }, v) => {
 				state.outline.blendFunction = v;
 			},
+			setOutlinePatternScale: ({ state }, v) => {
+				state.outline.patternScale = v;
+			},
+			setOutlineMultisampling: ({ state }, v) => {
+				state.outline.multisampling = v;
+			},
+			setOutlineResolutionScale: ({ state }, v) => {
+				state.outline.resolutionScale = v;
+			},
 			toggleDepthEffect: ({ state }) => {
 				state.depthEffect.enabled = !state.depthEffect.enabled;
 			},
@@ -713,6 +777,7 @@
 				state.bloom.mipmapBlur = true;
 				state.bloom.radius = 0.85;
 				state.bloom.levels = 8;
+				state.bloom.resolutionScale = 0.5;
 			},
 			resetSMAA: ({ state }) => {
 				state.smaa.preset = 2;
@@ -739,6 +804,8 @@
 				state.glitch.ratio = 0.85;
 				state.glitch.columns = 0.05;
 				state.glitch.mode = 1;
+				state.glitch.blendFunction = 0 as BlendFunction;
+				state.glitch.dtSize = 64;
 			},
 			resetNoise: ({ state }) => {
 				state.noise.premultiply = false;
@@ -830,6 +897,7 @@
 				state.depthOfField.focusRange = 2.0;
 				state.depthOfField.bokehScale = 1.0;
 				state.depthOfField.blendFunction = 0 as BlendFunction;
+				state.depthOfField.resolutionScale = 0.5;
 			},
 			resetGodRays: ({ state }) => {
 				state.godRays.samples = 60;
@@ -845,6 +913,7 @@
 				state.godRays.sunY = 5;
 				state.godRays.sunZ = 0;
 				state.godRays.sunColor = 0xffddaa;
+				state.godRays.resolutionScale = 0.5;
 			},
 			resetSSAO: ({ state }) => {
 				state.ssao.samples = 9;
@@ -855,6 +924,14 @@
 				state.ssao.fade = 0.01;
 				state.ssao.luminanceInfluence = 0.7;
 				state.ssao.blendFunction = 7 as BlendFunction;
+				state.ssao.worldDistanceThreshold = 0.97;
+				state.ssao.worldDistanceFalloff = 0.03;
+				state.ssao.worldProximityThreshold = 0.0005;
+				state.ssao.worldProximityFalloff = 0.001;
+				state.ssao.minRadiusScale = 0.1;
+				state.ssao.color = 0x000000;
+				state.ssao.depthAwareUpsampling = true;
+				state.ssao.resolutionScale = 1.0;
 			},
 			resetOutline: ({ state }) => {
 				state.outline.edgeStrength = 1.0;
@@ -865,6 +942,9 @@
 				state.outline.blur = false;
 				state.outline.kernelSize = 1 as KernelSize;
 				state.outline.blendFunction = 22 as BlendFunction;
+				state.outline.patternScale = 1.0;
+				state.outline.multisampling = 0;
+				state.outline.resolutionScale = 0.5;
 			},
 			resetDepthEffect: ({ state }) => {
 				state.depthEffect.inverted = false;
@@ -1036,6 +1116,14 @@
 					max={16}
 					step={1}
 					on:change={(e) => ext.setBloomLevels(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.bloom.resolutionScale}
+					label="Resolution Scale"
+					min={0.1}
+					max={1}
+					step={0.1}
+					on:change={(e) => ext.setBloomResolutionScale(e.detail.value)}
 				/>
 				<List
 					value={ext.state.bloom.kernelSize}
@@ -1229,6 +1317,20 @@
 					max={0.5}
 					step={0.01}
 					on:change={(e) => ext.setGlitchColumns(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.glitch.dtSize}
+					label="Noise Map Size"
+					min={16}
+					max={256}
+					step={16}
+					on:change={(e) => ext.setGlitchDtSize(e.detail.value)}
+				/>
+				<List
+					value={ext.state.glitch.blendFunction}
+					label="Blend Function"
+					options={blendFunctionOptions}
+					on:change={(e) => ext.setGlitchBlendFunction(e.detail.value)}
 				/>
 				<Button title="Reset" on:click={ext.resetGlitch} />
 			{/if}
@@ -1810,6 +1912,14 @@
 					step={0.1}
 					on:change={(e) => ext.setDepthOfFieldBokehScale(e.detail.value)}
 				/>
+				<Slider
+					value={ext.state.depthOfField.resolutionScale}
+					label="Resolution Scale"
+					min={0.1}
+					max={1}
+					step={0.1}
+					on:change={(e) => ext.setDepthOfFieldResolutionScale(e.detail.value)}
+				/>
 				<List
 					value={ext.state.depthOfField.blendFunction}
 					label="Blend Function"
@@ -1887,6 +1997,14 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setGodRaysBlendFunction(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.godRays.resolutionScale}
+					label="Resolution Scale"
+					min={0.1}
+					max={1}
+					step={0.1}
+					on:change={(e) => ext.setGodRaysResolutionScale(e.detail.value)}
 				/>
 				<Separator />
 				<Slider
@@ -1990,6 +2108,67 @@
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setSSAOBlendFunction(e.detail.value)}
 				/>
+				<Slider
+					value={ext.state.ssao.worldDistanceThreshold}
+					label="World Distance Threshold"
+					min={0}
+					max={100}
+					step={0.1}
+					on:change={(e) => ext.setSSAOWorldDistanceThreshold(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.worldDistanceFalloff}
+					label="World Distance Falloff"
+					min={0}
+					max={10}
+					step={0.01}
+					on:change={(e) => ext.setSSAOWorldDistanceFalloff(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.worldProximityThreshold}
+					label="World Proximity Threshold"
+					min={0}
+					max={0.01}
+					step={0.0001}
+					on:change={(e) => ext.setSSAOWorldProximityThreshold(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.worldProximityFalloff}
+					label="World Proximity Falloff"
+					min={0}
+					max={0.01}
+					step={0.0001}
+					on:change={(e) => ext.setSSAOWorldProximityFalloff(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.minRadiusScale}
+					label="Min Radius Scale"
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setSSAOMinRadiusScale(e.detail.value)}
+				/>
+				<Checkbox
+					value={ext.state.ssao.depthAwareUpsampling}
+					label="Depth-Aware Upsampling"
+					on:change={(e) => ext.setSSAODepthAwareUpsampling(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.ssao.color}
+					label="AO Color"
+					min={0}
+					max={0xffffff}
+					step={1}
+					on:change={(e) => ext.setSSAOColor(Math.floor(e.detail.value))}
+				/>
+				<Slider
+					value={ext.state.ssao.resolutionScale}
+					label="Resolution Scale"
+					min={0.1}
+					max={1}
+					step={0.1}
+					on:change={(e) => ext.setSSAOResolutionScale(e.detail.value)}
+				/>
 				<Button title="Reset" on:click={ext.resetSSAO} />
 			{/if}
 		</Folder>
@@ -2030,6 +2209,30 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 					on:change={(e) => ext.setOutlineBlendFunction(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.outline.patternScale}
+					label="Pattern Scale"
+					min={0.1}
+					max={10}
+					step={0.1}
+					on:change={(e) => ext.setOutlinePatternScale(e.detail.value)}
+				/>
+				<Slider
+					value={ext.state.outline.multisampling}
+					label="Multisampling"
+					min={0}
+					max={8}
+					step={1}
+					on:change={(e) => ext.setOutlineMultisampling(Math.floor(e.detail.value))}
+				/>
+				<Slider
+					value={ext.state.outline.resolutionScale}
+					label="Resolution Scale"
+					min={0.1}
+					max={1}
+					step={0.1}
+					on:change={(e) => ext.setOutlineResolutionScale(e.detail.value)}
 				/>
 				<Button title="Reset" on:click={ext.resetOutline} />
 			{/if}

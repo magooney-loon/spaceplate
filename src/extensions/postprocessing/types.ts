@@ -1,63 +1,240 @@
-import type {
-	BloomState,
-	SMAAState,
-	FXAAState,
-	VignetteState,
-	PixelationState,
-	GlitchState,
-	NoiseState,
-	ChromaticAberrationState,
-	BrightnessContrastState,
-	HueSaturationState,
-	SepiaState,
-	DotScreenState,
-	ScanlineState,
-	ShockWaveState,
-	ASCIIState,
-	ToneMappingState,
-	GridState,
-	TiltShiftState,
-	LensDistortionState,
-	ColorDepthState,
-	DepthOfFieldState,
-	GodRaysState,
-	SSAOState,
-	OutlineState,
-	DepthEffectState
-} from './effects';
+import type { KernelSize, BlendFunction, ToneMappingMode } from 'postprocessing';
 
 export const extensionScope = 'postprocessing';
 
-// Re-export all state types from effects
-export type {
-	BloomState,
-	SMAAState,
-	FXAAState,
-	VignetteState,
-	PixelationState,
-	GlitchState,
-	NoiseState,
-	ChromaticAberrationState,
-	BrightnessContrastState,
-	HueSaturationState,
-	SepiaState,
-	DotScreenState,
-	ScanlineState,
-	ShockWaveState,
-	ASCIIState,
-	ToneMappingState,
-	GridState,
-	TiltShiftState,
-	LensDistortionState,
-	ColorDepthState,
-	DepthOfFieldState,
-	GodRaysState,
-	SSAOState,
-	OutlineState,
-	DepthEffectState
+export type BloomState = {
+	enabled: boolean;
+	intensity: number;
+	luminanceThreshold: number;
+	luminanceSmoothing: number;
+	kernelSize: KernelSize;
+	blendFunction: BlendFunction;
+	mipmapBlur: boolean;
+	radius: number;
+	levels: number;
+	resolutionScale: number;
 };
 
-// Composite state type
+export type SMAAState = {
+	enabled: boolean;
+	preset: 0 | 1 | 2 | 3;
+	edgeDetectionMode: 0 | 1 | 2;
+	predicationMode: 0 | 1 | 2;
+};
+
+export type FXAAState = {
+	enabled: boolean;
+	minEdgeThreshold: number;
+	maxEdgeThreshold: number;
+	subpixelQuality: number;
+};
+
+export type VignetteState = {
+	enabled: boolean;
+	offset: number;
+	darkness: number;
+	technique: 0 | 1;
+};
+
+export type PixelationState = {
+	enabled: boolean;
+	granularity: number;
+};
+
+export type GlitchState = {
+	enabled: boolean;
+	delay: number;
+	duration: number;
+	strength: number;
+	ratio: number;
+	columns: number;
+	mode: 0 | 1 | 2 | 3;
+	blendFunction: BlendFunction;
+	dtSize: number;
+};
+
+export type NoiseState = {
+	enabled: boolean;
+	premultiply: boolean;
+	blendFunction: BlendFunction;
+};
+
+export type ChromaticAberrationState = {
+	enabled: boolean;
+	radialModulation: boolean;
+	modulationOffset: number;
+	offsetX: number;
+	offsetY: number;
+	blendFunction: BlendFunction;
+};
+
+export type BrightnessContrastState = {
+	enabled: boolean;
+	brightness: number;
+	contrast: number;
+	blendFunction: BlendFunction;
+};
+
+export type HueSaturationState = {
+	enabled: boolean;
+	hue: number;
+	saturation: number;
+	blendFunction: BlendFunction;
+};
+
+export type SepiaState = {
+	enabled: boolean;
+	intensity: number;
+	blendFunction: BlendFunction;
+};
+
+export type DotScreenState = {
+	enabled: boolean;
+	angle: number;
+	scale: number;
+	blendFunction: BlendFunction;
+};
+
+export type ScanlineState = {
+	enabled: boolean;
+	density: number;
+	opacity: number;
+	scrollSpeed: number;
+	blendFunction: BlendFunction;
+};
+
+export type ShockWaveState = {
+	enabled: boolean;
+	speed: number;
+	maxRadius: number;
+	waveSize: number;
+	amplitude: number;
+	epicenterX: number;
+	epicenterY: number;
+	epicenterZ: number;
+	triggered: boolean;
+};
+
+export type ASCIIState = {
+	enabled: boolean;
+	cellSize: number;
+	inverted: boolean;
+};
+
+export type ToneMappingState = {
+	enabled: boolean;
+	mode: ToneMappingMode;
+	whitePoint: number;
+	middleGrey: number;
+	blendFunction: BlendFunction;
+	resolution: number;
+	minLuminance: number;
+	averageLuminance: number;
+	adaptationRate: number;
+};
+
+export type GridState = {
+	enabled: boolean;
+	scale: number;
+	lineWidth: number;
+	blendFunction: BlendFunction;
+};
+
+export type TiltShiftState = {
+	enabled: boolean;
+	offset: number;
+	rotation: number;
+	focusArea: number;
+	feather: number;
+	kernelSize: KernelSize;
+	blendFunction: BlendFunction;
+};
+
+export type LensDistortionState = {
+	enabled: boolean;
+	distortionX: number;
+	distortionY: number;
+	principalX: number;
+	principalY: number;
+	focalLengthX: number;
+	focalLengthY: number;
+	skew: number;
+};
+
+export type ColorDepthState = {
+	enabled: boolean;
+	bits: number;
+	blendFunction: BlendFunction;
+};
+
+export type DepthOfFieldState = {
+	enabled: boolean;
+	focusDistance: number;
+	focusRange: number;
+	bokehScale: number;
+	blendFunction: BlendFunction;
+	resolutionScale: number;
+};
+
+export type GodRaysState = {
+	enabled: boolean;
+	samples: number;
+	density: number;
+	decay: number;
+	weight: number;
+	exposure: number;
+	clampMax: number;
+	blur: boolean;
+	kernelSize: KernelSize;
+	blendFunction: BlendFunction;
+	sunX: number;
+	sunY: number;
+	sunZ: number;
+	sunColor: number;
+	resolutionScale: number;
+};
+
+export type SSAOState = {
+	enabled: boolean;
+	samples: number;
+	rings: number;
+	radius: number;
+	intensity: number;
+	bias: number;
+	fade: number;
+	luminanceInfluence: number;
+	blendFunction: BlendFunction;
+	worldDistanceThreshold: number;
+	worldDistanceFalloff: number;
+	worldProximityThreshold: number;
+	worldProximityFalloff: number;
+	minRadiusScale: number;
+	color: number;
+	depthAwareUpsampling: boolean;
+	resolutionScale: number;
+};
+
+export type OutlineState = {
+	enabled: boolean;
+	edgeStrength: number;
+	visibleEdgeColor: number;
+	hiddenEdgeColor: number;
+	pulseSpeed: number;
+	xRay: boolean;
+	blur: boolean;
+	kernelSize: KernelSize;
+	blendFunction: BlendFunction;
+	patternScale: number;
+	multisampling: number;
+	resolutionScale: number;
+};
+
+export type DepthEffectState = {
+	enabled: boolean;
+	inverted: boolean;
+	blendFunction: BlendFunction;
+};
+
 export type ExtensionState = {
 	bloom: BloomState;
 	smaa: SMAAState;
@@ -84,238 +261,6 @@ export type ExtensionState = {
 	ssao: SSAOState;
 	outline: OutlineState;
 	depthEffect: DepthEffectState;
-	[key: string]: unknown;
 };
 
-// Actions type - combining all effect actions
-export type ExtensionActions = {
-	// Bloom
-	toggleBloom: () => void;
-	setBloomIntensity: (value: number) => void;
-	setBloomThreshold: (value: number) => void;
-	setBloomSmoothing: (value: number) => void;
-	setBloomKernelSize: (value: import('postprocessing').KernelSize) => void;
-	setBloomBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	setBloomMipmapBlur: (value: boolean) => void;
-	setBloomRadius: (value: number) => void;
-	setBloomLevels: (value: number) => void;
-	setBloomResolutionScale: (value: number) => void;
-	resetBloom: () => void;
-
-	// Glitch
-	toggleGlitch: () => void;
-	setGlitchDelay: (value: number) => void;
-	setGlitchDuration: (value: number) => void;
-	setGlitchStrength: (value: number) => void;
-	setGlitchRatio: (value: number) => void;
-	setGlitchColumns: (value: number) => void;
-	setGlitchMode: (value: 0 | 1 | 2 | 3) => void;
-	setGlitchBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	setGlitchDtSize: (value: number) => void;
-	resetGlitch: () => void;
-
-	// SMAA
-	toggleSMAA: () => void;
-	setSMAAPreset: (value: 0 | 1 | 2 | 3) => void;
-	setSMAEEdgeDetectionMode: (value: 0 | 1 | 2) => void;
-	setSMAAPredicationMode: (value: 0 | 1 | 2) => void;
-	resetSMAA: () => void;
-
-	// FXAA
-	toggleFXAA: () => void;
-	setFXAAEdgeThreshold: (min: number, max: number, quality: number) => void;
-	resetFXAA: () => void;
-
-	// Vignette
-	toggleVignette: () => void;
-	setVignetteOffset: (value: number) => void;
-	setVignetteDarkness: (value: number) => void;
-	setVignetteTechnique: (value: 0 | 1) => void;
-	resetVignette: () => void;
-
-	// Pixelation
-	togglePixelation: () => void;
-	setPixelationGranularity: (value: number) => void;
-	resetPixelation: () => void;
-
-	// Noise
-	toggleNoise: () => void;
-	setNoiseBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetNoise: () => void;
-
-	// Chromatic Aberration
-	toggleChromaticAberration: () => void;
-	setChromaticAberrationOffset: (value: number) => void;
-	setChromaticAberrationOffsetX: (value: number) => void;
-	setChromaticAberrationOffsetY: (value: number) => void;
-	setChromaticAberrationModulation: (radial: boolean, offset: number) => void;
-	setChromaticAberrationBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetChromaticAberration: () => void;
-
-	// Brightness & Contrast
-	toggleBrightnessContrast: () => void;
-	setBrightness: (value: number) => void;
-	setContrast: (value: number) => void;
-	setBrightnessContrastBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetBrightnessContrast: () => void;
-
-	// Hue & Saturation
-	toggleHueSaturation: () => void;
-	setHue: (value: number) => void;
-	setSaturation: (value: number) => void;
-	setHueSaturationBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetHueSaturation: () => void;
-
-	// Sepia
-	toggleSepia: () => void;
-	setSepiaIntensity: (value: number) => void;
-	setSepiaBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetSepia: () => void;
-
-	// Dot Screen
-	toggleDotScreen: () => void;
-	setDotScreenAngle: (value: number) => void;
-	setDotScreenScale: (value: number) => void;
-	setDotScreenBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetDotScreen: () => void;
-
-	// Scanline
-	toggleScanline: () => void;
-	setScanlineDensity: (value: number) => void;
-	setScanlineOpacity: (value: number) => void;
-	setScanlineScrollSpeed: (value: number) => void;
-	setScanlineBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetScanline: () => void;
-
-	// Shock Wave
-	toggleShockWave: () => void;
-	setShockWaveSpeed: (value: number) => void;
-	setShockWaveMaxRadius: (value: number) => void;
-	setShockWaveWaveSize: (value: number) => void;
-	setShockWaveAmplitude: (value: number) => void;
-	setShockWaveEpicenter: (x: number, y: number, z: number) => void;
-	triggerShockWave: () => void;
-	resetShockWave: () => void;
-
-	// ASCII
-	toggleASCII: () => void;
-	setASCIICellSize: (value: number) => void;
-	setASCIIInverted: (value: boolean) => void;
-	resetASCII: () => void;
-
-	// Tone Mapping
-	toggleToneMapping: () => void;
-	setToneMappingMode: (value: import('postprocessing').ToneMappingMode) => void;
-	setToneMappingWhitePoint: (value: number) => void;
-	setToneMappingMiddleGrey: (value: number) => void;
-	setToneMappingResolution: (value: number) => void;
-	setToneMappingMinLuminance: (value: number) => void;
-	setToneMappingAverageLuminance: (value: number) => void;
-	setToneMappingAdaptationRate: (value: number) => void;
-	setToneMappingBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetToneMapping: () => void;
-
-	// Grid
-	toggleGrid: () => void;
-	setGridScale: (value: number) => void;
-	setGridLineWidth: (value: number) => void;
-	setGridBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetGrid: () => void;
-
-	// Tilt Shift
-	toggleTiltShift: () => void;
-	setTiltShiftOffset: (value: number) => void;
-	setTiltShiftFocusArea: (value: number) => void;
-	setTiltShiftFeather: (value: number) => void;
-	setTiltShiftKernelSize: (value: import('postprocessing').KernelSize) => void;
-	setTiltShiftBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetTiltShift: () => void;
-
-	// Lens Distortion
-	toggleLensDistortion: () => void;
-	setLensDistortionX: (value: number) => void;
-	setLensDistortionY: (value: number) => void;
-	setLensPrincipalX: (value: number) => void;
-	setLensPrincipalY: (value: number) => void;
-	setLensFocalLengthX: (value: number) => void;
-	setLensFocalLengthY: (value: number) => void;
-	setLensSkew: (value: number) => void;
-	resetLensDistortion: () => void;
-
-	// Color Depth
-	toggleColorDepth: () => void;
-	setColorDepthBits: (value: number) => void;
-	setColorDepthBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetColorDepth: () => void;
-
-	// Depth of Field
-	toggleDepthOfField: () => void;
-	setDepthOfFieldFocusDistance: (value: number) => void;
-	setDepthOfFieldFocusRange: (value: number) => void;
-	setDepthOfFieldBokehScale: (value: number) => void;
-	setDepthOfFieldBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	setDepthOfFieldResolutionScale: (value: number) => void;
-	resetDepthOfField: () => void;
-
-	// God Rays
-	toggleGodRays: () => void;
-	setGodRaysSamples: (value: number) => void;
-	setGodRaysDensity: (value: number) => void;
-	setGodRaysDecay: (value: number) => void;
-	setGodRaysWeight: (value: number) => void;
-	setGodRaysExposure: (value: number) => void;
-	setGodRaysClampMax: (value: number) => void;
-	setGodRaysBlur: (value: boolean) => void;
-	setGodRaysKernelSize: (value: import('postprocessing').KernelSize) => void;
-	setGodRaysBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	setGodRaysSunX: (value: number) => void;
-	setGodRaysSunY: (value: number) => void;
-	setGodRaysSunZ: (value: number) => void;
-	setGodRaysSunColor: (value: number) => void;
-	setGodRaysResolutionScale: (value: number) => void;
-	resetGodRays: () => void;
-
-	// SSAO
-	toggleSSAO: () => void;
-	setSSAOSamples: (value: number) => void;
-	setSSAORings: (value: number) => void;
-	setSSAORadius: (value: number) => void;
-	setSSAOIntensity: (value: number) => void;
-	setSSAOBias: (value: number) => void;
-	setSSAOFade: (value: number) => void;
-	setSSAOLuminanceInfluence: (value: number) => void;
-	setSSAOBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	setSSAOWorldDistanceThreshold: (value: number) => void;
-	setSSAOWorldDistanceFalloff: (value: number) => void;
-	setSSAOWorldProximityThreshold: (value: number) => void;
-	setSSAOWorldProximityFalloff: (value: number) => void;
-	setSSAOMinRadiusScale: (value: number) => void;
-	setSSAOColor: (value: number) => void;
-	setSSAODepthAwareUpsampling: (value: boolean) => void;
-	setSSAOResolutionScale: (value: number) => void;
-	resetSSAO: () => void;
-
-	// Outline
-	toggleOutline: () => void;
-	setOutlineEdgeStrength: (value: number) => void;
-	setOutlineVisibleEdgeColor: (value: number) => void;
-	setOutlineHiddenEdgeColor: (value: number) => void;
-	setOutlinePulseSpeed: (value: number) => void;
-	setOutlineXRay: (value: boolean) => void;
-	setOutlineBlur: (value: boolean) => void;
-	setOutlineKernelSize: (value: import('postprocessing').KernelSize) => void;
-	setOutlineBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	setOutlinePatternScale: (value: number) => void;
-	setOutlineMultisampling: (value: number) => void;
-	setOutlineResolutionScale: (value: number) => void;
-	resetOutline: () => void;
-
-	// Depth Effect
-	toggleDepthEffect: () => void;
-	setDepthEffectInverted: (value: boolean) => void;
-	setDepthEffectBlendFunction: (value: import('postprocessing').BlendFunction) => void;
-	resetDepthEffect: () => void;
-
-	// Global
-	resetAll: () => void;
-};
+export type ExtensionActions = Record<string, (...args: any[]) => void>;

@@ -10,34 +10,8 @@ Each extension follows a consistent structure with three files:
 extensions/
   my-extension/
     MyExtension.svelte    # Main extension component with UI
-    types.ts              # TypeScript type definitions
     useMyExtension.ts     # Public hook/API
 ```
-
-### Complex Extensions with Modular State
-
-For extensions with many state properties (like post-processing effects), you can
-organize state and actions into modular sub-files:
-
-```
-extensions/
-  postprocessing/
-    PostProcessingExtension.svelte    # Main extension component with UI
-    types.ts                          # TypeScript type definitions (re-exports from effects/)
-    usePostProcessing.ts              # Public hook/API
-    effects/                          # Modular state definitions
-      index.ts                        # Re-exports all effect modules
-      bloom.ts                        # Bloom effect state + actions
-      smaa.ts                         # SMAA effect state + actions
-      fxaa.ts                         # FXAA effect state + actions
-      ...
-```
-
-**Benefits of this approach:**
-- Easier to navigate and maintain
-- Each effect is self-contained with its own state interface and default values
-- Types are composable and can be imported individually
-- Reduces merge conflicts in large teams
 
 ## Conventions
 
