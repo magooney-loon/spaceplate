@@ -450,8 +450,12 @@ const savePresets = (presets: PostProcessingPreset[]) => {
 
 export const postprocessingState = $state<PostProcessingState>(defaultState());
 
-export const postprocessingPresetsState = $state<{ presets: PostProcessingPreset[] }>({
-	presets: loadPresets()
+export const postprocessingPresetsState = $state<{
+	presets: PostProcessingPreset[];
+	currentPresetId: string | null;
+}>({
+	presets: loadPresets(),
+	currentPresetId: null
 });
 
 export const postprocessingActions = {
@@ -460,6 +464,7 @@ export const postprocessingActions = {
 		for (const key of Object.keys(defaults)) {
 			(postprocessingState as any)[key] = defaults[key as keyof PostProcessingState];
 		}
+		postprocessingPresetsState.currentPresetId = null;
 	},
 
 	savePreset(name: string) {
@@ -472,6 +477,7 @@ export const postprocessingActions = {
 		};
 		postprocessingPresetsState.presets = [...postprocessingPresetsState.presets, preset];
 		savePresets(postprocessingPresetsState.presets);
+		postprocessingPresetsState.currentPresetId = id;
 		return id;
 	},
 
@@ -482,6 +488,7 @@ export const postprocessingActions = {
 		for (const key of Object.keys(settings)) {
 			(postprocessingState as any)[key] = JSON.parse(JSON.stringify((settings as any)[key]));
 		}
+		postprocessingPresetsState.currentPresetId = presetId;
 	},
 
 	deletePreset(presetId: string) {
@@ -489,6 +496,9 @@ export const postprocessingActions = {
 			(p) => p.id !== presetId
 		);
 		savePresets(postprocessingPresetsState.presets);
+		if (postprocessingPresetsState.currentPresetId === presetId) {
+			postprocessingPresetsState.currentPresetId = null;
+		}
 	},
 
 	renamePreset(presetId: string, newName: string) {
@@ -498,5 +508,13 @@ export const postprocessingActions = {
 			postprocessingPresetsState.presets = [...postprocessingPresetsState.presets];
 			savePresets(postprocessingPresetsState.presets);
 		}
+	},
+
+	getCurrentPresetName(): string | null {
+		if (!postprocessingPresetsState.currentPresetId) return null;
+		const preset = postprocessingPresetsState.presets.find(
+			(p) => p.id === postprocessingPresetsState.currentPresetId
+		);
+		return preset?.name ?? null;
 	}
 };

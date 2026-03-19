@@ -736,21 +736,20 @@
 		<Separator />
 
 		<Folder title="Presets" expanded={false}>
-			<Button title="Save Current as Preset" on:click={saveAsPreset} />
-
+			<Button title="Save as Preset" on:click={saveAsPreset} />
 			{#if postprocessingPresetsState.presets.length > 0}
 				<Separator />
 				{#each postprocessingPresetsState.presets as preset (preset.id)}
-					<div class="preset-item">
-						<span class="preset-name">{preset.name}</span>
-						<div class="preset-actions">
-							<Button title="Load" on:click={() => postprocessingActions.loadPreset(preset.id)} />
-							<Button
-								title="Delete"
-								on:click={() => postprocessingActions.deletePreset(preset.id)}
-							/>
-						</div>
-					</div>
+					<Button
+						title="{preset.name} [{postprocessingPresetsState.currentPresetId === preset.id
+							? 'ACTIVE'
+							: 'load'}]"
+						on:click={() => postprocessingActions.loadPreset(preset.id)}
+					/>
+					<Button
+						title="Del {preset.name}"
+						on:click={() => postprocessingActions.deletePreset(preset.id)}
+					/>
 				{/each}
 			{/if}
 		</Folder>
@@ -762,27 +761,3 @@
 </ToolbarItem>
 
 <slot />
-
-<style>
-	.preset-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 4px 8px;
-		background: rgba(255, 255, 255, 0.05);
-		border-radius: 4px;
-		margin: 4px 0;
-	}
-	.preset-name {
-		font-size: 12px;
-		color: white;
-		flex: 1;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.preset-actions {
-		display: flex;
-		gap: 2px;
-	}
-</style>
