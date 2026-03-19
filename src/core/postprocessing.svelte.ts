@@ -467,18 +467,58 @@ export const postprocessingActions = {
 		postprocessingPresetsState.currentPresetId = null;
 	},
 
-	savePreset(name: string) {
+	savePreset(name: string): { success: boolean; error?: string } {
+		const trimmedName = name.trim();
+		if (!trimmedName) {
+			return { success: false, error: 'Name cannot be empty' };
+		}
+		const stateAny = postprocessingState as any;
+		const hasEnabledEffect =
+			stateAny.bloom?.enabled ||
+			stateAny.smaa?.enabled ||
+			stateAny.fxaa?.enabled ||
+			stateAny.vignette?.enabled ||
+			stateAny.pixelation?.enabled ||
+			stateAny.glitch?.enabled ||
+			stateAny.noise?.enabled ||
+			stateAny.chromaticAberration?.enabled ||
+			stateAny.brightnessContrast?.enabled ||
+			stateAny.hueSaturation?.enabled ||
+			stateAny.sepia?.enabled ||
+			stateAny.dotScreen?.enabled ||
+			stateAny.scanline?.enabled ||
+			stateAny.shockWave?.enabled ||
+			stateAny.ascii?.enabled ||
+			stateAny.toneMapping?.enabled ||
+			stateAny.grid?.enabled ||
+			stateAny.tiltShift?.enabled ||
+			stateAny.lensDistortion?.enabled ||
+			stateAny.colorDepth?.enabled ||
+			stateAny.depthOfField?.enabled ||
+			stateAny.godRays?.enabled ||
+			stateAny.ssao?.enabled ||
+			stateAny.outline?.enabled ||
+			stateAny.depthEffect?.enabled;
+		if (!hasEnabledEffect) {
+			return { success: false, error: 'No effects enabled' };
+		}
+		const duplicate = postprocessingPresetsState.presets.find(
+			(p) => p.name.toLowerCase() === trimmedName.toLowerCase()
+		);
+		if (duplicate) {
+			return { success: false, error: 'Name already exists' };
+		}
 		const id = crypto.randomUUID();
 		const preset: PostProcessingPreset = {
 			id,
-			name,
+			name: trimmedName,
 			createdAt: Date.now(),
 			settings: JSON.parse(JSON.stringify(postprocessingState))
 		};
 		postprocessingPresetsState.presets = [...postprocessingPresetsState.presets, preset];
 		savePresets(postprocessingPresetsState.presets);
 		postprocessingPresetsState.currentPresetId = id;
-		return id;
+		return { success: true };
 	},
 
 	loadPreset(presetId: string) {

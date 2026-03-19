@@ -10,6 +10,41 @@
 
 	const { createExtension } = useStudio();
 
+	const effectNames: Record<string, string> = {
+		bloom: 'Bloom',
+		smaa: 'SMAA',
+		fxaa: 'FXAA',
+		vignette: 'Vignette',
+		pixelation: 'Pixelation',
+		glitch: 'Glitch',
+		noise: 'Noise',
+		chromaticAberration: 'Chromatic',
+		brightnessContrast: 'Brightness',
+		hueSaturation: 'Hue/Sat',
+		sepia: 'Sepia',
+		dotScreen: 'DotScreen',
+		scanline: 'Scanline',
+		shockWave: 'ShockWave',
+		ascii: 'ASCII',
+		toneMapping: 'ToneMap',
+		grid: 'Grid',
+		tiltShift: 'TiltShift',
+		lensDistortion: 'LensDist',
+		colorDepth: 'ColorDepth',
+		depthOfField: 'DOF',
+		godRays: 'GodRays',
+		ssao: 'SSAO',
+		outline: 'Outline',
+		depthEffect: 'Depth'
+	};
+
+	const getEnabledEffects = (preset: any): string => {
+		const enabled = Object.entries(preset.settings)
+			.filter(([, val]: [string, any]) => val?.enabled)
+			.map(([key]) => effectNames[key] ?? key);
+		return enabled.length > 0 ? enabled.join(', ') : 'none';
+	};
+
 	const kernelSizeOptions = [
 		{ value: 0 as KernelSize, text: 'Very Small' },
 		{ value: 1 as KernelSize, text: 'Small' },
@@ -105,15 +140,18 @@
 
 	const saveAsPreset = () => {
 		const name = prompt('Enter preset name:');
-		if (name?.trim()) {
-			postprocessingActions.savePreset(name.trim());
+		if (name) {
+			const result = postprocessingActions.savePreset(name);
+			if (!result.success && result.error) {
+				alert(result.error);
+			}
 		}
 	};
 </script>
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiImageFilterHdr" title="Post Processing">
-		<Folder title="Bloom" expanded={true}>
+		<Folder title="Bloom" expanded={false}>
 			<Checkbox bind:value={s.bloom.enabled} label="Enabled" />
 			{#if s.bloom.enabled}
 				<Slider bind:value={s.bloom.intensity} label="Intensity" min={0} max={20} step={0.1} />
@@ -735,19 +773,30 @@
 
 		<Separator />
 
-		<Folder title="Presets" expanded={false}>
-			<Button title="Save as Preset" on:click={saveAsPreset} />
+		<Folder title="Load Preset" expanded={false}>
 			{#if postprocessingPresetsState.presets.length > 0}
-				<Separator />
 				{#each postprocessingPresetsState.presets as preset (preset.id)}
 					<Button
-						title="{preset.name} [{postprocessingPresetsState.currentPresetId === preset.id
-							? 'ACTIVE'
-							: 'load'}]"
+						title="Load: {preset.name}"
 						on:click={() => postprocessingActions.loadPreset(preset.id)}
 					/>
+					<span style="font-size: 10px; color: rgba(255,255,255,0.5);">
+						{getEnabledEffects(preset)}
+					</span>
+				{/each}
+			{:else}
+				<span style="font-size: 11px; color: rgba(255,255,255,0.5);">No presets saved</span>
+			{/if}
+		</Folder>
+
+		<Folder title="Manage Presets" expanded={false}>
+			<Button title="Save Current as Preset" on:click={saveAsPreset} />
+			{#if postprocessingPresetsState.presets.length > 0}
+				<Separator />
+				<span style="font-size: 10px; color: rgba(255,255,255,0.4);">Delete:</span>
+				{#each postprocessingPresetsState.presets as preset (preset.id)}
 					<Button
-						title="Del {preset.name}"
+						title="X {preset.name}"
 						on:click={() => postprocessingActions.deletePreset(preset.id)}
 					/>
 				{/each}
