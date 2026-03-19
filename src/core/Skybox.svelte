@@ -65,7 +65,7 @@
 </script>
 
 <!-- Background stars — Layer 1 (inner, faster) -->
-<T.Group userData={{ hideInTree: true, selectable: false }}>
+<T.Group>
 	<StarsComponent
 		count={starCounts.stars1}
 		radius={10}
@@ -76,12 +76,11 @@
 		opacity={1}
 		saturation={0.45}
 		speed={0.72}
-		userData={{ hideInTree: true, selectable: false }}
 	/>
 </T.Group>
 
 <!-- Background stars — Layer 2 (outer, slower for depth parallax) -->
-<T.Group userData={{ hideInTree: true, selectable: false }}>
+<T.Group>
 	<StarsComponent
 		count={starCounts.stars2}
 		radius={10}
@@ -92,12 +91,11 @@
 		opacity={1}
 		saturation={0.45}
 		speed={0.2}
-		userData={{ hideInTree: true, selectable: false }}
 	/>
 </T.Group>
 
 <!-- Nebula model — place at /public/models/skybox/skybox_nebula-transformed.glb -->
-<T.Group position={[0, 20, -27]} scale={0.2} userData={{ hideInTree: true, selectable: false }}>
+<T.Group position={[0, 20, -27]} scale={0.2}>
 	<GLTF
 		{dracoLoader}
 		scale={0.5}

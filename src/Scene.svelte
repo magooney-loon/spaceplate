@@ -5,7 +5,7 @@
 </script>
 
 <!-- 3D scene content based on current scene -->
-{#if sceneState.currentScene === 'mainMenu' || sceneState.currentScene === 'settings'}
+{#if sceneState.currentScene === 'mainMenu'}
 	<MainMenu />
 {/if}
 

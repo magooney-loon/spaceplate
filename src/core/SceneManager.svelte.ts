@@ -4,7 +4,7 @@ import { log } from '$core/settings.svelte.js';
 // Scene Configuration
 // ============================================================================
 
-export type SceneType = 'mainMenu' | 'demoScene' | 'settings';
+export type SceneType = 'mainMenu' | 'demoScene';
 
 export type SceneConfig = {
 	id: SceneType;
@@ -17,11 +17,6 @@ export const SCENES: SceneConfig[] = [
 		id: 'mainMenu',
 		label: 'Main Menu',
 		icon: 'mdiHome'
-	},
-	{
-		id: 'settings',
-		label: 'Settings',
-		icon: 'mdiCog'
 	},
 	{
 		id: 'demoScene',
@@ -61,7 +56,7 @@ export const sceneActions = {
 	},
 
 	goToSettings() {
-		this.setScene('settings');
+		// Settings is a UI panel in main menu — handled by MainMenuHud
 	},
 
 	goToMainMenu() {

@@ -4,7 +4,6 @@
 	import { settingsState } from '$core/settings.svelte.js';
 	import MainMenuHud from '$scenes/MainMenuHud.svelte';
 	import DemoSceneHud from '$scenes/DemoSceneHud.svelte';
-	import SettingsHud from '$scenes/SettingsHud.svelte';
 </script>
 
 <!-- HTML overlay — rendered as a sibling to <Canvas> in App.svelte -->
@@ -16,10 +15,6 @@
 
 		{#if sceneState.currentScene === 'demoScene'}
 			<DemoSceneHud />
-		{/if}
-
-		{#if sceneState.currentScene === 'settings'}
-			<SettingsHud />
 		{/if}
 	</div>
 {/if}

@@ -1,8 +1,13 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
-	import { sceneActions } from '$core/SceneManager.svelte.ts';
 	import { settingsState, graphicsActions, audioActions } from '$core/settings.svelte.js';
 	import type { QualityLevel } from '$core/settings.svelte.js';
+
+	type Props = {
+		onBack: () => void;
+	};
+
+	let { onBack }: Props = $props();
 </script>
 
 <!-- Settings HUD -->
@@ -149,7 +154,7 @@
 
 			<!-- Back Button -->
 			<button
-				onclick={() => sceneActions.goBack()}
+				onclick={onBack}
 				class="w-full px-4 py-2.5 bg-white/15 text-white border border-white/30 rounded-lg cursor-pointer hover:bg-white/20 transition-colors"
 			>
 				Back
