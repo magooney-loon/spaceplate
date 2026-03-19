@@ -38,7 +38,8 @@
 		DepthEffect,
 		ShockWaveEffect
 	} from 'postprocessing';
-	import { settingsState, log } from '$core/settings.svelte.js';
+	import { settingsState } from '$core/settings.svelte.js';
+	import { logPostprocessing } from './logger.svelte.js';
 	import { usePostProcessing } from '$extensions/postprocessing/usePostProcessing';
 
 	const { state: postProcessingState } = usePostProcessing();
@@ -449,7 +450,7 @@
 			(s.smaa.enabled ? 1 : 0) +
 			(mainEffects.length > 0 ? 1 : 0) +
 			(secondaryEffects.length > 0 ? 1 : 0);
-		log.info(
+		logPostprocessing.info(
 			'Post-processing:',
 			passCount,
 			'pass(es) with',

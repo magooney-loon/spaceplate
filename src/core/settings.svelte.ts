@@ -27,19 +27,7 @@ export interface SettingsState {
 	general: GeneralSettings;
 }
 
-const createLogger = (prefix: string, enabled: boolean) => ({
-	info: (...args: unknown[]) => {
-		if (enabled) console.log(`[${prefix}]`, ...args);
-	},
-	warn: (...args: unknown[]) => {
-		if (enabled) console.warn(`[${prefix}]`, ...args);
-	},
-	error: (...args: unknown[]) => {
-		if (enabled) console.error(`[${prefix}]`, ...args);
-	}
-});
-
-export const log = createLogger('spaceplate', import.meta.env.VITE_GAME_ENGINE_LOGS === 'true');
+import { logSettings } from './logger.svelte.js';
 
 const GRAPHICS_KEY = 'graphics-quality';
 const UI_VISIBLE_KEY = 'ui-visible';
@@ -103,55 +91,55 @@ export const settingsState = $state<SettingsState>({
 export const audioActions = {
 	toggleMusic() {
 		settingsState.audio.musicEnabled = !settingsState.audio.musicEnabled;
-		log.info('Music:', settingsState.audio.musicEnabled ? 'on' : 'off');
+		logSettings.info('Music:', settingsState.audio.musicEnabled ? 'on' : 'off');
 	},
 	toggleEffects() {
 		settingsState.audio.effectsEnabled = !settingsState.audio.effectsEnabled;
-		log.info('Effects:', settingsState.audio.effectsEnabled ? 'on' : 'off');
+		logSettings.info('Effects:', settingsState.audio.effectsEnabled ? 'on' : 'off');
 	},
 	toggleAmbience() {
 		settingsState.audio.ambienceEnabled = !settingsState.audio.ambienceEnabled;
-		log.info('Ambience:', settingsState.audio.ambienceEnabled ? 'on' : 'off');
+		logSettings.info('Ambience:', settingsState.audio.ambienceEnabled ? 'on' : 'off');
 	},
 	setMusicVolume(v: number) {
 		settingsState.audio.musicVolume = v;
 		toStorage(MUSIC_VOLUME_KEY, String(v));
-		log.info('Music volume:', v);
+		logSettings.info('Music volume:', v);
 	},
 	setAmbienceVolume(v: number) {
 		settingsState.audio.ambienceVolume = v;
 		toStorage(AMBIENCE_VOLUME_KEY, String(v));
-		log.info('Ambience volume:', v);
+		logSettings.info('Ambience volume:', v);
 	},
 	setEffectsVolume(v: number) {
 		settingsState.audio.effectsVolume = v;
 		toStorage(EFFECTS_VOLUME_KEY, String(v));
-		log.info('Effects volume:', v);
+		logSettings.info('Effects volume:', v);
 	},
 	toggleMusicMute() {
 		settingsState.audio.musicMuted = !settingsState.audio.musicMuted;
 		toStorage(MUSIC_MUTED_KEY, String(settingsState.audio.musicMuted));
-		log.info('Music mute:', settingsState.audio.musicMuted);
+		logSettings.info('Music mute:', settingsState.audio.musicMuted);
 	},
 	toggleSfxMute() {
 		settingsState.audio.sfxMuted = !settingsState.audio.sfxMuted;
 		toStorage(SFX_MUTED_KEY, String(settingsState.audio.sfxMuted));
-		log.info('SFX mute:', settingsState.audio.sfxMuted);
+		logSettings.info('SFX mute:', settingsState.audio.sfxMuted);
 	},
 	setSfxVolume(v: number) {
 		settingsState.audio.sfxVolume = v;
 		toStorage(SFX_VOLUME_KEY, String(v));
-		log.info('SFX volume:', v);
+		logSettings.info('SFX volume:', v);
 	},
 	toggleAmbientMute() {
 		settingsState.audio.ambienceMuted = !settingsState.audio.ambienceMuted;
 		toStorage(AMBIENCE_MUTED_KEY, String(settingsState.audio.ambienceMuted));
-		log.info('Ambience mute:', settingsState.audio.ambienceMuted);
+		logSettings.info('Ambience mute:', settingsState.audio.ambienceMuted);
 	},
 	setAmbientVolume(v: number) {
 		settingsState.audio.ambienceVolume = v;
 		toStorage(AMBIENCE_VOLUME_KEY, String(v));
-		log.info('Ambience volume:', v);
+		logSettings.info('Ambience volume:', v);
 	}
 };
 
@@ -159,7 +147,7 @@ export const graphicsActions = {
 	setQuality(quality: QualityLevel) {
 		settingsState.graphics.quality = quality;
 		toStorage(GRAPHICS_KEY, quality);
-		log.info('Graphics quality:', quality);
+		logSettings.info('Graphics quality:', quality);
 	}
 };
 
@@ -167,6 +155,6 @@ export const generalActions = {
 	toggleUiVisible() {
 		settingsState.general.uiVisible = !settingsState.general.uiVisible;
 		toStorage(UI_VISIBLE_KEY, String(settingsState.general.uiVisible));
-		log.info('HUD visible:', settingsState.general.uiVisible);
+		logSettings.info('HUD visible:', settingsState.general.uiVisible);
 	}
 };

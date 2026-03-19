@@ -1,4 +1,4 @@
-import { log } from '$core/settings.svelte.js';
+import { logEngine } from './logger.svelte.js';
 
 // ============================================================================
 // Scene Configuration
@@ -49,14 +49,10 @@ export const sceneActions = {
 	setScene(scene: SceneType) {
 		if (sceneState.currentScene === scene) return;
 
-		log.info(`Scene: ${sceneState.currentScene} → ${scene}`);
+		logEngine.info(`Scene: ${sceneState.currentScene} → ${scene}`);
 
 		sceneState.previousScene = sceneState.currentScene;
 		sceneState.currentScene = scene;
-	},
-
-	goToSettings() {
-		// Settings is a UI panel in main menu — handled by MainMenuHud
 	},
 
 	goToMainMenu() {

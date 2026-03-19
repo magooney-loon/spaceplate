@@ -3,7 +3,7 @@
 	import { Tween } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
 	import { useProgress } from '@threlte/extras';
-	import { log } from '$core/settings.svelte.js';
+	import { logEngine } from './logger.svelte.js';
 
 	const { progress, finishedOnce, active, item, loaded, total } = useProgress();
 
@@ -13,7 +13,7 @@
 	});
 
 	$effect(() => {
-		if ($finishedOnce) log.info('Assets loaded');
+		if ($finishedOnce) logEngine.info('Assets loaded');
 	});
 
 	function truncatePath(path: string | undefined): string {
