@@ -21,8 +21,8 @@
 <T.Group userData={{ hideInTree: true, selectable: false }}>
 	<StarsComponent
 		count={starCounts.stars1}
-		radius={10}
-		depth={30}
+		radius={4.5}
+		depth={12}
 		factor={1.45}
 		fade={true}
 		lightness={0.4}
@@ -37,8 +37,8 @@
 <T.Group userData={{ hideInTree: true, selectable: false }}>
 	<StarsComponent
 		count={starCounts.stars2}
-		radius={10}
-		depth={30}
+		radius={4.5}
+		depth={9}
 		factor={1.9}
 		fade={true}
 		lightness={0.4}
