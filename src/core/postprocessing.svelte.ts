@@ -1,4 +1,5 @@
 import type { KernelSize, BlendFunction, ToneMappingMode } from 'postprocessing';
+import { logPostprocessing } from './logger.svelte.js';
 
 const PRESETS_KEY = 'spaceplate-postprocessing-presets';
 
@@ -465,6 +466,7 @@ export const postprocessingActions = {
 			(postprocessingState as any)[key] = defaults[key as keyof PostProcessingState];
 		}
 		postprocessingPresetsState.currentPresetId = null;
+		logPostprocessing.info('All effects reset to defaults');
 	},
 
 	savePreset(name: string): { success: boolean; error?: string } {
@@ -518,6 +520,7 @@ export const postprocessingActions = {
 		postprocessingPresetsState.presets = [...postprocessingPresetsState.presets, preset];
 		savePresets(postprocessingPresetsState.presets);
 		postprocessingPresetsState.currentPresetId = id;
+		logPostprocessing.info(`Preset saved: "${trimmedName}"`);
 		return { success: true };
 	},
 
@@ -529,14 +532,19 @@ export const postprocessingActions = {
 			(postprocessingState as any)[key] = JSON.parse(JSON.stringify((settings as any)[key]));
 		}
 		postprocessingPresetsState.currentPresetId = presetId;
+		logPostprocessing.info(`Preset loaded: "${preset.name}"`);
 	},
 
 	deletePreset(presetId: string) {
 		const isCurrentPreset = postprocessingPresetsState.currentPresetId === presetId;
+		const presetName = postprocessingPresetsState.presets.find((p) => p.id === presetId)?.name;
 		postprocessingPresetsState.presets = postprocessingPresetsState.presets.filter(
 			(p) => p.id !== presetId
 		);
 		savePresets(postprocessingPresetsState.presets);
+		logPostprocessing.info(
+			`Preset deleted: "${presetName}"${isCurrentPreset ? ' (was active)' : ''}`
+		);
 		if (isCurrentPreset) {
 			postprocessingState.bloom.enabled = false;
 			postprocessingState.smaa.enabled = false;
@@ -570,9 +578,11 @@ export const postprocessingActions = {
 	renamePreset(presetId: string, newName: string) {
 		const preset = postprocessingPresetsState.presets.find((p) => p.id === presetId);
 		if (preset) {
+			const oldName = preset.name;
 			preset.name = newName;
 			postprocessingPresetsState.presets = [...postprocessingPresetsState.presets];
 			savePresets(postprocessingPresetsState.presets);
+			logPostprocessing.info(`Preset renamed: "${oldName}" -> "${newName}"`);
 		}
 	},
 
