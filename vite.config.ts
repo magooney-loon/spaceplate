@@ -2,12 +2,14 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { threlteStudio } from '@threlte/studio/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 
 // https://vite.dev/config/
 export default defineConfig({
 	base: process.env.BASE_PATH ?? '/',
 	plugins: [
+		tailwindcss(),
 		threlteStudio(),
 		svelte(),
 		visualizer({

@@ -9,6 +9,7 @@
 	import Loader from '$core/Loader.svelte';
 	import * as THREE from 'three';
 	import { settingsState, generalActions } from '$core/settings.svelte.js';
+	import './app.css';
 
 	function handleKeydown(e: KeyboardEvent) {
 		// Ctrl+H — toggle HUD visibility
