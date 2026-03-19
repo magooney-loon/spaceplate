@@ -72,11 +72,17 @@
 	});
 
 	$effect(() => {
-		if (soundTriggers.click > 0 && settingsState.audio.sfxEnabled) playOneShot(clickAudio);
+		if (soundTriggers.click > 0 && settingsState.audio.sfxEnabled) {
+			playOneShot(clickAudio);
+			soundTriggers.click = 0;
+		}
 	});
 
 	$effect(() => {
-		if (soundTriggers.swoosh > 0 && settingsState.audio.sfxEnabled) playPolyphonic(swooshAudio);
+		if (soundTriggers.swoosh > 0 && settingsState.audio.sfxEnabled) {
+			playPolyphonic(swooshAudio);
+			soundTriggers.swoosh = 0;
+		}
 	});
 </script>
 
