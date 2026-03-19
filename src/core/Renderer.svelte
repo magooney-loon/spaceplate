@@ -174,7 +174,6 @@
 				kernelSize: s.bloom.kernelSize,
 				radius: s.bloom.radius,
 				levels: s.bloom.levels,
-				resolutionScale: s.bloom.resolutionScale,
 				blendFunction: s.bloom.blendFunction as BlendFunction
 			});
 			mainEffects.push(bloomEffect);
@@ -252,7 +251,6 @@
 				focusDistance: s.depthOfField.focusDistance,
 				focusRange: s.depthOfField.focusRange,
 				bokehScale: s.depthOfField.bokehScale,
-				resolutionScale: s.depthOfField.resolutionScale,
 				blendFunction: s.depthOfField.blendFunction as BlendFunction
 			});
 			mainEffects.push(depthOfFieldEffect);
@@ -279,7 +277,6 @@
 				exposure: s.godRays.exposure,
 				clampMax: s.godRays.clampMax,
 				kernelSize: s.godRays.kernelSize,
-				resolutionScale: s.godRays.resolutionScale,
 				blendFunction: s.godRays.blendFunction as BlendFunction
 			});
 			godRaysEffect.blur = s.godRays.blur;
@@ -295,15 +292,7 @@
 				bias: s.ssao.bias,
 				fade: s.ssao.fade,
 				luminanceInfluence: s.ssao.luminanceInfluence,
-				blendFunction: s.ssao.blendFunction as BlendFunction,
-				worldDistanceThreshold: s.ssao.worldDistanceThreshold,
-				worldDistanceFalloff: s.ssao.worldDistanceFalloff,
-				worldProximityThreshold: s.ssao.worldProximityThreshold,
-				worldProximityFalloff: s.ssao.worldProximityFalloff,
-				minRadiusScale: s.ssao.minRadiusScale,
-				color: new THREE.Color(s.ssao.color),
-				depthAwareUpsampling: s.ssao.depthAwareUpsampling,
-				resolutionScale: s.ssao.resolutionScale
+				blendFunction: s.ssao.blendFunction as BlendFunction
 			});
 			mainEffects.push(ssaoEffect);
 		}
@@ -317,9 +306,6 @@
 				xRay: s.outline.xRay,
 				blur: s.outline.blur,
 				kernelSize: s.outline.kernelSize,
-				patternScale: s.outline.patternScale,
-				multisampling: s.outline.multisampling,
-				resolutionScale: s.outline.resolutionScale,
 				blendFunction: s.outline.blendFunction as BlendFunction
 			});
 			mainEffects.push(outlineEffect);
@@ -390,9 +376,7 @@
 				duration: new THREE.Vector2(s.glitch.duration * 0.5, s.glitch.duration),
 				strength: new THREE.Vector2(s.glitch.strength * 0.5, s.glitch.strength),
 				ratio: s.glitch.ratio,
-				columns: s.glitch.columns,
-				blendFunction: s.glitch.blendFunction as BlendFunction,
-				dtSize: s.glitch.dtSize
+				columns: s.glitch.columns
 			});
 			glitchEffect.mode = s.glitch.mode as GlitchMode;
 			secondaryEffects.push(glitchEffect);
