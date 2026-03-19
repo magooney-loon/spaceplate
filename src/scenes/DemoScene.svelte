@@ -4,6 +4,7 @@
 	import { useGameTasks } from '$core/tasks';
 	import { useSound } from '$extensions/sound/useSound';
 	import { settingsState, BASE_URL } from '$core/settings.svelte.js';
+	import { soundActions } from '$core/GlobalAudio.svelte';
 	import { Spring } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
 	import * as THREE from 'three';
@@ -52,12 +53,13 @@
 	<T.Mesh
 		bind:ref={rotatingIco}
 		rotation.y={rotation}
-		position.y={1.5}
+		position.y={2.5}
 		scale={scale.current}
 		onpointerenter={() => (scale.target = 1.5)}
 		onpointerleave={() => (scale.target = 1)}
 		onclick={() => {
 			colorIndex = (colorIndex + 1) % colors.length;
+			soundActions.playClick();
 		}}
 		castShadow
 	>
@@ -65,7 +67,7 @@
 		<T.MeshStandardMaterial color={colors[colorIndex]} flatShading />
 	</T.Mesh>
 
-	<HTML position.y={3.6} center zIndexRange={[0, 0]}>
+	<HTML position.y={4.5} center zIndexRange={[0, 0]}>
 		<div
 			style="
 			color: {colors[colorIndex]};
@@ -97,7 +99,7 @@
 		/>
 	</T.Mesh>
 
-	<T.Mesh position.y={-1} position.z={-0.9} rotation.x={-Math.PI / 2} receiveShadow>
+	<T.Mesh position.z={-0.9} rotation.x={-Math.PI / 2} receiveShadow>
 		<T.CircleGeometry args={[2, 40]} />
 		<T.MeshStandardMaterial color="white" />
 	</T.Mesh>

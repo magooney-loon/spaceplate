@@ -16,6 +16,6 @@
 	<div
 		class="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/50 rounded text-white text-center"
 	>
-		<p class="m-0 text-sm">🎮 Physics running at 60 FPS | Objects update in physics stage</p>
+		<p class="m-0 text-sm">Physics running at 60 FPS | Objects update in physics stage</p>
 	</div>
 </div>
