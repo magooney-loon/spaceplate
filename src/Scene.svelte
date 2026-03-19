@@ -14,7 +14,7 @@
 			prevScene = sceneState.currentScene;
 			introT = 0;
 		}
-		if (introT < 1) introT = Math.min(1, introT + delta * 2.0);
+		if (introT < 1) introT = Math.min(1, introT + delta * 2.5);
 	});
 
 	const eased = $derived(easeOutExpo(introT));
