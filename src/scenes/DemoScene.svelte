@@ -52,8 +52,8 @@
 		<PositionalAudio
 			src={SWOOSH_URL}
 			volume={settingsState.audio.sfxMuted ? 0 : settingsState.audio.sfxVolume}
-			refDistance={5}
-			maxDistance={80}
+			refDistance={2}
+			maxDistance={10}
 			rolloffFactor={1.5}
 			panningModel="HRTF"
 			loop

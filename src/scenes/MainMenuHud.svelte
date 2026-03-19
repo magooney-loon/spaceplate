@@ -11,9 +11,9 @@
 		<!-- Menu Title -->
 		<div class="absolute top-[20%] left-1/2 -translate-x-1/2 text-center">
 			<h1 class="text-5xl text-white font-bold m-0" style="text-shadow: 0 0 20px #4a90d9;">
-				Spaceplate Engine
+				SPACEPLATE ENGINE
 			</h1>
-			<p class="text-[#aaa] mt-2">Threlte 5 + Svelte 5</p>
+			<p class="text-[#aaa] mt-2">Threlte/Svelte/Spacetime</p>
 		</div>
 
 		<!-- Menu Buttons -->

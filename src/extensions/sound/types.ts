@@ -1,6 +1,9 @@
 export const extensionScope = 'sound';
 
 export type ExtensionState = {
+	masterVolume: number;
+	masterMuted: boolean;
+
 	sfxVolume: number;
 	sfxMuted: boolean;
 
@@ -19,6 +22,8 @@ export type ExtensionState = {
 };
 
 export type ExtensionActions = {
+	setMasterVolume: (v: number) => void;
+	toggleMasterMute: () => void;
 	setSfxVolume: (v: number) => void;
 	toggleSfxMute: () => void;
 	setMusicVolume: (v: number) => void;

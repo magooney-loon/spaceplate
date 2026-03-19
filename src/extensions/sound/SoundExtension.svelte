@@ -2,7 +2,7 @@
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
 	import { Folder, Slider, Checkbox, Button, List } from 'svelte-tweakpane-ui';
 	import { extensionScope, type ExtensionState, type ExtensionActions } from './types';
-	import { settingsState, audioActions } from '$core/settings.svelte.js';
+	import { settingsState } from '$core/settings.svelte.js';
 
 	const { createExtension } = useStudio();
 
@@ -10,6 +10,9 @@
 		scope: extensionScope,
 		state() {
 			return {
+				masterVolume: 1,
+				masterMuted: false,
+
 				sfxVolume: settingsState.audio.sfxVolume,
 				sfxMuted: settingsState.audio.sfxMuted,
 
@@ -28,29 +31,35 @@
 			};
 		},
 		actions: {
+			setMasterVolume({ state }, v) {
+				state.masterVolume = v;
+			},
+			toggleMasterMute({ state }) {
+				state.masterMuted = !state.masterMuted;
+			},
 			setSfxVolume({ state }, v) {
 				state.sfxVolume = v;
-				audioActions.setSfxVolume(v);
+				settingsState.audio.sfxVolume = v;
 			},
 			toggleSfxMute({ state }) {
 				state.sfxMuted = !state.sfxMuted;
-				audioActions.toggleSfxMute();
+				settingsState.audio.sfxMuted = state.sfxMuted;
 			},
 			setMusicVolume({ state }, v) {
 				state.musicVolume = v;
-				audioActions.setMusicVolume(v);
+				settingsState.audio.musicVolume = v;
 			},
 			toggleMusicMute({ state }) {
 				state.musicMuted = !state.musicMuted;
-				audioActions.toggleMusicMute();
+				settingsState.audio.musicMuted = state.musicMuted;
 			},
 			setAmbientVolume({ state }, v) {
 				state.ambienceVolume = v;
-				audioActions.setAmbientVolume(v);
+				settingsState.audio.ambienceVolume = v;
 			},
 			toggleAmbientMute({ state }) {
 				state.ambienceMuted = !state.ambienceMuted;
-				audioActions.toggleAmbientMute();
+				settingsState.audio.ambienceMuted = state.ambienceMuted;
 			},
 			setRefDistance({ state }, v) {
 				state.refDistance = v;
@@ -65,12 +74,14 @@
 				state.panningModel = v;
 			},
 			resetAll({ state }) {
-				state.sfxVolume = 0;
-				state.sfxMuted = true;
-				state.musicVolume = 0;
-				state.musicMuted = true;
-				state.ambienceVolume = 0;
-				state.ambienceMuted = true;
+				state.masterVolume = 1;
+				state.masterMuted = false;
+				state.sfxVolume = settingsState.audio.sfxVolume;
+				state.sfxMuted = settingsState.audio.sfxMuted;
+				state.musicVolume = settingsState.audio.musicVolume;
+				state.musicMuted = settingsState.audio.musicMuted;
+				state.ambienceVolume = settingsState.audio.ambienceVolume;
+				state.ambienceMuted = settingsState.audio.ambienceMuted;
 				state.refDistance = 5;
 				state.maxDistance = 80;
 				state.rolloffFactor = 1.5;
@@ -131,8 +142,6 @@
 			/>
 		</Folder>
 
-		<!-- Positional audio tuning — applies to all PositionalAudio instances -->
-		<!-- via the useSound() hook reading these values -->
 		<Folder title="Positional Audio">
 			<List
 				label="Panning Model"

@@ -29,6 +29,7 @@
 		opacity={1}
 		saturation={0.45}
 		speed={0.72}
+		userData={{ hideInTree: true, selectable: false }}
 	/>
 </T.Group>
 
@@ -44,5 +45,6 @@
 		opacity={1}
 		saturation={0.45}
 		speed={0.2}
+		userData={{ hideInTree: true, selectable: false }}
 	/>
 </T.Group>
