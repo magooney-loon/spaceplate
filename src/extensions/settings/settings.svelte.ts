@@ -1,15 +1,10 @@
 import { logSettings, logSound } from '$extensions/logger/logger.svelte';
 import type {
 	QualityLevel,
-	AudioSettings,
-	GraphicsSettings,
-	GeneralSettings,
-	SettingsState,
 	ExtensionState,
 	AudioActions,
 	GraphicsActions,
-	GeneralActions,
-	ExtensionActions
+	GeneralActions
 } from './types';
 
 export type { ExtensionState, ExtensionActions, QualityLevel } from './types';
@@ -54,19 +49,15 @@ const loadVolume = (key: string, fallback: number): number => {
 	return isNaN(v) ? fallback : Math.min(1, Math.max(0, v));
 };
 
-const loadEnabled = (key: string, fallback: boolean): boolean => {
-	return fromStorage(key, String(fallback)) === 'true';
-};
-
 export const settingsState = $state<ExtensionState>({
 	audio: {
 		musicVolume: loadVolume(MUSIC_VOLUME_KEY, 0),
-		musicEnabled: loadEnabled(MUSIC_ENABLED_KEY, false),
+		musicEnabled: false,
 		ambienceVolume: loadVolume(AMBIENCE_VOLUME_KEY, 0),
-		ambienceEnabled: loadEnabled(AMBIENCE_ENABLED_KEY, false),
+		ambienceEnabled: false,
 		effectsVolume: loadVolume(EFFECTS_VOLUME_KEY, 0),
 		sfxVolume: loadVolume(SFX_VOLUME_KEY, 0),
-		sfxEnabled: loadEnabled(SFX_ENABLED_KEY, false)
+		sfxEnabled: false
 	},
 	graphics: {
 		quality: loadQuality()
