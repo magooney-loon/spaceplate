@@ -33,9 +33,3 @@
 		<DemoScene />
 	</T.Group>
 {/if}
-
-{#if sceneState.currentScene === 'demoScene'}
-	<T.Group {scale}>
-		<DemoScene />
-	</T.Group>
-{/if}
