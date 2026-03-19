@@ -532,11 +532,37 @@ export const postprocessingActions = {
 	},
 
 	deletePreset(presetId: string) {
+		const isCurrentPreset = postprocessingPresetsState.currentPresetId === presetId;
 		postprocessingPresetsState.presets = postprocessingPresetsState.presets.filter(
 			(p) => p.id !== presetId
 		);
 		savePresets(postprocessingPresetsState.presets);
-		if (postprocessingPresetsState.currentPresetId === presetId) {
+		if (isCurrentPreset) {
+			postprocessingState.bloom.enabled = false;
+			postprocessingState.smaa.enabled = false;
+			postprocessingState.fxaa.enabled = false;
+			postprocessingState.vignette.enabled = false;
+			postprocessingState.pixelation.enabled = false;
+			postprocessingState.glitch.enabled = false;
+			postprocessingState.noise.enabled = false;
+			postprocessingState.chromaticAberration.enabled = false;
+			postprocessingState.brightnessContrast.enabled = false;
+			postprocessingState.hueSaturation.enabled = false;
+			postprocessingState.sepia.enabled = false;
+			postprocessingState.dotScreen.enabled = false;
+			postprocessingState.scanline.enabled = false;
+			postprocessingState.shockWave.enabled = false;
+			postprocessingState.ascii.enabled = false;
+			postprocessingState.toneMapping.enabled = false;
+			postprocessingState.grid.enabled = false;
+			postprocessingState.tiltShift.enabled = false;
+			postprocessingState.lensDistortion.enabled = false;
+			postprocessingState.colorDepth.enabled = false;
+			postprocessingState.depthOfField.enabled = false;
+			postprocessingState.godRays.enabled = false;
+			postprocessingState.ssao.enabled = false;
+			postprocessingState.outline.enabled = false;
+			postprocessingState.depthEffect.enabled = false;
 			postprocessingPresetsState.currentPresetId = null;
 		}
 	},
