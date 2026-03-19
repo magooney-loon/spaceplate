@@ -1,4 +1,5 @@
 import { logEngine } from './logger.svelte.js';
+import { soundActions } from '$core/GlobalAudio.svelte';
 
 // ============================================================================
 // Scene Configuration
@@ -50,6 +51,7 @@ export const sceneActions = {
 		if (sceneState.currentScene === scene) return;
 
 		logEngine.info(`Scene: ${sceneState.currentScene} → ${scene}`);
+		soundActions.playSwoosh();
 
 		sceneState.previousScene = sceneState.currentScene;
 		sceneState.currentScene = scene;

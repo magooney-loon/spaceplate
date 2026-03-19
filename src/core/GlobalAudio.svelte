@@ -1,11 +1,15 @@
 <script module>
 	export const soundTriggers = $state({
-		click: 0
+		click: 0,
+		swoosh: 0
 	});
 
 	export const soundActions = {
 		playClick() {
 			soundTriggers.click++;
+		},
+		playSwoosh() {
+			soundTriggers.swoosh++;
 		}
 	};
 </script>
@@ -19,15 +23,24 @@
 	const OST_URL = `${BASE_URL}sounds/ost.ogg`;
 	const AMBIENCE_URL = `${BASE_URL}sounds/ambience.ogg`;
 	const CLICK_URL = `${BASE_URL}sounds/click.mp3`;
+	const SWOOSH_URL = `${BASE_URL}sounds/swoosh.mp3`;
 
 	let ostAudio = $state.raw<ThreeAudio>();
 	let ambienceAudio = $state.raw<ThreeAudio>();
 	let clickAudio = $state.raw<ThreeAudio>();
+	let swooshAudio = $state.raw<ThreeAudio>();
 
 	const playOneShot = (audio: ThreeAudio | undefined) => {
 		if (!audio) return;
 		if (audio.isPlaying) audio.stop();
 		audio.play();
+	};
+
+	const playPolyphonic = (audio: ThreeAudio | undefined) => {
+		if (!audio?.buffer) return;
+		const clone = audio.clone() as ThreeAudio;
+		clone.setVolume(audio.getVolume());
+		clone.play();
 	};
 
 	$effect(() => {
@@ -55,7 +68,15 @@
 	});
 
 	$effect(() => {
+		if (swooshAudio) swooshAudio.setVolume(settingsState.audio.sfxVolume);
+	});
+
+	$effect(() => {
 		if (soundTriggers.click > 0 && settingsState.audio.sfxEnabled) playOneShot(clickAudio);
+	});
+
+	$effect(() => {
+		if (soundTriggers.swoosh > 0 && settingsState.audio.sfxEnabled) playPolyphonic(swooshAudio);
 	});
 </script>
 
@@ -84,6 +105,15 @@
 	oncreate={(a) => {
 		clickAudio = a;
 		logSound.info('Audio loaded: Click');
+	}}
+	userData={{ hideInTree: true, selectable: false }}
+/>
+
+<Audio
+	src={SWOOSH_URL}
+	oncreate={(a) => {
+		swooshAudio = a;
+		logSound.info('Audio loaded: Swoosh');
 	}}
 	userData={{ hideInTree: true, selectable: false }}
 />
