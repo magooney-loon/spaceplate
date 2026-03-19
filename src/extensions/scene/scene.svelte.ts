@@ -1,13 +1,8 @@
 import { logEngine } from '$extensions/logger/logger.svelte';
 import { soundActions } from '$core/GlobalAudio.svelte';
+import type { SceneType, SceneConfig, ExtensionState, ExtensionActions } from './types';
 
-export type SceneType = 'mainMenu' | 'demoScene';
-
-export type SceneConfig = {
-	id: SceneType;
-	label: string;
-	icon: string;
-};
+export type { ExtensionState, ExtensionActions } from './types';
 
 export const SCENES: SceneConfig[] = [
 	{
@@ -22,19 +17,13 @@ export const SCENES: SceneConfig[] = [
 	}
 ];
 
-export interface SceneState {
-	currentScene: SceneType;
-	previousScene: SceneType | null;
-	isTransitioning: boolean;
-}
-
-export const sceneState = $state<SceneState>({
+export const sceneState = $state<ExtensionState>({
 	currentScene: 'mainMenu',
 	previousScene: null,
 	isTransitioning: false
 });
 
-export const sceneActions = {
+export const sceneActions: ExtensionActions = {
 	setScene(scene: SceneType) {
 		if (sceneState.currentScene === scene) return;
 

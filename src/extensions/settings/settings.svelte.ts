@@ -1,30 +1,18 @@
 import { logSettings, logSound } from '$extensions/logger/logger.svelte';
+import type {
+	QualityLevel,
+	AudioSettings,
+	GraphicsSettings,
+	GeneralSettings,
+	SettingsState,
+	ExtensionState,
+	AudioActions,
+	GraphicsActions,
+	GeneralActions,
+	ExtensionActions
+} from './types';
 
-export type QualityLevel = 'low' | 'high';
-
-export interface AudioSettings {
-	musicVolume: number;
-	musicEnabled: boolean;
-	ambienceVolume: number;
-	ambienceEnabled: boolean;
-	effectsVolume: number;
-	sfxVolume: number;
-	sfxEnabled: boolean;
-}
-
-export interface GraphicsSettings {
-	quality: QualityLevel;
-}
-
-export interface GeneralSettings {
-	uiVisible: boolean;
-}
-
-export interface SettingsState {
-	audio: AudioSettings;
-	graphics: GraphicsSettings;
-	general: GeneralSettings;
-}
+export type { ExtensionState, ExtensionActions, QualityLevel } from './types';
 
 export const BASE_URL = import.meta.env.BASE_URL;
 
@@ -70,7 +58,7 @@ const loadEnabled = (key: string, fallback: boolean): boolean => {
 	return fromStorage(key, String(fallback)) === 'true';
 };
 
-export const settingsState = $state<SettingsState>({
+export const settingsState = $state<ExtensionState>({
 	audio: {
 		musicVolume: loadVolume(MUSIC_VOLUME_KEY, 0),
 		musicEnabled: loadEnabled(MUSIC_ENABLED_KEY, false),
@@ -88,7 +76,7 @@ export const settingsState = $state<SettingsState>({
 	}
 });
 
-export const audioActions = {
+export const audioActions: AudioActions = {
 	toggleMusic() {
 		settingsState.audio.musicEnabled = !settingsState.audio.musicEnabled;
 		toStorage(MUSIC_ENABLED_KEY, String(settingsState.audio.musicEnabled));
@@ -126,7 +114,7 @@ export const audioActions = {
 	}
 };
 
-export const graphicsActions = {
+export const graphicsActions: GraphicsActions = {
 	setQuality(quality: QualityLevel) {
 		settingsState.graphics.quality = quality;
 		toStorage(GRAPHICS_KEY, quality);
@@ -134,7 +122,7 @@ export const graphicsActions = {
 	}
 };
 
-export const generalActions = {
+export const generalActions: GeneralActions = {
 	toggleUiVisible() {
 		settingsState.general.uiVisible = !settingsState.general.uiVisible;
 		toStorage(UI_VISIBLE_KEY, String(settingsState.general.uiVisible));

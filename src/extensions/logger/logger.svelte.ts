@@ -1,9 +1,6 @@
-export interface LoggerState {
-	engine: boolean;
-	settings: boolean;
-	sound: boolean;
-	postprocessing: boolean;
-}
+import type { LoggerState, LoggerChannel, LoggerStyle, Logger } from './types';
+
+export type { LoggerState, LoggerChannel, ExtensionState, ExtensionActions, Logger } from './types';
 
 export const loggerState = $state<LoggerState>({
 	engine: true,
@@ -12,7 +9,7 @@ export const loggerState = $state<LoggerState>({
 	postprocessing: true
 });
 
-const channelStyles: Record<keyof LoggerState, { color: string; bg: string; text: string }> = {
+const channelStyles: Record<LoggerChannel, LoggerStyle> = {
 	engine: { color: '#61afef', bg: 'background:#1e3a5f', text: '⬡' },
 	settings: { color: '#98c379', bg: 'background:#2d4a2d', text: '⚙' },
 	sound: { color: '#c678dd', bg: 'background:#3d2d4a', text: '♪' },
@@ -31,7 +28,7 @@ const formatTime = () => {
 	);
 };
 
-const createLogger = (prefix: string, channel: keyof LoggerState) => {
+const createLogger = (prefix: string, channel: LoggerChannel): Logger => {
 	const style = channelStyles[channel];
 	return {
 		info: (...args: unknown[]) => {
@@ -73,7 +70,7 @@ export const logSound = createLogger('sound', 'sound');
 export const logPostprocessing = createLogger('postprocessing', 'postprocessing');
 
 export const loggerActions = {
-	toggleChannel(channel: keyof LoggerState) {
+	toggleChannel(channel: LoggerChannel) {
 		loggerState[channel] = !loggerState[channel];
 	}
 };

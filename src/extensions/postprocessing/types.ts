@@ -235,7 +235,7 @@ export type DepthEffectState = {
 	blendFunction: BlendFunction;
 };
 
-export type ExtensionState = {
+export type PostProcessingState = {
 	bloom: BloomState;
 	smaa: SMAAState;
 	fxaa: FXAAState;
@@ -262,5 +262,14 @@ export type ExtensionState = {
 	outline: OutlineState;
 	depthEffect: DepthEffectState;
 };
+
+export type PostProcessingPreset = {
+	id: string;
+	name: string;
+	createdAt: number;
+	settings: PostProcessingState;
+};
+
+export type ExtensionState = PostProcessingState;
 
 export type ExtensionActions = Record<string, (...args: any[]) => void>;
