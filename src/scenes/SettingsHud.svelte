@@ -10,7 +10,6 @@
 	let { onBack }: Props = $props();
 </script>
 
-<!-- Settings HUD -->
 <div class="pointer-events-auto">
 	<div
 		transition:fly={{ y: -16, duration: 220 }}
@@ -41,29 +40,6 @@
 			<div class="mb-6">
 				<p class="m-0 mb-2 opacity-70 text-sm">Audio</p>
 				<div class="flex flex-col gap-3">
-					<!-- Master -->
-					<div class="flex flex-col gap-1">
-						<label class="flex items-center gap-2 cursor-pointer">
-							<input
-								type="checkbox"
-								checked={!settingsState.audio.masterMuted}
-								onchange={() => audioActions.toggleMasterMute()}
-								class="w-4 h-4"
-							/>
-							Master
-						</label>
-						<input
-							type="range"
-							min="0"
-							max="1"
-							step="0.01"
-							aria-label="Master volume"
-							value={settingsState.audio.masterVolume}
-							oninput={(e) => audioActions.setMasterVolume(+(e.target as HTMLInputElement).value)}
-							class="w-full accent-white/80"
-						/>
-					</div>
-
 					<!-- SFX -->
 					<div class="flex flex-col gap-1">
 						<label class="flex items-center gap-2 cursor-pointer">
@@ -142,12 +118,6 @@
 					<span>Toggle HUD</span>
 					<kbd class="bg-white/8 border border-white/20 rounded px-2 py-0.5 font-mono text-xs">
 						Ctrl+H
-					</kbd>
-				</div>
-				<div class="flex justify-between items-center text-sm opacity-60 mt-2">
-					<span>Mute Master</span>
-					<kbd class="bg-white/8 border border-white/20 rounded px-2 py-0.5 font-mono text-xs">
-						Shift+M
 					</kbd>
 				</div>
 			</div>

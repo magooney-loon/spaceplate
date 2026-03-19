@@ -8,9 +8,6 @@ export interface AudioSettings {
 	musicMuted: boolean;
 	ambienceVolume: number;
 	effectsVolume: number;
-	// Sound extension state
-	masterVolume: number;
-	masterMuted: boolean;
 	sfxVolume: number;
 	sfxMuted: boolean;
 	ambienceMuted: boolean;
@@ -30,11 +27,6 @@ export interface SettingsState {
 	general: GeneralSettings;
 }
 
-// ─── Debug logger ────────────────────────────────────────────────────────────
-// Extend by adding new channels with their own env var:
-//   export const logGame = createLogger('game', import.meta.env.VITE_GAME_LOGS === 'true');
-//   export const logApi  = createLogger('api',  import.meta.env.VITE_API_LOGS  === 'true');
-
 const createLogger = (prefix: string, enabled: boolean) => ({
 	info: (...args: unknown[]) => {
 		if (enabled) console.log(`[${prefix}]`, ...args);
@@ -49,16 +41,12 @@ const createLogger = (prefix: string, enabled: boolean) => ({
 
 export const log = createLogger('spaceplate', import.meta.env.VITE_GAME_ENGINE_LOGS === 'true');
 
-// ─── localStorage helpers ────────────────────────────────────────────────────
-
 const GRAPHICS_KEY = 'graphics-quality';
 const UI_VISIBLE_KEY = 'ui-visible';
 const MUSIC_VOLUME_KEY = 'music-volume';
 const MUSIC_MUTED_KEY = 'music-muted';
 const AMBIENCE_VOLUME_KEY = 'ambience-volume';
 const EFFECTS_VOLUME_KEY = 'effects-volume';
-const MASTER_VOLUME_KEY = 'master-volume';
-const MASTER_MUTED_KEY = 'master-muted';
 const SFX_VOLUME_KEY = 'sfx-volume';
 const SFX_MUTED_KEY = 'sfx-muted';
 const AMBIENCE_MUTED_KEY = 'ambience-muted';
@@ -91,8 +79,6 @@ const loadVolume = (key: string, fallback: number): number => {
 	return isNaN(v) ? fallback : Math.min(1, Math.max(0, v));
 };
 
-// ─── Reactive state ──────────────────────────────────────────────────────────
-
 export const settingsState = $state<SettingsState>({
 	audio: {
 		musicEnabled: false,
@@ -102,9 +88,6 @@ export const settingsState = $state<SettingsState>({
 		musicMuted: fromStorage(MUSIC_MUTED_KEY, 'true') === 'true',
 		ambienceVolume: loadVolume(AMBIENCE_VOLUME_KEY, 0),
 		effectsVolume: loadVolume(EFFECTS_VOLUME_KEY, 0),
-		// Sound extension state - all muted by default
-		masterVolume: loadVolume(MASTER_VOLUME_KEY, 0),
-		masterMuted: true,
 		sfxVolume: loadVolume(SFX_VOLUME_KEY, 0),
 		sfxMuted: true,
 		ambienceMuted: fromStorage(AMBIENCE_MUTED_KEY, 'true') === 'true'
@@ -116,8 +99,6 @@ export const settingsState = $state<SettingsState>({
 		uiVisible: fromStorage(UI_VISIBLE_KEY, 'true') !== 'false'
 	}
 });
-
-// ─── Actions ─────────────────────────────────────────────────────────────────
 
 export const audioActions = {
 	toggleMusic() {
@@ -146,17 +127,6 @@ export const audioActions = {
 		settingsState.audio.effectsVolume = v;
 		toStorage(EFFECTS_VOLUME_KEY, String(v));
 		log.info('Effects volume:', v);
-	},
-	// Sound extension actions
-	toggleMasterMute() {
-		settingsState.audio.masterMuted = !settingsState.audio.masterMuted;
-		toStorage(MASTER_MUTED_KEY, String(settingsState.audio.masterMuted));
-		log.info('Master mute:', settingsState.audio.masterMuted);
-	},
-	setMasterVolume(v: number) {
-		settingsState.audio.masterVolume = v;
-		toStorage(MASTER_VOLUME_KEY, String(v));
-		log.info('Master volume:', v);
 	},
 	toggleMusicMute() {
 		settingsState.audio.musicMuted = !settingsState.audio.musicMuted;

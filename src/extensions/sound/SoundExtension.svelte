@@ -10,9 +10,6 @@
 		scope: extensionScope,
 		state() {
 			return {
-				masterVolume: settingsState.audio.masterVolume,
-				masterMuted: settingsState.audio.masterMuted,
-
 				sfxVolume: settingsState.audio.sfxVolume,
 				sfxMuted: settingsState.audio.sfxMuted,
 
@@ -22,8 +19,6 @@
 				ambienceVolume: settingsState.audio.ambienceVolume,
 				ambienceMuted: settingsState.audio.ambienceMuted,
 
-				// Positional audio defaults tuned for arena scale
-				// arena maps are typically 50-200 units across
 				refDistance: 5,
 				maxDistance: 80,
 				rolloffFactor: 1.5,
@@ -33,14 +28,6 @@
 			};
 		},
 		actions: {
-			setMasterVolume({ state }, v) {
-				state.masterVolume = v;
-				audioActions.setMasterVolume(v);
-			},
-			toggleMasterMute({ state }) {
-				state.masterMuted = !state.masterMuted;
-				audioActions.toggleMasterMute();
-			},
 			setSfxVolume({ state }, v) {
 				state.sfxVolume = v;
 				audioActions.setSfxVolume(v);
@@ -78,8 +65,6 @@
 				state.panningModel = v;
 			},
 			resetAll({ state }) {
-				state.masterVolume = 0;
-				state.masterMuted = true;
 				state.sfxVolume = 0;
 				state.sfxMuted = true;
 				state.musicVolume = 0;
@@ -91,11 +76,6 @@
 				state.rolloffFactor = 1.5;
 				state.panningModel = 'HRTF';
 			}
-		},
-		keyMap({ shift }) {
-			return {
-				toggleMasterMute: shift('m')
-			};
 		}
 	});
 
@@ -111,20 +91,6 @@
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiVolumeHigh" title="Sound">
-		<!-- Master bus -->
-		<Folder title="Master">
-			<Slider
-				label="Volume"
-				value={state.masterVolume}
-				min={0}
-				max={1}
-				step={0.01}
-				on:change={(e) => ext.setMasterVolume(e.detail.value)}
-			/>
-			<Checkbox label="Muted" value={state.masterMuted} on:change={() => ext.toggleMasterMute()} />
-		</Folder>
-
-		<!-- Per-bus volumes — consumed by useSound() hook in game code -->
 		<Folder title="Buses">
 			<Slider
 				label="SFX"

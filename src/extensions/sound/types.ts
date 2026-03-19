@@ -1,33 +1,24 @@
 export const extensionScope = 'sound';
 
 export type ExtensionState = {
-	// master buses
-	masterVolume: number;
-	masterMuted: boolean;
-
-	sfxVolume: number; // weapons, impacts, pickups
+	sfxVolume: number;
 	sfxMuted: boolean;
 
-	musicVolume: number; // background music tracks
+	musicVolume: number;
 	musicMuted: boolean;
 
-	ambienceVolume: number; // wind, hum, atmosphere loops
+	ambienceVolume: number;
 	ambienceMuted: boolean;
 
-	// positional audio tuning
-	// these go on <PositionalAudio> instances
-	refDistance: number; // distance where vol starts dropping
-	maxDistance: number; // distance where vol reaches 0
-	rolloffFactor: number; // how fast it drops off
-	panningModel: 'HRTF' | 'equalpower'; // HRTF = 3D head model, expensive but realistic
+	refDistance: number;
+	maxDistance: number;
+	rolloffFactor: number;
+	panningModel: 'HRTF' | 'equalpower';
 
-	// listener
 	listenerEnabled: boolean;
 };
 
 export type ExtensionActions = {
-	setMasterVolume: (v: number) => void;
-	toggleMasterMute: () => void;
 	setSfxVolume: (v: number) => void;
 	toggleSfxMute: () => void;
 	setMusicVolume: (v: number) => void;
