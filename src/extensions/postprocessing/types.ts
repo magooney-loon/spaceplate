@@ -102,6 +102,18 @@ export type ExtensionActions = {
 	setBloomResolutionScale: (value: number) => void;
 	resetBloom: () => void;
 
+	// Glitch
+	toggleGlitch: () => void;
+	setGlitchDelay: (value: number) => void;
+	setGlitchDuration: (value: number) => void;
+	setGlitchStrength: (value: number) => void;
+	setGlitchRatio: (value: number) => void;
+	setGlitchColumns: (value: number) => void;
+	setGlitchMode: (value: 0 | 1 | 2 | 3) => void;
+	setGlitchBlendFunction: (value: import('postprocessing').BlendFunction) => void;
+	setGlitchDtSize: (value: number) => void;
+	resetGlitch: () => void;
+
 	// SMAA
 	toggleSMAA: () => void;
 	setSMAAPreset: (value: 0 | 1 | 2 | 3) => void;
@@ -125,16 +137,6 @@ export type ExtensionActions = {
 	togglePixelation: () => void;
 	setPixelationGranularity: (value: number) => void;
 	resetPixelation: () => void;
-
-	// Glitch
-	toggleGlitch: () => void;
-	setGlitchDelay: (value: number) => void;
-	setGlitchDuration: (value: number) => void;
-	setGlitchStrength: (value: number) => void;
-	setGlitchRatio: (value: number) => void;
-	setGlitchColumns: (value: number) => void;
-	setGlitchMode: (value: 0 | 1 | 2 | 3) => void;
-	resetGlitch: () => void;
 
 	// Noise
 	toggleNoise: () => void;
@@ -252,6 +254,7 @@ export type ExtensionActions = {
 	setDepthOfFieldFocusRange: (value: number) => void;
 	setDepthOfFieldBokehScale: (value: number) => void;
 	setDepthOfFieldBlendFunction: (value: import('postprocessing').BlendFunction) => void;
+	setDepthOfFieldResolutionScale: (value: number) => void;
 	resetDepthOfField: () => void;
 
 	// God Rays
@@ -269,6 +272,7 @@ export type ExtensionActions = {
 	setGodRaysSunY: (value: number) => void;
 	setGodRaysSunZ: (value: number) => void;
 	setGodRaysSunColor: (value: number) => void;
+	setGodRaysResolutionScale: (value: number) => void;
 	resetGodRays: () => void;
 
 	// SSAO
@@ -281,6 +285,14 @@ export type ExtensionActions = {
 	setSSAOFade: (value: number) => void;
 	setSSAOLuminanceInfluence: (value: number) => void;
 	setSSAOBlendFunction: (value: import('postprocessing').BlendFunction) => void;
+	setSSAOWorldDistanceThreshold: (value: number) => void;
+	setSSAOWorldDistanceFalloff: (value: number) => void;
+	setSSAOWorldProximityThreshold: (value: number) => void;
+	setSSAOWorldProximityFalloff: (value: number) => void;
+	setSSAOMinRadiusScale: (value: number) => void;
+	setSSAOColor: (value: number) => void;
+	setSSAODepthAwareUpsampling: (value: boolean) => void;
+	setSSAOResolutionScale: (value: number) => void;
 	resetSSAO: () => void;
 
 	// Outline
@@ -293,6 +305,9 @@ export type ExtensionActions = {
 	setOutlineBlur: (value: boolean) => void;
 	setOutlineKernelSize: (value: import('postprocessing').KernelSize) => void;
 	setOutlineBlendFunction: (value: import('postprocessing').BlendFunction) => void;
+	setOutlinePatternScale: (value: number) => void;
+	setOutlineMultisampling: (value: number) => void;
+	setOutlineResolutionScale: (value: number) => void;
 	resetOutline: () => void;
 
 	// Depth Effect

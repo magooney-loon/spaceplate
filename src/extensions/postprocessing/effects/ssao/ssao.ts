@@ -10,6 +10,14 @@ export interface SSAOState {
 	fade: number;
 	luminanceInfluence: number;
 	blendFunction: BlendFunction;
+	worldDistanceThreshold: number;
+	worldDistanceFalloff: number;
+	worldProximityThreshold: number;
+	worldProximityFalloff: number;
+	minRadiusScale: number;
+	color: number;
+	depthAwareUpsampling: boolean;
+	resolutionScale: number;
 	[key: string]: unknown;
 }
 
@@ -22,7 +30,15 @@ export const defaultSSAOState: SSAOState = {
 	bias: 0.025,
 	fade: 0.01,
 	luminanceInfluence: 0.7,
-	blendFunction: 7 as BlendFunction
+	blendFunction: 7 as BlendFunction,
+	worldDistanceThreshold: 0.97,
+	worldDistanceFalloff: 0.03,
+	worldProximityThreshold: 0.0005,
+	worldProximityFalloff: 0.001,
+	minRadiusScale: 0.1,
+	color: 0x000000,
+	depthAwareUpsampling: true,
+	resolutionScale: 1.0
 };
 
 export function createSSAOActions(state: SSAOState) {
@@ -54,6 +70,30 @@ export function createSSAOActions(state: SSAOState) {
 		setSSAOBlendFunction: (value: BlendFunction) => {
 			state.blendFunction = value;
 		},
+		setSSAOWorldDistanceThreshold: (value: number) => {
+			state.worldDistanceThreshold = value;
+		},
+		setSSAOWorldDistanceFalloff: (value: number) => {
+			state.worldDistanceFalloff = value;
+		},
+		setSSAOWorldProximityThreshold: (value: number) => {
+			state.worldProximityThreshold = value;
+		},
+		setSSAOWorldProximityFalloff: (value: number) => {
+			state.worldProximityFalloff = value;
+		},
+		setSSAOMinRadiusScale: (value: number) => {
+			state.minRadiusScale = value;
+		},
+		setSSAOColor: (value: number) => {
+			state.color = value;
+		},
+		setSSAODepthAwareUpsampling: (value: boolean) => {
+			state.depthAwareUpsampling = value;
+		},
+		setSSAOResolutionScale: (value: number) => {
+			state.resolutionScale = value;
+		},
 		resetSSAO: () => {
 			state.samples = defaultSSAOState.samples;
 			state.rings = defaultSSAOState.rings;
@@ -63,6 +103,14 @@ export function createSSAOActions(state: SSAOState) {
 			state.fade = defaultSSAOState.fade;
 			state.luminanceInfluence = defaultSSAOState.luminanceInfluence;
 			state.blendFunction = defaultSSAOState.blendFunction;
+			state.worldDistanceThreshold = defaultSSAOState.worldDistanceThreshold;
+			state.worldDistanceFalloff = defaultSSAOState.worldDistanceFalloff;
+			state.worldProximityThreshold = defaultSSAOState.worldProximityThreshold;
+			state.worldProximityFalloff = defaultSSAOState.worldProximityFalloff;
+			state.minRadiusScale = defaultSSAOState.minRadiusScale;
+			state.color = defaultSSAOState.color;
+			state.depthAwareUpsampling = defaultSSAOState.depthAwareUpsampling;
+			state.resolutionScale = defaultSSAOState.resolutionScale;
 		}
 	};
 }

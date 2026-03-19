@@ -15,6 +15,7 @@ export interface GodRaysState {
 	sunY: number;
 	sunZ: number;
 	sunColor: number;
+	resolutionScale: number;
 	[key: string]: unknown;
 }
 
@@ -32,7 +33,8 @@ export const defaultGodRaysState: GodRaysState = {
 	sunX: 0,
 	sunY: 5,
 	sunZ: 0,
-	sunColor: 0xffddaa
+	sunColor: 0xffddaa,
+	resolutionScale: 0.5
 };
 
 export function createGodRaysActions(state: GodRaysState) {
@@ -79,6 +81,9 @@ export function createGodRaysActions(state: GodRaysState) {
 		setGodRaysSunColor: (value: number) => {
 			state.sunColor = value;
 		},
+		setGodRaysResolutionScale: (value: number) => {
+			state.resolutionScale = value;
+		},
 		resetGodRays: () => {
 			state.samples = defaultGodRaysState.samples;
 			state.density = defaultGodRaysState.density;
@@ -93,6 +98,7 @@ export function createGodRaysActions(state: GodRaysState) {
 			state.sunY = defaultGodRaysState.sunY;
 			state.sunZ = defaultGodRaysState.sunZ;
 			state.sunColor = defaultGodRaysState.sunColor;
+			state.resolutionScale = defaultGodRaysState.resolutionScale;
 		}
 	};
 }

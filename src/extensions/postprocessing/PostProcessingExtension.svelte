@@ -224,6 +224,12 @@
 			setGlitchMode: ({ state }, value: 0 | 1 | 2 | 3) => {
 				state.glitch.mode = value;
 			},
+			setGlitchBlendFunction: ({ state }, value: BlendFunction) => {
+				state.glitch.blendFunction = value;
+			},
+			setGlitchDtSize: ({ state }, value: number) => {
+				state.glitch.dtSize = value;
+			},
 			resetGlitch: ({ state }) => {
 				state.glitch = structuredClone(defaultGlitchState);
 			},
@@ -503,6 +509,9 @@
 			setDepthOfFieldBlendFunction: ({ state }, value: BlendFunction) => {
 				state.depthOfField.blendFunction = value;
 			},
+			setDepthOfFieldResolutionScale: ({ state }, value: number) => {
+				state.depthOfField.resolutionScale = value;
+			},
 			resetDepthOfField: ({ state }) => {
 				state.depthOfField = structuredClone(defaultDepthOfFieldState);
 			},
@@ -549,6 +558,9 @@
 			setGodRaysSunColor: ({ state }, value: number) => {
 				state.godRays.sunColor = value;
 			},
+			setGodRaysResolutionScale: ({ state }, value: number) => {
+				state.godRays.resolutionScale = value;
+			},
 			resetGodRays: ({ state }) => {
 				state.godRays = structuredClone(defaultGodRaysState);
 			},
@@ -580,6 +592,30 @@
 			setSSAOBlendFunction: ({ state }, value: BlendFunction) => {
 				state.ssao.blendFunction = value;
 			},
+			setSSAOWorldDistanceThreshold: ({ state }, value: number) => {
+				state.ssao.worldDistanceThreshold = value;
+			},
+			setSSAOWorldDistanceFalloff: ({ state }, value: number) => {
+				state.ssao.worldDistanceFalloff = value;
+			},
+			setSSAOWorldProximityThreshold: ({ state }, value: number) => {
+				state.ssao.worldProximityThreshold = value;
+			},
+			setSSAOWorldProximityFalloff: ({ state }, value: number) => {
+				state.ssao.worldProximityFalloff = value;
+			},
+			setSSAOMinRadiusScale: ({ state }, value: number) => {
+				state.ssao.minRadiusScale = value;
+			},
+			setSSAOColor: ({ state }, value: number) => {
+				state.ssao.color = value;
+			},
+			setSSAODepthAwareUpsampling: ({ state }, value: boolean) => {
+				state.ssao.depthAwareUpsampling = value;
+			},
+			setSSAOResolutionScale: ({ state }, value: number) => {
+				state.ssao.resolutionScale = value;
+			},
 			resetSSAO: ({ state }) => {
 				state.ssao = structuredClone(defaultSSAOState);
 			},
@@ -610,6 +646,15 @@
 			},
 			setOutlineBlendFunction: ({ state }, value: BlendFunction) => {
 				state.outline.blendFunction = value;
+			},
+			setOutlinePatternScale: ({ state }, value: number) => {
+				state.outline.patternScale = value;
+			},
+			setOutlineMultisampling: ({ state }, value: number) => {
+				state.outline.multisampling = value;
+			},
+			setOutlineResolutionScale: ({ state }, value: number) => {
+				state.outline.resolutionScale = value;
 			},
 			resetOutline: ({ state }) => {
 				state.outline = structuredClone(defaultOutlineState);

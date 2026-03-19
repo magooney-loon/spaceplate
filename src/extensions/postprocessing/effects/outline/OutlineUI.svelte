@@ -12,6 +12,9 @@
 		blur: boolean;
 		kernelSize: KernelSize;
 		blendFunction: BlendFunction;
+		patternScale: number;
+		multisampling: number;
+		resolutionScale: number;
 	};
 
 	export let actions: Record<string, (...args: any[]) => void>;
@@ -67,6 +70,14 @@
 	<Checkbox value={state.enabled} label="Enabled" on:change={() => actions.toggleOutline()} />
 	{#if state.enabled}
 		<Slider
+			value={state.resolutionScale}
+			label="Resolution Scale"
+			min={0.1}
+			max={1}
+			step={0.1}
+			on:change={(e) => actions.setOutlineResolutionScale(e.detail.value)}
+		/>
+		<Slider
 			value={state.edgeStrength}
 			label="Edge Strength"
 			min={0}
@@ -81,6 +92,38 @@
 			max={10}
 			step={0.1}
 			on:change={(e) => actions.setOutlinePulseSpeed(e.detail.value)}
+		/>
+		<Slider
+			value={state.patternScale}
+			label="Pattern Scale"
+			min={0.1}
+			max={10}
+			step={0.1}
+			on:change={(e) => actions.setOutlinePatternScale(e.detail.value)}
+		/>
+		<Slider
+			value={state.multisampling}
+			label="Multisampling"
+			min={0}
+			max={8}
+			step={1}
+			on:change={(e) => actions.setOutlineMultisampling(Math.floor(e.detail.value))}
+		/>
+		<Slider
+			value={state.visibleEdgeColor}
+			label="Visible Edge Color"
+			min={0}
+			max={0xffffff}
+			step={1}
+			on:change={(e) => actions.setOutlineVisibleEdgeColor(Math.floor(e.detail.value))}
+		/>
+		<Slider
+			value={state.hiddenEdgeColor}
+			label="Hidden Edge Color"
+			min={0}
+			max={0xffffff}
+			step={1}
+			on:change={(e) => actions.setOutlineHiddenEdgeColor(Math.floor(e.detail.value))}
 		/>
 		<Checkbox value={state.xRay} label="X-Ray" />
 		<Checkbox value={state.blur} label="Blur" />

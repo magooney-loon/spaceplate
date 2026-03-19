@@ -17,6 +17,7 @@
 		sunY: number;
 		sunZ: number;
 		sunColor: number;
+		resolutionScale: number;
 	};
 
 	export let actions: Record<string, (...args: any[]) => void>;
@@ -71,6 +72,14 @@
 <Folder title="God Rays" expanded={false}>
 	<Checkbox value={state.enabled} label="Enabled" on:change={() => actions.toggleGodRays()} />
 	{#if state.enabled}
+		<Slider
+			value={state.resolutionScale}
+			label="Resolution Scale"
+			min={0.1}
+			max={1}
+			step={0.1}
+			on:change={(e) => actions.setGodRaysResolutionScale(e.detail.value)}
+		/>
 		<Slider
 			value={state.samples}
 			label="Samples"

@@ -8,6 +8,7 @@
 		focusRange: number;
 		bokehScale: number;
 		blendFunction: BlendFunction;
+		resolutionScale: number;
 	};
 
 	export let actions: Record<string, (...args: any[]) => void>;
@@ -76,6 +77,14 @@
 			max={10}
 			step={0.1}
 			on:change={(e) => actions.setDepthOfFieldBokehScale(e.detail.value)}
+		/>
+		<Slider
+			value={state.resolutionScale}
+			label="Resolution Scale"
+			min={0.1}
+			max={1}
+			step={0.1}
+			on:change={(e) => actions.setDepthOfFieldResolutionScale(e.detail.value)}
 		/>
 		<List
 			value={state.blendFunction}

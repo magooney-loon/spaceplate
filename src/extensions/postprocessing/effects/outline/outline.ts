@@ -10,6 +10,9 @@ export interface OutlineState {
 	blur: boolean;
 	kernelSize: KernelSize;
 	blendFunction: BlendFunction;
+	patternScale: number;
+	multisampling: number;
+	resolutionScale: number;
 	[key: string]: unknown;
 }
 
@@ -22,7 +25,10 @@ export const defaultOutlineState: OutlineState = {
 	xRay: true,
 	blur: false,
 	kernelSize: 1 as KernelSize,
-	blendFunction: 22 as BlendFunction
+	blendFunction: 22 as BlendFunction,
+	patternScale: 1.0,
+	multisampling: 0,
+	resolutionScale: 0.5
 };
 
 export function createOutlineActions(state: OutlineState) {
@@ -54,6 +60,15 @@ export function createOutlineActions(state: OutlineState) {
 		setOutlineBlendFunction: (value: BlendFunction) => {
 			state.blendFunction = value;
 		},
+		setOutlinePatternScale: (value: number) => {
+			state.patternScale = value;
+		},
+		setOutlineMultisampling: (value: number) => {
+			state.multisampling = value;
+		},
+		setOutlineResolutionScale: (value: number) => {
+			state.resolutionScale = value;
+		},
 		resetOutline: () => {
 			state.edgeStrength = defaultOutlineState.edgeStrength;
 			state.visibleEdgeColor = defaultOutlineState.visibleEdgeColor;
@@ -63,6 +78,9 @@ export function createOutlineActions(state: OutlineState) {
 			state.blur = defaultOutlineState.blur;
 			state.kernelSize = defaultOutlineState.kernelSize;
 			state.blendFunction = defaultOutlineState.blendFunction;
+			state.patternScale = defaultOutlineState.patternScale;
+			state.multisampling = defaultOutlineState.multisampling;
+			state.resolutionScale = defaultOutlineState.resolutionScale;
 		}
 	};
 }

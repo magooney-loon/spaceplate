@@ -1,3 +1,5 @@
+import type { BlendFunction } from 'postprocessing';
+
 export interface GlitchState {
 	enabled: boolean;
 	delay: number;
@@ -6,6 +8,8 @@ export interface GlitchState {
 	ratio: number;
 	columns: number;
 	mode: 0 | 1 | 2 | 3;
+	blendFunction: BlendFunction;
+	dtSize: number;
 	[key: string]: unknown;
 }
 
@@ -16,7 +20,9 @@ export const defaultGlitchState: GlitchState = {
 	strength: 0.65,
 	ratio: 0.85,
 	columns: 0.05,
-	mode: 1
+	mode: 1,
+	blendFunction: 0 as BlendFunction,
+	dtSize: 64
 };
 
 export function createGlitchActions(state: GlitchState) {
@@ -42,6 +48,12 @@ export function createGlitchActions(state: GlitchState) {
 		setGlitchMode: (value: 0 | 1 | 2 | 3) => {
 			state.mode = value;
 		},
+		setGlitchBlendFunction: (value: BlendFunction) => {
+			state.blendFunction = value;
+		},
+		setGlitchDtSize: (value: number) => {
+			state.dtSize = value;
+		},
 		resetGlitch: () => {
 			state.delay = defaultGlitchState.delay;
 			state.duration = defaultGlitchState.duration;
@@ -49,6 +61,8 @@ export function createGlitchActions(state: GlitchState) {
 			state.ratio = defaultGlitchState.ratio;
 			state.columns = defaultGlitchState.columns;
 			state.mode = defaultGlitchState.mode;
+			state.blendFunction = defaultGlitchState.blendFunction;
+			state.dtSize = defaultGlitchState.dtSize;
 		}
 	};
 }

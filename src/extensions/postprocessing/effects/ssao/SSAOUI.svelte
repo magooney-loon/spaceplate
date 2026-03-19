@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Folder, Slider, Checkbox, List, Button } from 'svelte-tweakpane-ui';
+	import { Folder, Slider, Checkbox, List, Button, Separator } from 'svelte-tweakpane-ui';
 	import type { BlendFunction } from 'postprocessing';
 
 	export let state: {
@@ -12,6 +12,14 @@
 		fade: number;
 		luminanceInfluence: number;
 		blendFunction: BlendFunction;
+		worldDistanceThreshold: number;
+		worldDistanceFalloff: number;
+		worldProximityThreshold: number;
+		worldProximityFalloff: number;
+		minRadiusScale: number;
+		color: number;
+		depthAwareUpsampling: boolean;
+		resolutionScale: number;
 	};
 
 	export let actions: Record<string, (...args: any[]) => void>;
@@ -57,6 +65,14 @@
 <Folder title="SSAO" expanded={false}>
 	<Checkbox value={state.enabled} label="Enabled" on:change={() => actions.toggleSSAO()} />
 	{#if state.enabled}
+		<Slider
+			value={state.resolutionScale}
+			label="Resolution Scale"
+			min={0.1}
+			max={1}
+			step={0.1}
+			on:change={(e) => actions.setSSAOResolutionScale(e.detail.value)}
+		/>
 		<Slider
 			value={state.samples}
 			label="Samples"
@@ -113,6 +129,61 @@
 			step={0.01}
 			on:change={(e) => actions.setSSAOLuminanceInfluence(e.detail.value)}
 		/>
+		<Separator />
+		<Slider
+			value={state.worldDistanceThreshold}
+			label="World Distance Threshold"
+			min={0}
+			max={100}
+			step={0.1}
+			on:change={(e) => actions.setSSAOWorldDistanceThreshold(e.detail.value)}
+		/>
+		<Slider
+			value={state.worldDistanceFalloff}
+			label="World Distance Falloff"
+			min={0}
+			max={10}
+			step={0.01}
+			on:change={(e) => actions.setSSAOWorldDistanceFalloff(e.detail.value)}
+		/>
+		<Slider
+			value={state.worldProximityThreshold}
+			label="World Proximity Threshold"
+			min={0}
+			max={0.01}
+			step={0.0001}
+			on:change={(e) => actions.setSSAOWorldProximityThreshold(e.detail.value)}
+		/>
+		<Slider
+			value={state.worldProximityFalloff}
+			label="World Proximity Falloff"
+			min={0}
+			max={0.01}
+			step={0.0001}
+			on:change={(e) => actions.setSSAOWorldProximityFalloff(e.detail.value)}
+		/>
+		<Slider
+			value={state.minRadiusScale}
+			label="Min Radius Scale"
+			min={0}
+			max={1}
+			step={0.01}
+			on:change={(e) => actions.setSSAOMinRadiusScale(e.detail.value)}
+		/>
+		<Checkbox
+			value={state.depthAwareUpsampling}
+			label="Depth-Aware Upsampling"
+			on:change={(e) => actions.setSSAODepthAwareUpsampling(e.detail.value)}
+		/>
+		<Slider
+			value={state.color}
+			label="AO Color"
+			min={0}
+			max={0xffffff}
+			step={1}
+			on:change={(e) => actions.setSSAOColor(Math.floor(e.detail.value))}
+		/>
+		<Separator />
 		<List
 			value={state.blendFunction}
 			label="Blend Function"
