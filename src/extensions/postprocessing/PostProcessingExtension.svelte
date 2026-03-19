@@ -59,40 +59,37 @@
 	];
 
 	const blendFunctionOptions = [
-		{ value: 0 as BlendFunction, text: 'Normal' },
-		{ value: 1 as BlendFunction, text: 'Add' },
-		{ value: 2 as BlendFunction, text: 'Alpha' },
-		{ value: 3 as BlendFunction, text: 'Average' },
-		{ value: 4 as BlendFunction, text: 'Color' },
-		{ value: 5 as BlendFunction, text: 'Color Burn' },
-		{ value: 6 as BlendFunction, text: 'Color Dodge' },
-		{ value: 7 as BlendFunction, text: 'Darken' },
-		{ value: 8 as BlendFunction, text: 'Difference' },
-		{ value: 9 as BlendFunction, text: 'Divide' },
-		{ value: 10 as BlendFunction, text: 'Dst' },
-		{ value: 11 as BlendFunction, text: 'Exclusion' },
-		{ value: 12 as BlendFunction, text: 'Hard Light' },
-		{ value: 13 as BlendFunction, text: 'Hard Mix' },
-		{ value: 14 as BlendFunction, text: 'Hue' },
-		{ value: 15 as BlendFunction, text: 'Invert' },
-		{ value: 16 as BlendFunction, text: 'Invert RGB' },
-		{ value: 17 as BlendFunction, text: 'Lighten' },
-		{ value: 18 as BlendFunction, text: 'Linear Burn' },
-		{ value: 19 as BlendFunction, text: 'Linear Dodge' },
-		{ value: 20 as BlendFunction, text: 'Linear Light' },
-		{ value: 21 as BlendFunction, text: 'Luminosity' },
-		{ value: 22 as BlendFunction, text: 'Multiply' },
-		{ value: 23 as BlendFunction, text: 'Negation' },
-		{ value: 24 as BlendFunction, text: 'Normal' },
-		{ value: 25 as BlendFunction, text: 'Overlay' },
-		{ value: 26 as BlendFunction, text: 'Pin Light' },
-		{ value: 27 as BlendFunction, text: 'Reflect' },
+		{ value: 0 as BlendFunction, text: 'Add' },
+		{ value: 1 as BlendFunction, text: 'Alpha' },
+		{ value: 2 as BlendFunction, text: 'Average' },
+		{ value: 3 as BlendFunction, text: 'Color' },
+		{ value: 4 as BlendFunction, text: 'Color Burn' },
+		{ value: 5 as BlendFunction, text: 'Color Dodge' },
+		{ value: 6 as BlendFunction, text: 'Darken' },
+		{ value: 7 as BlendFunction, text: 'Difference' },
+		{ value: 8 as BlendFunction, text: 'Divide' },
+		{ value: 10 as BlendFunction, text: 'Exclusion' },
+		{ value: 11 as BlendFunction, text: 'Hard Light' },
+		{ value: 12 as BlendFunction, text: 'Hard Mix' },
+		{ value: 13 as BlendFunction, text: 'Hue' },
+		{ value: 14 as BlendFunction, text: 'Invert' },
+		{ value: 15 as BlendFunction, text: 'Invert RGB' },
+		{ value: 16 as BlendFunction, text: 'Lighten' },
+		{ value: 17 as BlendFunction, text: 'Linear Burn' },
+		{ value: 18 as BlendFunction, text: 'Linear Dodge' },
+		{ value: 19 as BlendFunction, text: 'Linear Light' },
+		{ value: 20 as BlendFunction, text: 'Luminosity' },
+		{ value: 21 as BlendFunction, text: 'Multiply' },
+		{ value: 22 as BlendFunction, text: 'Negation' },
+		{ value: 23 as BlendFunction, text: 'Normal' },
+		{ value: 24 as BlendFunction, text: 'Overlay' },
+		{ value: 25 as BlendFunction, text: 'Pin Light' },
+		{ value: 26 as BlendFunction, text: 'Reflect' },
+		{ value: 27 as BlendFunction, text: 'Saturation' },
 		{ value: 28 as BlendFunction, text: 'Screen' },
-		{ value: 29 as BlendFunction, text: 'Src' },
-		{ value: 30 as BlendFunction, text: 'Saturation' },
-		{ value: 31 as BlendFunction, text: 'Soft Light' },
-		{ value: 32 as BlendFunction, text: 'Subtract' },
-		{ value: 33 as BlendFunction, text: 'Vivid Light' }
+		{ value: 29 as BlendFunction, text: 'Soft Light' },
+		{ value: 31 as BlendFunction, text: 'Subtract' },
+		{ value: 32 as BlendFunction, text: 'Vivid Light' }
 	];
 
 	const ext = createExtension({
@@ -140,7 +137,7 @@
 				ratio: 0.85,
 				columns: 0.05,
 				mode: 1,
-				blendFunction: 0 as BlendFunction,
+				blendFunction: 23 as BlendFunction,
 				dtSize: 64
 			},
 			noise: {
@@ -154,30 +151,30 @@
 				modulationOffset: 0.15,
 				offsetX: 0.01,
 				offsetY: 0.01,
-				blendFunction: 0 as BlendFunction
+				blendFunction: 23 as BlendFunction
 			},
 			brightnessContrast: {
 				enabled: false,
 				brightness: 0,
 				contrast: 0,
-				blendFunction: 0 as BlendFunction
+				blendFunction: 23 as BlendFunction
 			},
 			hueSaturation: {
 				enabled: false,
 				hue: 0,
 				saturation: 0,
-				blendFunction: 0 as BlendFunction
+				blendFunction: 23 as BlendFunction
 			},
 			sepia: {
 				enabled: false,
 				intensity: 1.0,
-				blendFunction: 0 as BlendFunction
+				blendFunction: 23 as BlendFunction
 			},
 			dotScreen: {
 				enabled: false,
 				angle: 1.57,
 				scale: 1.0,
-				blendFunction: 0 as BlendFunction
+				blendFunction: 23 as BlendFunction
 			},
 			scanline: {
 				enabled: false,
@@ -207,7 +204,7 @@
 				mode: 11 as ToneMappingMode,
 				whitePoint: 4.0,
 				middleGrey: 0.6,
-				blendFunction: 0 as BlendFunction,
+				blendFunction: 23 as BlendFunction,
 				resolution: 256,
 				minLuminance: 0.01,
 				averageLuminance: 1.0,
@@ -226,7 +223,7 @@
 				focusArea: 0.4,
 				feather: 0.3,
 				kernelSize: 3 as KernelSize,
-				blendFunction: 0 as BlendFunction
+				blendFunction: 23 as BlendFunction
 			},
 			lensDistortion: {
 				enabled: false,
@@ -241,14 +238,14 @@
 			colorDepth: {
 				enabled: false,
 				bits: 16,
-				blendFunction: 0 as BlendFunction
+				blendFunction: 23 as BlendFunction
 			},
 			depthOfField: {
 				enabled: false,
 				focusDistance: 3.0,
 				focusRange: 2.0,
 				bokehScale: 1.0,
-				blendFunction: 0 as BlendFunction,
+				blendFunction: 23 as BlendFunction,
 				resolutionScale: 0.5
 			},
 			godRays: {
@@ -304,7 +301,7 @@
 			depthEffect: {
 				enabled: false,
 				inverted: false,
-				blendFunction: 0 as BlendFunction
+				blendFunction: 23 as BlendFunction
 			}
 		}),
 		actions: {
@@ -405,6 +402,9 @@
 			},
 			toggleNoise: ({ state }) => {
 				state.noise.enabled = !state.noise.enabled;
+			},
+			setNoiseBlendFunction: ({ state }, v) => {
+				state.noise.blendFunction = v;
 			},
 			toggleChromaticAberration: ({ state }) => {
 				state.chromaticAberration.enabled = !state.chromaticAberration.enabled;
@@ -804,7 +804,7 @@
 				state.glitch.ratio = 0.85;
 				state.glitch.columns = 0.05;
 				state.glitch.mode = 1;
-				state.glitch.blendFunction = 0 as BlendFunction;
+				state.glitch.blendFunction = 23 as BlendFunction;
 				state.glitch.dtSize = 64;
 			},
 			resetNoise: ({ state }) => {
@@ -948,7 +948,7 @@
 			},
 			resetDepthEffect: ({ state }) => {
 				state.depthEffect.inverted = false;
-				state.depthEffect.blendFunction = 0 as BlendFunction;
+				state.depthEffect.blendFunction = 23 as BlendFunction;
 			},
 			resetAll: ({ state }) => {
 				state.bloom.intensity = 1.0;
@@ -981,18 +981,18 @@
 				state.chromaticAberration.modulationOffset = 0.15;
 				state.chromaticAberration.offsetX = 0.01;
 				state.chromaticAberration.offsetY = 0.01;
-				state.chromaticAberration.blendFunction = 0 as BlendFunction;
+				state.chromaticAberration.blendFunction = 23 as BlendFunction;
 				state.brightnessContrast.brightness = 0;
 				state.brightnessContrast.contrast = 0;
-				state.brightnessContrast.blendFunction = 0 as BlendFunction;
+				state.brightnessContrast.blendFunction = 23 as BlendFunction;
 				state.hueSaturation.hue = 0;
 				state.hueSaturation.saturation = 0;
-				state.hueSaturation.blendFunction = 0 as BlendFunction;
+				state.hueSaturation.blendFunction = 23 as BlendFunction;
 				state.sepia.intensity = 1.0;
-				state.sepia.blendFunction = 0 as BlendFunction;
+				state.sepia.blendFunction = 23 as BlendFunction;
 				state.dotScreen.angle = 1.57;
 				state.dotScreen.scale = 1.0;
-				state.dotScreen.blendFunction = 0 as BlendFunction;
+				state.dotScreen.blendFunction = 23 as BlendFunction;
 				state.scanline.density = 1.25;
 				state.scanline.opacity = 0.5;
 				state.scanline.scrollSpeed = 0;
