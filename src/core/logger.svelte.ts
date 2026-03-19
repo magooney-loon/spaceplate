@@ -12,17 +12,60 @@ export const loggerState = $state<LoggerState>({
 	postprocessing: true
 });
 
-const createLogger = (prefix: string, channel: keyof LoggerState) => ({
-	info: (...args: unknown[]) => {
-		if (loggerState[channel]) console.log(`[${prefix}]`, ...args);
-	},
-	warn: (...args: unknown[]) => {
-		if (loggerState[channel]) console.warn(`[${prefix}]`, ...args);
-	},
-	error: (...args: unknown[]) => {
-		if (loggerState[channel]) console.error(`[${prefix}]`, ...args);
-	}
-});
+const channelStyles: Record<keyof LoggerState, { color: string; bg: string; text: string }> = {
+	engine: { color: '#61afef', bg: 'background:#1e3a5f', text: '⬡' },
+	settings: { color: '#98c379', bg: 'background:#2d4a2d', text: '⚙' },
+	sound: { color: '#c678dd', bg: 'background:#3d2d4a', text: '♪' },
+	postprocessing: { color: '#e5c07b', bg: 'background:#4a4020', text: '◈' }
+};
+
+const formatTime = () => {
+	const now = new Date();
+	return (
+		now.toLocaleTimeString('en-US', {
+			hour12: false,
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit'
+		}) + `.${String(now.getMilliseconds()).padStart(3, '0')}`
+	);
+};
+
+const createLogger = (prefix: string, channel: keyof LoggerState) => {
+	const style = channelStyles[channel];
+	return {
+		info: (...args: unknown[]) => {
+			if (!loggerState[channel]) return;
+			console.log(
+				`%c${style.text} ${formatTime()} %c${prefix.padEnd(14)}%c `,
+				`color: ${style.color}; font-weight: bold; ${style.bg}; padding: 2px 6px; border-radius: 3px;`,
+				`color: ${style.color}; font-weight: bold;`,
+				'color: #abb2bf; font-family: monospace;',
+				...args
+			);
+		},
+		warn: (...args: unknown[]) => {
+			if (!loggerState[channel]) return;
+			console.warn(
+				`%c⚠ ${formatTime()} %c${prefix.padEnd(14)}%c `,
+				`color: #e5c07b; font-weight: bold; background: #4a4020; padding: 2px 6px; border-radius: 3px;`,
+				`color: #e5c07b; font-weight: bold;`,
+				'color: #abb2bf; font-family: monospace;',
+				...args
+			);
+		},
+		error: (...args: unknown[]) => {
+			if (!loggerState[channel]) return;
+			console.error(
+				`%c✗ ${formatTime()} %c${prefix.padEnd(14)}%c `,
+				`color: #e06c75; font-weight: bold; background: #4a2020; padding: 2px 6px; border-radius: 3px;`,
+				`color: #e06c75; font-weight: bold;`,
+				'color: #abb2bf; font-family: monospace;',
+				...args
+			);
+		}
+	};
+};
 
 export const logEngine = createLogger('engine', 'engine');
 export const logSettings = createLogger('settings', 'settings');

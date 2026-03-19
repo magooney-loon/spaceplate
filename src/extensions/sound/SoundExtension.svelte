@@ -8,58 +8,31 @@
 
 	const ext = createExtension<ExtensionState, ExtensionActions>({
 		scope: extensionScope,
-		state() {
-			return {
-				masterVolume: 1,
-				masterMuted: false,
-
-				sfxVolume: settingsState.audio.sfxVolume,
-				sfxMuted: settingsState.audio.sfxMuted,
-
-				musicVolume: settingsState.audio.musicVolume,
-				musicMuted: settingsState.audio.musicMuted,
-
-				ambienceVolume: settingsState.audio.ambienceVolume,
-				ambienceMuted: settingsState.audio.ambienceMuted,
-
-				refDistance: 5,
-				maxDistance: 80,
-				rolloffFactor: 1.5,
-				panningModel: 'HRTF' as 'HRTF' | 'equalpower',
-
-				listenerEnabled: true
-			};
-		},
+		state: () => ({
+			refDistance: 5,
+			maxDistance: 80,
+			rolloffFactor: 1.5,
+			panningModel: 'HRTF' as 'HRTF' | 'equalpower',
+			listenerEnabled: true
+		}),
 		actions: {
-			setMasterVolume({ state }, v) {
-				state.masterVolume = v;
-			},
-			toggleMasterMute({ state }) {
-				state.masterMuted = !state.masterMuted;
-			},
-			setSfxVolume({ state }, v) {
-				state.sfxVolume = v;
+			setSfxVolume(_state, v) {
 				settingsState.audio.sfxVolume = v;
 			},
-			toggleSfxMute({ state }) {
-				state.sfxMuted = !state.sfxMuted;
-				settingsState.audio.sfxMuted = state.sfxMuted;
+			toggleSfx() {
+				settingsState.audio.sfxEnabled = !settingsState.audio.sfxEnabled;
 			},
-			setMusicVolume({ state }, v) {
-				state.musicVolume = v;
+			setMusicVolume(_state, v) {
 				settingsState.audio.musicVolume = v;
 			},
-			toggleMusicMute({ state }) {
-				state.musicMuted = !state.musicMuted;
-				settingsState.audio.musicMuted = state.musicMuted;
+			toggleMusic() {
+				settingsState.audio.musicEnabled = !settingsState.audio.musicEnabled;
 			},
-			setAmbientVolume({ state }, v) {
-				state.ambienceVolume = v;
+			setAmbienceVolume(_state, v) {
 				settingsState.audio.ambienceVolume = v;
 			},
-			toggleAmbientMute({ state }) {
-				state.ambienceMuted = !state.ambienceMuted;
-				settingsState.audio.ambienceMuted = state.ambienceMuted;
+			toggleAmbience() {
+				settingsState.audio.ambienceEnabled = !settingsState.audio.ambienceEnabled;
 			},
 			setRefDistance({ state }, v) {
 				state.refDistance = v;
@@ -73,15 +46,7 @@
 			setPanningModel({ state }, v) {
 				state.panningModel = v;
 			},
-			resetAll({ state }) {
-				state.masterVolume = 1;
-				state.masterMuted = false;
-				state.sfxVolume = settingsState.audio.sfxVolume;
-				state.sfxMuted = settingsState.audio.sfxMuted;
-				state.musicVolume = settingsState.audio.musicVolume;
-				state.musicMuted = settingsState.audio.musicMuted;
-				state.ambienceVolume = settingsState.audio.ambienceVolume;
-				state.ambienceMuted = settingsState.audio.ambienceMuted;
+			resetPositional({ state }) {
 				state.refDistance = 5;
 				state.maxDistance = 80;
 				state.rolloffFactor = 1.5;
@@ -90,7 +55,7 @@
 		}
 	});
 
-	const state = ext.state;
+	const extState = ext.state;
 
 	const panningOptions = [
 		{ value: 'HRTF', text: 'HRTF (3D)' },
@@ -102,72 +67,48 @@
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiVolumeHigh" title="Sound">
-		<Folder title="Master" expanded={true}>
-			<Slider
-				label="Master Volume"
-				value={state.masterVolume}
-				min={0}
-				max={1}
-				step={0.01}
-				on:change={(e) => ext.setMasterVolume(e.detail.value)}
-			/>
-			<Checkbox
-				label="Master Muted"
-				value={state.masterMuted}
-				on:change={() => ext.toggleMasterMute()}
-			/>
-		</Folder>
-
 		<Folder title="Buses" expanded={true}>
 			<Slider
 				label="SFX"
-				value={state.sfxVolume}
+				value={settingsState.audio.sfxVolume}
 				min={0}
 				max={1}
 				step={0.01}
 				on:change={(e) => ext.setSfxVolume(e.detail.value)}
 			/>
-			<Checkbox label="SFX Muted" value={state.sfxMuted} on:change={() => ext.toggleSfxMute()} />
+			<Checkbox label="SFX" bind:value={settingsState.audio.sfxEnabled} />
 
 			<Slider
 				label="Music"
-				value={state.musicVolume}
+				value={settingsState.audio.musicVolume}
 				min={0}
 				max={1}
 				step={0.01}
 				on:change={(e) => ext.setMusicVolume(e.detail.value)}
 			/>
-			<Checkbox
-				label="Music Muted"
-				value={state.musicMuted}
-				on:change={() => ext.toggleMusicMute()}
-			/>
+			<Checkbox label="Music" bind:value={settingsState.audio.musicEnabled} />
 
 			<Slider
 				label="Ambient"
-				value={state.ambienceVolume}
+				value={settingsState.audio.ambienceVolume}
 				min={0}
 				max={1}
 				step={0.01}
-				on:change={(e) => ext.setAmbientVolume(e.detail.value)}
+				on:change={(e) => ext.setAmbienceVolume(e.detail.value)}
 			/>
-			<Checkbox
-				label="Ambient Muted"
-				value={state.ambienceMuted}
-				on:change={() => ext.toggleAmbientMute()}
-			/>
+			<Checkbox label="Ambient" bind:value={settingsState.audio.ambienceEnabled} />
 		</Folder>
 
 		<Folder title="Positional Audio" expanded={false}>
 			<List
 				label="Panning Model"
-				value={state.panningModel}
+				value={extState.panningModel}
 				options={panningOptions}
 				on:change={(e) => ext.setPanningModel(e.detail.value as 'HRTF' | 'equalpower')}
 			/>
 			<Slider
 				label="Ref Distance"
-				value={state.refDistance}
+				value={extState.refDistance}
 				min={0.1}
 				max={20}
 				step={0.1}
@@ -175,7 +116,7 @@
 			/>
 			<Slider
 				label="Max Distance"
-				value={state.maxDistance}
+				value={extState.maxDistance}
 				min={10}
 				max={500}
 				step={1}
@@ -183,7 +124,7 @@
 			/>
 			<Slider
 				label="Rolloff Factor"
-				value={state.rolloffFactor}
+				value={extState.rolloffFactor}
 				min={0}
 				max={5}
 				step={0.01}
@@ -191,6 +132,6 @@
 			/>
 		</Folder>
 
-		<Button title="Reset All" on:click={() => ext.resetAll()} />
+		<Button title="Reset Positional" on:click={() => ext.resetPositional()} />
 	</DropDownPane>
 </ToolbarItem>

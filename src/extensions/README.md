@@ -27,20 +27,21 @@ extensions/
 export const extensionScope = 'my-extension';
 
 export type ExtensionState = {
-  // State properties
-  enabled: boolean;
-  value: number;
+	// State properties
+	enabled: boolean;
+	value: number;
 };
 
 export type ExtensionActions = {
-  // Actions that mutate state
-  setEnabled: (value: boolean) => void;
-  setValue: (value: number) => void;
-  resetAll: () => void;
+	// Actions that mutate state
+	setEnabled: (value: boolean) => void;
+	setValue: (value: number) => void;
+	resetAll: () => void;
 };
 ```
 
 **Rules:**
+
 - Always export `extensionScope` as a unique string (kebab-case)
 - Define `ExtensionState` interface/type for all state properties
 - Define `ExtensionActions` type for all state-mutating functions
@@ -53,12 +54,13 @@ import { useStudio } from '@threlte/studio/extend';
 import { extensionScope, type ExtensionState, type ExtensionActions } from './types';
 
 export const useMyExtension = () => {
-  const { useExtension } = useStudio();
-  return useExtension<ExtensionState, ExtensionActions, true>(extensionScope);
+	const { useExtension } = useStudio();
+	return useExtension<ExtensionState, ExtensionActions, true>(extensionScope);
 };
 ```
 
 **Rules:**
+
 - Export a single hook function named `use{Name}`
 - Use `useExtension` from `@threlte/studio/extend`
 - Pass the generic types: `<ExtensionState, ExtensionActions, true>`
@@ -109,6 +111,7 @@ export const useMyExtension = () => {
 ```
 
 **Rules:**
+
 - Always include `<slot />` at the end (required by Threlte Studio)
 - Use `createExtension` to register the extension
 - State should use sensible defaults (avoid `Infinity` for slider-compatible values)
@@ -119,15 +122,16 @@ export const useMyExtension = () => {
 
 We use [`svelte-tweakpane-ui`](https://github.com/nicegui/svelte-tweakpane) for extension UIs:
 
-| Component | Use Case | Example |
-|-----------|----------|---------|
-| `Checkbox` | Boolean toggles | Enable/disable features |
-| `Slider` | Numeric values | Adjust intensity, speed, limits |
-| `Button` | Actions | Reset, apply, trigger effects |
-| `Folder` | Grouping related controls | Organize complex settings |
-| `DropDownPane` | Main extension panel | Container in toolbar |
+| Component      | Use Case                  | Example                         |
+| -------------- | ------------------------- | ------------------------------- |
+| `Checkbox`     | Boolean toggles           | Enable/disable features         |
+| `Slider`       | Numeric values            | Adjust intensity, speed, limits |
+| `Button`       | Actions                   | Reset, apply, trigger effects   |
+| `Folder`       | Grouping related controls | Organize complex settings       |
+| `DropDownPane` | Main extension panel      | Container in toolbar            |
 
 **Slider Tips:**
+
 - Always set explicit `min`, `max`, and `step` values
 - Avoid `Infinity` - use large finite numbers instead
 - For boolean toggles with Slider, use `min={0} max={1} step={1}`
@@ -165,6 +169,7 @@ keyMap({ shift, ctrl, alt }) {
 Controls for the perspective camera and camera controls behavior.
 
 **State includes:**
+
 - Camera properties: `positionX`, `positionY`, `positionZ`, `fov`, `near`, `far`
 - Control limits: `minPolarAngle`, `maxPolarAngle`, `minAzimuthAngle`, `maxAzimuthAngle`
 - Distance limits: `minDistance`, `maxDistance`, `minZoom`, `maxZoom`
@@ -172,6 +177,7 @@ Controls for the perspective camera and camera controls behavior.
 - Options: `dollyToCursor`
 
 **Usage:**
+
 ```typescript
 import { useCameraControls } from '$extensions/camera/useCameraControls';
 
@@ -184,16 +190,18 @@ const position = $derived([ext.state.positionX, ext.state.positionY, ext.state.p
 Post-processing effects using the `postprocessing` library.
 
 **State includes:**
+
 - Multiple effect states (bloom, SMAA, FXAA, vignette, etc.)
 - Each effect has `enabled` flag and effect-specific parameters
 
 **Usage:**
+
 ```typescript
 import { usePostProcessing } from '$extensions/postprocessing/usePostProcessing';
 
 const { state } = usePostProcessing();
 if (state.bloom.enabled) {
-  // Apply bloom with state.bloom.intensity, state.bloom.threshold, etc.
+	// Apply bloom with state.bloom.intensity, state.bloom.threshold, etc.
 }
 ```
 
@@ -202,11 +210,13 @@ if (state.bloom.enabled) {
 Audio system with bus-based mixing and positional audio tuning.
 
 **State includes:**
+
 - Master volume/mute
 - Per-bus volumes (SFX, Music, Ambient)
 - Positional audio settings (refDistance, maxDistance, rolloff, panning model)
 
 **Usage:**
+
 ```typescript
 import { useSound } from '$extensions/sound/useSound';
 import { PositionalAudio } from '@threlte/extras';
@@ -216,12 +226,12 @@ const { state } = useSound();
 
 ```svelte
 <PositionalAudio
-  src="/sounds/rocket.ogg"
-  volume={state.sfxMuted ? 0 : state.sfxVolume}
-  refDistance={state.refDistance}
-  maxDistance={state.maxDistance}
-  rolloffFactor={state.rolloffFactor}
-  panningModel={state.panningModel}
+	src="/sounds/rocket.ogg"
+	volume={state.sfxMuted ? 0 : state.sfxVolume}
+	refDistance={state.refDistance}
+	maxDistance={state.maxDistance}
+	rolloffFactor={state.rolloffFactor}
+	panningModel={state.panningModel}
 />
 ```
 

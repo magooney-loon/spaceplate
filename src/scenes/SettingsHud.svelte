@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
 	import { settingsState, graphicsActions, audioActions } from '$core/settings.svelte.js';
+	import { soundActions } from '$core/GlobalAudio.svelte';
 	import type { QualityLevel } from '$core/settings.svelte.js';
 
 	type Props = {
@@ -24,7 +25,10 @@
 				<div class="flex gap-2">
 					{#each ['low', 'high'] as level}
 						<button
-							onclick={() => graphicsActions.setQuality(level as QualityLevel)}
+							onclick={() => {
+								soundActions.playClick();
+								graphicsActions.setQuality(level as QualityLevel);
+							}}
 							class="flex-1 px-4 py-2 rounded-lg border transition-all capitalize cursor-pointer
 								{settingsState.graphics.quality === level
 								? 'border-white/60 bg-white/20'
@@ -45,8 +49,7 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								checked={!settingsState.audio.sfxMuted}
-								onchange={() => audioActions.toggleSfxMute()}
+								bind:checked={settingsState.audio.sfxEnabled}
 								class="w-4 h-4"
 							/>
 							Sound Effects
@@ -68,8 +71,7 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								checked={!settingsState.audio.musicMuted}
-								onchange={() => audioActions.toggleMusicMute()}
+								bind:checked={settingsState.audio.musicEnabled}
 								class="w-4 h-4"
 							/>
 							Music
@@ -91,8 +93,7 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								checked={!settingsState.audio.ambienceMuted}
-								onchange={() => audioActions.toggleAmbientMute()}
+								bind:checked={settingsState.audio.ambienceEnabled}
 								class="w-4 h-4"
 							/>
 							Ambient
@@ -104,7 +105,7 @@
 							step="0.01"
 							aria-label="Ambient volume"
 							value={settingsState.audio.ambienceVolume}
-							oninput={(e) => audioActions.setAmbientVolume(+(e.target as HTMLInputElement).value)}
+							oninput={(e) => audioActions.setAmbienceVolume(+(e.target as HTMLInputElement).value)}
 							class="w-full accent-white/80"
 						/>
 					</div>
@@ -124,7 +125,10 @@
 
 			<!-- Back Button -->
 			<button
-				onclick={onBack}
+				onclick={() => {
+					soundActions.playClick();
+					onBack();
+				}}
 				class="w-full px-4 py-2.5 bg-white/15 text-white border border-white/30 rounded-lg cursor-pointer hover:bg-white/20 transition-colors"
 			>
 				Back

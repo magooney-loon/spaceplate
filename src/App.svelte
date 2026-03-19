@@ -6,6 +6,7 @@
 	import Camera from '$core/Camera.svelte';
 	import Renderer from '$core/Renderer.svelte';
 	import Loader from '$core/Loader.svelte';
+	import GlobalAudio from '$core/GlobalAudio.svelte';
 	import * as THREE from 'three';
 	import { settingsState, generalActions } from '$core/settings.svelte.js';
 	import './app.css';
@@ -53,6 +54,7 @@
 				extensions={[StageExtension, PostProcessingExtension, SoundExtension, LoggerExtension]}
 			>
 				<Camera />
+				<GlobalAudio />
 				<Skybox />
 				<Renderer />
 				<Scene />
@@ -60,6 +62,7 @@
 		{/await}
 	{:else}
 		<Camera />
+		<GlobalAudio />
 		<Skybox />
 		<Renderer />
 		<Scene />

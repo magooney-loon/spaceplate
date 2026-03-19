@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { sceneActions } from '$core/SceneManager.svelte.ts';
+	import { soundActions } from '$core/GlobalAudio.svelte';
 	import SettingsHud from '$scenes/SettingsHud.svelte';
 
 	let showSettings = $state(false);
@@ -19,14 +20,20 @@
 		<!-- Menu Buttons -->
 		<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-4">
 			<button
-				onclick={() => sceneActions.goToDemoScene()}
+				onclick={() => {
+					soundActions.playClick();
+					sceneActions.goToDemoScene();
+				}}
 				class="px-8 py-4 text-xl bg-linear-to-br from-[#4a90d9] to-[#357abd] text-white border-none rounded-lg cursor-pointer min-w-50"
 			>
 				🚀 Start Demo
 			</button>
 
 			<button
-				onclick={() => (showSettings = true)}
+				onclick={() => {
+					soundActions.playClick();
+					showSettings = true;
+				}}
 				class="px-8 py-4 text-xl bg-white/10 text-white border-2 border-[#4a90d9] rounded-lg cursor-pointer min-w-50"
 			>
 				⚙️ Settings
@@ -34,5 +41,10 @@
 		</div>
 	</div>
 {:else}
-	<SettingsHud onBack={() => (showSettings = false)} />
+	<SettingsHud
+		onBack={() => {
+			soundActions.playClick();
+			showSettings = false;
+		}}
+	/>
 {/if}
