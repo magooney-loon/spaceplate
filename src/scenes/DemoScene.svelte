@@ -69,15 +69,10 @@
 
 	<HTML position.y={4.5} center zIndexRange={[0, 0]}>
 		<div
-			style="
-			color: {colors[colorIndex]};
-			font-size: 42px;
-			font-weight: bold;
-			font-family: monospace;
-			text-shadow: 0 0 6px {colors[colorIndex]}, 0 1px 3px rgba(0,0,0,0.8);
-			white-space: nowrap;
-			pointer-events: none;
-		"
+			class="text-[42px] font-bold"
+			style="color: {colors[colorIndex]}; text-shadow: 0 0 6px {colors[
+				colorIndex
+			]}, 0 1px 3px rgba(0,0,0,0.8);"
 		>
 			{colors[colorIndex]}
 		</div>
