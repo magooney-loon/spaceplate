@@ -40,9 +40,9 @@
 	} from 'postprocessing';
 	import { settingsState } from '$core/settings.svelte.js';
 	import { logPostprocessing } from './logger.svelte.js';
-	import { usePostProcessing } from '$extensions/postprocessing/usePostProcessing';
+	import { postprocessingState } from '$core/postprocessing.svelte';
 
-	const { state: postProcessingState } = usePostProcessing();
+	const s = postprocessingState;
 
 	const { scene, renderer, camera, size, autoRender, renderStage } = useThrelte();
 
@@ -127,8 +127,6 @@
 		depthEffect = null;
 		shockWaveEffect = null;
 	};
-
-	const s = postProcessingState;
 
 	$effect(() => {
 		if (settingsState.graphics.quality === 'low') {
