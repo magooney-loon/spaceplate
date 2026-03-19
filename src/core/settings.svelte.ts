@@ -5,8 +5,15 @@ export interface AudioSettings {
 	effectsEnabled: boolean;
 	ambienceEnabled: boolean;
 	musicVolume: number;
+	musicMuted: boolean;
 	ambienceVolume: number;
 	effectsVolume: number;
+	// Sound extension state
+	masterVolume: number;
+	masterMuted: boolean;
+	sfxVolume: number;
+	sfxMuted: boolean;
+	ambienceMuted: boolean;
 }
 
 export interface GraphicsSettings {
@@ -47,8 +54,14 @@ export const log = createLogger('spaceplate', import.meta.env.VITE_GAME_ENGINE_L
 const GRAPHICS_KEY = 'graphics-quality';
 const UI_VISIBLE_KEY = 'ui-visible';
 const MUSIC_VOLUME_KEY = 'music-volume';
+const MUSIC_MUTED_KEY = 'music-muted';
 const AMBIENCE_VOLUME_KEY = 'ambience-volume';
 const EFFECTS_VOLUME_KEY = 'effects-volume';
+const MASTER_VOLUME_KEY = 'master-volume';
+const MASTER_MUTED_KEY = 'master-muted';
+const SFX_VOLUME_KEY = 'sfx-volume';
+const SFX_MUTED_KEY = 'sfx-muted';
+const AMBIENCE_MUTED_KEY = 'ambience-muted';
 
 const fromStorage = (key: string, fallback: string): string => {
 	try {
@@ -85,9 +98,16 @@ export const settingsState = $state<SettingsState>({
 		musicEnabled: false,
 		effectsEnabled: false,
 		ambienceEnabled: false,
-		musicVolume: loadVolume(MUSIC_VOLUME_KEY, 0.69),
-		ambienceVolume: loadVolume(AMBIENCE_VOLUME_KEY, 0.5),
-		effectsVolume: loadVolume(EFFECTS_VOLUME_KEY, 0.5)
+		musicVolume: loadVolume(MUSIC_VOLUME_KEY, 0),
+		musicMuted: fromStorage(MUSIC_MUTED_KEY, 'true') === 'true',
+		ambienceVolume: loadVolume(AMBIENCE_VOLUME_KEY, 0),
+		effectsVolume: loadVolume(EFFECTS_VOLUME_KEY, 0),
+		// Sound extension state - all muted by default
+		masterVolume: loadVolume(MASTER_VOLUME_KEY, 0),
+		masterMuted: true,
+		sfxVolume: loadVolume(SFX_VOLUME_KEY, 0),
+		sfxMuted: true,
+		ambienceMuted: fromStorage(AMBIENCE_MUTED_KEY, 'true') === 'true'
 	},
 	graphics: {
 		quality: loadQuality()
@@ -126,6 +146,42 @@ export const audioActions = {
 		settingsState.audio.effectsVolume = v;
 		toStorage(EFFECTS_VOLUME_KEY, String(v));
 		log.info('Effects volume:', v);
+	},
+	// Sound extension actions
+	toggleMasterMute() {
+		settingsState.audio.masterMuted = !settingsState.audio.masterMuted;
+		toStorage(MASTER_MUTED_KEY, String(settingsState.audio.masterMuted));
+		log.info('Master mute:', settingsState.audio.masterMuted);
+	},
+	setMasterVolume(v: number) {
+		settingsState.audio.masterVolume = v;
+		toStorage(MASTER_VOLUME_KEY, String(v));
+		log.info('Master volume:', v);
+	},
+	toggleMusicMute() {
+		settingsState.audio.musicMuted = !settingsState.audio.musicMuted;
+		toStorage(MUSIC_MUTED_KEY, String(settingsState.audio.musicMuted));
+		log.info('Music mute:', settingsState.audio.musicMuted);
+	},
+	toggleSfxMute() {
+		settingsState.audio.sfxMuted = !settingsState.audio.sfxMuted;
+		toStorage(SFX_MUTED_KEY, String(settingsState.audio.sfxMuted));
+		log.info('SFX mute:', settingsState.audio.sfxMuted);
+	},
+	setSfxVolume(v: number) {
+		settingsState.audio.sfxVolume = v;
+		toStorage(SFX_VOLUME_KEY, String(v));
+		log.info('SFX volume:', v);
+	},
+	toggleAmbientMute() {
+		settingsState.audio.ambienceMuted = !settingsState.audio.ambienceMuted;
+		toStorage(AMBIENCE_MUTED_KEY, String(settingsState.audio.ambienceMuted));
+		log.info('Ambience mute:', settingsState.audio.ambienceMuted);
+	},
+	setAmbientVolume(v: number) {
+		settingsState.audio.ambienceVolume = v;
+		toStorage(AMBIENCE_VOLUME_KEY, String(v));
+		log.info('Ambience volume:', v);
 	}
 };
 

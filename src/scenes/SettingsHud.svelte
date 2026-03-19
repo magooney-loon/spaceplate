@@ -1,12 +1,8 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
 	import { sceneActions } from '$core/SceneManager.svelte.ts';
-	import { settingsState, graphicsActions } from '$core/settings.svelte.js';
-	import { useSound } from '$extensions/sound/useSound';
+	import { settingsState, graphicsActions, audioActions } from '$core/settings.svelte.js';
 	import type { QualityLevel } from '$core/settings.svelte.js';
-
-	const ext = useSound();
-	const { state } = ext;
 </script>
 
 <!-- Settings HUD -->
@@ -45,8 +41,8 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								checked={!state.masterMuted}
-								onchange={() => ext.toggleMasterMute()}
+								checked={!settingsState.audio.masterMuted}
+								onchange={() => audioActions.toggleMasterMute()}
 								class="w-4 h-4"
 							/>
 							Master
@@ -57,8 +53,8 @@
 							max="1"
 							step="0.01"
 							aria-label="Master volume"
-							value={state.masterVolume}
-							oninput={(e) => ext.setMasterVolume(+(e.target as HTMLInputElement).value)}
+							value={settingsState.audio.masterVolume}
+							oninput={(e) => audioActions.setMasterVolume(+(e.target as HTMLInputElement).value)}
 							class="w-full accent-white/80"
 						/>
 					</div>
@@ -68,8 +64,8 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								checked={!state.sfxMuted}
-								onchange={() => ext.toggleSfxMute()}
+								checked={!settingsState.audio.sfxMuted}
+								onchange={() => audioActions.toggleSfxMute()}
 								class="w-4 h-4"
 							/>
 							Sound Effects
@@ -80,8 +76,8 @@
 							max="1"
 							step="0.01"
 							aria-label="SFX volume"
-							value={state.sfxVolume}
-							oninput={(e) => ext.setSfxVolume(+(e.target as HTMLInputElement).value)}
+							value={settingsState.audio.sfxVolume}
+							oninput={(e) => audioActions.setSfxVolume(+(e.target as HTMLInputElement).value)}
 							class="w-full accent-white/80"
 						/>
 					</div>
@@ -91,8 +87,8 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								checked={!state.musicMuted}
-								onchange={() => ext.toggleMusicMute()}
+								checked={!settingsState.audio.musicMuted}
+								onchange={() => audioActions.toggleMusicMute()}
 								class="w-4 h-4"
 							/>
 							Music
@@ -103,8 +99,8 @@
 							max="1"
 							step="0.01"
 							aria-label="Music volume"
-							value={state.musicVolume}
-							oninput={(e) => ext.setMusicVolume(+(e.target as HTMLInputElement).value)}
+							value={settingsState.audio.musicVolume}
+							oninput={(e) => audioActions.setMusicVolume(+(e.target as HTMLInputElement).value)}
 							class="w-full accent-white/80"
 						/>
 					</div>
@@ -114,8 +110,8 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								checked={!state.ambientMuted}
-								onchange={() => ext.toggleAmbientMute()}
+								checked={!settingsState.audio.ambienceMuted}
+								onchange={() => audioActions.toggleAmbientMute()}
 								class="w-4 h-4"
 							/>
 							Ambient
@@ -126,8 +122,8 @@
 							max="1"
 							step="0.01"
 							aria-label="Ambient volume"
-							value={state.ambientVolume}
-							oninput={(e) => ext.setAmbientVolume(+(e.target as HTMLInputElement).value)}
+							value={settingsState.audio.ambienceVolume}
+							oninput={(e) => audioActions.setAmbientVolume(+(e.target as HTMLInputElement).value)}
 							class="w-full accent-white/80"
 						/>
 					</div>

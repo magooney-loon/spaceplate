@@ -11,8 +11,8 @@ export type ExtensionState = {
 	musicVolume: number; // background music tracks
 	musicMuted: boolean;
 
-	ambientVolume: number; // wind, hum, atmosphere loops
-	ambientMuted: boolean;
+	ambienceVolume: number; // wind, hum, atmosphere loops
+	ambienceMuted: boolean;
 
 	// positional audio tuning
 	// these go on <PositionalAudio> instances

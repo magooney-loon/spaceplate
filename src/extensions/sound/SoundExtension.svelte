@@ -2,59 +2,68 @@
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
 	import { Folder, Slider, Checkbox, Button, List } from 'svelte-tweakpane-ui';
 	import { extensionScope, type ExtensionState, type ExtensionActions } from './types';
+	import { settingsState, audioActions } from '$core/settings.svelte.js';
 
 	const { createExtension } = useStudio();
 
 	const ext = createExtension<ExtensionState, ExtensionActions>({
 		scope: extensionScope,
-		state({ persist }) {
+		state() {
 			return {
-				masterVolume: persist(0.8),
-				masterMuted: persist(false),
+				masterVolume: settingsState.audio.masterVolume,
+				masterMuted: settingsState.audio.masterMuted,
 
-				sfxVolume: persist(1.0),
-				sfxMuted: persist(false),
+				sfxVolume: settingsState.audio.sfxVolume,
+				sfxMuted: settingsState.audio.sfxMuted,
 
-				musicVolume: persist(0.5), // music quieter by default, classic arena feel
-				musicMuted: persist(false),
+				musicVolume: settingsState.audio.musicVolume,
+				musicMuted: settingsState.audio.musicMuted,
 
-				ambientVolume: persist(0.4),
-				ambientMuted: persist(false),
+				ambienceVolume: settingsState.audio.ambienceVolume,
+				ambienceMuted: settingsState.audio.ambienceMuted,
 
 				// Positional audio defaults tuned for arena scale
 				// arena maps are typically 50-200 units across
-				refDistance: persist(5),
-				maxDistance: persist(80),
-				rolloffFactor: persist(1.5),
-				panningModel: persist('HRTF' as 'HRTF' | 'equalpower'),
+				refDistance: 5,
+				maxDistance: 80,
+				rolloffFactor: 1.5,
+				panningModel: 'HRTF' as 'HRTF' | 'equalpower',
 
-				listenerEnabled: persist(true)
+				listenerEnabled: true
 			};
 		},
 		actions: {
 			setMasterVolume({ state }, v) {
 				state.masterVolume = v;
+				audioActions.setMasterVolume(v);
 			},
 			toggleMasterMute({ state }) {
 				state.masterMuted = !state.masterMuted;
+				audioActions.toggleMasterMute();
 			},
 			setSfxVolume({ state }, v) {
 				state.sfxVolume = v;
+				audioActions.setSfxVolume(v);
 			},
 			toggleSfxMute({ state }) {
 				state.sfxMuted = !state.sfxMuted;
+				audioActions.toggleSfxMute();
 			},
 			setMusicVolume({ state }, v) {
 				state.musicVolume = v;
+				audioActions.setMusicVolume(v);
 			},
 			toggleMusicMute({ state }) {
 				state.musicMuted = !state.musicMuted;
+				audioActions.toggleMusicMute();
 			},
 			setAmbientVolume({ state }, v) {
-				state.ambientVolume = v;
+				state.ambienceVolume = v;
+				audioActions.setAmbientVolume(v);
 			},
 			toggleAmbientMute({ state }) {
-				state.ambientMuted = !state.ambientMuted;
+				state.ambienceMuted = !state.ambienceMuted;
+				audioActions.toggleAmbientMute();
 			},
 			setRefDistance({ state }, v) {
 				state.refDistance = v;
@@ -69,11 +78,14 @@
 				state.panningModel = v;
 			},
 			resetAll({ state }) {
-				state.masterVolume = 0.8;
-				state.masterMuted = false;
-				state.sfxVolume = 1.0;
-				state.musicVolume = 0.5;
-				state.ambientVolume = 0.4;
+				state.masterVolume = 0;
+				state.masterMuted = true;
+				state.sfxVolume = 0;
+				state.sfxMuted = true;
+				state.musicVolume = 0;
+				state.musicMuted = true;
+				state.ambienceVolume = 0;
+				state.ambienceMuted = true;
 				state.refDistance = 5;
 				state.maxDistance = 80;
 				state.rolloffFactor = 1.5;
@@ -140,7 +152,7 @@
 
 			<Slider
 				label="Ambient"
-				value={state.ambientVolume}
+				value={state.ambienceVolume}
 				min={0}
 				max={1}
 				step={0.01}
@@ -148,7 +160,7 @@
 			/>
 			<Checkbox
 				label="Ambient Muted"
-				value={state.ambientMuted}
+				value={state.ambienceMuted}
 				on:change={() => ext.toggleAmbientMute()}
 			/>
 		</Folder>

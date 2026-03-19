@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
 	import { Audio, PositionalAudio } from '@threlte/extras';
-	import { useSound } from '$extensions/sound/useSound';
 	import { useGameTasks } from '$core/tasks';
+	import { settingsState } from '$core/settings.svelte.js';
 	import * as THREE from 'three';
 
-	const { state: soundState } = useSound();
 	const { createPhysicsTask } = useGameTasks();
 
 	// Demo scene objects
@@ -33,7 +32,7 @@
 	// Base URL for sounds in /public/sounds/
 	const base = import.meta.env.BASE_URL;
 	const AMBIENCE_URL = `${base}sounds/ambience.ogg`;
-	const CLICK_URL = `${base}sounds/click.mp3`;
+	const SWOOSH_URL = `${base}sounds/swoosh.mp3`;
 </script>
 
 <!-- Demo Scene 3D Content -->
@@ -51,14 +50,14 @@
 
 		<!-- Positional audio that moves with the sphere -->
 		<PositionalAudio
-			src={CLICK_URL}
-			volume={soundState.sfxMuted ? 0 : soundState.sfxVolume}
-			refDistance={soundState.refDistance}
-			maxDistance={soundState.maxDistance}
-			rolloffFactor={soundState.rolloffFactor}
-			panningModel={soundState.panningModel}
+			src={SWOOSH_URL}
+			volume={settingsState.audio.sfxMuted ? 0 : settingsState.audio.sfxVolume}
+			refDistance={5}
+			maxDistance={80}
+			rolloffFactor={1.5}
+			panningModel="HRTF"
 			loop
-			autoplay={!soundState.sfxMuted}
+			autoplay={!settingsState.audio.sfxMuted}
 		/>
 	</T.Mesh>
 
@@ -77,6 +76,6 @@
 <Audio
 	src={AMBIENCE_URL}
 	loop
-	volume={soundState.ambientMuted ? 0 : soundState.ambientVolume}
-	autoplay={!soundState.ambientMuted}
+	volume={settingsState.audio.ambienceMuted ? 0 : settingsState.audio.ambienceVolume}
+	autoplay={!settingsState.audio.ambienceMuted}
 />
