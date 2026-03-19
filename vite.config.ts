@@ -9,18 +9,15 @@ import path from 'path';
 export default defineConfig({
 	base: process.env.BASE_PATH ?? '/',
 	plugins: [
-		tailwindcss(),
 		threlteStudio(),
 		svelte(),
+		tailwindcss(),
 		visualizer({
 			filename: 'stats.html',
 			open: false,
 			gzipSize: true
 		})
 	],
-	ssr: {
-		noExternal: ['camera-controls']
-	},
 	resolve: {
 		alias: {
 			$lib: path.resolve(__dirname, './src/lib'),

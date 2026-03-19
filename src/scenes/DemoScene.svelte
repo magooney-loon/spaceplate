@@ -36,7 +36,7 @@
 </script>
 
 <!-- Demo Scene 3D Content -->
-<T.Group>
+<T.Group position={[0, 2, 0]}>
 	<!-- Rotating Cube -->
 	<T.Mesh bind:ref={rotatingCube} position={[0, 0, 0]}>
 		<T.BoxGeometry args={[1, 1, 1]} />
@@ -68,8 +68,7 @@
 	</T.Mesh>
 
 	<!-- Lighting -->
-	<T.DirectionalLight position={[5, 5, 5]} intensity={1} />
-	<T.AmbientLight intensity={0.5} />
+	<T.DirectionalLight position={[3, 10, 7]} intensity={Math.PI} />
 </T.Group>
 
 <!-- Global ambient sound (non-positional) -->
