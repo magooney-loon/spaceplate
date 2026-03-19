@@ -2,10 +2,11 @@
 	import { T } from '@threlte/core';
 	import { Audio, PositionalAudio } from '@threlte/extras';
 	import { useGameTasks } from '$core/tasks';
-	import { settingsState } from '$core/settings.svelte.js';
+	import { useSound } from '$extensions/sound/useSound';
 	import * as THREE from 'three';
 
 	const { createPhysicsTask } = useGameTasks();
+	const { state: soundState } = useSound();
 
 	// Demo scene objects
 	let rotatingCube = $state.raw<THREE.Mesh>();
@@ -33,6 +34,14 @@
 	const base = import.meta.env.BASE_URL;
 	const AMBIENCE_URL = `${base}sounds/ambience.ogg`;
 	const SWOOSH_URL = `${base}sounds/swoosh.mp3`;
+
+	// Computed volumes with master applied
+	const sfxVolume = $derived(
+		soundState.masterMuted ? 0 : soundState.sfxVolume * soundState.masterVolume
+	);
+	const ambientVolume = $derived(
+		soundState.masterMuted ? 0 : soundState.ambienceVolume * soundState.masterVolume
+	);
 </script>
 
 <!-- Demo Scene 3D Content -->
@@ -51,13 +60,13 @@
 		<!-- Positional audio that moves with the sphere -->
 		<PositionalAudio
 			src={SWOOSH_URL}
-			volume={settingsState.audio.sfxMuted ? 0 : settingsState.audio.sfxVolume}
-			refDistance={2}
-			maxDistance={10}
-			rolloffFactor={1.5}
-			panningModel="HRTF"
+			volume={soundState.sfxMuted ? 0 : sfxVolume}
+			refDistance={soundState.refDistance}
+			maxDistance={soundState.maxDistance}
+			rolloffFactor={soundState.rolloffFactor}
+			panningModel={soundState.panningModel}
 			loop
-			autoplay={!settingsState.audio.sfxMuted}
+			autoplay={!soundState.sfxMuted}
 		/>
 	</T.Mesh>
 
@@ -75,6 +84,6 @@
 <Audio
 	src={AMBIENCE_URL}
 	loop
-	volume={settingsState.audio.ambienceMuted ? 0 : settingsState.audio.ambienceVolume}
-	autoplay={!settingsState.audio.ambienceMuted}
+	volume={soundState.ambienceMuted ? 0 : ambientVolume}
+	autoplay={!soundState.ambienceMuted}
 />

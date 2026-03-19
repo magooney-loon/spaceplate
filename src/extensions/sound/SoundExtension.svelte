@@ -102,7 +102,23 @@
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiVolumeHigh" title="Sound">
-		<Folder title="Buses">
+		<Folder title="Master" expanded={true}>
+			<Slider
+				label="Master Volume"
+				value={state.masterVolume}
+				min={0}
+				max={1}
+				step={0.01}
+				on:change={(e) => ext.setMasterVolume(e.detail.value)}
+			/>
+			<Checkbox
+				label="Master Muted"
+				value={state.masterMuted}
+				on:change={() => ext.toggleMasterMute()}
+			/>
+		</Folder>
+
+		<Folder title="Buses" expanded={true}>
 			<Slider
 				label="SFX"
 				value={state.sfxVolume}
@@ -142,7 +158,7 @@
 			/>
 		</Folder>
 
-		<Folder title="Positional Audio">
+		<Folder title="Positional Audio" expanded={false}>
 			<List
 				label="Panning Model"
 				value={state.panningModel}
