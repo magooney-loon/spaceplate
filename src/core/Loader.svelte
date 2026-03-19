@@ -26,39 +26,24 @@
 {#if !$finishedOnce}
 	<div
 		transition:fade={{ duration: 400 }}
-		style="position: absolute; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #000; color: white;"
+		class="absolute inset-0 z-200 flex flex-col items-center justify-center bg-black text-white"
 	>
-		<p
-			style="margin: 0 0 1.5rem; font-size: 0.8rem; letter-spacing: 0.15em; text-transform: uppercase; opacity: 0.4;"
-		>
-			Loading
-		</p>
+		<p class="m-0 mb-6 text-xs tracking-[0.15em] uppercase opacity-40">Loading</p>
 
 		<!-- Progress bar -->
-		<div
-			style="width: 200px; height: 2px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden;"
-		>
-			<div
-				style="height: 100%; background: white; border-radius: 999px; width: {tweened.current *
-					100}%;"
-			></div>
+		<div class="w-50 h-0.5 bg-white/10 rounded-full overflow-hidden">
+			<div class="h-full bg-white rounded-full" style="width: {tweened.current * 100}%;"></div>
 		</div>
 
-		<p
-			style="margin: 1rem 0 0; font-size: 0.75rem; opacity: 0.25; font-variant-numeric: tabular-nums;"
-		>
+		<p class="mt-4 text-xs opacity-25 font-mono">
 			{Math.round(tweened.current * 100)}%
 		</p>
 
 		{#if $active}
-			<p
-				style="margin: 0.5rem 0 0; font-size: 0.7rem; opacity: 0.2; max-width: 240px; text-align: center; font-variant-numeric: tabular-nums;"
-			>
+			<p class="mt-2 text-[11px] opacity-20 max-w-60 text-center font-mono">
 				{truncatePath($item)}
 			</p>
-			<p
-				style="margin: 0.2rem 0 0; font-size: 0.65rem; opacity: 0.15; font-variant-numeric: tabular-nums;"
-			>
+			<p class="mt-0.5 text-[10px] opacity-15 font-mono">
 				{$loaded} / {$total}
 			</p>
 		{/if}

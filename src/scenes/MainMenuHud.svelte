@@ -3,76 +3,27 @@
 </script>
 
 <!-- Main Menu HUD -->
-<div style="pointer-events: auto;">
+<div class="pointer-events-auto">
 	<!-- Menu Title -->
-	<div
-		style="
-		position: absolute;
-		top: 20%;
-		left: 50%;
-		transform: translateX(-50%);
-		text-align: center;
-	"
-	>
-		<h1
-			style="
-			font-size: 3rem;
-			color: white;
-			text-shadow: 0 0 20px #4a90d9;
-			margin: 0;
-		"
-		>
+	<div class="absolute top-[20%] left-1/2 -translate-x-1/2 text-center">
+		<h1 class="text-5xl text-white font-bold m-0" style="text-shadow: 0 0 20px #4a90d9;">
 			Spaceplate Engine
 		</h1>
-		<p style="color: #aaa; margin-top: 0.5rem;">Threlte 5 + Svelte 5</p>
+		<p class="text-[#aaa] mt-2">Threlte 5 + Svelte 5</p>
 	</div>
 
 	<!-- Menu Buttons -->
-	<div
-		style="
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%);
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	"
-	>
+	<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-4">
 		<button
 			onclick={() => sceneActions.goToDemoScene()}
-			style="
-				padding: 1rem 2rem;
-				font-size: 1.2rem;
-				background: linear-gradient(135deg, #4a90d9, #357abd);
-				color: white;
-				border: none;
-				border-radius: 8px;
-				cursor: pointer;
-				min-width: 200px;
-				transition: transform 0.2s;
-			"
-			onmouseenter={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
-			onmouseleave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+			class="px-8 py-4 text-xl bg-linear-to-br from-[#4a90d9] to-[#357abd] text-white border-none rounded-lg cursor-pointer min-w-50 transition-transform duration-200 hover:scale-105"
 		>
 			🚀 Start Demo
 		</button>
 
 		<button
 			onclick={() => sceneActions.goToSettings()}
-			style="
-				padding: 1rem 2rem;
-				font-size: 1.2rem;
-				background: rgba(255, 255, 255, 0.1);
-				color: white;
-				border: 2px solid #4a90d9;
-				border-radius: 8px;
-				cursor: pointer;
-				min-width: 200px;
-				transition: transform 0.2s;
-			"
-			onmouseenter={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
-			onmouseleave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+			class="px-8 py-4 text-xl bg-white/10 text-white border-2 border-[#4a90d9] rounded-lg cursor-pointer min-w-50 transition-transform duration-200 hover:scale-105"
 		>
 			⚙️ Settings
 		</button>
