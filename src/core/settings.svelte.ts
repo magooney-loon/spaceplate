@@ -83,7 +83,7 @@ const loadVolume = (key: string, fallback: number): number => {
 export const settingsState = $state<SettingsState>({
 	audio: {
 		musicEnabled: false,
-		effectsEnabled: true,
+		effectsEnabled: false,
 		ambienceEnabled: false,
 		musicVolume: loadVolume(MUSIC_VOLUME_KEY, 0.69),
 		ambienceVolume: loadVolume(AMBIENCE_VOLUME_KEY, 0.5),

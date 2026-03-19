@@ -1,4 +1,3 @@
-import { soundActions } from '$core/Sound.svelte';
 import { log } from '$core/settings.svelte.js';
 
 // ============================================================================
@@ -56,7 +55,6 @@ export const sceneActions = {
 		if (sceneState.currentScene === scene) return;
 
 		log.info(`Scene: ${sceneState.currentScene} → ${scene}`);
-		soundActions.playSwoosh();
 
 		sceneState.previousScene = sceneState.currentScene;
 		sceneState.currentScene = scene;

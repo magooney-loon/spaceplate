@@ -197,6 +197,34 @@ if (state.bloom.enabled) {
 }
 ```
 
+### Sound (`./sound/`)
+
+Audio system with bus-based mixing and positional audio tuning.
+
+**State includes:**
+- Master volume/mute
+- Per-bus volumes (SFX, Music, Ambient)
+- Positional audio settings (refDistance, maxDistance, rolloff, panning model)
+
+**Usage:**
+```typescript
+import { useSound } from '$extensions/sound/useSound';
+import { PositionalAudio } from '@threlte/extras';
+
+const { state } = useSound();
+```
+
+```svelte
+<PositionalAudio
+  src="/sounds/rocket.ogg"
+  volume={state.sfxMuted ? 0 : state.sfxVolume}
+  refDistance={state.refDistance}
+  maxDistance={state.maxDistance}
+  rolloffFactor={state.rolloffFactor}
+  panningModel={state.panningModel}
+/>
+```
+
 ## Adding a New Extension
 
 1. Create folder: `extensions/my-feature/`

@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
+	import { Audio, PositionalAudio } from '@threlte/extras';
+	import { useSound } from '$extensions/sound/useSound';
 	import { useGameTasks } from '$core/tasks';
 	import * as THREE from 'three';
 
+	const { state: soundState } = useSound();
 	const { createPhysicsTask } = useGameTasks();
 
 	// Demo scene objects
@@ -26,6 +29,11 @@
 			bouncingSphere.rotation.x += delta;
 		}
 	});
+
+	// Base URL for sounds in /public/sounds/
+	const base = import.meta.env.BASE_URL;
+	const AMBIENCE_URL = `${base}sounds/ambience.ogg`;
+	const CLICK_URL = `${base}sounds/click.mp3`;
 </script>
 
 <!-- Demo Scene 3D Content -->
@@ -36,10 +44,22 @@
 		<T.MeshStandardMaterial color="#4a90d9" />
 	</T.Mesh>
 
-	<!-- Bouncing Sphere -->
+	<!-- Bouncing Sphere with Positional Audio -->
 	<T.Mesh bind:ref={bouncingSphere} position={[2, 0, 0]}>
 		<T.SphereGeometry args={[0.5, 32, 32]} />
 		<T.MeshStandardMaterial color="#d94a4a" />
+
+		<!-- Positional audio that moves with the sphere -->
+		<PositionalAudio
+			src={CLICK_URL}
+			volume={soundState.sfxMuted ? 0 : soundState.sfxVolume}
+			refDistance={soundState.refDistance}
+			maxDistance={soundState.maxDistance}
+			rolloffFactor={soundState.rolloffFactor}
+			panningModel={soundState.panningModel}
+			loop
+			autoplay={!soundState.sfxMuted}
+		/>
 	</T.Mesh>
 
 	<!-- Ground Plane -->
@@ -52,3 +72,11 @@
 	<T.DirectionalLight position={[5, 5, 5]} intensity={1} />
 	<T.AmbientLight intensity={0.5} />
 </T.Group>
+
+<!-- Global ambient sound (non-positional) -->
+<Audio
+	src={AMBIENCE_URL}
+	loop
+	volume={soundState.ambientMuted ? 0 : soundState.ambientVolume}
+	autoplay={!soundState.ambientMuted}
+/>

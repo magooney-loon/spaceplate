@@ -5,7 +5,6 @@
 	import Skybox from '$core/Skybox.svelte';
 	import Camera from '$core/Camera.svelte';
 	import Renderer from '$core/Renderer.svelte';
-	import Sound from '$core/Sound.svelte';
 	import Loader from '$core/Loader.svelte';
 	import * as THREE from 'three';
 	import { settingsState, generalActions } from '$core/settings.svelte.js';
@@ -49,10 +48,16 @@
 		{#await import('@threlte/extras') then { PerfMonitor }}
 			<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} />
 		{/await}
-		{#await Promise.all( [import('@threlte/studio'), import('./extensions/StageExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/camera/CameraControlsExtension.svelte')] ) then [{ Studio }, { default: StageExtension }, { default: PostProcessingExtension }, { default: CameraControlsExtension }]}
-			<Studio extensions={[StageExtension, PostProcessingExtension, CameraControlsExtension]}>
+		{#await Promise.all( [import('@threlte/studio'), import('./extensions/StageExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/camera/CameraControlsExtension.svelte'), import('./extensions/sound/SoundExtension.svelte')] ) then [{ Studio }, { default: StageExtension }, { default: PostProcessingExtension }, { default: CameraControlsExtension }, { default: SoundExtension }]}
+			<Studio
+				extensions={[
+					StageExtension,
+					PostProcessingExtension,
+					CameraControlsExtension,
+					SoundExtension
+				]}
+			>
 				<Camera />
-				<Sound />
 				<Skybox />
 				<Renderer />
 				<Scene />
@@ -60,7 +65,6 @@
 		{/await}
 	{:else}
 		<Camera />
-		<Sound />
 		<Skybox />
 		<Renderer />
 		<Scene />
