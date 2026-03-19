@@ -8,7 +8,7 @@
 	import Loader from '$core/Loader.svelte';
 	import GlobalAudio from '$core/GlobalAudio.svelte';
 	import * as THREE from 'three';
-	import { settingsState, generalActions } from '$core/settings.svelte.js';
+	import { settingsState, generalActions } from '$extensions/settings/settings.svelte';
 	import './app.css';
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -49,9 +49,9 @@
 		{#await import('@threlte/extras') then { PerfMonitor }}
 			<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} />
 		{/await}
-		{#await Promise.all( [import('@threlte/studio'), import('./extensions/StageExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte')] ) then [{ Studio }, { default: StageExtension }, { default: PostProcessingExtension }, { default: SoundExtension }, { default: LoggerExtension }]}
+		{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: PostProcessingExtension }, { default: SoundExtension }, { default: LoggerExtension }]}
 			<Studio
-				extensions={[StageExtension, PostProcessingExtension, SoundExtension, LoggerExtension]}
+				extensions={[SceneExtension, PostProcessingExtension, SoundExtension, LoggerExtension]}
 			>
 				<Camera />
 				<GlobalAudio />

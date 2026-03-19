@@ -5,12 +5,12 @@
 		HorizontalButtonGroup,
 		ToolbarButton
 	} from '@threlte/studio/extend';
-	import { sceneActions, sceneState, SCENES } from '$core/SceneManager.svelte.ts';
+	import { sceneActions, sceneState, SCENES } from '$extensions/scene/scene.svelte';
 
 	const { createExtension } = useStudio();
 
 	createExtension({
-		scope: 'scene-manager',
+		scope: 'scene',
 		state() {
 			return {};
 		},

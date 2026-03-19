@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { sceneActions } from '$core/SceneManager.svelte.ts';
+	import { sceneActions } from '$extensions/scene/scene.svelte';
 </script>
 
 <!-- Demo Scene HUD -->

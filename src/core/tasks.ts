@@ -1,5 +1,5 @@
 import { useStage, useTask, useThrelte, type Task } from '@threlte/core';
-import { useSceneManager } from './SceneManager.svelte.ts';
+import { sceneState } from '$extensions/scene/scene.svelte';
 
 // ============================================================================
 // Game Task Stages
@@ -42,7 +42,6 @@ export interface TaskReturn {
 
 export const useGameTasks = (): GameTasks => {
 	const { renderStage } = useThrelte();
-	const { state: sceneState } = useSceneManager();
 
 	// Create specialized stages
 	const physicsStage = useStage('physics', {

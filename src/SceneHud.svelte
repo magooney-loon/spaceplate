@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
-	import { sceneState } from '$core/SceneManager.svelte.ts';
-	import { settingsState } from '$core/settings.svelte.js';
+	import { sceneState } from '$extensions/scene/scene.svelte';
+	import { settingsState } from '$extensions/settings/settings.svelte';
 	import MainMenuHud from '$scenes/MainMenuHud.svelte';
 	import DemoSceneHud from '$scenes/DemoSceneHud.svelte';
 </script>

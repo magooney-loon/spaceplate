@@ -1,5 +1,5 @@
 import type { KernelSize, BlendFunction, ToneMappingMode } from 'postprocessing';
-import { logPostprocessing } from './logger.svelte.js';
+import { logPostprocessing } from '$extensions/logger/logger.svelte';
 
 const PRESETS_KEY = 'spaceplate-postprocessing-presets';
 

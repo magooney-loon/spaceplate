@@ -38,9 +38,9 @@
 		DepthEffect,
 		ShockWaveEffect
 	} from 'postprocessing';
-	import { settingsState } from '$core/settings.svelte.js';
-	import { logPostprocessing } from './logger.svelte.js';
-	import { postprocessingState } from '$core/postprocessing.svelte';
+	import { settingsState } from '$extensions/settings/settings.svelte';
+	import { logPostprocessing } from '$extensions/logger/logger.svelte';
+	import { postprocessingState } from '$extensions/postprocessing/postprocessing.svelte';
 
 	const s = postprocessingState;
 

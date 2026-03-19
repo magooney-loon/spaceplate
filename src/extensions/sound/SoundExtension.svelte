@@ -2,7 +2,7 @@
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
 	import { Folder, Slider, Checkbox, Button, List } from 'svelte-tweakpane-ui';
 	import { extensionScope, type ExtensionState, type ExtensionActions } from './types';
-	import { settingsState } from '$core/settings.svelte.js';
+	import { settingsState } from '$extensions/settings/settings.svelte';
 
 	const { createExtension } = useStudio();
 

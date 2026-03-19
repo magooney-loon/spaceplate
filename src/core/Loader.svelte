@@ -3,7 +3,7 @@
 	import { Tween } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
 	import { useProgress } from '@threlte/extras';
-	import { logEngine } from './logger.svelte.js';
+	import { logEngine } from '$extensions/logger/logger.svelte';
 
 	const { progress, finishedOnce, active, item, loaded, total } = useProgress();
 

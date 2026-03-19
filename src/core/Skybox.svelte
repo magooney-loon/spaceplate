@@ -2,7 +2,7 @@
 	import { T } from '@threlte/core';
 	import { Stars as StarsComponent } from '@threlte/extras';
 
-	import { settingsState } from '$core/settings.svelte.js';
+	import { settingsState } from '$extensions/settings/settings.svelte';
 
 	// ─── Quality-based star counts ────────────────────────────────────────────
 	const starCounts = $derived.by(() => {

@@ -1,9 +1,5 @@
-import { logEngine } from './logger.svelte.js';
+import { logEngine } from '$extensions/logger/logger.svelte';
 import { soundActions } from '$core/GlobalAudio.svelte';
-
-// ============================================================================
-// Scene Configuration
-// ============================================================================
 
 export type SceneType = 'mainMenu' | 'demoScene';
 
@@ -26,10 +22,6 @@ export const SCENES: SceneConfig[] = [
 	}
 ];
 
-// ============================================================================
-// Scene State
-// ============================================================================
-
 export interface SceneState {
 	currentScene: SceneType;
 	previousScene: SceneType | null;
@@ -41,10 +33,6 @@ export const sceneState = $state<SceneState>({
 	previousScene: null,
 	isTransitioning: false
 });
-
-// ============================================================================
-// Scene Actions
-// ============================================================================
 
 export const sceneActions = {
 	setScene(scene: SceneType) {
@@ -82,16 +70,4 @@ export const sceneActions = {
 
 		sceneState.isTransitioning = false;
 	}
-};
-
-// ============================================================================
-// Hook for accessing scene manager (Svelte 5 rune pattern)
-// ============================================================================
-
-export const useSceneManager = () => {
-	return {
-		state: sceneState,
-		actions: sceneActions,
-		scenes: SCENES
-	};
 };

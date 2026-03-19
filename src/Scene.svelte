@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
-	import { sceneState } from '$core/SceneManager.svelte.ts';
+	import { sceneState } from '$extensions/scene/scene.svelte';
 	import MainMenu from '$scenes/MainMenu.svelte';
 	import DemoScene from '$scenes/DemoScene.svelte';
 

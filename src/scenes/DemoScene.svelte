@@ -3,7 +3,7 @@
 	import { PositionalAudio, HTML, interactivity } from '@threlte/extras';
 	import { useGameTasks } from '$core/tasks';
 	import { useSound } from '$extensions/sound/useSound';
-	import { settingsState, BASE_URL } from '$core/settings.svelte.js';
+	import { settingsState, BASE_URL } from '$extensions/settings/settings.svelte';
 	import { soundActions } from '$core/GlobalAudio.svelte';
 	import { Spring } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';

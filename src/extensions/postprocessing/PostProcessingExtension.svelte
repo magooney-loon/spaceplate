@@ -6,7 +6,7 @@
 		postprocessingState as s,
 		postprocessingPresetsState,
 		postprocessingActions
-	} from '$core/postprocessing.svelte';
+	} from '$extensions/postprocessing/postprocessing.svelte';
 
 	const { createExtension } = useStudio();
 

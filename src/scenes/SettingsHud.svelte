@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
-	import { settingsState, graphicsActions, audioActions } from '$core/settings.svelte.js';
+	import {
+		settingsState,
+		graphicsActions,
+		audioActions
+	} from '$extensions/settings/settings.svelte';
 	import { soundActions } from '$core/GlobalAudio.svelte';
-	import type { QualityLevel } from '$core/settings.svelte.js';
+	import type { QualityLevel } from '$extensions/settings/settings.svelte';
 
 	type Props = {
 		onBack: () => void;

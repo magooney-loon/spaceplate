@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { sceneActions } from '$core/SceneManager.svelte.ts';
+	import { sceneActions } from '$extensions/scene/scene.svelte';
 	import { soundActions } from '$core/GlobalAudio.svelte';
 	import SettingsHud from '$scenes/SettingsHud.svelte';
 

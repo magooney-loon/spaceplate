@@ -1,3 +1,5 @@
+import { logSettings, logSound } from '$extensions/logger/logger.svelte';
+
 export type QualityLevel = 'low' | 'high';
 
 export interface AudioSettings {
@@ -25,8 +27,6 @@ export interface SettingsState {
 }
 
 export const BASE_URL = import.meta.env.BASE_URL;
-
-import { logSettings, logSound } from './logger.svelte.js';
 
 const GRAPHICS_KEY = 'graphics-quality';
 const UI_VISIBLE_KEY = 'ui-visible';
