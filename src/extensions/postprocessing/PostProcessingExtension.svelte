@@ -159,8 +159,9 @@
 		<Folder title="Saved Presets" expanded={false}>
 			{#each postprocessingPresetsState.presets as preset (preset.id)}
 				{@const isBundled = BUNDLED_PP_PRESETS.find((b) => b.id === preset.id)}
+				{@const isActive = postprocessingPresetsState.currentPresetId === preset.id}
 				<Button
-					title="{isBundled ? '📦 ' : ''}▶ {preset.name}"
+					title="{isActive ? '✓ ' : ''}{isBundled ? '📦 ' : ''}▶ {preset.name}"
 					on:click={() => postprocessingActions.loadPreset(preset.id)}
 				/>
 				{#if !isBundled}
@@ -175,12 +176,23 @@
 			{#if postprocessingPresetsState.presets.length > 0}
 				<Separator />
 			{/if}
+			{#if postprocessingPresetsState.currentPresetId && !BUNDLED_PP_PRESETS.find((b) => b.id === postprocessingPresetsState.currentPresetId)}
+				<Button
+					title="Update Preset"
+					on:click={() => {
+						const result = postprocessingActions.updatePreset(postprocessingPresetsState.currentPresetId!);
+						if (!result.success && result.error) alert(result.error);
+					}}
+				/>
+				<Separator />
+			{/if}
 			<Button title="Save Current as Preset" on:click={saveAsPreset} />
 		</Folder>
 
 		<Separator />
 
-		<Folder title="Bloom" expanded={false}>
+		{#key postprocessingPresetsState.currentPresetId}
+		<Folder title="Bloom" expanded={s.bloom.enabled}>
 			<Checkbox bind:value={s.bloom.enabled} label="Enabled" />
 			{#if s.bloom.enabled}
 				<Slider bind:value={s.bloom.intensity} label="Intensity" min={0} max={20} step={0.1} />
@@ -218,7 +230,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="SMAA" expanded={false}>
+		<Folder title="SMAA" expanded={s.smaa.enabled}>
 			<Checkbox bind:value={s.smaa.enabled} label="Enabled" />
 			{#if s.smaa.enabled}
 				<List bind:value={s.smaa.preset} label="Preset" options={smaaPresetOptions} />
@@ -236,7 +248,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="FXAA" expanded={false}>
+		<Folder title="FXAA" expanded={s.fxaa.enabled}>
 			<Checkbox bind:value={s.fxaa.enabled} label="Enabled" />
 			{#if s.fxaa.enabled}
 				<Slider bind:value={s.fxaa.minEdgeThreshold} label="Min Edge" min={0} max={1} step={0.01} />
@@ -252,7 +264,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Vignette" expanded={false}>
+		<Folder title="Vignette" expanded={s.vignette.enabled}>
 			<Checkbox bind:value={s.vignette.enabled} label="Enabled" />
 			{#if s.vignette.enabled}
 				<Slider bind:value={s.vignette.offset} label="Offset" min={0} max={2} step={0.01} />
@@ -266,7 +278,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Pixelation" expanded={false}>
+		<Folder title="Pixelation" expanded={s.pixelation.enabled}>
 			<Checkbox bind:value={s.pixelation.enabled} label="Enabled" />
 			{#if s.pixelation.enabled}
 				<Slider
@@ -280,7 +292,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Glitch" expanded={false}>
+		<Folder title="Glitch" expanded={s.glitch.enabled}>
 			<Checkbox bind:value={s.glitch.enabled} label="Enabled" />
 			{#if s.glitch.enabled}
 				<List bind:value={s.glitch.mode} label="Mode" options={glitchModeOptions} />
@@ -299,7 +311,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Noise" expanded={false}>
+		<Folder title="Noise" expanded={s.noise.enabled}>
 			<Checkbox bind:value={s.noise.enabled} label="Enabled" />
 			{#if s.noise.enabled}
 				<Checkbox bind:value={s.noise.premultiply} label="Premultiply" />
@@ -312,7 +324,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Chromatic Aberration" expanded={false}>
+		<Folder title="Chromatic Aberration" expanded={s.chromaticAberration.enabled}>
 			<Checkbox bind:value={s.chromaticAberration.enabled} label="Enabled" />
 			{#if s.chromaticAberration.enabled}
 				<Slider
@@ -349,7 +361,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Brightness & Contrast" expanded={false}>
+		<Folder title="Brightness & Contrast" expanded={s.brightnessContrast.enabled}>
 			<Checkbox bind:value={s.brightnessContrast.enabled} label="Enabled" />
 			{#if s.brightnessContrast.enabled}
 				<Slider
@@ -378,7 +390,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Hue & Saturation" expanded={false}>
+		<Folder title="Hue & Saturation" expanded={s.hueSaturation.enabled}>
 			<Checkbox bind:value={s.hueSaturation.enabled} label="Enabled" />
 			{#if s.hueSaturation.enabled}
 				<Slider bind:value={s.hueSaturation.hue} label="Hue" min={-3.14} max={3.14} step={0.01} />
@@ -398,7 +410,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Sepia" expanded={false}>
+		<Folder title="Sepia" expanded={s.sepia.enabled}>
 			<Checkbox bind:value={s.sepia.enabled} label="Enabled" />
 			{#if s.sepia.enabled}
 				<Slider bind:value={s.sepia.intensity} label="Intensity" min={0} max={1} step={0.01} />
@@ -411,7 +423,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Dot Screen" expanded={false}>
+		<Folder title="Dot Screen" expanded={s.dotScreen.enabled}>
 			<Checkbox bind:value={s.dotScreen.enabled} label="Enabled" />
 			{#if s.dotScreen.enabled}
 				<Slider bind:value={s.dotScreen.angle} label="Angle" min={0} max={6.28} step={0.01} />
@@ -425,7 +437,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Scanline" expanded={false}>
+		<Folder title="Scanline" expanded={s.scanline.enabled}>
 			<Checkbox bind:value={s.scanline.enabled} label="Enabled" />
 			{#if s.scanline.enabled}
 				<Slider bind:value={s.scanline.density} label="Density" min={0.5} max={5} step={0.1} />
@@ -446,7 +458,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Shock Wave" expanded={false}>
+		<Folder title="Shock Wave" expanded={s.shockWave.enabled}>
 			<Checkbox bind:value={s.shockWave.enabled} label="Enabled" />
 			{#if s.shockWave.enabled}
 				<Slider bind:value={s.shockWave.speed} label="Speed" min={0} max={10} step={0.01} />
@@ -469,7 +481,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="ASCII" expanded={false}>
+		<Folder title="ASCII" expanded={s.ascii.enabled}>
 			<Checkbox bind:value={s.ascii.enabled} label="Enabled" />
 			{#if s.ascii.enabled}
 				<Slider bind:value={s.ascii.cellSize} label="Cell Size" min={4} max={64} step={1} />
@@ -478,7 +490,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Tone Mapping" expanded={false}>
+		<Folder title="Tone Mapping" expanded={s.toneMapping.enabled}>
 			<Checkbox bind:value={s.toneMapping.enabled} label="Enabled" />
 			{#if s.toneMapping.enabled}
 				<List bind:value={s.toneMapping.mode} label="Mode" options={toneMappingOptions} />
@@ -533,7 +545,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Grid" expanded={false}>
+		<Folder title="Grid" expanded={s.grid.enabled}>
 			<Checkbox bind:value={s.grid.enabled} label="Enabled" />
 			{#if s.grid.enabled}
 				<Slider bind:value={s.grid.scale} label="Scale" min={0.1} max={10} step={0.1} />
@@ -547,7 +559,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Tilt Shift" expanded={false}>
+		<Folder title="Tilt Shift" expanded={s.tiltShift.enabled}>
 			<Checkbox bind:value={s.tiltShift.enabled} label="Enabled" />
 			{#if s.tiltShift.enabled}
 				<Slider bind:value={s.tiltShift.offset} label="Offset" min={-1} max={1} step={0.01} />
@@ -570,7 +582,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Lens Distortion" expanded={false}>
+		<Folder title="Lens Distortion" expanded={s.lensDistortion.enabled}>
 			<Checkbox bind:value={s.lensDistortion.enabled} label="Enabled" />
 			{#if s.lensDistortion.enabled}
 				<Slider
@@ -623,7 +635,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Color Depth" expanded={false}>
+		<Folder title="Color Depth" expanded={s.colorDepth.enabled}>
 			<Checkbox bind:value={s.colorDepth.enabled} label="Enabled" />
 			{#if s.colorDepth.enabled}
 				<Slider bind:value={s.colorDepth.bits} label="Bits" min={1} max={32} step={1} />
@@ -636,7 +648,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Depth of Field" expanded={false}>
+		<Folder title="Depth of Field" expanded={s.depthOfField.enabled}>
 			<Checkbox bind:value={s.depthOfField.enabled} label="Enabled" />
 			{#if s.depthOfField.enabled}
 				<Slider
@@ -676,7 +688,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="God Rays" expanded={false}>
+		<Folder title="God Rays" expanded={s.godRays.enabled}>
 			<Checkbox bind:value={s.godRays.enabled} label="Enabled" />
 			{#if s.godRays.enabled}
 				<Slider bind:value={s.godRays.samples} label="Samples" min={1} max={120} step={1} />
@@ -708,7 +720,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="SSAO" expanded={false}>
+		<Folder title="SSAO" expanded={s.ssao.enabled}>
 			<Checkbox bind:value={s.ssao.enabled} label="Enabled" />
 			{#if s.ssao.enabled}
 				<Slider bind:value={s.ssao.samples} label="Samples" min={1} max={32} step={1} />
@@ -777,7 +789,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Outline" expanded={false}>
+		<Folder title="Outline" expanded={s.outline.enabled}>
 			<Checkbox bind:value={s.outline.enabled} label="Enabled" />
 			{#if s.outline.enabled}
 				<Slider
@@ -821,7 +833,7 @@
 			{/if}
 		</Folder>
 
-		<Folder title="Depth Effect" expanded={false}>
+		<Folder title="Depth Effect" expanded={s.depthEffect.enabled}>
 			<Checkbox bind:value={s.depthEffect.enabled} label="Enabled" />
 			{#if s.depthEffect.enabled}
 				<Checkbox bind:value={s.depthEffect.inverted} label="Inverted" />
@@ -833,6 +845,7 @@
 				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('depthEffect')} />
 			{/if}
 		</Folder>
+		{/key}
 		<Separator />
 		<Button title="Reset All" on:click={postprocessingActions.resetAll} />
 	</DropDownPane>

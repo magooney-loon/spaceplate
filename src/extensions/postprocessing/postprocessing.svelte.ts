@@ -577,6 +577,21 @@ export const postprocessingActions = {
 		logPostprocessing.info(`Global preset: ${preset ? `"${preset.name}"` : 'none'}`);
 	},
 
+	updatePreset(presetId: string): { success: boolean; error?: string } {
+		if (BUNDLED_PP_PRESETS.find((p) => p.id === presetId)) {
+			return { success: false, error: 'Cannot update a bundled preset' };
+		}
+		const preset = postprocessingPresetsState.presets.find((p) => p.id === presetId);
+		if (!preset) {
+			return { success: false, error: 'Preset not found' };
+		}
+		preset.settings = JSON.parse(JSON.stringify(postprocessingState));
+		postprocessingPresetsState.presets = [...postprocessingPresetsState.presets];
+		savePresets(postprocessingPresetsState.presets);
+		logPostprocessing.info(`Preset updated: "${preset.name}"`);
+		return { success: true };
+	},
+
 	setScenePreset(sceneId: string, presetId: string | null) {
 		const preset = presetId
 			? postprocessingPresetsState.presets.find((p) => p.id === presetId)
