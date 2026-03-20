@@ -39,7 +39,7 @@
 	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 </script>
 
-{#if import.meta.env.DEV}
+{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 	{#await import('$extensions/gltf-viewer/GltfViewerScene.svelte') then { default: GltfViewerScene }}
 		<GltfViewerScene />
 	{/await}

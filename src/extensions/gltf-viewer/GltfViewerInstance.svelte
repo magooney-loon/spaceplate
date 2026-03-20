@@ -4,6 +4,7 @@
 	import { LoopRepeat, LoopOnce } from 'three';
 	import { untrack } from 'svelte';
 	import { gltfViewerActions } from './gltfViewer.svelte';
+	import { logGltf } from '$extensions/logger/logger.svelte';
 	import type { GltfViewerModel } from './types';
 
 	let { model }: { model: GltfViewerModel } = $props();
@@ -11,6 +12,14 @@
 	// untrack: URL is intentionally fixed per instance (keyed by model.id in parent {#each})
 	const gltf = useGltf(untrack(() => model.url));
 	const { actions } = useGltfAnimations(gltf);
+
+	// Log when GLTF scene finishes loading
+	$effect(() => {
+		const scene = $gltf?.scene;
+		if (scene) {
+			logGltf.info('Loaded:', untrack(() => model.name), '— meshes:', scene.children.length);
+		}
+	});
 
 	// Populate clip names into state once GLTF loads
 	$effect(() => {

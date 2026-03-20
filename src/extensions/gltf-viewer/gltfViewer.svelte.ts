@@ -1,4 +1,5 @@
 import { sceneActions } from '$extensions/scene/scene.svelte';
+import { logGltf } from '$extensions/logger/logger.svelte';
 import type { GltfViewerModel, GltfViewerState } from './types';
 
 export type { GltfViewerModel, GltfViewerState } from './types';
@@ -34,6 +35,7 @@ export const gltfViewerActions = {
 		const model = makeModel(name, url, true);
 		gltfViewerState.models.push(model);
 		gltfViewerState.selectedId = model.id;
+		logGltf.info('Load from file:', name, `(${file.name}, ${(file.size / 1024).toFixed(1)} KB)`);
 		sceneActions.setScene('demoScene');
 	},
 
@@ -42,12 +44,14 @@ export const gltfViewerActions = {
 		const model = makeModel(name, path, false);
 		gltfViewerState.models.push(model);
 		gltfViewerState.selectedId = model.id;
+		logGltf.info('Load from path:', name, `(${path})`);
 		sceneActions.setScene('demoScene');
 	},
 
 	removeModel(id: string) {
 		const model = find(id);
 		if (!model) return;
+		logGltf.info('Remove model:', model.name, `(${id})`);
 		if (model.isBlobUrl) URL.revokeObjectURL(model.url);
 		gltfViewerState.models = gltfViewerState.models.filter((m) => m.id !== id);
 		if (gltfViewerState.selectedId === id) {
@@ -57,6 +61,7 @@ export const gltfViewerActions = {
 	},
 
 	clearAll() {
+		logGltf.info('Clear all models:', gltfViewerState.models.length, 'removed');
 		for (const m of gltfViewerState.models) {
 			if (m.isBlobUrl) URL.revokeObjectURL(m.url);
 		}
@@ -71,7 +76,9 @@ export const gltfViewerActions = {
 	// Called by GltfViewerInstance once the GLTF loads and animations are known
 	setModelClips(id: string, clips: string[]) {
 		const m = find(id);
-		if (m) m.animationClips = clips;
+		if (!m) return;
+		m.animationClips = clips;
+		logGltf.info('Clips discovered for', m.name + ':', clips.length > 0 ? clips.join(', ') : '(none)');
 	},
 
 	setPosition(id: string, x: number, y: number, z: number) {
@@ -94,6 +101,7 @@ export const gltfViewerActions = {
 		if (!m) return;
 		m.activeAnimation = clipName;
 		m.playing = clipName !== null;
+		logGltf.info('Animation:', m.name, '→', clipName ?? '(none)');
 	},
 
 	setPlaying(id: string, playing: boolean) {
