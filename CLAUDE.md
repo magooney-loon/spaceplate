@@ -11,129 +11,314 @@ Spaceplate is a boilerplate for real-time 3D web apps. It combines:
 
 ```
 src/
-  App.svelte          — Root: Canvas, SceneHud, Loader siblings
-  Scene.svelte        — 3D stage router (inside Canvas, Threlte context)
+  App.svelte          — Root: Canvas + SceneHud + Loader siblings; loads Studio extensions
+  Root.svelte         — SpacetimeDB provider wrapper (wraps App)
+  main.ts             — Entry point
+  Scene.svelte        — 3D scene router (inside Canvas, Threlte context)
   SceneHud.svelte     — HTML overlay router (sibling to Canvas)
-  Loader.svelte       — Asset loading screen (useProgress, shown until finishedOnce)
-  Camera.svelte       — PerspectiveCamera + AudioListener + CameraControls
-  Skybox.svelte       — Static skybox (stars, nebula GLB, sun)
-  Renderer.svelte     — Post-processing (Bloom, SMAA, Vignette)
-  Sound.svelte        — All Audio components + soundTriggers/soundActions exports
-  stage.svelte.ts     — Stage state machine + STAGES config array (camera per stage)
-  settings.svelte.ts  — Persistent settings state (audio volumes, graphics, general)
   module_bindings/    — Generated SpacetimeDB client bindings (do not edit)
 
-  lib/
-    HomeStage.svelte   — Example 3D stage 1 (inside Canvas)
-    GalaxyStage.svelte — Example 3D stage 2 (inside Canvas)
-    HomeHud.svelte     — HTML overlay for home stage (SpacetimeDB example)
-    GalaxyHud.svelte   — HTML overlay for galaxy stage
-    Settings.svelte    — Settings overlay
-    WelcomeModal.svelte — First-visit welcome modal
+  core/
+    Camera.svelte     — PerspectiveCamera + AudioListener
+    GlobalAudio.svelte — All Audio components + soundTriggers/soundActions exports
+    Loader.svelte     — Asset loading screen (useProgress, shown until finishedOnce)
+    Renderer.svelte   — Post-processing (25+ effects, quality-gated)
+    Skybox.svelte     — Sky + dual-layer stars (state-driven)
+    tasks.ts          — Task pipeline: physicsStage, renderStage, uiStage, audioStage
+
+  scenes/
+    MainMenu.svelte    — Example 3D scene 1 (inside Canvas)
+    MainMenuHud.svelte — HTML overlay for main menu (SpacetimeDB example)
+    DemoScene.svelte   — Example 3D scene 2 (inside Canvas)
+    DemoSceneHud.svelte — HTML overlay for demo scene
+    SettingsHud.svelte — Settings overlay
 
   extensions/
-    StageExtension.svelte — Threlte Studio toolbar buttons for stage switching
+    scene/
+      scene.svelte.ts      — Scene state machine + SCENES config array
+      SceneExtension.svelte — Studio toolbar buttons for scene switching
+      types.ts
+    settings/
+      settings.svelte.ts   — Persistent settings state (audio, graphics, general)
+      types.ts
+    sound/
+      soundState.svelte.ts — Positional audio state
+      SoundExtension.svelte — Studio extension
+      useSound.ts
+      types.ts
+    skybox/
+      skybox.svelte.ts     — Sky/stars presets + animated transitions
+      SkyboxExtension.svelte — Studio extension
+      types.ts
+    postprocessing/
+      postprocessing.svelte.ts — 25+ effects state + preset management
+      PostProcessingExtension.svelte — Studio extension
+      types.ts
+      usePostProcessing.ts
+    logger/
+      logger.svelte.ts     — Multi-channel styled logging
+      LoggerExtension.svelte — Studio extension
+      types.ts
 ```
 
 ## Architecture Rules
 
-### HUD vs 3D Stage
-- **3D content** (meshes, lights, cameras) belongs inside `<Canvas>` — use `Scene.svelte` → stage components
+### HUD vs 3D Scene
+- **3D content** (meshes, lights, cameras) belongs inside `<Canvas>` — use `Scene.svelte` → scene components
 - **HTML overlays** (buttons, panels, forms) cannot live inside Canvas — use `SceneHud.svelte` → HUD components
 - HUD components are siblings to Canvas in a `position: relative` wrapper div
 
 ### Sound System
-- `Sound.svelte` owns all `<Audio>` Threlte components — never unmounts (no race conditions)
-- `soundTriggers` and `soundActions` are exported from `<script module>` in `Sound.svelte` — shared singleton
-- Import: `import { soundActions } from './Sound.svelte'`
+- `core/GlobalAudio.svelte` owns all `<Audio>` Threlte components — never unmounts (no race conditions)
+- `soundTriggers` and `soundActions` are exported from `<script module>` in `GlobalAudio.svelte` — shared singleton
+- Import: `import { soundActions } from '../core/GlobalAudio.svelte'`
 - `soundActions.playSwoosh()` — polyphonic (clone per call → overlapping instances)
 - `soundActions.playClick()` — one-shot (stop+restart)
-- `soundActions.playAnimSound(action)` / `soundActions.stopAnimSounds()` — character animation audio
-- `$state.raw<ThreeAudio>()` + `oncreate` — prevents Svelte 5 Proxy wrapping THREE.js class instances
+- `$state.raw<ThreeAudio>()` — prevents Svelte 5 Proxy wrapping THREE.js class instances
 
-### Stage State Machine (`stage.svelte.ts`)
-- Stages defined in `STAGES: StageConfig[]` — each entry has `id`, `label`, `icon`, and a `camera` function
-- Adding a new stage = one new entry in `STAGES` (+ add its `id` to `StageType`)
-- Camera config lives inside each `StageConfig.camera(controls, animated)` — no separate switch statement
-- `stageActions.setStage(stage)` transitions stage AND applies camera automatically
-- Convenience: `stageActions.goToHome/goToGalaxy/goToSettings/goBack()`
-- Read current stage via `stageState.currentStage` — do NOT use removed helper functions (`isHomeStage` etc.)
-- `stageState.isTransitioning` — set during animated transitions (`stageActions.transitionTo`)
-- `cameraActions.setCameraControls(ref)` — called by `Camera.svelte` on mount/unmount only
+### Scene State Machine (`extensions/scene/scene.svelte.ts`)
+- Scenes defined in `SCENES: SceneConfig[]` — each entry has `id`, `label`, `icon`
+- Adding a new scene = one new entry in `SCENES` (+ add its `id` to `SceneType`)
+- `sceneActions.setScene(scene)` transitions scene (plays swoosh, logs)
+- Convenience: `sceneActions.goToMainMenu()` / `goToDemoScene()` / `goBack()`
+- Read current scene via `sceneState.currentScene`
+- `sceneState.isTransitioning` — set during animated transitions (`sceneActions.transitionTo`)
 
-### Threlte Studio Extensions (`src/extensions/`)
-- Extensions add custom toolbar items, panes, or controls to the Studio (dev-only, `VITE_GAME_ENGINE=true`)
-- Register via `<Studio extensions={[MyExtension]}>` in `App.svelte`
-- Each extension must call `createExtension({ scope, state })` from `useStudio()` and include `<slot />`
-- **`ToolbarButton` uses `onclick` prop (Svelte 5), NOT `on:click`** — using `on:click` silently does nothing
-- Import from `@threlte/studio/extend`: `useStudio`, `ToolbarItem`, `HorizontalButtonGroup`, `ToolbarButton`
+### Task Pipeline (`core/tasks.ts`)
+- Four ordered stages per frame: `physicsStage` (BEFORE render) → `renderStage` (default) → `uiStage` (AFTER) → `audioStage` (AFTER ui)
+- `useGameTasks()` returns `{ stages, createPhysicsTask, createUiTask, createAudioTask }`
+- `physicsStage` only active in DemoScene; `uiStage` paused during transitions; `audioStage` always runs
+- Use tasks instead of raw `useTask` to ensure correct execution order
 
+### Skybox System (`extensions/skybox/skybox.svelte.ts`)
+- **Sky presets**: 11 time-of-day options (dawn, day, dusk, night, sunset, sunrise, cloudy, overcast, aurora, vacuum)
+- **Star presets**: 5 configurations (dense, sparse, twinkle, nebula, milkyway) — each sky preset embeds a star preset
+- `skyboxActions.applyPreset(id)` — instant or animated transition via `requestAnimationFrame`
+- Individual setters: `setTurbidity`, `setAzimuth`, `setElevation`, etc.
+- `skyboxState` / `starsState` / `transitionState` — all reactive, drive `core/Skybox.svelte`
+
+### Post-Processing System (`extensions/postprocessing/postprocessing.svelte.ts`)
+- 25+ effects: SMAA, FXAA, Bloom, Tone Mapping, God Rays, SSAO, Chromatic Aberration, Lens Distortion, Glitch, ASCII, Pixelation, Outline, Depth of Field, and more
+- All effects disabled when `graphics.quality === 'low'` (render pass only)
+- `postprocessingActions.savePreset(name)` / `loadPreset(id)` / `deletePreset(id)` — persisted to localStorage
+- `postprocessingActions.resetAll()` / `resetEffect(name)` — restore defaults
+
+### Extensions System (`src/extensions/`)
+
+**Core principle:** State in `.svelte.ts` modules is always reactive and works everywhere — in production, in components, in hooks. Threlte Studio is a **dev-only editor** (`VITE_GAME_ENGINE=true`) that provides a UI panel to tweak that same state at runtime. Never put logic in `*Extension.svelte` files — only UI.
+
+#### Extension folder structure
+
+```
+extensions/my-feature/
+  types.ts                 — extensionScope constant + all types
+  myFeature.svelte.ts      — $state + actions (always active, works without Studio)
+  MyFeatureExtension.svelte — Studio toolbar UI only (dev mode)
+  useMyFeature.ts          — (optional) Studio-aware hook with fallback
+```
+
+#### types.ts pattern
+```typescript
+export const extensionScope = 'my-feature';
+export type MyFeatureState = { enabled: boolean; value: number };
+export type MyFeatureActions = { setEnabled(v: boolean): void; setValue(v: number): void };
+```
+
+#### myFeature.svelte.ts pattern
+```typescript
+import { logSettings } from '$extensions/logger/logger.svelte';
+import type { MyFeatureState, MyFeatureActions } from './types';
+
+export type { MyFeatureState, MyFeatureActions } from './types';
+
+export const myFeatureState = $state<MyFeatureState>({ enabled: true, value: 0.5 });
+
+export const myFeatureActions: MyFeatureActions = {
+  setEnabled(v) { myFeatureState.enabled = v; logSettings.info('Enabled:', v); },
+  setValue(v)   { myFeatureState.value = v; },
+};
+```
+
+#### MyFeatureExtension.svelte pattern (Studio UI only)
 ```svelte
-<!-- src/extensions/MyExtension.svelte -->
 <script lang="ts">
-  import { useStudio, ToolbarItem, HorizontalButtonGroup, ToolbarButton } from '@threlte/studio/extend';
+  import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
+  import { Folder, Slider, Checkbox } from 'svelte-tweakpane-ui';
+  import { myFeatureState, myFeatureActions } from './myFeature.svelte';
+  import { extensionScope } from './types';
 
   const { createExtension } = useStudio();
-  createExtension({ scope: 'my-extension', state() { return {}; } });
+  createExtension({ scope: extensionScope, state: () => ({}) });
 </script>
 
 <ToolbarItem position="left">
-  <HorizontalButtonGroup>
-    <ToolbarButton label="Do Thing" icon="mdiStar" onclick={() => doThing()} tooltip="Do the thing" />
-  </HorizontalButtonGroup>
+  <DropDownPane icon="mdiStar" title="My Feature">
+    <Folder title="Settings" expanded={true}>
+      <Checkbox label="Enabled" value={myFeatureState.enabled}
+        on:change={() => myFeatureActions.setEnabled(!myFeatureState.enabled)} />
+      <Slider label="Value" value={myFeatureState.value} min={0} max={1} step={0.01}
+        on:change={(e) => myFeatureActions.setValue(e.detail.value)} />
+    </Folder>
+  </DropDownPane>
 </ToolbarItem>
 
 <slot />
 ```
 
-### Settings (`settings.svelte.ts`)
+**`ToolbarButton` uses `onclick` prop (Svelte 5), NOT `on:click`** — using `on:click` silently does nothing.
+
+#### useX.ts fallback hook pattern (for Studio-aware access)
+```typescript
+import { useStudio } from '@threlte/studio/extend';
+import { myFeatureState, myFeatureActions } from './myFeature.svelte';
+import { extensionScope } from './types';
+
+export const useMyFeature = () => {
+  try {
+    const { useExtension } = useStudio();
+    return useExtension(extensionScope);
+  } catch {
+    return { state: myFeatureState, ...myFeatureActions };
+  }
+};
+```
+
+#### Registering extensions in App.svelte
+```svelte
+{#await import('@threlte/studio') then { Studio }}
+  <Studio extensions={[SceneExtension, LoggerExtension, PostProcessingExtension, SoundExtension, SkyboxExtension]}>
+    <!-- app content -->
+  </Studio>
+{/await}
+```
+
+#### Existing extensions and their exports
+
+| Extension | State export | Actions export | Has Studio UI |
+|-----------|-------------|----------------|---------------|
+| `scene` | `sceneState` | `sceneActions` | `SceneExtension.svelte` |
+| `settings` | `settingsState` | `audioActions`, `graphicsActions`, `generalActions` | none (state-only) |
+| `logger` | `loggerState` | `toggleChannel(ch)` | `LoggerExtension.svelte` |
+| `postprocessing` | `postprocessingState`, `postprocessingPresetsState` | `postprocessingActions` | `PostProcessingExtension.svelte` |
+| `skybox` | `skyboxState`, `starsState`, `transitionState` | `skyboxActions` | `SkyboxExtension.svelte` |
+| `sound` | `soundState` | (via `settingsState.audio`) | `SoundExtension.svelte` |
+
+**Logger named exports:** `logEngine`, `logSettings`, `logSound`, `logPostprocessing`, `logSkybox`
+```typescript
+import { logEngine, logSettings } from '$extensions/logger/logger.svelte';
+logEngine.info('Scene:', scene);   // console.log
+logSettings.warn('Bad value');     // console.warn
+logEngine.error('Failed:', err);   // console.error
+```
+
+#### Common patterns
+
+**localStorage persistence** — write inside actions, not `$effect`:
+```typescript
+const MY_KEY = 'my-key';
+export const myState = $state({ value: parseFloat(localStorage.getItem(MY_KEY) ?? '0.5') });
+export const myActions = {
+  setValue(v: number) { myState.value = v; localStorage.setItem(MY_KEY, String(v)); }
+};
+```
+
+**Audio defaults must be `false`** — browser autoplay policy requires audio to start disabled:
+```typescript
+musicEnabled: false,  // Always off by default — never true
+sfxEnabled: false,
+ambienceEnabled: false,
+```
+
+**Use `on:change` not `bind:` for toggles** — `bind:` bypasses actions:
+```svelte
+<!-- ❌ Bypasses actions -->
+<Checkbox bind:value={state.enabled} />
+<!-- ✅ Triggers action -->
+<Checkbox value={state.enabled} on:change={() => actions.toggleEnabled()} />
+```
+
+**Cross-extension state access** — import directly, no wrappers needed:
+```typescript
+import { settingsState } from '$extensions/settings/settings.svelte';
+// Read or mutate directly — runes are reactive across modules
+settingsState.audio.sfxVolume = 0.8;
+```
+
+**Post-processing effect disposal** — track `isUpdatingEffects` to prevent render mid-rebuild:
+```typescript
+let isUpdatingEffects = false;
+$effect(() => {
+  isUpdatingEffects = true;
+  disposeAllEffects();
+  // rebuild...
+  isUpdatingEffects = false;
+});
+useTask((delta) => { if (composer && !isUpdatingEffects) composer.render(delta); });
+```
+
+#### UI components (`svelte-tweakpane-ui`)
+| Component | Use case |
+|-----------|----------|
+| `Checkbox` | Boolean toggles — use `on:change` |
+| `Slider` | Numeric values — `min/max/step` props |
+| `Button` | Actions — `on:click` |
+| `Folder` | Group related controls — `expanded={true}` |
+| `DropDownPane` | Main extension panel in toolbar |
+| `List` | Select from options — `options={[{value, text}]}` |
+| `Separator` | Visual divider |
+
+### Settings (`extensions/settings/settings.svelte.ts`)
 - All settings persist to localStorage automatically
-- Audio: `musicEnabled/Volume`, `ambienceEnabled/Volume`, `effectsEnabled/Volume`
-- Graphics: `quality` (`"low"` | `"mid"` | `"high"`) — affects DPR and renderer power preference
-- General: `hideWelcomeModal`, `uiVisible` (toggled with `Ctrl+H`)
+- Audio: `musicVolume/musicEnabled`, `ambienceVolume/ambienceEnabled`, `sfxVolume/sfxEnabled`, `effectsVolume`
+- Graphics: `quality` (`"low"` | `"high"`) — affects DPR and whether post-processing runs
+- General: `uiVisible` (toggled with `Ctrl+H`)
+- Actions: `audioActions.toggleMusic/Ambience/Sfx()`, `setMusicVolume(v)`, `graphicsActions.setQuality(q)`, `generalActions.toggleUiVisible()`
+- **`BASE_URL`** — always import and use this for static asset paths; never hardcode `/` or relative paths
+  ```ts
+  import { BASE_URL } from '$extensions/settings/settings.svelte';
+  const src = `${BASE_URL}sounds/click.mp3`;
+  ```
 
 ### SpacetimeDB Client
-- Connection is set up in `main.ts` via `SpacetimeDBProvider`
+- Connection is set up in `Root.svelte` via `DbConnection.builder()` + `createSpacetimeDBProvider`
 - Module bindings are in `src/module_bindings/` — regenerate with `pnpm spacetime:generate`
-- Use `useSpacetimeDB()`, `useTable(tables.x)`, `useReducer(reducers.x)` from `spacetimedb/svelte`
-- SpacetimeDB UI lives in HUD components (HTML), not 3D stage components
+- Use `useTable(tables.x)` from `spacetimedb/svelte` — returns `[rows, isLoading]`
+- SpacetimeDB UI lives in HUD components (HTML), not 3D scene components
 
 ### Key Svelte 5 Patterns Used
 - `$state.raw<T>()` for Three.js class instances (avoids Proxy breakage)
-- `<script module>` for shared singleton state exported from `.svelte` files
+- All extension state lives in `.svelte.ts` modules — exported as `fooState` / `fooActions` singletons
 - `transition:fly` on each HUD component's root element — `transition:fade` on the uiVisible wrapper
-- Separate `{#if}` blocks (not `{:else if}`) for stage HUD routing — ensures transitions fire on switch
+- Separate `{#if}` blocks (not `{:else if}`) for scene HUD routing — ensures transitions fire on switch
 
-### Debug Logging (`settings.svelte.ts`)
+### Debug Logging (`extensions/logger/logger.svelte.ts`)
 
-All logging goes through `log` — gated by `VITE_GAME_ENGINE_LOGS=true` in `.env`.
+Styled multi-channel logging with timestamp + color-coded channel prefix.
 
-```ts
-import { log } from './settings.svelte.js';
-
-log.info('Stage:', stage);   // console.log  — general info
-log.warn('Missing asset');   // console.warn — recoverable issues
-log.error('Failed:', err);   // console.error — failures
-```
-
-**Adding new log channels** (e.g. game events, API calls):
+**Channels:** `engine` (blue), `settings` (green), `sound` (purple), `postprocessing` (yellow), `skybox` (cyan)
 
 ```ts
-// In settings.svelte.ts — add alongside `log`:
-export const logGame = createLogger('game', import.meta.env.VITE_GAME_LOGS === 'true');
-export const logApi  = createLogger('api',  import.meta.env.VITE_API_LOGS  === 'true');
+import { logger } from '../extensions/logger/logger.svelte.js';
+
+logger.engine.info('Scene:', scene);   // console.log — general info
+logger.sound.warn('Missing asset');    // console.warn — recoverable issues
+logger.settings.error('Failed:', err); // console.error — failures
 ```
 
-Each channel has its own env var so teams can toggle categories independently.
+**Adding a new channel:**
+```ts
+// In logger.svelte.ts — add to the channels map with a color
+channels.set('game', createChannel('game', '#ff6b6b'));
+```
 
 **Where logs are used in the boilerplate:**
 - `Root.svelte` — SpacetimeDB connect / disconnect / error
 - `Renderer.svelte` — graphics quality applied
-- `Camera.svelte` — camera disposed
-- `Sound.svelte` — each audio file loaded
+- `core/GlobalAudio.svelte` — each audio file loaded
 - `Loader.svelte` — all assets finished loading
-- `stage.svelte.ts` — every stage transition (`home → galaxy`)
-- `settings.svelte.ts` — quality changes, volume changes, HUD toggle
+- `extensions/scene/scene.svelte.ts` — every scene transition (`mainMenu → demoScene`)
+- `extensions/settings/settings.svelte.ts` — quality changes, volume changes, HUD toggle
+- `extensions/skybox/skybox.svelte.ts` — preset applied
 
 ---
 
