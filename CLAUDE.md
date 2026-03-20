@@ -19,12 +19,13 @@ src/
   module_bindings/    — Generated SpacetimeDB client bindings (do not edit)
 
   core/
-    Camera.svelte     — PerspectiveCamera + AudioListener
-    GlobalAudio.svelte — All Audio components + soundTriggers/soundActions exports
-    Loader.svelte     — Asset loading screen (useProgress, shown until finishedOnce)
-    Renderer.svelte   — Post-processing (25+ effects, quality-gated)
-    Skybox.svelte     — Sky + dual-layer stars (state-driven)
-    tasks.ts          — Task pipeline: physicsStage, renderStage, uiStage, audioStage
+    Camera.svelte        — PerspectiveCamera + AudioListener
+    GlobalAudio.svelte   — All Audio components; re-exports from globalAudio.svelte.ts
+    globalAudio.svelte.ts — soundTriggers + soundActions singleton (import from here in .ts files)
+    Loader.svelte        — Asset loading screen (useProgress, shown until finishedOnce)
+    Renderer.svelte      — Post-processing (25+ effects, quality-gated)
+    Skybox.svelte        — Sky + dual-layer stars (state-driven)
+    tasks.ts             — Task pipeline: physicsStage, renderStage, uiStage, audioStage
 
   scenes/
     MainMenu.svelte    — Example 3D scene 1 (inside Canvas)
@@ -36,7 +37,8 @@ src/
   extensions/
     scene/
       scene.svelte.ts      — Scene state machine + SCENES config array
-      SceneExtension.svelte — Studio toolbar buttons for scene switching
+      bundledPresets.ts    — Code-committed preset assignments per scene + global
+      SceneExtension.svelte — Studio toolbar: scene switching + preset manager
       types.ts
     settings/
       settings.svelte.ts   — Persistent settings state (audio, graphics, general)
@@ -48,16 +50,24 @@ src/
       types.ts
     skybox/
       skybox.svelte.ts     — Sky/stars presets + animated transitions
+      bundledPresets.ts    — Built-in skybox presets (not stored in localStorage)
       SkyboxExtension.svelte — Studio extension
       types.ts
     postprocessing/
       postprocessing.svelte.ts — 25+ effects state + preset management
+      bundledPresets.ts    — Built-in PP presets (not stored in localStorage)
       PostProcessingExtension.svelte — Studio extension
       types.ts
       usePostProcessing.ts
     logger/
       logger.svelte.ts     — Multi-channel styled logging
-      LoggerExtension.svelte — Studio extension
+      LoggerExtension.svelte — Studio extension (auto-generates checkboxes from channelStyles)
+      types.ts
+    gltf-viewer/
+      gltfViewer.svelte.ts  — GLTF/GLB model state + actions (dev-only, DemoScene)
+      GltfViewerExtension.svelte — Studio extension: load, transform, animate models
+      GltfViewerInstance.svelte  — Per-model component: useGltf + animation mixer
+      GltfViewerScene.svelte     — Renders all loaded models inside DemoScene
       types.ts
 ```
 
@@ -70,8 +80,9 @@ src/
 
 ### Sound System
 - `core/GlobalAudio.svelte` owns all `<Audio>` Threlte components — never unmounts (no race conditions)
-- `soundTriggers` and `soundActions` are exported from `<script module>` in `GlobalAudio.svelte` — shared singleton
-- Import: `import { soundActions } from '../core/GlobalAudio.svelte'`
+- `soundTriggers` and `soundActions` live in `core/globalAudio.svelte.ts` — imported from there in `.ts` files
+- **Always import from `.ts` file, not the `.svelte` file** — named exports from `<script module>` in `.svelte` are not visible to TypeScript in `.ts` imports
+- Import: `import { soundActions } from '$core/globalAudio.svelte'`
 - `soundActions.playSwoosh()` — polyphonic (clone per call → overlapping instances)
 - `soundActions.playClick()` — one-shot (stop+restart)
 - `$state.raw<ThreeAudio>()` — prevents Svelte 5 Proxy wrapping THREE.js class instances
@@ -83,6 +94,16 @@ src/
 - Convenience: `sceneActions.goToMainMenu()` / `goToDemoScene()` / `goBack()`
 - Read current scene via `sceneState.currentScene`
 - `sceneState.isTransitioning` — set during animated transitions (`sceneActions.transitionTo`)
+
+#### Preset Assignment System (`extensions/scene/bundledPresets.ts`)
+- **Single source of truth** for which PP/skybox presets load per scene — all in code, not localStorage
+- `BUNDLED_SCENE_PRESETS: Partial<Record<SceneType, ScenePresets>>` — per-scene assignments
+- `BUNDLED_GLOBAL_PRESETS: ScenePresets` — baseline applied to all scenes (scene-specific wins on conflict)
+- `resolveScenePreset(sceneId, type)` — localStorage studio override → bundledPresets → null
+- `resolveGlobalPreset(type)` — localStorage studio override → bundledPresets → null
+- Studio SceneExtension lets you set/override assignments at runtime and copy the code to paste into `bundledPresets.ts`
+- **Conflict detection**: PP extension warns if global and scene presets share the same enabled effect
+- **Deletion guard**: PP/Skybox extensions block deleting presets that are in use by the scene manager
 
 ### Task Pipeline (`core/tasks.ts`)
 - Four ordered stages per frame: `physicsStage` (BEFORE render) → `renderStage` (default) → `uiStage` (AFTER) → `audioStage` (AFTER ui)
@@ -97,16 +118,17 @@ src/
 - Individual setters: `setTurbidity`, `setAzimuth`, `setElevation`, etc.
 - `skyboxState` / `starsState` / `transitionState` — all reactive, drive `core/Skybox.svelte`
 - **User presets**: `skyboxActions.savePreset(name)` / `loadUserPreset(id)` / `deletePreset(id)` — persisted to localStorage
-- **Bundled presets**: add to `extensions/skybox/bundledPresets.ts` — always available to all users, not stored in localStorage
-- **Global + per-scene presets**: `skyboxPresetsState.globalPresetId` + `scenePresets[sceneId]` — scene wins; applied automatically in `core/Skybox.svelte`
+- **Bundled presets**: add to `extensions/skybox/bundledPresets.ts` — always available, not stored in localStorage
+- **Scene preset assignment**: owned by the scene manager — use `resolveScenePreset` / `resolveGlobalPreset` from `$extensions/scene/scene.svelte`; `core/Skybox.svelte` reads these reactively
 
 ### Post-Processing System (`extensions/postprocessing/postprocessing.svelte.ts`)
 - 25+ effects: SMAA, FXAA, Bloom, Tone Mapping, God Rays, SSAO, Chromatic Aberration, Lens Distortion, Glitch, ASCII, Pixelation, Outline, Depth of Field, and more
 - All effects disabled when `graphics.quality === 'low'` (render pass only)
-- `postprocessingActions.savePreset(name)` / `loadPreset(id)` / `deletePreset(id)` — persisted to localStorage
-- `postprocessingActions.resetAll()` / `resetEffect(name)` — restore defaults
+- `postprocessingActions.savePreset(name)` / `loadPreset(id)` / `deletePreset(id)` / `updatePreset(id)` — persisted to localStorage
+- `postprocessingActions.resetAll()` / `resetEffect(name)` — restore defaults; `resetEffect` preserves `enabled` state
 - **Bundled presets**: add to `extensions/postprocessing/bundledPresets.ts` — always available, not stored in localStorage
-- **Global + per-scene presets**: `postprocessingPresetsState.globalPresetId` + `scenePresets[sceneId]` — scene wins on conflict (same effect active in both logs a warning); merged reactively in `core/Renderer.svelte`
+- **Scene preset assignment**: owned by the scene manager — `core/Renderer.svelte` calls `resolveScenePreset` / `resolveGlobalPreset` to merge active presets
+- Studio UI: active preset shows ✓, enabled effects auto-expand on load, warning banner shown when a preset overrides manual changes
 
 ### Extensions System (`src/extensions/`)
 
@@ -157,7 +179,7 @@ export const myFeatureActions: MyFeatureActions = {
   let { children }: Props = $props();
 
   const { createExtension } = useStudio();
-  createExtension({ scope: extensionScope, state: () => ({}) });
+  createExtension({ scope: extensionScope, state: () => ({}), actions: {} });
 </script>
 
 <ToolbarItem position="left">
@@ -195,7 +217,7 @@ export const useMyFeature = () => {
 #### Registering extensions in App.svelte
 ```svelte
 {#await import('@threlte/studio') then { Studio }}
-  <Studio extensions={[SceneExtension, LoggerExtension, PostProcessingExtension, SoundExtension, SkyboxExtension]}>
+  <Studio extensions={[SceneExtension, PostProcessingExtension, SkyboxExtension, SoundExtension, LoggerExtension, GltfViewerExtension]}>
     <!-- app content -->
   </Studio>
 {/await}
@@ -205,19 +227,20 @@ export const useMyFeature = () => {
 
 | Extension | State export | Actions export | Has Studio UI |
 |-----------|-------------|----------------|---------------|
-| `scene` | `sceneState` | `sceneActions` | `SceneExtension.svelte` |
+| `scene` | `sceneState` | `sceneActions`, `resolveScenePreset`, `resolveGlobalPreset` | `SceneExtension.svelte` |
 | `settings` | `settingsState` | `audioActions`, `graphicsActions`, `generalActions` | none (state-only) |
-| `logger` | `loggerState` | `toggleChannel(ch)` | `LoggerExtension.svelte` |
+| `logger` | `loggerState` | `loggerActions.toggleChannel(ch)` | `LoggerExtension.svelte` |
 | `postprocessing` | `postprocessingState`, `postprocessingPresetsState` | `postprocessingActions` | `PostProcessingExtension.svelte` |
 | `skybox` | `skyboxState`, `starsState`, `transitionState` | `skyboxActions` | `SkyboxExtension.svelte` |
 | `sound` | `soundState` | (via `settingsState.audio`) | `SoundExtension.svelte` |
+| `gltf-viewer` | `gltfViewerState` | `gltfViewerActions` | `GltfViewerExtension.svelte` (dev only) |
 
-**Logger named exports:** `logEngine`, `logSettings`, `logSound`, `logPostprocessing`, `logSkybox`
+**Logger named exports:** `logEngine`, `logSettings`, `logSound`, `logPostprocessing`, `logSkybox`, `logCache`, `logGltf`
 ```typescript
-import { logEngine, logSettings } from '$extensions/logger/logger.svelte';
+import { logEngine, logSettings, logGltf } from '$extensions/logger/logger.svelte';
 logEngine.info('Scene:', scene);   // console.log
 logSettings.warn('Bad value');     // console.warn
-logEngine.error('Failed:', err);   // console.error
+logGltf.error('Failed:', err);     // console.error
 ```
 
 #### Common patterns
@@ -304,32 +327,28 @@ useTask((delta) => { if (composer && !isUpdatingEffects) composer.render(delta);
 
 Styled multi-channel logging with timestamp + color-coded channel prefix.
 
-**Channels:** `engine` (blue), `settings` (green), `sound` (purple), `postprocessing` (yellow), `skybox` (cyan)
+**Channels:** `engine` (blue), `settings` (green), `sound` (purple), `postprocessing` (yellow), `skybox` (cyan), `cache` (orange), `gltf` (teal)
 
 ```ts
-import { logEngine, logSound, logSettings } from '$extensions/logger/logger.svelte';
+import { logEngine, logSound, logGltf } from '$extensions/logger/logger.svelte';
 
 logEngine.info('Scene:', scene);    // console.log — general info
 logSound.warn('Missing asset');     // console.warn — recoverable issues
-logSettings.error('Failed:', err);  // console.error — failures
+logGltf.error('Failed:', err);      // console.error — failures
 ```
 
-**Adding a new channel** — edit `logger.svelte.ts` only; the Studio UI (`LoggerExtension.svelte`) picks it up automatically via `channelStyles`:
+**Adding a new channel** — two files only; the Studio UI picks it up automatically via `channelStyles`:
 ```typescript
-// 1. types.ts — add to the union
+// 1. types.ts — add to the union and state type
 export type LoggerChannel = 'engine' | ... | 'game';
 export type LoggerState = { ...; game: boolean };
 
-// 2. logger.svelte.ts — add to loggerState
+// 2. logger.svelte.ts — add state entry, channelStyle, and export
 export const loggerState = $state<LoggerState>({ ..., game: true });
-
-// 3. logger.svelte.ts — add to channelStyles (drives auto-generated UI checkbox)
 export const channelStyles = {
   ...,
   game: { color: '#ff6b6b', bg: 'background:#4a2020', text: '🎮', label: 'Game' }
 };
-
-// 4. logger.svelte.ts — export the logger instance
 export const logGame = createLogger('game', 'game');
 ```
 
@@ -341,6 +360,40 @@ export const logGame = createLogger('game', 'game');
 - `extensions/scene/scene.svelte.ts` — every scene transition (`mainMenu → demoScene`)
 - `extensions/settings/settings.svelte.ts` — quality changes, volume changes, HUD toggle
 - `extensions/skybox/skybox.svelte.ts` — preset applied
+- `extensions/gltf-viewer/gltfViewer.svelte.ts` — model load, remove, animation changes
+- `extensions/gltf-viewer/GltfViewerInstance.svelte` — GLTF scene loaded, clips discovered
+
+### GLTF Viewer (`extensions/gltf-viewer/`)
+
+Dev-only (`VITE_GAME_ENGINE=true`) extension for loading and inspecting GLTF/GLB files. Always targets DemoScene — loading a model auto-switches to it.
+
+**State:** `gltfViewerState.models: GltfViewerModel[]`, `selectedId: string | null`
+
+**Each model has:**
+- `position/rotation/scale` — transform (rotation in degrees)
+- `animationClips: string[]` — populated after GLTF loads
+- `activeAnimations: string[]` — multiple clips can play simultaneously (Three.js blending)
+- `playState: 'playing' | 'paused' | 'stopped'` — paused keeps current frame; stopped resets to frame 0
+- `animationSpeed`, `crossfadeDuration`, `loop`, `visible`
+
+**Key actions:**
+```typescript
+import { gltfViewerActions } from '$extensions/gltf-viewer/gltfViewer.svelte';
+
+gltfViewerActions.loadFromFile(file);          // Blob URL, auto-switches to DemoScene
+gltfViewerActions.loadFromPath('/models/x.glb'); // Public asset path
+gltfViewerActions.toggleAnimation(id, clipName); // Enable/disable a clip
+gltfViewerActions.setPlayState(id, 'playing');   // 'playing' | 'paused' | 'stopped'
+gltfViewerActions.setCrossfadeDuration(id, 0.3); // Seconds; 0 = instant cuts
+```
+
+**Crossfade / animation blending:**
+- Enabling a clip → `action.fadeIn(crossfadeDuration)` — weight ramps 0→1
+- Disabling a clip → `action.fadeOut(crossfadeDuration)` — weight ramps 1→0 naturally
+- Re-enabling during fade-out → `action.fadeIn()` reverses the ongoing fade
+- `crossfadeDuration = 0` → hard cuts (same as before)
+
+**GltfViewerScene.svelte** — drop inside DemoScene (dev-only); renders one `GltfViewerInstance` per model. Each instance owns its own `useGltf` + `useGltfAnimations` lifecycle, preventing mixer conflicts between models.
 
 ---
 

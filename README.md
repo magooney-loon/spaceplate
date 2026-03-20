@@ -28,20 +28,23 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 
 ## What's included
 
-- **Scene Manager** — Application state machine (`mainMenu` / `demoScene` / `settings`) with transitions and scene-specific HUD routing
-- **Task Scheduling** — Threlte-based render pipeline with specialized stages:
+- **Scene Manager** — Application state machine (`mainMenu` / `demoScene`) with animated transitions, per-scene HUD routing, and a preset assignment system for PP/skybox
+- **Task Scheduling** — Threlte-based render pipeline with ordered stages:
   - `physicsStage` — Game logic (runs only in demoScene, pauses in menus)
   - `renderStage` — 3D rendering (default)
   - `uiStage` — UI updates (after render)
-  - `audioStage` — Audio updates (always runs)
-- **Extensions** — Threlte Studio toolbar extensions:
-  - `StageExtension` — Scene switcher buttons
-  - `CameraControlsExtension` — Camera position/angle controls
-  - `PostProcessingExtension` — Full post-processing stack (Bloom, SSAO, GodRays, etc.)
+  - `audioStage` — Audio (always runs)
+- **Studio Extensions** (`VITE_GAME_ENGINE=true`) — Threlte Studio toolbar panels:
+  - `SceneExtension` — Scene switcher + preset manager (assign PP/skybox presets per scene or globally)
+  - `PostProcessingExtension` — 25+ effects, preset save/load/update, bundled presets, conflict detection
+  - `SkyboxExtension` — 11 sky presets, 5 star configs, animated transitions, user presets
+  - `SoundExtension` — Volume controls + audio channel toggles
+  - `LoggerExtension` — Per-channel log toggles (engine, settings, sound, postprocessing, skybox, cache, gltf)
+  - `GltfViewerExtension` — Load GLTF/GLB from file or path; transform, multi-animation with crossfade blending
 - **Sound system** — Polyphonic + one-shot audio, never unmounts, safe from race conditions
 - **Settings** — Persistent audio, graphics quality (DPR + power preference), UI visibility — saved to localStorage
 - **SpacetimeDB wiring** — Connection setup, generated bindings, example table subscription
-- **Debug logging** — Env-gated log channels (`VITE_GAME_ENGINE_LOGS`)
+- **Debug logging** — Multi-channel styled logging with timestamp; channels auto-generate Studio UI checkboxes
 - **TailwindCSS** — Utility-first CSS framework via `@tailwindcss/vite`
 
 ---
@@ -79,16 +82,20 @@ createUiTask((delta) => {
 ```
 
 ### Extensions
-Each extension is self-contained with state, actions, and UI:
+Each extension is self-contained: reactive state (`.svelte.ts`), actions, and a Studio UI panel (dev only).
+
 ```
 extensions/
-├── StageExtension.svelte         # Scene switcher toolbar
-├── camera/                       # Camera controls
-└── postprocessing/               # 27 post-processing effects
-    ├── PostProcessingExtension.svelte
-    ├── types.ts
-    └── usePostProcessing.ts
+├── scene/              # Scene state machine + preset assignment system
+├── settings/           # Persistent audio/graphics/general settings
+├── postprocessing/     # 25+ effects, presets, bundledPresets.ts
+├── skybox/             # Sky + stars presets, bundledPresets.ts
+├── sound/              # Positional audio state
+├── logger/             # Multi-channel styled logging
+└── gltf-viewer/        # GLTF/GLB loader with animation + crossfade (dev only)
 ```
+
+State always works in production — Studio panels are purely dev-time UI on top of the same state.
 
 ---
 
@@ -133,5 +140,4 @@ Copy `.env.example` to `.env.local` and fill in your values.
 | `VITE_SPACETIMEDB_HOST` | SpacetimeDB host (`https://maincloud.spacetimedb.com` for maincloud) |
 | `SPACETIMEDB_DB_NAME` | Same as above, used by the `spacetime` CLI |
 | `SPACETIMEDB_HOST` | Same as above, used by the `spacetime` CLI |
-| `VITE_GAME_ENGINE` | `true` to enable Threlte Studio + PerfMonitor in dev |
-| `VITE_GAME_ENGINE_LOGS` | `true` to enable debug logging |
+| `VITE_GAME_ENGINE` | `true` to enable Threlte Studio + PerfMonitor + all Studio extensions |
