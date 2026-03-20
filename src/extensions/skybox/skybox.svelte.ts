@@ -1,5 +1,14 @@
 import { logSkybox } from '$extensions/logger/logger.svelte';
-import type { SkyState, SkyPreset, StarPreset, StarsState, TransitionState } from './types';
+import { BUNDLED_SKYBOX_PRESETS } from './bundledPresets';
+import type {
+	SkyState,
+	SkyPreset,
+	StarPreset,
+	StarsState,
+	TransitionState,
+	SkyboxUserPreset,
+	SkyboxPresetsState
+} from './types';
 
 export type {
 	SkyPreset,
@@ -8,7 +17,9 @@ export type {
 	SkyState,
 	TransitionState,
 	ExtensionState,
-	ExtensionActions
+	ExtensionActions,
+	SkyboxUserPreset,
+	SkyboxPresetsState
 } from './types';
 
 export const STAR_PRESETS: Record<string, StarPreset> = {
@@ -377,6 +388,42 @@ export const TRANSITION_DURATIONS = [
 	{ value: 5000, text: '5s' }
 ];
 
+const USER_PRESETS_KEY = 'spaceplate-skybox-presets';
+const GLOBAL_PRESET_KEY = 'spaceplate-skybox-global-preset';
+const SCENE_PRESETS_KEY = 'spaceplate-skybox-scene-presets';
+
+const loadUserPresets = (): SkyboxUserPreset[] => {
+	let stored: SkyboxUserPreset[] = [];
+	try {
+		const raw = localStorage.getItem(USER_PRESETS_KEY);
+		stored = raw ? JSON.parse(raw) : [];
+	} catch { /* ignore */ }
+	const merged = [...BUNDLED_SKYBOX_PRESETS];
+	for (const preset of stored) {
+		if (!merged.find((p) => p.id === preset.id)) {
+			merged.push(preset);
+		}
+	}
+	return merged;
+};
+
+const loadGlobalPresetId = (): string | null => {
+	try { return localStorage.getItem(GLOBAL_PRESET_KEY); } catch { return null; }
+};
+
+const loadScenePresets = (): Record<string, string | null> => {
+	try {
+		const stored = localStorage.getItem(SCENE_PRESETS_KEY);
+		return stored ? JSON.parse(stored) : {};
+	} catch { return {}; }
+};
+
+export const skyboxPresetsState = $state<SkyboxPresetsState>({
+	presets: loadUserPresets(),
+	globalPresetId: loadGlobalPresetId(),
+	scenePresets: loadScenePresets()
+});
+
 let animationFrameId: number | null = null;
 
 const lerp = (start: number, end: number, t: number): number => {
@@ -509,6 +556,71 @@ const transitionToPreset = (fromPreset: SkyPreset, toPreset: SkyPreset, duration
 	animationFrameId = requestAnimationFrame(animate);
 };
 
+const applyPresetObject = (preset: SkyPreset) => {
+	const duration = transitionState.transitionDuration;
+
+	if (duration <= 0) {
+		if (animationFrameId !== null) {
+			cancelAnimationFrame(animationFrameId);
+			animationFrameId = null;
+		}
+		transitionState.isTransitioning = false;
+
+		skyboxState.turbidity = preset.turbidity;
+		skyboxState.rayleigh = preset.rayleigh;
+		skyboxState.azimuth = preset.azimuth;
+		skyboxState.elevation = preset.elevation;
+		skyboxState.mieCoefficient = preset.mieCoefficient;
+		skyboxState.mieDirectionalG = preset.mieDirectionalG;
+		skyboxState.exposure = preset.exposure;
+
+		if (preset.stars) {
+			const s = preset.stars;
+			starsState.count = s.count ?? 5000;
+			starsState.radius = s.radius ?? 4.5;
+			starsState.depth = s.depth ?? 50;
+			starsState.factor = s.factor ?? 4;
+			starsState.fade = s.fade ?? true;
+			starsState.lightness = s.lightness ?? 0.5;
+			starsState.opacity = s.opacity ?? 1;
+			starsState.saturation = s.saturation ?? 0.5;
+			starsState.speed = s.speed ?? 0.5;
+			starsState.layer1Count = Math.round((s.count ?? 5000) * 0.6);
+			starsState.layer2Count = Math.round((s.count ?? 5000) * 0.45);
+			starsState.layer1Speed = (s.speed ?? 0.5) * 1.5;
+			starsState.layer2Speed = (s.speed ?? 0.5) * 0.4;
+			starsState.layer1Factor = (s.factor ?? 4) * 0.7;
+			starsState.layer2Factor = (s.factor ?? 4) * 0.95;
+		}
+	} else {
+		const currentPreset: SkyPreset = {
+			id: 'current',
+			name: 'Current',
+			turbidity: skyboxState.turbidity,
+			rayleigh: skyboxState.rayleigh,
+			azimuth: skyboxState.azimuth,
+			elevation: skyboxState.elevation,
+			mieCoefficient: skyboxState.mieCoefficient,
+			mieDirectionalG: skyboxState.mieDirectionalG,
+			exposure: skyboxState.exposure,
+			stars: {
+				id: 'current',
+				name: 'Current',
+				count: starsState.count,
+				radius: starsState.radius,
+				depth: starsState.depth,
+				factor: starsState.factor,
+				fade: starsState.fade,
+				lightness: starsState.lightness,
+				opacity: starsState.opacity,
+				saturation: starsState.saturation,
+				speed: starsState.speed
+			}
+		};
+		transitionToPreset(currentPreset, preset, duration);
+	}
+};
+
 export const skyboxActions = {
 	reset() {
 		if (animationFrameId !== null) {
@@ -535,73 +647,9 @@ export const skyboxActions = {
 			logSkybox.warn(`Unknown skybox preset: ${presetId}`);
 			return;
 		}
-
+		applyPresetObject(preset);
 		const duration = transitionState.transitionDuration;
-
-		if (duration <= 0) {
-			if (animationFrameId !== null) {
-				cancelAnimationFrame(animationFrameId);
-				animationFrameId = null;
-			}
-			transitionState.isTransitioning = false;
-
-			skyboxState.turbidity = preset.turbidity;
-			skyboxState.rayleigh = preset.rayleigh;
-			skyboxState.azimuth = preset.azimuth;
-			skyboxState.elevation = preset.elevation;
-			skyboxState.mieCoefficient = preset.mieCoefficient;
-			skyboxState.mieDirectionalG = preset.mieDirectionalG;
-			skyboxState.exposure = preset.exposure;
-
-			if (preset.stars) {
-				const s = preset.stars;
-				starsState.count = s.count ?? 5000;
-				starsState.radius = s.radius ?? 4.5;
-				starsState.depth = s.depth ?? 50;
-				starsState.factor = s.factor ?? 4;
-				starsState.fade = s.fade ?? true;
-				starsState.lightness = s.lightness ?? 0.5;
-				starsState.opacity = s.opacity ?? 1;
-				starsState.saturation = s.saturation ?? 0.5;
-				starsState.speed = s.speed ?? 0.5;
-				starsState.layer1Count = Math.round((s.count ?? 5000) * 0.6);
-				starsState.layer2Count = Math.round((s.count ?? 5000) * 0.45);
-				starsState.layer1Speed = (s.speed ?? 0.5) * 1.5;
-				starsState.layer2Speed = (s.speed ?? 0.5) * 0.4;
-				starsState.layer1Factor = (s.factor ?? 4) * 0.7;
-				starsState.layer2Factor = (s.factor ?? 4) * 0.95;
-			}
-
-			logSkybox.info(`Skybox preset applied (instant): ${preset.name}`);
-		} else {
-			const currentPreset: SkyPreset = {
-				id: 'current',
-				name: 'Current',
-				turbidity: skyboxState.turbidity,
-				rayleigh: skyboxState.rayleigh,
-				azimuth: skyboxState.azimuth,
-				elevation: skyboxState.elevation,
-				mieCoefficient: skyboxState.mieCoefficient,
-				mieDirectionalG: skyboxState.mieDirectionalG,
-				exposure: skyboxState.exposure,
-				stars: {
-					id: 'current',
-					name: 'Current',
-					count: starsState.count,
-					radius: starsState.radius,
-					depth: starsState.depth,
-					factor: starsState.factor,
-					fade: starsState.fade,
-					lightness: starsState.lightness,
-					opacity: starsState.opacity,
-					saturation: starsState.saturation,
-					speed: starsState.speed
-				}
-			};
-
-			transitionToPreset(currentPreset, preset, duration);
-			logSkybox.info(`Skybox transition started: → ${preset.name} (${duration}ms)`);
-		}
+		logSkybox.info(`Skybox preset: ${preset.name}${duration > 0 ? ` (${duration}ms)` : ' (instant)'}`);
 	},
 
 	setTransitionDuration(duration: number) {
@@ -689,5 +737,97 @@ export const skyboxActions = {
 
 	setStarsFade(value: boolean) {
 		starsState.fade = value;
+	},
+
+	savePreset(name: string): { success: boolean; error?: string } {
+		const trimmedName = name.trim();
+		if (!trimmedName) return { success: false, error: 'Name cannot be empty' };
+		const duplicate = skyboxPresetsState.presets.find(
+			(p) => p.name.toLowerCase() === trimmedName.toLowerCase()
+		);
+		if (duplicate) return { success: false, error: 'Name already exists' };
+
+		const snapshot: SkyPreset = {
+			id: crypto.randomUUID(),
+			name: trimmedName,
+			turbidity: skyboxState.turbidity,
+			rayleigh: skyboxState.rayleigh,
+			azimuth: skyboxState.azimuth,
+			elevation: skyboxState.elevation,
+			mieCoefficient: skyboxState.mieCoefficient,
+			mieDirectionalG: skyboxState.mieDirectionalG,
+			exposure: skyboxState.exposure,
+			stars: {
+				id: 'saved',
+				name: 'Saved',
+				count: starsState.count,
+				radius: starsState.radius,
+				depth: starsState.depth,
+				factor: starsState.factor,
+				fade: starsState.fade,
+				lightness: starsState.lightness,
+				opacity: starsState.opacity,
+				saturation: starsState.saturation,
+				speed: starsState.speed
+			}
+		};
+		const preset: SkyboxUserPreset = {
+			id: crypto.randomUUID(),
+			name: trimmedName,
+			createdAt: Date.now(),
+			snapshot
+		};
+		skyboxPresetsState.presets = [...skyboxPresetsState.presets, preset];
+		const toStore = skyboxPresetsState.presets.filter((p) => !BUNDLED_SKYBOX_PRESETS.find((b) => b.id === p.id));
+		try { localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(toStore)); } catch { /* ignore */ }
+		logSkybox.info(`Skybox preset saved: "${trimmedName}"`);
+		return { success: true };
+	},
+
+	loadUserPreset(presetId: string) {
+		const preset = skyboxPresetsState.presets.find((p) => p.id === presetId);
+		if (!preset) return;
+		applyPresetObject(preset.snapshot);
+		logSkybox.info(`Skybox user preset loaded: "${preset.name}"`);
+	},
+
+	deletePreset(presetId: string) {
+		if (BUNDLED_SKYBOX_PRESETS.find((p) => p.id === presetId)) {
+			logSkybox.warn(`Cannot delete bundled preset`);
+			return;
+		}
+		const preset = skyboxPresetsState.presets.find((p) => p.id === presetId);
+		skyboxPresetsState.presets = skyboxPresetsState.presets.filter((p) => p.id !== presetId);
+		const toStore = skyboxPresetsState.presets.filter((p) => !BUNDLED_SKYBOX_PRESETS.find((b) => b.id === p.id));
+		try { localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(toStore)); } catch { /* ignore */ }
+		// Clear global/scene assignments pointing to deleted preset
+		if (skyboxPresetsState.globalPresetId === presetId) {
+			skyboxPresetsState.globalPresetId = null;
+			try { localStorage.removeItem(GLOBAL_PRESET_KEY); } catch { /* ignore */ }
+		}
+		for (const sceneId of Object.keys(skyboxPresetsState.scenePresets)) {
+			if (skyboxPresetsState.scenePresets[sceneId] === presetId) {
+				skyboxPresetsState.scenePresets[sceneId] = null;
+			}
+		}
+		try { localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(skyboxPresetsState.scenePresets)); } catch { /* ignore */ }
+		logSkybox.info(`Skybox preset deleted: "${preset?.name}"`);
+	},
+
+	setGlobalPreset(presetId: string | null) {
+		const preset = presetId ? skyboxPresetsState.presets.find((p) => p.id === presetId) : null;
+		skyboxPresetsState.globalPresetId = presetId;
+		try {
+			if (presetId) localStorage.setItem(GLOBAL_PRESET_KEY, presetId);
+			else localStorage.removeItem(GLOBAL_PRESET_KEY);
+		} catch { /* ignore */ }
+		logSkybox.info(`Skybox global preset: ${preset ? `"${preset.name}"` : 'none'}`);
+	},
+
+	setScenePreset(sceneId: string, presetId: string | null) {
+		const preset = presetId ? skyboxPresetsState.presets.find((p) => p.id === presetId) : null;
+		skyboxPresetsState.scenePresets[sceneId] = presetId;
+		try { localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(skyboxPresetsState.scenePresets)); } catch { /* ignore */ }
+		logSkybox.info(`Skybox scene preset [${sceneId}]: ${preset ? `"${preset.name}"` : 'none'}`);
 	}
 };

@@ -40,9 +40,41 @@
 	} from 'postprocessing';
 	import { settingsState } from '$extensions/settings/settings.svelte';
 	import { logPostprocessing } from '$extensions/logger/logger.svelte';
-	import { postprocessingState } from '$extensions/postprocessing/postprocessing.svelte';
+	import { postprocessingState, postprocessingPresetsState } from '$extensions/postprocessing/postprocessing.svelte';
+	import { sceneState } from '$extensions/scene/scene.svelte';
 
-	const s = postprocessingState;
+	const s = $derived.by((): typeof postprocessingState => {
+		const { globalPresetId, scenePresets, presets } = postprocessingPresetsState;
+		const scenePresetId = scenePresets[sceneState.currentScene] ?? null;
+
+		const globalSettings = globalPresetId
+			? (presets.find((p) => p.id === globalPresetId)?.settings ?? null)
+			: null;
+		const sceneSettings = scenePresetId
+			? (presets.find((p) => p.id === scenePresetId)?.settings ?? null)
+			: null;
+
+		// No presets assigned — use manual postprocessingState
+		if (!globalSettings && !sceneSettings) return postprocessingState;
+		if (!globalSettings) return sceneSettings!;
+		if (!sceneSettings) return globalSettings;
+
+		// Merge global + scene: same effect active in both → warn, scene wins
+		const merged = JSON.parse(JSON.stringify(globalSettings)) as typeof postprocessingState;
+		const keys = Object.keys(merged) as (keyof typeof postprocessingState)[];
+		for (const key of keys) {
+			const g = (globalSettings as any)[key] as { enabled: boolean };
+			const sc = (sceneSettings as any)[key] as { enabled: boolean };
+			if (g.enabled && sc.enabled) {
+				logPostprocessing.warn(`Effect "${key}" active in both global & scene preset — scene wins`);
+				(merged as any)[key] = sc;
+			} else if (sc.enabled) {
+				(merged as any)[key] = sc;
+			}
+			// else: global is already in merged (from JSON.parse of globalSettings)
+		}
+		return merged;
+	});
 
 	const { scene, renderer, camera, size, autoRender, renderStage } = useThrelte();
 

@@ -1,5 +1,6 @@
 import type { KernelSize, BlendFunction, ToneMappingMode } from 'postprocessing';
 import { logPostprocessing } from '$extensions/logger/logger.svelte';
+import { BUNDLED_PP_PRESETS } from './bundledPresets';
 import type {
 	PostProcessingState,
 	PostProcessingPreset,
@@ -38,6 +39,8 @@ export type {
 } from './types';
 
 const PRESETS_KEY = 'spaceplate-postprocessing-presets';
+const GLOBAL_PRESET_KEY = 'spaceplate-pp-global-preset';
+const SCENE_PRESETS_KEY = 'spaceplate-pp-scene-presets';
 
 const defaultBloom = (): BloomState => ({
 	enabled: false,
@@ -301,20 +304,37 @@ const defaultState = (): PostProcessingState => ({
 });
 
 const loadPresets = (): PostProcessingPreset[] => {
+	let stored: PostProcessingPreset[] = [];
 	try {
-		const stored = localStorage.getItem(PRESETS_KEY);
-		return stored ? JSON.parse(stored) : [];
-	} catch {
-		return [];
+		const raw = localStorage.getItem(PRESETS_KEY);
+		stored = raw ? JSON.parse(raw) : [];
+	} catch { /* ignore */ }
+	// Merge: bundled first, then localStorage additions (localStorage wins on id conflict)
+	const merged = [...BUNDLED_PP_PRESETS];
+	for (const preset of stored) {
+		if (!merged.find((p) => p.id === preset.id)) {
+			merged.push(preset);
+		}
 	}
+	return merged;
 };
 
 const savePresets = (presets: PostProcessingPreset[]) => {
 	try {
-		localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
-	} catch {
-		/* ignore */
-	}
+		const toStore = presets.filter((p) => !BUNDLED_PP_PRESETS.find((b) => b.id === p.id));
+		localStorage.setItem(PRESETS_KEY, JSON.stringify(toStore));
+	} catch { /* ignore */ }
+};
+
+const loadGlobalPresetId = (): string | null => {
+	try { return localStorage.getItem(GLOBAL_PRESET_KEY); } catch { return null; }
+};
+
+const loadScenePresets = (): Record<string, string | null> => {
+	try {
+		const stored = localStorage.getItem(SCENE_PRESETS_KEY);
+		return stored ? JSON.parse(stored) : {};
+	} catch { return {}; }
 };
 
 export const postprocessingState = $state<PostProcessingState>(defaultState());
@@ -322,9 +342,13 @@ export const postprocessingState = $state<PostProcessingState>(defaultState());
 export const postprocessingPresetsState = $state<{
 	presets: PostProcessingPreset[];
 	currentPresetId: string | null;
+	globalPresetId: string | null;
+	scenePresets: Record<string, string | null>;
 }>({
 	presets: loadPresets(),
-	currentPresetId: null
+	currentPresetId: null,
+	globalPresetId: loadGlobalPresetId(),
+	scenePresets: loadScenePresets()
 });
 
 export const postprocessingActions = {
@@ -446,6 +470,10 @@ export const postprocessingActions = {
 	},
 
 	deletePreset(presetId: string) {
+		if (BUNDLED_PP_PRESETS.find((p) => p.id === presetId)) {
+			logPostprocessing.warn(`Cannot delete bundled preset`);
+			return;
+		}
 		const isCurrentPreset = postprocessingPresetsState.currentPresetId === presetId;
 		const presetName = postprocessingPresetsState.presets.find((p) => p.id === presetId)?.name;
 		postprocessingPresetsState.presets = postprocessingPresetsState.presets.filter(
@@ -484,6 +512,20 @@ export const postprocessingActions = {
 			state.depthEffect.enabled = false;
 			postprocessingPresetsState.currentPresetId = null;
 		}
+		// Clear from global/scene preset assignments
+		if (postprocessingPresetsState.globalPresetId === presetId) {
+			postprocessingPresetsState.globalPresetId = null;
+			try { localStorage.removeItem(GLOBAL_PRESET_KEY); } catch { /* ignore */ }
+		}
+		const scenePresets = postprocessingPresetsState.scenePresets;
+		for (const sceneId of Object.keys(scenePresets)) {
+			if (scenePresets[sceneId] === presetId) {
+				scenePresets[sceneId] = null;
+			}
+		}
+		try {
+			localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(scenePresets));
+		} catch { /* ignore */ }
 	},
 
 	renamePreset(presetId: string, newName: string) {
@@ -503,5 +545,24 @@ export const postprocessingActions = {
 			(p) => p.id === postprocessingPresetsState.currentPresetId
 		);
 		return preset?.name ?? null;
+	},
+
+	setGlobalPreset(presetId: string | null) {
+		const preset = presetId ? postprocessingPresetsState.presets.find(p => p.id === presetId) : null;
+		postprocessingPresetsState.globalPresetId = presetId;
+		try {
+			if (presetId) localStorage.setItem(GLOBAL_PRESET_KEY, presetId);
+			else localStorage.removeItem(GLOBAL_PRESET_KEY);
+		} catch { /* ignore */ }
+		logPostprocessing.info(`Global preset: ${preset ? `"${preset.name}"` : 'none'}`);
+	},
+
+	setScenePreset(sceneId: string, presetId: string | null) {
+		const preset = presetId ? postprocessingPresetsState.presets.find(p => p.id === presetId) : null;
+		postprocessingPresetsState.scenePresets[sceneId] = presetId;
+		try {
+			localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(postprocessingPresetsState.scenePresets));
+		} catch { /* ignore */ }
+		logPostprocessing.info(`Scene preset [${sceneId}]: ${preset ? `"${preset.name}"` : 'none'}`);
 	}
 };

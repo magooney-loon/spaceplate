@@ -7,8 +7,13 @@
 		postprocessingPresetsState,
 		postprocessingActions
 	} from '$extensions/postprocessing/postprocessing.svelte';
+	import { BUNDLED_PP_PRESETS } from './bundledPresets';
+
+	import type { Snippet } from 'svelte';
 
 	const { createExtension } = useStudio();
+
+	let { children }: { children?: Snippet } = $props();
 
 	const effectNames: Record<string, string> = {
 		bloom: 'Bloom',
@@ -137,6 +142,7 @@
 		state: () => ({}),
 		actions: {}
 	});
+
 
 	const saveAsPreset = () => {
 		const name = prompt('Enter preset name:');
@@ -808,19 +814,18 @@
 		<Separator />
 
 		<Folder title="Load Preset" expanded={false}>
-			{#if postprocessingPresetsState.presets.length > 0}
-				{#each postprocessingPresetsState.presets as preset (preset.id)}
-					<Button
-						title="Load: {preset.name}"
-						on:click={() => postprocessingActions.loadPreset(preset.id)}
-					/>
+			{#each postprocessingPresetsState.presets as preset (preset.id)}
+				{@const isBundled = BUNDLED_PP_PRESETS.find((b) => b.id === preset.id)}
+				<Button
+					title="{isBundled ? '📦 ' : ''}{preset.name}"
+					on:click={() => postprocessingActions.loadPreset(preset.id)}
+				/>
 					<span style="font-size: 10px; color: rgba(255,255,255,0.5);">
-						{getEnabledEffects(preset)}
-					</span>
-				{/each}
+					{getEnabledEffects(preset)}
+				</span>
 			{:else}
 				<span style="font-size: 11px; color: rgba(255,255,255,0.5);">No presets saved</span>
-			{/if}
+			{/each}
 		</Folder>
 
 		<Folder title="Manage Presets" expanded={false}>
@@ -843,4 +848,4 @@
 	</DropDownPane>
 </ToolbarItem>
 
-<slot />
+{@render children?.()}

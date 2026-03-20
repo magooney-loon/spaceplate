@@ -2,7 +2,14 @@
 	import { T } from '@threlte/core';
 	import { Sky, Stars as StarsComponent } from '@threlte/extras';
 
-	import { skyboxState, starsState } from '$extensions/skybox/skybox.svelte';
+	import { skyboxState, starsState, skyboxPresetsState, skyboxActions } from '$extensions/skybox/skybox.svelte';
+	import { sceneState } from '$extensions/scene/scene.svelte';
+
+	$effect(() => {
+		const scenePresetId = skyboxPresetsState.scenePresets[sceneState.currentScene] ?? null;
+		const presetId = scenePresetId ?? skyboxPresetsState.globalPresetId;
+		if (presetId) skyboxActions.loadUserPreset(presetId);
+	});
 
 	const effectiveLayer1Count = $derived.by(() => {
 		return Math.round(starsState.layer1Count);

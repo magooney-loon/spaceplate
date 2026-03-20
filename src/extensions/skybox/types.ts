@@ -69,6 +69,19 @@ export type TransitionState = {
 	transitionDuration: number;
 };
 
+export type SkyboxUserPreset = {
+	id: string;
+	name: string;
+	createdAt: number;
+	snapshot: SkyPreset;
+};
+
+export type SkyboxPresetsState = {
+	presets: SkyboxUserPreset[];
+	globalPresetId: string | null;
+	scenePresets: Record<string, string | null>;
+};
+
 export type ExtensionState = SkyState;
 
 export type ExtensionActions = Record<string, (...args: any[]) => void>;

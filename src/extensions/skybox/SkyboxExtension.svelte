@@ -7,10 +7,12 @@
 		starsState,
 		transitionState,
 		skyboxActions,
+		skyboxPresetsState,
 		SKY_PRESETS,
 		STAR_PRESETS,
 		TRANSITION_DURATIONS
 	} from '$extensions/skybox/skybox.svelte';
+	import { BUNDLED_SKYBOX_PRESETS } from './bundledPresets';
 
 	interface Props {
 		children?: Snippet;
@@ -51,10 +53,32 @@
 	};
 
 	const isDurationSelected = (value: number) => transitionState.transitionDuration === value;
+
 </script>
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiWeatherSunny" title="Sky">
+		<Folder title="Saved Presets" expanded={true}>
+			{#each skyboxPresetsState.presets as preset (preset.id)}
+				{@const isBundled = BUNDLED_SKYBOX_PRESETS.find((b) => b.id === preset.id)}
+				<Button title="{isBundled ? '📦 ' : ''}▶ {preset.name}" on:click={() => skyboxActions.loadUserPreset(preset.id)} />
+					{#if !isBundled}
+					<Button title="✕ Delete" on:click={() => skyboxActions.deletePreset(preset.id)} />
+				{/if}
+			{/each}
+			{#if skyboxPresetsState.presets.length > 0}
+				<Separator />
+			{/if}
+			<Button title="Save Current as Preset" on:click={() => {
+				const name = prompt('Preset name:');
+				if (name) {
+					const result = skyboxActions.savePreset(name);
+					if (!result.success) alert(result.error);
+				}
+			}} />
+		</Folder>
+		<Separator />
+
 		<Folder title="Sky Presets" expanded={true}>
 			{#each Object.entries(presetCategories) as [category, presetIds]}
 				<Folder title={presetCategoryNames[category]} expanded={false}>
