@@ -35,6 +35,7 @@ jobs:
         run: pnpm build
         env:
           BASE_PATH: /spaceplate/
+          VITE_GAME_ENGINE: 'true'
 
       - uses: actions/upload-pages-artifact@v3
         with:
