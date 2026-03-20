@@ -53,7 +53,8 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								bind:checked={settingsState.audio.sfxEnabled}
+								checked={settingsState.audio.sfxEnabled}
+								onchange={() => audioActions.toggleSfx()}
 								class="w-4 h-4"
 							/>
 							Sound Effects
@@ -75,7 +76,8 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								bind:checked={settingsState.audio.musicEnabled}
+								checked={settingsState.audio.musicEnabled}
+								onchange={() => audioActions.toggleMusic()}
 								class="w-4 h-4"
 							/>
 							Music
@@ -97,7 +99,8 @@
 						<label class="flex items-center gap-2 cursor-pointer">
 							<input
 								type="checkbox"
-								bind:checked={settingsState.audio.ambienceEnabled}
+								checked={settingsState.audio.ambienceEnabled}
+								onchange={() => audioActions.toggleAmbience()}
 								class="w-4 h-4"
 							/>
 							Ambient

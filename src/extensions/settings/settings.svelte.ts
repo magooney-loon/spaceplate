@@ -71,17 +71,17 @@ export const audioActions: AudioActions = {
 	toggleMusic() {
 		settingsState.audio.musicEnabled = !settingsState.audio.musicEnabled;
 		toStorage(MUSIC_ENABLED_KEY, String(settingsState.audio.musicEnabled));
-		logSound.info('Music:', settingsState.audio.musicEnabled ? 'enabled' : 'disabled');
+		logSettings.info('Music:', settingsState.audio.musicEnabled ? 'enabled' : 'disabled');
 	},
 	toggleAmbience() {
 		settingsState.audio.ambienceEnabled = !settingsState.audio.ambienceEnabled;
 		toStorage(AMBIENCE_ENABLED_KEY, String(settingsState.audio.ambienceEnabled));
-		logSound.info('Ambience:', settingsState.audio.ambienceEnabled ? 'enabled' : 'disabled');
+		logSettings.info('Ambience:', settingsState.audio.ambienceEnabled ? 'enabled' : 'disabled');
 	},
 	toggleSfx() {
 		settingsState.audio.sfxEnabled = !settingsState.audio.sfxEnabled;
 		toStorage(SFX_ENABLED_KEY, String(settingsState.audio.sfxEnabled));
-		logSound.info('SFX:', settingsState.audio.sfxEnabled ? 'enabled' : 'disabled');
+		logSettings.info('SFX:', settingsState.audio.sfxEnabled ? 'enabled' : 'disabled');
 	},
 	setMusicVolume(v: number) {
 		settingsState.audio.musicVolume = v;
