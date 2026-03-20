@@ -32,7 +32,11 @@
 
 	const nebulaColors = $derived.by(() => {
 		const seed = hashCode(planetId);
-		const cacheKey = createPlanetSmokeCacheKey(planetId, temperature, settingsState.graphics.quality);
+		const cacheKey = createPlanetSmokeCacheKey(
+			planetId,
+			temperature,
+			settingsState.graphics.quality
+		);
 		return planetSmokeCache.getOrSet(cacheKey, () => {
 			const atmosphericColors = getPlanetAtmosphericColors(temperature, seed);
 			return atmosphericColors.colors.map((hex) => new THREE.Color(hex));
@@ -95,7 +99,7 @@
 				.lerp(colors[colorIndex2], Math.random() * 0.5)
 				.lerp(colors[colorIndex3], Math.random() * 0.3);
 
-			const intensity = 0.32 - depthFactor * 0.08 + Math.random() * 0.12;
+			const intensity = 0.9 - depthFactor * 0.08 + Math.random() * 0.12;
 			color.multiplyScalar(intensity);
 
 			tempPosition.copy(position);
@@ -234,8 +238,7 @@
 					waveRadius * Math.sin(phi) * Math.sin(theta) +
 					Math.cos(time * 0.06 + i * 0.1) * (1.5 + depthWaveFactor);
 				particle.position.z =
-					waveRadius * Math.cos(phi) +
-					Math.sin(time * 0.04 + i * 0.07) * (1.5 + depthWaveFactor);
+					waveRadius * Math.cos(phi) + Math.sin(time * 0.04 + i * 0.07) * (1.5 + depthWaveFactor);
 
 				particle.rotation += particle.rotationSpeed;
 				tempQuaternion.setFromAxisAngle(particle.rotationAxis, particle.rotation);

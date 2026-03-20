@@ -345,7 +345,7 @@ const defaultState = (): SkyState => ({
 	turbidity: 10,
 	rayleigh: 3,
 	azimuth: 180,
-	elevation: 2,
+	elevation: -0.9,
 	mieCoefficient: 0.005,
 	mieDirectionalG: 0.7,
 	exposure: 0.5,
@@ -405,7 +405,9 @@ const loadUserPresets = (): SkyboxUserPreset[] => {
 	try {
 		const raw = localStorage.getItem(USER_PRESETS_KEY);
 		stored = raw ? JSON.parse(raw) : [];
-	} catch { /* ignore */ }
+	} catch {
+		/* ignore */
+	}
 	const merged = [...BUNDLED_SKYBOX_PRESETS];
 	for (const preset of stored) {
 		if (!merged.find((p) => p.id === preset.id)) {
@@ -416,14 +418,20 @@ const loadUserPresets = (): SkyboxUserPreset[] => {
 };
 
 const loadGlobalPresetId = (): string | null => {
-	try { return localStorage.getItem(GLOBAL_PRESET_KEY); } catch { return null; }
+	try {
+		return localStorage.getItem(GLOBAL_PRESET_KEY);
+	} catch {
+		return null;
+	}
 };
 
 const loadScenePresets = (): Record<string, string | null> => {
 	try {
 		const stored = localStorage.getItem(SCENE_PRESETS_KEY);
 		return stored ? JSON.parse(stored) : {};
-	} catch { return {}; }
+	} catch {
+		return {};
+	}
 };
 
 export const skyboxPresetsState = $state<SkyboxPresetsState>({
@@ -644,7 +652,14 @@ const loadEnvState = (): EnvironmentState => {
 			cubeIsBackground: true
 		};
 	} catch {
-		return { mode: 'sky', envTextureId: null, envIsBackground: true, envGround: false, cubeTextureId: null, cubeIsBackground: true };
+		return {
+			mode: 'sky',
+			envTextureId: null,
+			envIsBackground: true,
+			envGround: false,
+			cubeTextureId: null,
+			cubeIsBackground: true
+		};
 	}
 };
 
@@ -678,7 +693,9 @@ export const skyboxActions = {
 		}
 		applyPresetObject(preset);
 		const duration = transitionState.transitionDuration;
-		logSkybox.info(`Skybox preset: ${preset.name}${duration > 0 ? ` (${duration}ms)` : ' (instant)'}`);
+		logSkybox.info(
+			`Skybox preset: ${preset.name}${duration > 0 ? ` (${duration}ms)` : ' (instant)'}`
+		);
 	},
 
 	setTransitionDuration(duration: number) {
@@ -807,8 +824,14 @@ export const skyboxActions = {
 			snapshot
 		};
 		skyboxPresetsState.presets = [...skyboxPresetsState.presets, preset];
-		const toStore = skyboxPresetsState.presets.filter((p) => !BUNDLED_SKYBOX_PRESETS.find((b) => b.id === p.id));
-		try { localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(toStore)); } catch { /* ignore */ }
+		const toStore = skyboxPresetsState.presets.filter(
+			(p) => !BUNDLED_SKYBOX_PRESETS.find((b) => b.id === p.id)
+		);
+		try {
+			localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(toStore));
+		} catch {
+			/* ignore */
+		}
 		logSkybox.info(`Skybox preset saved: "${trimmedName}"`);
 		return { success: true };
 	},
@@ -827,19 +850,33 @@ export const skyboxActions = {
 		}
 		const preset = skyboxPresetsState.presets.find((p) => p.id === presetId);
 		skyboxPresetsState.presets = skyboxPresetsState.presets.filter((p) => p.id !== presetId);
-		const toStore = skyboxPresetsState.presets.filter((p) => !BUNDLED_SKYBOX_PRESETS.find((b) => b.id === p.id));
-		try { localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(toStore)); } catch { /* ignore */ }
+		const toStore = skyboxPresetsState.presets.filter(
+			(p) => !BUNDLED_SKYBOX_PRESETS.find((b) => b.id === p.id)
+		);
+		try {
+			localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(toStore));
+		} catch {
+			/* ignore */
+		}
 		// Clear global/scene assignments pointing to deleted preset
 		if (skyboxPresetsState.globalPresetId === presetId) {
 			skyboxPresetsState.globalPresetId = null;
-			try { localStorage.removeItem(GLOBAL_PRESET_KEY); } catch { /* ignore */ }
+			try {
+				localStorage.removeItem(GLOBAL_PRESET_KEY);
+			} catch {
+				/* ignore */
+			}
 		}
 		for (const sceneId of Object.keys(skyboxPresetsState.scenePresets)) {
 			if (skyboxPresetsState.scenePresets[sceneId] === presetId) {
 				skyboxPresetsState.scenePresets[sceneId] = null;
 			}
 		}
-		try { localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(skyboxPresetsState.scenePresets)); } catch { /* ignore */ }
+		try {
+			localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(skyboxPresetsState.scenePresets));
+		} catch {
+			/* ignore */
+		}
 		logSkybox.info(`Skybox preset deleted: "${preset?.name}"`);
 	},
 
@@ -849,20 +886,30 @@ export const skyboxActions = {
 		try {
 			if (presetId) localStorage.setItem(GLOBAL_PRESET_KEY, presetId);
 			else localStorage.removeItem(GLOBAL_PRESET_KEY);
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 		logSkybox.info(`Skybox global preset: ${preset ? `"${preset.name}"` : 'none'}`);
 	},
 
 	setScenePreset(sceneId: string, presetId: string | null) {
 		const preset = presetId ? skyboxPresetsState.presets.find((p) => p.id === presetId) : null;
 		skyboxPresetsState.scenePresets[sceneId] = presetId;
-		try { localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(skyboxPresetsState.scenePresets)); } catch { /* ignore */ }
+		try {
+			localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(skyboxPresetsState.scenePresets));
+		} catch {
+			/* ignore */
+		}
 		logSkybox.info(`Skybox scene preset [${sceneId}]: ${preset ? `"${preset.name}"` : 'none'}`);
 	},
 
 	setMode(mode: EnvironmentState['mode']) {
 		environmentState.mode = mode;
-		try { localStorage.setItem(ENV_MODE_KEY, mode); } catch { /* ignore */ }
+		try {
+			localStorage.setItem(ENV_MODE_KEY, mode);
+		} catch {
+			/* ignore */
+		}
 		logSkybox.info(`Skybox mode: ${mode}`);
 	},
 
@@ -871,7 +918,9 @@ export const skyboxActions = {
 		try {
 			if (id) localStorage.setItem(ENV_TEXTURE_KEY, id);
 			else localStorage.removeItem(ENV_TEXTURE_KEY);
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 		const entry = id ? ENV_TEXTURES.find((t) => t.id === id) : null;
 		logSkybox.info(`Environment texture: ${entry?.name ?? 'none'}`);
 	},
@@ -881,7 +930,9 @@ export const skyboxActions = {
 		try {
 			if (id) localStorage.setItem(ENV_CUBE_KEY, id);
 			else localStorage.removeItem(ENV_CUBE_KEY);
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 		const entry = id ? CUBE_TEXTURES.find((t) => t.id === id) : null;
 		logSkybox.info(`Cube texture: ${entry?.name ?? 'none'}`);
 	},
