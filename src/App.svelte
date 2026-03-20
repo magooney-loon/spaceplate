@@ -54,9 +54,9 @@
 				extensions={[
 					SceneExtension,
 					PostProcessingExtension,
+					SkyboxExtension,
 					SoundExtension,
-					LoggerExtension,
-					SkyboxExtension
+					LoggerExtension
 				]}
 			>
 				<Camera />
