@@ -4,7 +4,9 @@
   <p>Example Game: <a href="https://github.com/magooney-loon/JustSurvive">⚔️ JustSurvive</a></p>
 </div>
 
-<img width="1900" height="1955" alt="Screenshot_2026-03-09_19-16-56" src="https://github.com/user-attachments/assets/69ce0322-4c56-4d2c-b403-487354e3e11f" />
+<img width="2507" height="1587" alt="engi1" src="https://github.com/user-attachments/assets/19b9ee92-866d-427c-a03a-a6618447d0ed" />
+<img width="2507" height="1587" alt="engi2" src="https://github.com/user-attachments/assets/428ac85b-3de4-4475-ae18-387fdd728717" />
+<img width="2507" height="1587" alt="engi3" src="https://github.com/user-attachments/assets/07682e13-e066-4e58-a55a-4d9b94fdc331" />
 
 <div align="center">
   <table>
