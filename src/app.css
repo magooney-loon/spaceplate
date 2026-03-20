@@ -1,8 +1,9 @@
 @import 'tailwindcss';
 
-#body {
+body {
 	background: #333333;
 	margin: 0;
+	overflow: hidden;
 }
 
 #app {

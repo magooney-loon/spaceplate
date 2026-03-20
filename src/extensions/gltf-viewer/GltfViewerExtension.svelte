@@ -203,10 +203,7 @@
 								/>
 								<Button
 									title="⏹ Stop"
-									on:click={() => {
-										gltfViewerActions.setPlaying(model.id, false);
-										gltfViewerActions.setAnimation(model.id, null);
-									}}
+									on:click={() => gltfViewerActions.setPlaying(model.id, false)}
 								/>
 								<Slider
 									label="Speed"
