@@ -39,6 +39,12 @@
 	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 </script>
 
+{#if import.meta.env.DEV}
+	{#await import('$extensions/gltf-viewer/GltfViewerScene.svelte') then { default: GltfViewerScene }}
+		<GltfViewerScene />
+	{/await}
+{/if}
+
 <T.Group>
 	<T.DirectionalLight position={[0, 10, 0]} intensity={0.5} castShadow />
 
