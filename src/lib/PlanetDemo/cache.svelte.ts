@@ -1,18 +1,13 @@
 import * as THREE from 'three';
+import { logCache, loggerState } from '$extensions/logger/logger.svelte';
 
 /**
- * Centralized caching system for game assets
- * Provides efficient LRU (Least Recently Used) caching with automatic eviction
+ * Centralized caching system for game assets.
+ * Caching is enabled when the 'cache' logger channel is ON.
+ * Debug output is also gated by the same channel.
  */
-
-const DEBUG_MODE = import.meta.env.VITE_CACHE_DEBUG_MODE === 'true';
-
-/**
- * Global caching enable/disable flag
- * Set to false during development to bypass all caching
- * This is useful for debugging and testing without cache interference
- */
-const CACHE_ENABLED = import.meta.env.VITE_CACHE_ENABLED === 'true';
+const CACHE_ENABLED = () => loggerState.cache;
+const DEBUG_MODE = () => loggerState.cache;
 
 // ============================================================================
 // TYPES
@@ -59,8 +54,8 @@ class LRUCache<T> implements TTLCache<T> {
 		this.ttl = config.ttl;
 
 		const ttlInfo = this.ttl ? `TTL: ${(this.ttl / 1000).toFixed(1)}s` : 'No TTL';
-		if (DEBUG_MODE) {
-			console.log(`📦 Created cache: ${this.name} (max size: ${this.maxSize}, ${ttlInfo})`);
+		if (DEBUG_MODE()) {
+			logCache.info(`📦 Created cache: ${this.name} (max size: ${this.maxSize}, ${ttlInfo})`);
 		}
 
 		// Start automatic cleanup if TTL is set
@@ -83,10 +78,10 @@ class LRUCache<T> implements TTLCache<T> {
 
 	get(key: string): T | undefined {
 		// Skip cache if disabled
-		if (!CACHE_ENABLED) {
+		if (!CACHE_ENABLED()) {
 			this.misses++;
-			if (DEBUG_MODE) {
-				console.log(`⏭️  ${this.name} SKIP (disabled): ${key}`);
+			if (DEBUG_MODE()) {
+				logCache.info(`⏭️  ${this.name} SKIP (disabled): ${key}`);
 			}
 			return undefined;
 		}
@@ -98,8 +93,8 @@ class LRUCache<T> implements TTLCache<T> {
 			if (this.isExpired(entry)) {
 				this.cache.delete(key);
 				this.onEvict(entry.value);
-				if (DEBUG_MODE) {
-					console.log(`⏰ ${this.name} EXPIRED: ${key}`);
+				if (DEBUG_MODE()) {
+					logCache.info(`⏰ ${this.name} EXPIRED: ${key}`);
 				}
 				this.misses++;
 				return undefined;
@@ -109,14 +104,14 @@ class LRUCache<T> implements TTLCache<T> {
 			this.cache.delete(key);
 			this.cache.set(key, entry);
 			this.hits++;
-			if (DEBUG_MODE) {
-				console.log(`✅ ${this.name} HIT: ${key} (${this.hits} total hits, ${this.misses} misses)`);
+			if (DEBUG_MODE()) {
+				logCache.info(`✅ ${this.name} HIT: ${key} (${this.hits} total hits, ${this.misses} misses)`);
 			}
 			return entry.value;
 		}
 		this.misses++;
-		if (DEBUG_MODE) {
-			console.log(`❌ ${this.name} MISS: ${key} (${this.hits} hits, ${this.misses} total misses)`);
+		if (DEBUG_MODE()) {
+			logCache.info(`❌ ${this.name} MISS: ${key} (${this.hits} hits, ${this.misses} total misses)`);
 		}
 		return undefined;
 	}
@@ -135,8 +130,8 @@ class LRUCache<T> implements TTLCache<T> {
 	 */
 	delete(key: string): boolean {
 		const result = this.cache.delete(key);
-		if (result && DEBUG_MODE) {
-			console.log(`🗑️  ${this.name} DELETE: ${key}`);
+		if (result && DEBUG_MODE()) {
+			logCache.info(`🗑️  ${this.name} DELETE: ${key}`);
 		}
 		return result;
 	}
@@ -146,9 +141,9 @@ class LRUCache<T> implements TTLCache<T> {
 	 */
 	set(key: string, value: T): void {
 		// Skip cache if disabled
-		if (!CACHE_ENABLED) {
-			if (DEBUG_MODE) {
-				console.log(`⏭️  ${this.name} SKIP SET (disabled): ${key}`);
+		if (!CACHE_ENABLED()) {
+			if (DEBUG_MODE()) {
+				logCache.info(`⏭️  ${this.name} SKIP SET (disabled): ${key}`);
 			}
 			return;
 		}
@@ -159,8 +154,8 @@ class LRUCache<T> implements TTLCache<T> {
 		// Remove if exists (to move to end)
 		if (isUpdate) {
 			this.cache.delete(key);
-			if (DEBUG_MODE) {
-				console.log(`🔄 ${this.name} UPDATE: ${key}`);
+			if (DEBUG_MODE()) {
+				logCache.info(`🔄 ${this.name} UPDATE: ${key}`);
 			}
 		} else if (this.cache.size >= this.maxSize) {
 			// Remove oldest (first in Map) and call onEvict
@@ -171,15 +166,15 @@ class LRUCache<T> implements TTLCache<T> {
 					this.onEvict(evictedEntry.value);
 				}
 				this.cache.delete(firstKey);
-				if (DEBUG_MODE) {
-					console.log(`⚡ ${this.name} EVICT: ${firstKey} (cache full)`);
+				if (DEBUG_MODE()) {
+					logCache.info(`⚡ ${this.name} EVICT: ${firstKey} (cache full)`);
 				}
 			}
 		}
 		this.cache.set(key, entry);
 
-		if (!isUpdate && DEBUG_MODE) {
-			console.log(`➕ ${this.name} SET: ${key} (${this.cache.size}/${this.maxSize})`);
+		if (!isUpdate && DEBUG_MODE()) {
+			logCache.info(`➕ ${this.name} SET: ${key} (${this.cache.size}/${this.maxSize})`);
 		}
 	}
 
@@ -201,8 +196,8 @@ class LRUCache<T> implements TTLCache<T> {
 			}
 		}
 
-		if (removed > 0 && DEBUG_MODE) {
-			console.log(`🧹 ${this.name} CLEANUP: ${removed} expired entries removed`);
+		if (removed > 0 && DEBUG_MODE()) {
+			logCache.info(`🧹 ${this.name} CLEANUP: ${removed} expired entries removed`);
 		}
 
 		return removed;
@@ -243,8 +238,8 @@ class LRUCache<T> implements TTLCache<T> {
 	clear(): void {
 		const size = this.cache.size;
 		this.cache.clear();
-		if (DEBUG_MODE) {
-			console.log(`🧹 ${this.name} CLEAR: ${size} entries removed`);
+		if (DEBUG_MODE()) {
+			logCache.info(`🧹 ${this.name} CLEAR: ${size} entries removed`);
 		}
 	}
 
@@ -267,9 +262,9 @@ class LRUCache<T> implements TTLCache<T> {
 	 */
 	getOrSet(key: string, generator: () => T): T {
 		// If cache is disabled, just generate and return
-		if (!CACHE_ENABLED) {
-			if (DEBUG_MODE) {
-				console.log(`⏭️  ${this.name} GET OR SET SKIP (disabled): ${key}`);
+		if (!CACHE_ENABLED()) {
+			if (DEBUG_MODE()) {
+				logCache.info(`⏭️  ${this.name} GET OR SET SKIP (disabled): ${key}`);
 			}
 			return generator();
 		}
@@ -752,7 +747,7 @@ export const CACHE_NAMES = {
  * Useful for monitoring cache performance during development
  */
 export const logCacheStats = (): void => {
-	if (!DEBUG_MODE) return;
+	if (!DEBUG_MODE()) return;
 
 	console.group('📊 Cache Statistics');
 	const stats = CacheManager.getAllStats();
@@ -777,8 +772,8 @@ export const resetAllCacheStats = (): void => {
 			(cache as any).resetStats();
 		}
 	});
-	if (DEBUG_MODE) {
-		console.log('🔄 All cache statistics reset');
+	if (DEBUG_MODE()) {
+		logCache.info('🔄 All cache statistics reset');
 	}
 };
 
@@ -806,7 +801,7 @@ export const getCacheDetails = (cacheName: string) => {
  * Log detailed information about all caches
  */
 export const logCacheDetails = (): void => {
-	if (!DEBUG_MODE) return;
+	if (!DEBUG_MODE()) return;
 
 	console.group('🔍 Cache Details');
 	const caches = CacheManager.getAllCaches();
@@ -833,7 +828,7 @@ export const logCacheDetails = (): void => {
  * Returns a cleanup function to stop logging
  */
 export const startCacheMonitoring = (intervalMs: number = 5000): (() => void) => {
-	if (!DEBUG_MODE) return () => {};
+	if (!DEBUG_MODE()) return () => {};
 
 	const intervalId = setInterval(() => {
 		logCacheStats();
@@ -843,15 +838,12 @@ export const startCacheMonitoring = (intervalMs: number = 5000): (() => void) =>
 
 	return () => {
 		clearInterval(intervalId);
-		console.log('🛑 Cache monitoring stopped');
+		logCache.info('🛑 Cache monitoring stopped');
 	};
 };
 
-/**
- * Expose debug utilities to window for easy console access
- * Only runs in development when DEBUG_MODE is true
- */
-if (typeof window !== 'undefined' && DEBUG_MODE) {
+// Expose debug utilities to window when cache channel is active
+if (typeof window !== 'undefined') {
 	(window as any).cacheDebug = {
 		logStats: logCacheStats,
 		logDetails: logCacheDetails,
@@ -862,22 +854,6 @@ if (typeof window !== 'undefined' && DEBUG_MODE) {
 		getCache: (name: string) => CacheManager.getCacheByName(name),
 		clearCache: (name: string) => CacheManager.clearCache(name),
 		clearAll: () => CacheManager.clearAll(),
-		isEnabled: () => CACHE_ENABLED,
-		toggleCache: () => {
-			// This is a reference to help developers know where to change it
-			console.log('🔧 To toggle caching, edit CACHE_ENABLED in cache.svelte.ts');
-			console.log(`   Current value: CACHE_ENABLED = ${CACHE_ENABLED}`);
-		}
+		isEnabled: () => CACHE_ENABLED()
 	};
-	console.log('🎯 Cache debug utilities available at window.cacheDebug');
-	console.log('  - window.cacheDebug.logStats()      - Show all cache statistics');
-	console.log('  - window.cacheDebug.logDetails()    - Show detailed cache info');
-	console.log('  - window.cacheDebug.resetStats()    - Reset hit/miss counters');
-	console.log('  - window.cacheDebug.getDetails(name) - Get specific cache details');
-	console.log('  - window.cacheDebug.startMonitoring() - Start periodic logging');
-	console.log('  - window.cacheDebug.isEnabled()    - Check if caching is enabled');
-	console.log(`🚀 Caching is currently ${CACHE_ENABLED ? 'ENABLED' : 'DISABLED'}`);
-	if (!CACHE_ENABLED) {
-		console.warn('⚠️  Caching is DISABLED - set CACHE_ENABLED = true to enable');
-	}
 }

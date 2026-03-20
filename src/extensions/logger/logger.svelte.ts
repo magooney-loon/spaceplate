@@ -7,7 +7,8 @@ export const loggerState = $state<LoggerState>({
 	settings: true,
 	sound: true,
 	postprocessing: true,
-	skybox: true
+	skybox: true,
+	cache: false
 });
 
 export const channelStyles: Record<LoggerChannel, LoggerStyle & { label: string }> = {
@@ -15,7 +16,8 @@ export const channelStyles: Record<LoggerChannel, LoggerStyle & { label: string 
 	settings: { color: '#98c379', bg: 'background:#2d4a2d', text: '⚙', label: 'Settings' },
 	sound: { color: '#c678dd', bg: 'background:#3d2d4a', text: '♪', label: 'Sound' },
 	postprocessing: { color: '#e5c07b', bg: 'background:#4a4020', text: '◈', label: 'Post FX' },
-	skybox: { color: '#56b6c2', bg: 'background:#2d4a4a', text: '☀', label: 'Skybox' }
+	skybox: { color: '#56b6c2', bg: 'background:#2d4a4a', text: '☀', label: 'Skybox' },
+	cache: { color: '#e06c75', bg: 'background:#4a2020', text: '⬡', label: 'Cache' }
 };
 
 const formatTime = () => {
@@ -71,6 +73,7 @@ export const logSettings = createLogger('settings', 'settings');
 export const logSound = createLogger('sound', 'sound');
 export const logPostprocessing = createLogger('postprocessing', 'postprocessing');
 export const logSkybox = createLogger('skybox', 'skybox');
+export const logCache = createLogger('cache', 'cache');
 
 export const loggerActions = {
 	toggleChannel(channel: LoggerChannel) {

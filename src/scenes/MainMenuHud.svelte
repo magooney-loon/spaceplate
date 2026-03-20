@@ -3,8 +3,14 @@
 	import { soundActions } from '$core/GlobalAudio.svelte';
 	import { BASE_URL } from '$extensions/settings/settings.svelte';
 	import SettingsHud from '$scenes/SettingsHud.svelte';
+	import { planetDemoActions, planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
+	import { getPlanetVariantName, hashCode } from '$lib/PlanetDemo/procedural.svelte';
 
 	let showSettings = $state(false);
+
+	const planetName = $derived(
+		getPlanetVariantName(planetDemoState.temperature, hashCode(planetDemoState.planetId))
+	);
 </script>
 
 <!-- Main Menu HUD -->
@@ -17,6 +23,7 @@
 				SPACEPLATE ENGINE
 			</h1>
 			<p class="text-[#aaa] mt-2">Threlte/Svelte/Spacetime</p>
+			<p class="text-[#888] text-sm mt-1 italic">{planetName} · {planetDemoState.temperature}°C</p>
 		</div>
 
 		<!-- Menu Buttons -->
@@ -39,6 +46,16 @@
 				class="px-8 py-4 text-xl bg-white/10 text-white border-2 border-[#4a90d9] rounded-lg cursor-pointer min-w-50"
 			>
 				⚙️ Settings
+			</button>
+
+			<button
+				onclick={() => {
+					soundActions.playClick();
+					planetDemoActions.randomize();
+				}}
+				class="px-8 py-4 text-xl bg-white/5 text-white/70 border border-white/20 rounded-lg cursor-pointer min-w-50 hover:bg-white/10 hover:text-white transition-colors"
+			>
+				🌍 Randomize Planet
 			</button>
 		</div>
 	</div>
