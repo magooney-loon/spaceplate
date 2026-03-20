@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Folder, Slider, Checkbox, Button, List } from 'svelte-tweakpane-ui';
+	import { Folder, Slider, Checkbox, Button, List, Separator } from 'svelte-tweakpane-ui';
+	import type { Snippet } from 'svelte';
 	import { extensionScope, type ExtensionState, type ExtensionActions } from './types';
 	import { settingsState } from '$extensions/settings/settings.svelte';
+
+	interface Props {
+		children?: Snippet;
+	}
+
+	let { children }: Props = $props();
 
 	const { createExtension } = useStudio();
 
@@ -63,41 +70,47 @@
 	];
 </script>
 
-<slot />
-
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiVolumeHigh" title="Sound">
 		<Folder title="Buses" expanded={true}>
-			<Slider
-				label="SFX"
-				value={settingsState.audio.sfxVolume}
-				min={0}
-				max={1}
-				step={0.01}
-				on:change={(e) => ext.setSfxVolume(e.detail.value)}
-			/>
-			<Checkbox label="SFX" bind:value={settingsState.audio.sfxEnabled} />
+			<Folder title="SFX" expanded={true}>
+				<Checkbox label="Enabled" bind:value={settingsState.audio.sfxEnabled} />
+				<Slider
+					label="Volume"
+					value={settingsState.audio.sfxVolume}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setSfxVolume(e.detail.value)}
+				/>
+			</Folder>
 
-			<Slider
-				label="Music"
-				value={settingsState.audio.musicVolume}
-				min={0}
-				max={1}
-				step={0.01}
-				on:change={(e) => ext.setMusicVolume(e.detail.value)}
-			/>
-			<Checkbox label="Music" bind:value={settingsState.audio.musicEnabled} />
+			<Folder title="Music" expanded={true}>
+				<Checkbox label="Enabled" bind:value={settingsState.audio.musicEnabled} />
+				<Slider
+					label="Volume"
+					value={settingsState.audio.musicVolume}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setMusicVolume(e.detail.value)}
+				/>
+			</Folder>
 
-			<Slider
-				label="Ambient"
-				value={settingsState.audio.ambienceVolume}
-				min={0}
-				max={1}
-				step={0.01}
-				on:change={(e) => ext.setAmbienceVolume(e.detail.value)}
-			/>
-			<Checkbox label="Ambient" bind:value={settingsState.audio.ambienceEnabled} />
+			<Folder title="Ambient" expanded={true}>
+				<Checkbox label="Enabled" bind:value={settingsState.audio.ambienceEnabled} />
+				<Slider
+					label="Volume"
+					value={settingsState.audio.ambienceVolume}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => ext.setAmbienceVolume(e.detail.value)}
+				/>
+			</Folder>
 		</Folder>
+
+		<Separator />
 
 		<Folder title="Positional Audio" expanded={false}>
 			<List
@@ -130,8 +143,9 @@
 				step={0.01}
 				on:change={(e) => ext.setRolloffFactor(e.detail.value)}
 			/>
+			<Button title="Reset to Default" on:click={() => ext.resetPositional()} />
 		</Folder>
-
-		<Button title="Reset Positional" on:click={() => ext.resetPositional()} />
 	</DropDownPane>
 </ToolbarItem>
+
+{@render children?.()}

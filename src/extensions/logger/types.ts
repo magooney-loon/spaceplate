@@ -22,6 +22,7 @@ export type LoggerStyle = {
 	color: string;
 	bg: string;
 	text: string;
+	label: string;
 };
 
 export type Logger = {

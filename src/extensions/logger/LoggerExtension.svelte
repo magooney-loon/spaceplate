@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Checkbox } from 'svelte-tweakpane-ui';
-	import { extensionScope } from './types';
-	import { loggerState, loggerActions } from '$extensions/logger/logger.svelte';
+	import { Folder, Checkbox } from 'svelte-tweakpane-ui';
+	import type { Snippet } from 'svelte';
+	import { extensionScope, type LoggerChannel } from './types';
+	import { loggerState, loggerActions, channelStyles } from '$extensions/logger/logger.svelte';
+
+	interface Props {
+		children?: Snippet;
+	}
+
+	let { children }: Props = $props();
 
 	const { createExtension } = useStudio();
 
@@ -11,31 +18,24 @@
 		state: () => ({}),
 		actions: {}
 	});
-</script>
 
-<slot />
+	const channels = $derived(
+		Object.entries(channelStyles) as [LoggerChannel, (typeof channelStyles)[LoggerChannel]][]
+	);
+</script>
 
 <ToolbarItem position="right">
 	<DropDownPane icon="mdiConsole" title="Logger">
-		<Checkbox
-			label="Engine"
-			value={loggerState.engine}
-			on:change={() => loggerActions.toggleChannel('engine')}
-		/>
-		<Checkbox
-			label="Settings"
-			value={loggerState.settings}
-			on:change={() => loggerActions.toggleChannel('settings')}
-		/>
-		<Checkbox
-			label="Sound"
-			value={loggerState.sound}
-			on:change={() => loggerActions.toggleChannel('sound')}
-		/>
-		<Checkbox
-			label="Postprocessing"
-			value={loggerState.postprocessing}
-			on:change={() => loggerActions.toggleChannel('postprocessing')}
-		/>
+		<Folder title="Channels" expanded={true}>
+			{#each channels as [channel, style]}
+				<Checkbox
+					label="{style.text} {style.label}"
+					value={loggerState[channel]}
+					on:change={() => loggerActions.toggleChannel(channel)}
+				/>
+			{/each}
+		</Folder>
 	</DropDownPane>
 </ToolbarItem>
+
+{@render children?.()}

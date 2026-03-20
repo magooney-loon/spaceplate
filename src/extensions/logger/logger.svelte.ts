@@ -10,12 +10,12 @@ export const loggerState = $state<LoggerState>({
 	skybox: true
 });
 
-const channelStyles: Record<LoggerChannel, LoggerStyle> = {
-	engine: { color: '#61afef', bg: 'background:#1e3a5f', text: '⬡' },
-	settings: { color: '#98c379', bg: 'background:#2d4a2d', text: '⚙' },
-	sound: { color: '#c678dd', bg: 'background:#3d2d4a', text: '♪' },
-	postprocessing: { color: '#e5c07b', bg: 'background:#4a4020', text: '◈' },
-	skybox: { color: '#56b6c2', bg: 'background:#2d4a4a', text: '☀' }
+export const channelStyles: Record<LoggerChannel, LoggerStyle & { label: string }> = {
+	engine: { color: '#61afef', bg: 'background:#1e3a5f', text: '⬡', label: 'Engine' },
+	settings: { color: '#98c379', bg: 'background:#2d4a2d', text: '⚙', label: 'Settings' },
+	sound: { color: '#c678dd', bg: 'background:#3d2d4a', text: '♪', label: 'Sound' },
+	postprocessing: { color: '#e5c07b', bg: 'background:#4a4020', text: '◈', label: 'Post FX' },
+	skybox: { color: '#56b6c2', bg: 'background:#2d4a4a', text: '☀', label: 'Skybox' }
 };
 
 const formatTime = () => {

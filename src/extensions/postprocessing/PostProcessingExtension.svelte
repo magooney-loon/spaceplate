@@ -813,33 +813,26 @@
 
 		<Separator />
 
-		<Folder title="Load Preset" expanded={false}>
+		<Folder title="Saved Presets" expanded={false}>
 			{#each postprocessingPresetsState.presets as preset (preset.id)}
 				{@const isBundled = BUNDLED_PP_PRESETS.find((b) => b.id === preset.id)}
 				<Button
-					title="{isBundled ? '📦 ' : ''}{preset.name}"
+					title="{isBundled ? '📦 ' : ''}▶ {preset.name}"
 					on:click={() => postprocessingActions.loadPreset(preset.id)}
 				/>
-					<span style="font-size: 10px; color: rgba(255,255,255,0.5);">
+				{#if !isBundled}
+					<Button title="✕ Delete" on:click={() => postprocessingActions.deletePreset(preset.id)} />
+				{/if}
+				<span style="font-size: 10px; color: rgba(255,255,255,0.4); margin-left: 4px;">
 					{getEnabledEffects(preset)}
 				</span>
 			{:else}
-				<span style="font-size: 11px; color: rgba(255,255,255,0.5);">No presets saved</span>
+				<span style="font-size: 11px; color: rgba(255,255,255,0.4);">No presets saved</span>
 			{/each}
-		</Folder>
-
-		<Folder title="Manage Presets" expanded={false}>
-			<Button title="Save Current as Preset" on:click={saveAsPreset} />
 			{#if postprocessingPresetsState.presets.length > 0}
 				<Separator />
-				<span style="font-size: 10px; color: rgba(255,255,255,0.4);">Delete:</span>
-				{#each postprocessingPresetsState.presets as preset (preset.id)}
-					<Button
-						title="X {preset.name}"
-						on:click={() => postprocessingActions.deletePreset(preset.id)}
-					/>
-				{/each}
 			{/if}
+			<Button title="Save Current as Preset" on:click={saveAsPreset} />
 		</Folder>
 
 		<Separator />
