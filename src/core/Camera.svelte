@@ -8,7 +8,7 @@
 	near={0.001}
 	far={144}
 	makeDefault
-	position={[0, 5, 20]}
+	position={[0, 5, 12]}
 	oncreate={(ref) => {
 		ref.lookAt(0, 0, 0);
 	}}

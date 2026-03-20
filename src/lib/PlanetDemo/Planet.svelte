@@ -328,7 +328,7 @@
 		rotation.y={rotation}
 		geometry={planetGeometry}
 		material={planetMaterial}
-		scale={0.1}
+		scale={0.12}
 		userData={{ hideInTree: true, selectable: false }}
 	/>
 </Float>
