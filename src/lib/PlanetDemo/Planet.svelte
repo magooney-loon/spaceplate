@@ -2,6 +2,8 @@
 	import { T, useTask } from '@threlte/core';
 	import { Float } from '@threlte/extras';
 	import * as THREE from 'three';
+	import { untrack } from 'svelte';
+	import { cubicOut } from 'svelte/easing';
 	import { settingsState } from '$extensions/settings/settings.svelte';
 	import { hashCode, seededRandom, getPlanetColors } from './procedural.svelte';
 	import { planetGeometryCache, planetUniformsCache } from '$core/cache.svelte';
@@ -153,6 +155,7 @@
 		uniform vec3 lightDirection;
 		uniform vec3 lightColor;
 		uniform float time;
+		uniform float opacity;
 		varying vec3 fragPosition;
 		varying vec3 fragNormal;
 		varying vec3 fragTangent;
@@ -197,7 +200,7 @@
 		  finalColor = mix(finalColor, atmosColor, fresnel * 0.4);
 
 		  vec3 color = light * finalColor * lightColor;
-		  gl_FragColor = vec4(color, 1.0);
+		  gl_FragColor = vec4(color, opacity);
 		}
 	`.replace('void main() {', `${noiseFunctions}\nvoid main() {`);
 
@@ -291,7 +294,8 @@
 			shininess: { value: cachedValues.shininess },
 			lightDirection: { value: cachedValues.lightDirection },
 			lightColor: { value: cachedValues.lightColor },
-			time: { value: 0.0 }
+			time: { value: 0.0 },
+			opacity: { value: 0.0 }
 		};
 	});
 
@@ -309,16 +313,27 @@
 			uniforms: planetUniforms,
 			vertexShader,
 			fragmentShader,
-			side: THREE.FrontSide
+			side: THREE.FrontSide,
+			transparent: true
 		})
 	);
 
 	let rotation = $state(0);
+	let opacityT = $state(0);
+	let prevPlanetId = $state(untrack(() => planetId));
 
 	useTask((delta) => {
+		// Detect planet switch — reset fade
+		if (planetId !== prevPlanetId) {
+			prevPlanetId = planetId;
+			opacityT = 0;
+		}
+		if (opacityT < 1) opacityT = Math.min(1, opacityT + delta * 2.5);
+
 		rotation += delta / 30;
 		if (planetMaterial instanceof THREE.ShaderMaterial) {
 			planetMaterial.uniforms.time.value += delta;
+			planetMaterial.uniforms.opacity.value = cubicOut(opacityT);
 		}
 	});
 </script>

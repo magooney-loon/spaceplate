@@ -17,7 +17,7 @@ export const channelStyles: Record<LoggerChannel, LoggerStyle & { label: string 
 	sound: { color: '#c678dd', bg: 'background:#3d2d4a', text: '♪', label: 'Sound' },
 	postprocessing: { color: '#e5c07b', bg: 'background:#4a4020', text: '◈', label: 'Post FX' },
 	skybox: { color: '#56b6c2', bg: 'background:#2d4a4a', text: '☀', label: 'Skybox' },
-	cache: { color: '#e06c75', bg: 'background:#4a2020', text: '⬡', label: 'Cache' }
+	cache: { color: '#d19a66', bg: 'background:#4a3010', text: '⬡', label: 'Cache' }
 };
 
 const formatTime = () => {

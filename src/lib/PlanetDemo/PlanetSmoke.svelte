@@ -2,6 +2,8 @@
 	import { T, useTask } from '@threlte/core';
 	import { Float, useTexture } from '@threlte/extras';
 	import * as THREE from 'three';
+	import { untrack } from 'svelte';
+	import { cubicOut } from 'svelte/easing';
 	import { BASE_URL, settingsState } from '$extensions/settings/settings.svelte';
 	import { hashCode, getPlanetAtmosphericColors } from './procedural.svelte';
 	import { planetSmokeCache, createPlanetSmokeCacheKey } from '$core/cache.svelte';
@@ -118,10 +120,17 @@
 	};
 
 	let cloudParticles = $state<CloudParticle[]>([]);
-	let cloudInstancedMesh = $state<THREE.InstancedMesh | null>(null);
+	let cloudInstancedMesh = $state.raw<THREE.InstancedMesh | null>(null);
+	let cloudMaterial = $state.raw<THREE.MeshBasicMaterial | null>(null);
 	let cloudRotationOffset = $state(0);
 	let cloudRotationSpeed = $state(0.0015);
 	let frameSkipCounter = 0;
+
+	// Fade transition state
+	let smokeT = $state(0); // 0 = transparent, 1 = opaque
+	type SmokePhase = 'in' | 'out' | 'stable';
+	let smokePhase = $state<SmokePhase>('in');
+	let prevPlanetId = $state(untrack(() => planetId));
 
 	const frameSkipModulo = $derived(settingsState.graphics.quality === 'high' ? 2 : 4);
 
@@ -136,8 +145,7 @@
 		}
 	});
 
-	const handleCloudMeshCreate = (mesh: THREE.InstancedMesh) => {
-		cloudInstancedMesh = mesh;
+	const rebuildParticles = (mesh: THREE.InstancedMesh) => {
 		const count = particleCount;
 		if (count === 0) return;
 		const particles = createCloudParticles(count);
@@ -148,6 +156,11 @@
 		}
 		mesh.instanceMatrix.needsUpdate = true;
 		if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+	};
+
+	const handleCloudMeshCreate = (mesh: THREE.InstancedMesh) => {
+		cloudInstancedMesh = mesh;
+		rebuildParticles(mesh);
 		mesh.frustumCulled = true;
 		return () => {
 			cloudInstancedMesh = null;
@@ -156,17 +169,43 @@
 	};
 
 	const handleMaterialCreate = (material: THREE.MeshBasicMaterial) => {
+		cloudMaterial = material;
 		material.transparent = true;
 		material.side = THREE.DoubleSide;
 		material.blending = THREE.AdditiveBlending;
 		material.depthWrite = false;
 		material.depthTest = true;
-		material.opacity = nebulaIntensity * 0.4;
+		material.opacity = 0;
 		material.alphaTest = 0.001;
-		return () => {};
+		return () => {
+			cloudMaterial = null;
+		};
 	};
 
-	useTask(() => {
+	useTask((delta) => {
+		// Detect planet switch — start fade out
+		if (planetId !== prevPlanetId) {
+			prevPlanetId = planetId;
+			smokePhase = 'out';
+		}
+
+		// Phase-based opacity transition
+		if (smokePhase === 'out') {
+			smokeT = Math.max(0, smokeT - delta * 3);
+			if (smokeT === 0) {
+				// Rebuild with new colors then fade in
+				if (cloudInstancedMesh) rebuildParticles(cloudInstancedMesh);
+				smokePhase = 'in';
+			}
+		} else if (smokePhase === 'in') {
+			smokeT = Math.min(1, smokeT + delta * 1.5);
+			if (smokeT >= 1) smokePhase = 'stable';
+		}
+
+		if (cloudMaterial) {
+			cloudMaterial.opacity = nebulaIntensity * 0.4 * cubicOut(smokeT);
+		}
+
 		frameSkipCounter++;
 		if (frameSkipCounter % frameSkipModulo !== 0) return;
 		const time = Date.now() * 0.0001;
