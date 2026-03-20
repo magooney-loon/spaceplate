@@ -7,6 +7,7 @@
 	import { Audio as ThreeAudio } from 'three';
 	import { settingsState, BASE_URL } from '$extensions/settings/settings.svelte';
 	import { logSound } from '$extensions/logger/logger.svelte';
+	import { soundTriggers } from './globalAudio.svelte';
 
 	const OST_URL = `${BASE_URL}sounds/ost.ogg`;
 	const AMBIENCE_URL = `${BASE_URL}sounds/ambience.ogg`;
