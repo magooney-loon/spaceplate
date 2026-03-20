@@ -9,13 +9,41 @@ import { BASE_URL } from '$extensions/settings/settings.svelte';
 // Then add an entry below.
 // ─────────────────────────────────────────────────────────────────────────────
 export const ENV_TEXTURES: EnvTextureEntry[] = [
-	{ id: 'aerodynamics_workshop', name: 'Aerodynamics Workshop', url: `${BASE_URL}textures/skybox/hdr/aerodynamics_workshop_1k.hdr` },
-	{ id: 'blouberg_sunrise', name: 'Blouberg Sunrise', url: `${BASE_URL}textures/skybox/hdr/blouberg_sunrise_2_1k.hdr` },
-	{ id: 'industrial_sunset', name: 'Industrial Sunset', url: `${BASE_URL}textures/skybox/hdr/industrial_sunset_puresky_1k.hdr` },
-	{ id: 'mpumalanga_veld', name: 'Mpumalanga Veld', url: `${BASE_URL}textures/skybox/hdr/mpumalanga_veld_puresky_1k.hdr` },
-	{ id: 'shanghai_riverside', name: 'Shanghai Riverside', url: `${BASE_URL}textures/skybox/hdr/shanghai_riverside_1k.hdr` },
-	{ id: 'piz_compressed', name: 'Piz Compressed (EXR)', url: `${BASE_URL}textures/skybox/exr/piz_compressed.exr` },
-	{ id: 'ruined_room', name: 'Ruined Room', url: `${BASE_URL}textures/skybox/equi_env/equirect_ruined_room.jpg` }
+	{
+		id: 'aerodynamics_workshop',
+		name: 'Aerodynamics Workshop',
+		url: `${BASE_URL}textures/skybox/hdr/aerodynamics_workshop_1k.hdr`
+	},
+	{
+		id: 'blouberg_sunrise',
+		name: 'Blouberg Sunrise',
+		url: `${BASE_URL}textures/skybox/hdr/blouberg_sunrise_2_1k.hdr`
+	},
+	{
+		id: 'industrial_sunset',
+		name: 'Industrial Sunset',
+		url: `${BASE_URL}textures/skybox/hdr/industrial_sunset_puresky_1k.hdr`
+	},
+	{
+		id: 'mpumalanga_veld',
+		name: 'Mpumalanga Veld',
+		url: `${BASE_URL}textures/skybox/hdr/mpumalanga_veld_puresky_1k.hdr`
+	},
+	{
+		id: 'shanghai_riverside',
+		name: 'Shanghai Riverside',
+		url: `${BASE_URL}textures/skybox/hdr/shanghai_riverside_1k.hdr`
+	},
+	{
+		id: 'piz_compressed',
+		name: 'Piz Compressed (EXR)',
+		url: `${BASE_URL}textures/skybox/exr/piz_compressed.exr`
+	},
+	{
+		id: 'ruined_room',
+		name: 'Ruined Room',
+		url: `${BASE_URL}textures/skybox/equi_env/equirect_ruined_room.jpg`
+	}
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

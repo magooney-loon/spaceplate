@@ -8,23 +8,29 @@
 		postprocessingActions
 	} from '$extensions/postprocessing/postprocessing.svelte';
 	import { BUNDLED_PP_PRESETS } from '$extensions/postprocessing/bundledPresets';
-	import {
-		skyboxPresetsState,
-		skyboxActions
-	} from '$extensions/skybox/skybox.svelte';
+	import { skyboxPresetsState, skyboxActions } from '$extensions/skybox/skybox.svelte';
 	import { BUNDLED_SKYBOX_PRESETS } from '$extensions/skybox/bundledPresets';
 
 	const { createExtension } = useStudio();
 
 	let { children }: { children?: Snippet } = $props();
 
-	createExtension({ scope: 'scene', state() { return {}; }, actions: {} });
+	createExtension({
+		scope: 'scene',
+		state() {
+			return {};
+		},
+		actions: {}
+	});
 
 	const noneOption = { value: null as string | null, text: '— None —' };
 
 	const presetOptions = $derived([
 		noneOption,
-		...postprocessingPresetsState.presets.map((p) => ({ value: p.id as string | null, text: p.name }))
+		...postprocessingPresetsState.presets.map((p) => ({
+			value: p.id as string | null,
+			text: p.name
+		}))
 	]);
 
 	const skyboxPresetOptions = $derived([
@@ -73,7 +79,8 @@
 					label="Post FX"
 					options={presetOptions}
 					value={postprocessingPresetsState.scenePresets[scene.id] ?? null}
-					on:change={(e) => postprocessingActions.setScenePreset(scene.id, e.detail.value as string | null)}
+					on:change={(e) =>
+						postprocessingActions.setScenePreset(scene.id, e.detail.value as string | null)}
 				/>
 				<List
 					label="Skybox"

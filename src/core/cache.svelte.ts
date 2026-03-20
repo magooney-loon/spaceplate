@@ -105,13 +105,17 @@ class LRUCache<T> implements TTLCache<T> {
 			this.cache.set(key, entry);
 			this.hits++;
 			if (DEBUG_MODE()) {
-				logCache.info(`✅ ${this.name} HIT: ${key} (${this.hits} total hits, ${this.misses} misses)`);
+				logCache.info(
+					`✅ ${this.name} HIT: ${key} (${this.hits} total hits, ${this.misses} misses)`
+				);
 			}
 			return entry.value;
 		}
 		this.misses++;
 		if (DEBUG_MODE()) {
-			logCache.info(`❌ ${this.name} MISS: ${key} (${this.hits} hits, ${this.misses} total misses)`);
+			logCache.info(
+				`❌ ${this.name} MISS: ${key} (${this.hits} hits, ${this.misses} total misses)`
+			);
 		}
 		return undefined;
 	}

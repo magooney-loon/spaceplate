@@ -70,14 +70,15 @@
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiWeatherSunny" title="Sky">
-
 		<Folder title="Mode" expanded={true}>
 			<Button
 				title={environmentState.mode === 'sky' ? '✓ Procedural Sky' : 'Procedural Sky'}
 				on:click={() => skyboxActions.setMode('sky')}
 			/>
 			<Button
-				title={environmentState.mode === 'environment' ? '✓ HDR / EXR Environment' : 'HDR / EXR Environment'}
+				title={environmentState.mode === 'environment'
+					? '✓ HDR / EXR Environment'
+					: 'HDR / EXR Environment'}
 				on:click={() => skyboxActions.setMode('environment')}
 			/>
 			<Button
@@ -90,7 +91,8 @@
 			<Folder title="Environment Texture" expanded={true}>
 				{#if ENV_TEXTURES.length === 0}
 					<span style="font-size: 11px; color: rgba(255,255,255,0.4);">
-						No textures — add HDR/EXR files to<br />public/textures/skybox/ and register in envTextures.ts
+						No textures — add HDR/EXR files to<br />public/textures/skybox/ and register in
+						envTextures.ts
 					</span>
 				{:else}
 					<List
@@ -110,7 +112,8 @@
 			<Folder title="Cube Map Texture" expanded={true}>
 				{#if CUBE_TEXTURES.length === 0}
 					<span style="font-size: 11px; color: rgba(255,255,255,0.4);">
-						No cube maps — add 6-face sets to<br />public/textures/skybox/cube/ and register in envTextures.ts
+						No cube maps — add 6-face sets to<br />public/textures/skybox/cube/ and register in
+						envTextures.ts
 					</span>
 				{:else}
 					<List

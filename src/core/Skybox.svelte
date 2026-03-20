@@ -24,13 +24,13 @@
 
 	const activeEnvTexture = $derived(
 		environmentState.envTextureId
-			? ENV_TEXTURES.find((t) => t.id === environmentState.envTextureId) ?? null
+			? (ENV_TEXTURES.find((t) => t.id === environmentState.envTextureId) ?? null)
 			: null
 	);
 
 	const activeCubeTexture = $derived(
 		environmentState.cubeTextureId
-			? CUBE_TEXTURES.find((t) => t.id === environmentState.cubeTextureId) ?? null
+			? (CUBE_TEXTURES.find((t) => t.id === environmentState.cubeTextureId) ?? null)
 			: null
 	);
 </script>
@@ -43,10 +43,7 @@
 		ground={environmentState.envGround}
 	/>
 {:else if environmentState.mode === 'cube' && activeCubeTexture}
-	<CubeEnvironment
-		urls={activeCubeTexture.urls}
-		isBackground={environmentState.cubeIsBackground}
-	/>
+	<CubeEnvironment urls={activeCubeTexture.urls} isBackground={environmentState.cubeIsBackground} />
 {:else}
 	<!-- Procedural sky (default) -->
 	<T.Group userData={{ hideInTree: true, selectable: false }}>

@@ -40,7 +40,10 @@
 	} from 'postprocessing';
 	import { settingsState } from '$extensions/settings/settings.svelte';
 	import { logPostprocessing } from '$extensions/logger/logger.svelte';
-	import { postprocessingState, postprocessingPresetsState } from '$extensions/postprocessing/postprocessing.svelte';
+	import {
+		postprocessingState,
+		postprocessingPresetsState
+	} from '$extensions/postprocessing/postprocessing.svelte';
 	import { sceneState } from '$extensions/scene/scene.svelte';
 
 	const s = $derived.by((): typeof postprocessingState => {

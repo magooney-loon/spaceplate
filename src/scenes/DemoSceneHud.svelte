@@ -7,7 +7,10 @@
 <div class="pointer-events-auto">
 	<!-- Back Button -->
 	<button
-		onclick={() => { soundActions.playClick(); sceneActions.goToMainMenu(); }}
+		onclick={() => {
+			soundActions.playClick();
+			sceneActions.goToMainMenu();
+		}}
 		class="absolute top-4 left-4 px-4 py-2 bg-black/50 text-white border border-[#4a90d9] rounded cursor-pointer hover:bg-black/60 transition-colors"
 	>
 		← Back to Menu
