@@ -385,7 +385,8 @@ export const postprocessingActions = {
 			return;
 		}
 
-		(state as any)[effectName] = defaultFn();
+		const wasEnabled = (state as any)[effectName]?.enabled ?? false;
+		(state as any)[effectName] = { ...defaultFn(), enabled: wasEnabled };
 		logPostprocessing.info(`Reset effect: ${effectName}`);
 	},
 
