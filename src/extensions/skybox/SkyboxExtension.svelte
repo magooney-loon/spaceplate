@@ -53,29 +53,34 @@
 	};
 
 	const isDurationSelected = (value: number) => transitionState.transitionDuration === value;
-
 </script>
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiWeatherSunny" title="Sky">
-		<Folder title="Saved Presets" expanded={true}>
+		<Folder title="Saved Presets" expanded={false}>
 			{#each skyboxPresetsState.presets as preset (preset.id)}
 				{@const isBundled = BUNDLED_SKYBOX_PRESETS.find((b) => b.id === preset.id)}
-				<Button title="{isBundled ? '📦 ' : ''}▶ {preset.name}" on:click={() => skyboxActions.loadUserPreset(preset.id)} />
-					{#if !isBundled}
+				<Button
+					title="{isBundled ? '📦 ' : ''}▶ {preset.name}"
+					on:click={() => skyboxActions.loadUserPreset(preset.id)}
+				/>
+				{#if !isBundled}
 					<Button title="✕ Delete" on:click={() => skyboxActions.deletePreset(preset.id)} />
 				{/if}
 			{/each}
 			{#if skyboxPresetsState.presets.length > 0}
 				<Separator />
 			{/if}
-			<Button title="Save Current as Preset" on:click={() => {
-				const name = prompt('Preset name:');
-				if (name) {
-					const result = skyboxActions.savePreset(name);
-					if (!result.success) alert(result.error);
-				}
-			}} />
+			<Button
+				title="Save Current as Preset"
+				on:click={() => {
+					const name = prompt('Preset name:');
+					if (name) {
+						const result = skyboxActions.savePreset(name);
+						if (!result.success) alert(result.error);
+					}
+				}}
+			/>
 		</Folder>
 		<Separator />
 
@@ -90,22 +95,6 @@
 					{/each}
 				</Folder>
 			{/each}
-		</Folder>
-
-		<Separator />
-
-		<Folder title="Transition" expanded={false}>
-			{#each TRANSITION_DURATIONS as opt}
-				<Button
-					title={isDurationSelected(opt.value) ? `✓ ${opt.text}` : opt.text}
-					on:click={() => skyboxActions.setTransitionDuration(opt.value)}
-				/>
-			{/each}
-			{#if transitionState.isTransitioning}
-				<span style="font-size: 10px; color: #56b6c2; margin-top: 4px;">
-					Transitioning... {Math.round(transitionState.progress * 100)}%
-				</span>
-			{/if}
 		</Folder>
 
 		<Separator />
@@ -172,6 +161,22 @@
 		<Folder title="Rendering" expanded={false}>
 			<Slider bind:value={skyboxState.exposure} label="Exposure" min={0} max={2} step={0.05} />
 			<Checkbox bind:value={skyboxState.setEnvironment} label="Set Environment" />
+		</Folder>
+
+		<Separator />
+
+		<Folder title="Transition" expanded={false}>
+			{#each TRANSITION_DURATIONS as opt}
+				<Button
+					title={isDurationSelected(opt.value) ? `✓ ${opt.text}` : opt.text}
+					on:click={() => skyboxActions.setTransitionDuration(opt.value)}
+				/>
+			{/each}
+			{#if transitionState.isTransitioning}
+				<span style="font-size: 10px; color: #56b6c2; margin-top: 4px;">
+					Transitioning... {Math.round(transitionState.progress * 100)}%
+				</span>
+			{/if}
 		</Folder>
 
 		<Separator />

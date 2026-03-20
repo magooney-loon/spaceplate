@@ -143,7 +143,6 @@
 		actions: {}
 	});
 
-
 	const saveAsPreset = () => {
 		const name = prompt('Enter preset name:');
 		if (name) {
@@ -157,6 +156,30 @@
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiImageFilterHdr" title="Post Processing">
+		<Folder title="Saved Presets" expanded={false}>
+			{#each postprocessingPresetsState.presets as preset (preset.id)}
+				{@const isBundled = BUNDLED_PP_PRESETS.find((b) => b.id === preset.id)}
+				<Button
+					title="{isBundled ? '📦 ' : ''}▶ {preset.name}"
+					on:click={() => postprocessingActions.loadPreset(preset.id)}
+				/>
+				{#if !isBundled}
+					<Button title="✕ Delete" on:click={() => postprocessingActions.deletePreset(preset.id)} />
+				{/if}
+				<span style="font-size: 10px; color: rgba(255,255,255,0.4); margin-left: 4px;">
+					{getEnabledEffects(preset)}
+				</span>
+			{:else}
+				<span style="font-size: 11px; color: rgba(255,255,255,0.4);">No presets saved</span>
+			{/each}
+			{#if postprocessingPresetsState.presets.length > 0}
+				<Separator />
+			{/if}
+			<Button title="Save Current as Preset" on:click={saveAsPreset} />
+		</Folder>
+
+		<Separator />
+
 		<Folder title="Bloom" expanded={false}>
 			<Checkbox bind:value={s.bloom.enabled} label="Enabled" />
 			{#if s.bloom.enabled}
@@ -810,33 +833,7 @@
 				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('depthEffect')} />
 			{/if}
 		</Folder>
-
 		<Separator />
-
-		<Folder title="Saved Presets" expanded={false}>
-			{#each postprocessingPresetsState.presets as preset (preset.id)}
-				{@const isBundled = BUNDLED_PP_PRESETS.find((b) => b.id === preset.id)}
-				<Button
-					title="{isBundled ? '📦 ' : ''}▶ {preset.name}"
-					on:click={() => postprocessingActions.loadPreset(preset.id)}
-				/>
-				{#if !isBundled}
-					<Button title="✕ Delete" on:click={() => postprocessingActions.deletePreset(preset.id)} />
-				{/if}
-				<span style="font-size: 10px; color: rgba(255,255,255,0.4); margin-left: 4px;">
-					{getEnabledEffects(preset)}
-				</span>
-			{:else}
-				<span style="font-size: 11px; color: rgba(255,255,255,0.4);">No presets saved</span>
-			{/each}
-			{#if postprocessingPresetsState.presets.length > 0}
-				<Separator />
-			{/if}
-			<Button title="Save Current as Preset" on:click={saveAsPreset} />
-		</Folder>
-
-		<Separator />
-
 		<Button title="Reset All" on:click={postprocessingActions.resetAll} />
 	</DropDownPane>
 </ToolbarItem>

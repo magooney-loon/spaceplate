@@ -96,12 +96,17 @@ src/
 - `skyboxActions.applyPreset(id)` — instant or animated transition via `requestAnimationFrame`
 - Individual setters: `setTurbidity`, `setAzimuth`, `setElevation`, etc.
 - `skyboxState` / `starsState` / `transitionState` — all reactive, drive `core/Skybox.svelte`
+- **User presets**: `skyboxActions.savePreset(name)` / `loadUserPreset(id)` / `deletePreset(id)` — persisted to localStorage
+- **Bundled presets**: add to `extensions/skybox/bundledPresets.ts` — always available to all users, not stored in localStorage
+- **Global + per-scene presets**: `skyboxPresetsState.globalPresetId` + `scenePresets[sceneId]` — scene wins; applied automatically in `core/Skybox.svelte`
 
 ### Post-Processing System (`extensions/postprocessing/postprocessing.svelte.ts`)
 - 25+ effects: SMAA, FXAA, Bloom, Tone Mapping, God Rays, SSAO, Chromatic Aberration, Lens Distortion, Glitch, ASCII, Pixelation, Outline, Depth of Field, and more
 - All effects disabled when `graphics.quality === 'low'` (render pass only)
 - `postprocessingActions.savePreset(name)` / `loadPreset(id)` / `deletePreset(id)` — persisted to localStorage
 - `postprocessingActions.resetAll()` / `resetEffect(name)` — restore defaults
+- **Bundled presets**: add to `extensions/postprocessing/bundledPresets.ts` — always available, not stored in localStorage
+- **Global + per-scene presets**: `postprocessingPresetsState.globalPresetId` + `scenePresets[sceneId]` — scene wins on conflict (same effect active in both logs a warning); merged reactively in `core/Renderer.svelte`
 
 ### Extensions System (`src/extensions/`)
 
@@ -146,6 +151,10 @@ export const myFeatureActions: MyFeatureActions = {
   import { Folder, Slider, Checkbox } from 'svelte-tweakpane-ui';
   import { myFeatureState, myFeatureActions } from './myFeature.svelte';
   import { extensionScope } from './types';
+  import type { Snippet } from 'svelte';
+
+  interface Props { children?: Snippet; }
+  let { children }: Props = $props();
 
   const { createExtension } = useStudio();
   createExtension({ scope: extensionScope, state: () => ({}) });
@@ -162,7 +171,7 @@ export const myFeatureActions: MyFeatureActions = {
   </DropDownPane>
 </ToolbarItem>
 
-<slot />
+{@render children?.()}
 ```
 
 **`ToolbarButton` uses `onclick` prop (Svelte 5), NOT `on:click`** — using `on:click` silently does nothing.
@@ -298,17 +307,30 @@ Styled multi-channel logging with timestamp + color-coded channel prefix.
 **Channels:** `engine` (blue), `settings` (green), `sound` (purple), `postprocessing` (yellow), `skybox` (cyan)
 
 ```ts
-import { logger } from '../extensions/logger/logger.svelte.js';
+import { logEngine, logSound, logSettings } from '$extensions/logger/logger.svelte';
 
-logger.engine.info('Scene:', scene);   // console.log — general info
-logger.sound.warn('Missing asset');    // console.warn — recoverable issues
-logger.settings.error('Failed:', err); // console.error — failures
+logEngine.info('Scene:', scene);    // console.log — general info
+logSound.warn('Missing asset');     // console.warn — recoverable issues
+logSettings.error('Failed:', err);  // console.error — failures
 ```
 
-**Adding a new channel:**
-```ts
-// In logger.svelte.ts — add to the channels map with a color
-channels.set('game', createChannel('game', '#ff6b6b'));
+**Adding a new channel** — edit `logger.svelte.ts` only; the Studio UI (`LoggerExtension.svelte`) picks it up automatically via `channelStyles`:
+```typescript
+// 1. types.ts — add to the union
+export type LoggerChannel = 'engine' | ... | 'game';
+export type LoggerState = { ...; game: boolean };
+
+// 2. logger.svelte.ts — add to loggerState
+export const loggerState = $state<LoggerState>({ ..., game: true });
+
+// 3. logger.svelte.ts — add to channelStyles (drives auto-generated UI checkbox)
+export const channelStyles = {
+  ...,
+  game: { color: '#ff6b6b', bg: 'background:#4a2020', text: '🎮', label: 'Game' }
+};
+
+// 4. logger.svelte.ts — export the logger instance
+export const logGame = createLogger('game', 'game');
 ```
 
 **Where logs are used in the boilerplate:**
