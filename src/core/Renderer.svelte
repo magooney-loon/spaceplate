@@ -84,9 +84,7 @@
 		}
 	};
 
-	const removeAllEffects = () => {
-		isUpdatingEffects = true;
-		composer.removeAllPasses();
+	const disposeAllEffects = () => {
 		disposeEffect(smaaPass);
 		disposeEffect(mainPass);
 		disposeEffect(secondaryPass);
@@ -128,18 +126,35 @@
 		shockWaveEffect = null;
 	};
 
+	const removeAllEffects = () => {
+		composer.removeAllPasses();
+		disposeAllEffects();
+	};
+
 	$effect(() => {
+		// Adapt the default WebGLRenderer for postprocessing
+		// Note: Default WebGL anti-aliasing is disabled in Canvas for performance,
+		// we use SMAA post-processing anti-aliasing instead for better control
+
+		// Remove all existing passes to prevent duplicates
+		isUpdatingEffects = true;
+		composer.removeAllPasses();
+
+		// Add the render pass first
+		const renderPass = new RenderPass(scene, $camera);
+		composer.addPass(renderPass);
+
+		// Skip effects for low quality - only basic rendering (no anti-aliasing)
 		if (settingsState.graphics.quality === 'low') {
-			removeAllEffects();
-			const renderPass = new RenderPass(scene, $camera);
-			composer.addPass(renderPass);
+			isUpdatingEffects = false;
+			logPostprocessing.info('Graphics quality: LOW - Post-processing disabled');
 			return;
 		}
 
-		removeAllEffects();
+		logPostprocessing.info('Graphics quality: HIGH - Post-processing enabled');
 
-		const renderPass = new RenderPass(scene, $camera);
-		composer.addPass(renderPass);
+		// Dispose old effects before creating new ones
+		disposeAllEffects();
 
 		const mainEffects: any[] = [];
 		const secondaryEffects: any[] = [];
