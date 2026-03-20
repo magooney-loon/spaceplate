@@ -70,7 +70,7 @@
 	];
 </script>
 
-<ToolbarItem position="left">
+<ToolbarItem position="right">
 	<DropDownPane icon="mdiVolumeHigh" title="Sound">
 		<Folder title="Buses" expanded={true}>
 			<Folder title="SFX" expanded={true}>
