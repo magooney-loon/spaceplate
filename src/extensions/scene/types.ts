@@ -11,7 +11,6 @@ export type SceneConfig = {
 	id: SceneType;
 	label: string;
 	icon: string;
-	presets?: ScenePresets;
 };
 
 export type SceneState = {

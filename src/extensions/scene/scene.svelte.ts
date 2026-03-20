@@ -1,5 +1,6 @@
 import { logEngine } from '$extensions/logger/logger.svelte';
 import { soundActions } from '$core/GlobalAudio.svelte';
+import { BUNDLED_SCENE_PRESETS, BUNDLED_GLOBAL_PRESETS } from './bundledPresets';
 import type {
 	SceneType,
 	SceneConfig,
@@ -11,27 +12,9 @@ import type {
 export type { ExtensionState, ExtensionActions, ScenePresets } from './types';
 
 export const SCENES: SceneConfig[] = [
-	{
-		id: 'mainMenu',
-		label: 'Main Menu',
-		icon: 'mdiHome'
-		// presets: { postprocessing: 'your-preset-id', skybox: 'your-preset-id' }
-	},
-	{
-		id: 'demoScene',
-		label: 'Demo Scene',
-		icon: 'mdiEarth'
-		// presets: { postprocessing: 'your-preset-id', skybox: 'your-preset-id' }
-	}
+	{ id: 'mainMenu', label: 'Main Menu', icon: 'mdiHome' },
+	{ id: 'demoScene', label: 'Demo Scene', icon: 'mdiEarth' }
 ];
-
-// Global presets — applied as a base layer to ALL scenes.
-// Scene presets stack on top (scene wins on same effect conflict).
-// Commit preset IDs here to ship defaults with the game.
-export const GLOBAL_PRESETS: ScenePresets = {
-	// postprocessing: 'your-global-pp-preset-id',
-	// skybox: 'your-global-skybox-preset-id',
-};
 
 // --- Overrides (Studio dev overrides, stored in localStorage) ---
 
@@ -84,17 +67,17 @@ export const scenePresetsOverrides = $state<Partial<Record<SceneType, PresetOver
 export const globalPresetsOverride = $state<PresetOverride>(loadGlobalPresetsOverride());
 
 // Resolver functions — reactive when called inside $derived / $effect.
-// Priority: localStorage studio override → committed config → null
+// Priority: localStorage studio override → bundledPresets.ts → null
 
 export function resolveScenePreset(sceneId: SceneType, type: keyof ScenePresets): string | null {
 	const override = scenePresetsOverrides[sceneId];
 	if (override && type in override) return (override as any)[type] ?? null;
-	return SCENES.find((s) => s.id === sceneId)?.presets?.[type] ?? null;
+	return BUNDLED_SCENE_PRESETS[sceneId]?.[type] ?? null;
 }
 
 export function resolveGlobalPreset(type: keyof ScenePresets): string | null {
 	if (type in globalPresetsOverride) return (globalPresetsOverride as any)[type] ?? null;
-	return GLOBAL_PRESETS[type] ?? null;
+	return BUNDLED_GLOBAL_PRESETS[type] ?? null;
 }
 
 // --- State & actions ---

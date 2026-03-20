@@ -9,6 +9,8 @@
 		resolveScenePreset,
 		resolveGlobalPreset
 	} from '$extensions/scene/scene.svelte';
+	import type { SceneType } from '$extensions/scene/types';
+	import { BUNDLED_SCENE_PRESETS, BUNDLED_GLOBAL_PRESETS } from '$extensions/scene/bundledPresets';
 	import { postprocessingPresetsState } from '$extensions/postprocessing/postprocessing.svelte';
 	import { BUNDLED_PP_PRESETS } from '$extensions/postprocessing/bundledPresets';
 	import { skyboxPresetsState } from '$extensions/skybox/skybox.svelte';
@@ -46,6 +48,20 @@
 	// Resolved global IDs (reactive — reads $state via plain function)
 	const resolvedGlobalPP = $derived(resolveGlobalPreset('postprocessing'));
 	const resolvedGlobalSky = $derived(resolveGlobalPreset('skybox'));
+
+	// Whether global assignments come from bundledPresets.ts (not a studio override)
+	const globalPPIsBundled = $derived(
+		resolvedGlobalPP !== null && BUNDLED_GLOBAL_PRESETS.postprocessing === resolvedGlobalPP
+	);
+	const globalSkyIsBundled = $derived(
+		resolvedGlobalSky !== null && BUNDLED_GLOBAL_PRESETS.skybox === resolvedGlobalSky
+	);
+
+	// Whether a scene's assignment comes from bundledPresets.ts
+	const scenePresetIsBundled = (sceneId: SceneType, type: 'postprocessing' | 'skybox'): boolean => {
+		const resolved = resolveScenePreset(sceneId, type);
+		return resolved !== null && BUNDLED_SCENE_PRESETS[sceneId]?.[type] === resolved;
+	};
 
 	// Check which PP effects conflict between a scene preset and the global preset
 	const getPPConflicts = (
@@ -94,40 +110,49 @@
 	const copyPPPresetAsCode = (preset: (typeof postprocessingPresetsState.presets)[number]) => {
 		const code = `  {\n    id: '${preset.id}',\n    name: '${preset.name}',\n    createdAt: ${preset.createdAt},\n    settings: ${JSON.stringify(preset.settings, null, 4).replace(/\n/g, '\n    ')}\n  }`;
 		navigator.clipboard.writeText(code);
-		alert(`"${preset.name}" copied! Paste into BUNDLED_PP_PRESETS in bundledPresets.ts.`);
+		alert(`"${preset.name}" copied!\n\nPaste inside BUNDLED_PP_PRESETS[] in:\nsrc/extensions/postprocessing/bundledPresets.ts`);
 	};
 
 	const copySkyboxPresetAsCode = (preset: (typeof skyboxPresetsState.presets)[number]) => {
 		const code = `  {\n    id: '${preset.id}',\n    name: '${preset.name}',\n    createdAt: ${preset.createdAt},\n    snapshot: ${JSON.stringify(preset.snapshot, null, 4).replace(/\n/g, '\n    ')}\n  }`;
 		navigator.clipboard.writeText(code);
-		alert(`"${preset.name}" copied! Paste into BUNDLED_SKYBOX_PRESETS in bundledPresets.ts.`);
+		alert(`"${preset.name}" copied!\n\nPaste inside BUNDLED_SKYBOX_PRESETS[] in:\nsrc/extensions/skybox/bundledPresets.ts`);
 	};
 
-	const buildSceneEntry = (scene: (typeof SCENES)[number]): string => {
+	const buildScenePresetEntry = (scene: (typeof SCENES)[number]): string => {
 		const ppId = resolveScenePreset(scene.id, 'postprocessing');
 		const skyId = resolveScenePreset(scene.id, 'skybox');
+		if (!ppId && !skyId) return '';
 		const ppName = ppId
 			? (postprocessingPresetsState.presets.find((p) => p.id === ppId)?.name ?? ppId)
-			: 'none';
+			: null;
 		const skyName = skyId
 			? (skyboxPresetsState.presets.find((p) => p.id === skyId)?.name ?? skyId)
-			: 'none';
-		const presetsLine =
-			ppId || skyId
-				? `,\n\t\tpresets: {${ppId ? `\n\t\t\tpostprocessing: '${ppId}', // ${ppName}` : ''}${skyId ? `\n\t\t\tskybox: '${skyId}', // ${skyName}` : ''}\n\t\t}`
-				: '';
-		return `\t{\n\t\tid: '${scene.id}',\n\t\tlabel: '${scene.label}',\n\t\ticon: '${scene.icon}'${presetsLine}\n\t}`;
+			: null;
+		const inner = [
+			ppId ? `\t\tpostprocessing: '${ppId}', // ${ppName}` : null,
+			skyId ? `\t\tskybox: '${skyId}', // ${skyName}` : null
+		]
+			.filter(Boolean)
+			.join('\n');
+		return `\t${scene.id}: {\n${inner}\n\t}`;
 	};
 
 	const copySceneEntry = (scene: (typeof SCENES)[number]) => {
-		navigator.clipboard.writeText(buildSceneEntry(scene));
-		alert(`"${scene.label}" config copied! Paste into SCENES in scene.svelte.ts.`);
+		const entry = buildScenePresetEntry(scene);
+		if (!entry) {
+			alert(`"${scene.label}" has no preset assignments — nothing to copy.`);
+			return;
+		}
+		navigator.clipboard.writeText(entry);
+		alert(`"${scene.label}" assignments copied!\n\nPaste inside BUNDLED_SCENE_PRESETS{} in:\nsrc/extensions/scene/bundledPresets.ts`);
 	};
 
 	const copyAllSceneAssignments = () => {
-		const code = `export const SCENES: SceneConfig[] = [\n${SCENES.map(buildSceneEntry).join(',\n')}\n];`;
+		const entries = SCENES.map(buildScenePresetEntry).filter(Boolean);
+		const code = `export const BUNDLED_SCENE_PRESETS: Partial<Record<SceneType, ScenePresets>> = {\n${entries.join(',\n')}\n};`;
 		navigator.clipboard.writeText(code);
-		alert('All scene assignments copied! Paste into scene.svelte.ts.');
+		alert(`All scene assignments copied!\n\nReplace BUNDLED_SCENE_PRESETS in:\nsrc/extensions/scene/bundledPresets.ts`);
 	};
 
 	const copyGlobalAssignments = () => {
@@ -145,9 +170,9 @@
 		]
 			.filter(Boolean)
 			.join('\n');
-		const code = `export const GLOBAL_PRESETS: ScenePresets = {\n${lines || '\t// No global presets assigned'}\n};`;
+		const code = `export const BUNDLED_GLOBAL_PRESETS: ScenePresets = {\n${lines || '\t// No global presets assigned'}\n};`;
 		navigator.clipboard.writeText(code);
-		alert('Global presets copied! Paste into GLOBAL_PRESETS in scene.svelte.ts.');
+		alert(`Global presets copied!\n\nReplace BUNDLED_GLOBAL_PRESETS in:\nsrc/extensions/scene/bundledPresets.ts`);
 	};
 </script>
 
@@ -155,7 +180,7 @@
 	<DropDownPane icon="mdiMap" title="Scenes — {currentScene?.label ?? ''}">
 		<Folder title="Global (all scenes)" expanded={true}>
 			<List
-				label="Post FX"
+				label="Post FX {globalPPIsBundled ? '📦' : ''}"
 				options={presetOptions}
 				value={resolvedGlobalPP}
 				on:change={(e) => {
@@ -165,7 +190,7 @@
 				}}
 			/>
 			<List
-				label="Skybox"
+				label="Skybox {globalSkyIsBundled ? '📦' : ''}"
 				options={skyboxPresetOptions}
 				value={resolvedGlobalSky}
 				on:change={(e) => sceneActions.setGlobalPreset('skybox', e.detail.value as string | null)}
@@ -181,7 +206,7 @@
 					on:click={() => sceneActions.setScene(scene.id)}
 				/>
 				<List
-					label="Post FX"
+					label="Post FX {scenePresetIsBundled(scene.id, 'postprocessing') ? '📦' : ''}"
 					options={presetOptions}
 					value={resolveScenePreset(scene.id, 'postprocessing')}
 					on:change={(e) => {
@@ -191,7 +216,7 @@
 					}}
 				/>
 				<List
-					label="Skybox"
+					label="Skybox {scenePresetIsBundled(scene.id, 'skybox') ? '📦' : ''}"
 					options={skyboxPresetOptions}
 					value={resolveScenePreset(scene.id, 'skybox')}
 					on:change={(e) =>
