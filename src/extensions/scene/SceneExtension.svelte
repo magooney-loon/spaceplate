@@ -5,12 +5,13 @@
 	import {
 		sceneActions,
 		sceneState,
-		scenePresetsOverrides,
-		SCENES
+		SCENES,
+		resolveScenePreset,
+		resolveGlobalPreset
 	} from '$extensions/scene/scene.svelte';
-	import { postprocessingPresetsState, postprocessingActions } from '$extensions/postprocessing/postprocessing.svelte';
+	import { postprocessingPresetsState } from '$extensions/postprocessing/postprocessing.svelte';
 	import { BUNDLED_PP_PRESETS } from '$extensions/postprocessing/bundledPresets';
-	import { skyboxPresetsState, skyboxActions } from '$extensions/skybox/skybox.svelte';
+	import { skyboxPresetsState } from '$extensions/skybox/skybox.svelte';
 	import { BUNDLED_SKYBOX_PRESETS } from '$extensions/skybox/bundledPresets';
 
 	const { createExtension } = useStudio();
@@ -42,18 +43,53 @@
 
 	const currentScene = $derived(SCENES.find((s) => s.id === sceneState.currentScene));
 
-	// Resolve effective preset ID for a scene: override → SCENES config → null
-	const resolvedPPId = (sceneId: string): string | null => {
-		const ov = scenePresetsOverrides[sceneId as keyof typeof scenePresetsOverrides];
-		if (ov && 'postprocessing' in ov) return ov.postprocessing ?? null;
-		return SCENES.find((s) => s.id === sceneId)?.presets?.postprocessing ?? null;
+	// Resolved global IDs (reactive — reads $state via plain function)
+	const resolvedGlobalPP = $derived(resolveGlobalPreset('postprocessing'));
+	const resolvedGlobalSky = $derived(resolveGlobalPreset('skybox'));
+
+	// Check which PP effects conflict between a scene preset and the global preset
+	const getPPConflicts = (
+		scenePresetId: string | null,
+		globalPresetId: string | null
+	): string[] => {
+		if (!scenePresetId || !globalPresetId || scenePresetId === globalPresetId) return [];
+		const scenePr = postprocessingPresetsState.presets.find((p) => p.id === scenePresetId);
+		const globalPr = postprocessingPresetsState.presets.find((p) => p.id === globalPresetId);
+		if (!scenePr || !globalPr) return [];
+		return Object.keys(scenePr.settings).filter(
+			(k) => (scenePr.settings as any)[k]?.enabled && (globalPr.settings as any)[k]?.enabled
+		);
 	};
 
-	const resolvedSkyboxId = (sceneId: string): string | null => {
-		const ov = scenePresetsOverrides[sceneId as keyof typeof scenePresetsOverrides];
-		if (ov && 'skybox' in ov) return ov.skybox ?? null;
-		return SCENES.find((s) => s.id === sceneId)?.presets?.skybox ?? null;
+	const warnIfPPConflict = (sceneId: string, newScenePresetId: string | null) => {
+		const conflicts = getPPConflicts(newScenePresetId, resolvedGlobalPP);
+		if (conflicts.length > 0) {
+			const sceneName = SCENES.find((s) => s.id === sceneId)?.label ?? sceneId;
+			const globalName =
+				postprocessingPresetsState.presets.find((p) => p.id === resolvedGlobalPP)?.name ?? 'global';
+			alert(
+				`⚠️ Conflict in "${sceneName}":\n\nBoth "${globalName}" (global) and the scene preset enable:\n${conflicts.map((k) => `  • ${k}`).join('\n')}\n\nScene preset wins, but this is likely unintentional. Remove the conflicting effect from one of the two presets.`
+			);
+		}
 	};
+
+	const warnIfGlobalPPConflict = (newGlobalPresetId: string | null) => {
+		const allConflicts: string[] = [];
+		for (const scene of SCENES) {
+			const sceneId = resolveScenePreset(scene.id, 'postprocessing');
+			const conflicts = getPPConflicts(sceneId, newGlobalPresetId);
+			if (conflicts.length > 0) {
+				allConflicts.push(`  ${scene.label}: ${conflicts.join(', ')}`);
+			}
+		}
+		if (allConflicts.length > 0) {
+			alert(
+				`⚠️ Global preset conflicts with existing scene presets:\n\n${allConflicts.join('\n')}\n\nScene presets win on conflict, but consider removing the overlapping effects.`
+			);
+		}
+	};
+
+	// --- Copy helpers ---
 
 	const copyPPPresetAsCode = (preset: (typeof postprocessingPresetsState.presets)[number]) => {
 		const code = `  {\n    id: '${preset.id}',\n    name: '${preset.name}',\n    createdAt: ${preset.createdAt},\n    settings: ${JSON.stringify(preset.settings, null, 4).replace(/\n/g, '\n    ')}\n  }`;
@@ -68,10 +104,14 @@
 	};
 
 	const buildSceneEntry = (scene: (typeof SCENES)[number]): string => {
-		const ppId = resolvedPPId(scene.id);
-		const skyId = resolvedSkyboxId(scene.id);
-		const ppName = ppId ? (postprocessingPresetsState.presets.find((p) => p.id === ppId)?.name ?? ppId) : 'none';
-		const skyName = skyId ? (skyboxPresetsState.presets.find((p) => p.id === skyId)?.name ?? skyId) : 'none';
+		const ppId = resolveScenePreset(scene.id, 'postprocessing');
+		const skyId = resolveScenePreset(scene.id, 'skybox');
+		const ppName = ppId
+			? (postprocessingPresetsState.presets.find((p) => p.id === ppId)?.name ?? ppId)
+			: 'none';
+		const skyName = skyId
+			? (skyboxPresetsState.presets.find((p) => p.id === skyId)?.name ?? skyId)
+			: 'none';
 		const presetsLine =
 			ppId || skyId
 				? `,\n\t\tpresets: {${ppId ? `\n\t\t\tpostprocessing: '${ppId}', // ${ppName}` : ''}${skyId ? `\n\t\t\tskybox: '${skyId}', // ${skyName}` : ''}\n\t\t}`
@@ -91,16 +131,23 @@
 	};
 
 	const copyGlobalAssignments = () => {
-		const ppId = postprocessingPresetsState.globalPresetId;
-		const skyId = skyboxPresetsState.globalPresetId;
-		const ppName = ppId ? (postprocessingPresetsState.presets.find((p) => p.id === ppId)?.name ?? ppId) : 'none';
-		const skyName = skyId ? (skyboxPresetsState.presets.find((p) => p.id === skyId)?.name ?? skyId) : 'none';
+		const ppId = resolvedGlobalPP;
+		const skyId = resolvedGlobalSky;
+		const ppName = ppId
+			? (postprocessingPresetsState.presets.find((p) => p.id === ppId)?.name ?? ppId)
+			: 'none';
+		const skyName = skyId
+			? (skyboxPresetsState.presets.find((p) => p.id === skyId)?.name ?? skyId)
+			: 'none';
 		const lines = [
-			ppId ? `postprocessingActions.setGlobalPreset('${ppId}'); // ${ppName}` : null,
-			skyId ? `skyboxActions.setGlobalPreset('${skyId}'); // ${skyName}` : null
-		].filter(Boolean).join('\n');
-		navigator.clipboard.writeText(lines || '// No global presets assigned');
-		alert('Global assignments copied!');
+			ppId ? `\tpostprocessing: '${ppId}', // ${ppName}` : null,
+			skyId ? `\tskybox: '${skyId}', // ${skyName}` : null
+		]
+			.filter(Boolean)
+			.join('\n');
+		const code = `export const GLOBAL_PRESETS: ScenePresets = {\n${lines || '\t// No global presets assigned'}\n};`;
+		navigator.clipboard.writeText(code);
+		alert('Global presets copied! Paste into GLOBAL_PRESETS in scene.svelte.ts.');
 	};
 </script>
 
@@ -110,16 +157,20 @@
 			<List
 				label="Post FX"
 				options={presetOptions}
-				value={postprocessingPresetsState.globalPresetId}
-				on:change={(e) => postprocessingActions.setGlobalPreset(e.detail.value as string | null)}
+				value={resolvedGlobalPP}
+				on:change={(e) => {
+					const newId = e.detail.value as string | null;
+					warnIfGlobalPPConflict(newId);
+					sceneActions.setGlobalPreset('postprocessing', newId);
+				}}
 			/>
 			<List
 				label="Skybox"
 				options={skyboxPresetOptions}
-				value={skyboxPresetsState.globalPresetId}
-				on:change={(e) => skyboxActions.setGlobalPreset(e.detail.value as string | null)}
+				value={resolvedGlobalSky}
+				on:change={(e) => sceneActions.setGlobalPreset('skybox', e.detail.value as string | null)}
 			/>
-			<Button title="Copy Global Assignments" on:click={copyGlobalAssignments} />
+			<Button title="Copy Global to Code" on:click={copyGlobalAssignments} />
 		</Folder>
 		<Separator />
 		{#each SCENES as scene}
@@ -132,22 +183,25 @@
 				<List
 					label="Post FX"
 					options={presetOptions}
-					value={resolvedPPId(scene.id)}
-					on:change={(e) =>
-						sceneActions.setScenePreset(scene.id, 'postprocessing', e.detail.value as string | null)}
+					value={resolveScenePreset(scene.id, 'postprocessing')}
+					on:change={(e) => {
+						const newId = e.detail.value as string | null;
+						warnIfPPConflict(scene.id, newId);
+						sceneActions.setScenePreset(scene.id, 'postprocessing', newId);
+					}}
 				/>
 				<List
 					label="Skybox"
 					options={skyboxPresetOptions}
-					value={resolvedSkyboxId(scene.id)}
+					value={resolveScenePreset(scene.id, 'skybox')}
 					on:change={(e) =>
 						sceneActions.setScenePreset(scene.id, 'skybox', e.detail.value as string | null)}
 				/>
-				<Button title="Copy Scene Config" on:click={() => copySceneEntry(scene)} />
+				<Button title="Copy Scene to Code" on:click={() => copySceneEntry(scene)} />
 			</Folder>
 		{/each}
 		<Separator />
-		<Button title="Copy All Scene Assignments" on:click={copyAllSceneAssignments} />
+		<Button title="Copy All Scenes to Code" on:click={copyAllSceneAssignments} />
 		<Separator />
 		<Folder title="Export Presets to Code" expanded={false}>
 			<Folder title="Post FX" expanded={true}>

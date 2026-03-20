@@ -25,16 +25,25 @@ export const SCENES: SceneConfig[] = [
 	}
 ];
 
-// --- Scene preset overrides (Studio dev overrides, stored in localStorage) ---
+// Global presets — applied as a base layer to ALL scenes.
+// Scene presets stack on top (scene wins on same effect conflict).
+// Commit preset IDs here to ship defaults with the game.
+export const GLOBAL_PRESETS: ScenePresets = {
+	// postprocessing: 'your-global-pp-preset-id',
+	// skybox: 'your-global-skybox-preset-id',
+};
+
+// --- Overrides (Studio dev overrides, stored in localStorage) ---
 
 const SCENE_PRESETS_OVERRIDE_KEY = 'spaceplate-scene-preset-overrides';
+const GLOBAL_PRESETS_OVERRIDE_KEY = 'spaceplate-global-preset-override';
 
-type ScenePresetOverride = {
+type PresetOverride = {
 	postprocessing?: string | null;
 	skybox?: string | null;
 };
 
-const loadScenePresetOverrides = (): Partial<Record<SceneType, ScenePresetOverride>> => {
+const loadScenePresetOverrides = (): Partial<Record<SceneType, PresetOverride>> => {
 	try {
 		const raw = localStorage.getItem(SCENE_PRESETS_OVERRIDE_KEY);
 		return raw ? JSON.parse(raw) : {};
@@ -43,7 +52,16 @@ const loadScenePresetOverrides = (): Partial<Record<SceneType, ScenePresetOverri
 	}
 };
 
-const saveScenePresetOverrides = (overrides: Partial<Record<SceneType, ScenePresetOverride>>) => {
+const loadGlobalPresetsOverride = (): PresetOverride => {
+	try {
+		const raw = localStorage.getItem(GLOBAL_PRESETS_OVERRIDE_KEY);
+		return raw ? JSON.parse(raw) : {};
+	} catch {
+		return {};
+	}
+};
+
+const saveScenePresetOverrides = (overrides: Partial<Record<SceneType, PresetOverride>>) => {
 	try {
 		localStorage.setItem(SCENE_PRESETS_OVERRIDE_KEY, JSON.stringify(overrides));
 	} catch {
@@ -51,9 +69,33 @@ const saveScenePresetOverrides = (overrides: Partial<Record<SceneType, ScenePres
 	}
 };
 
-export const scenePresetsOverrides = $state<Partial<Record<SceneType, ScenePresetOverride>>>(
+const saveGlobalPresetsOverride = (override: PresetOverride) => {
+	try {
+		localStorage.setItem(GLOBAL_PRESETS_OVERRIDE_KEY, JSON.stringify(override));
+	} catch {
+		/* ignore */
+	}
+};
+
+export const scenePresetsOverrides = $state<Partial<Record<SceneType, PresetOverride>>>(
 	loadScenePresetOverrides()
 );
+
+export const globalPresetsOverride = $state<PresetOverride>(loadGlobalPresetsOverride());
+
+// Resolver functions — reactive when called inside $derived / $effect.
+// Priority: localStorage studio override → committed config → null
+
+export function resolveScenePreset(sceneId: SceneType, type: keyof ScenePresets): string | null {
+	const override = scenePresetsOverrides[sceneId];
+	if (override && type in override) return (override as any)[type] ?? null;
+	return SCENES.find((s) => s.id === sceneId)?.presets?.[type] ?? null;
+}
+
+export function resolveGlobalPreset(type: keyof ScenePresets): string | null {
+	if (type in globalPresetsOverride) return (globalPresetsOverride as any)[type] ?? null;
+	return GLOBAL_PRESETS[type] ?? null;
+}
 
 // --- State & actions ---
 
@@ -113,5 +155,17 @@ export const sceneActions: ExtensionActions = {
 		scenePresetsOverrides[sceneId] = current;
 		saveScenePresetOverrides(scenePresetsOverrides);
 		logEngine.info(`Scene preset cleared [${sceneId}/${type}]`);
+	},
+
+	setGlobalPreset(type: 'postprocessing' | 'skybox', presetId: string | null) {
+		(globalPresetsOverride as any)[type] = presetId;
+		saveGlobalPresetsOverride(globalPresetsOverride);
+		logEngine.info(`Global preset [${type}]: ${presetId ?? 'none'}`);
+	},
+
+	clearGlobalPreset(type: 'postprocessing' | 'skybox') {
+		delete (globalPresetsOverride as any)[type];
+		saveGlobalPresetsOverride(globalPresetsOverride);
+		logEngine.info(`Global preset cleared [${type}]`);
 	}
 };

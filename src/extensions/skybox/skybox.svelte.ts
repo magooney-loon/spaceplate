@@ -397,7 +397,6 @@ export const TRANSITION_DURATIONS = [
 ];
 
 const USER_PRESETS_KEY = 'spaceplate-skybox-presets';
-const GLOBAL_PRESET_KEY = 'spaceplate-skybox-global-preset';
 
 const loadUserPresets = (): SkyboxUserPreset[] => {
 	let stored: SkyboxUserPreset[] = [];
@@ -416,17 +415,8 @@ const loadUserPresets = (): SkyboxUserPreset[] => {
 	return merged;
 };
 
-const loadGlobalPresetId = (): string | null => {
-	try {
-		return localStorage.getItem(GLOBAL_PRESET_KEY);
-	} catch {
-		return null;
-	}
-};
-
 export const skyboxPresetsState = $state<SkyboxPresetsState>({
-	presets: loadUserPresets(),
-	globalPresetId: loadGlobalPresetId()
+	presets: loadUserPresets()
 });
 
 let animationFrameId: number | null = null;
@@ -847,28 +837,7 @@ export const skyboxActions = {
 		} catch {
 			/* ignore */
 		}
-		// Clear global assignment if it pointed to the deleted preset
-		if (skyboxPresetsState.globalPresetId === presetId) {
-			skyboxPresetsState.globalPresetId = null;
-			try {
-				localStorage.removeItem(GLOBAL_PRESET_KEY);
-			} catch {
-				/* ignore */
-			}
-		}
 		logSkybox.info(`Skybox preset deleted: "${preset?.name}"`);
-	},
-
-	setGlobalPreset(presetId: string | null) {
-		const preset = presetId ? skyboxPresetsState.presets.find((p) => p.id === presetId) : null;
-		skyboxPresetsState.globalPresetId = presetId;
-		try {
-			if (presetId) localStorage.setItem(GLOBAL_PRESET_KEY, presetId);
-			else localStorage.removeItem(GLOBAL_PRESET_KEY);
-		} catch {
-			/* ignore */
-		}
-		logSkybox.info(`Skybox global preset: ${preset ? `"${preset.name}"` : 'none'}`);
 	},
 
 	setMode(mode: EnvironmentState['mode']) {

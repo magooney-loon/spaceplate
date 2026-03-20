@@ -101,7 +101,6 @@ export type SkyboxUserPreset = {
 
 export type SkyboxPresetsState = {
 	presets: SkyboxUserPreset[];
-	globalPresetId: string | null;
 };
 
 export type ExtensionState = SkyState;

@@ -30,4 +30,6 @@ export type ExtensionActions = {
 	transitionTo: (scene: SceneType, transitionDuration?: number) => Promise<void>;
 	setScenePreset: (sceneId: SceneType, type: 'postprocessing' | 'skybox', presetId: string | null) => void;
 	clearScenePreset: (sceneId: SceneType, type: 'postprocessing' | 'skybox') => void;
+	setGlobalPreset: (type: 'postprocessing' | 'skybox', presetId: string | null) => void;
+	clearGlobalPreset: (type: 'postprocessing' | 'skybox') => void;
 };

@@ -39,7 +39,6 @@ export type {
 } from './types';
 
 const PRESETS_KEY = 'spaceplate-postprocessing-presets';
-const GLOBAL_PRESET_KEY = 'spaceplate-pp-global-preset';
 
 const defaultBloom = (): BloomState => ({
 	enabled: false,
@@ -329,24 +328,14 @@ const savePresets = (presets: PostProcessingPreset[]) => {
 	}
 };
 
-const loadGlobalPresetId = (): string | null => {
-	try {
-		return localStorage.getItem(GLOBAL_PRESET_KEY);
-	} catch {
-		return null;
-	}
-};
-
 export const postprocessingState = $state<PostProcessingState>(defaultState());
 
 export const postprocessingPresetsState = $state<{
 	presets: PostProcessingPreset[];
 	currentPresetId: string | null;
-	globalPresetId: string | null;
 }>({
 	presets: loadPresets(),
-	currentPresetId: null,
-	globalPresetId: loadGlobalPresetId()
+	currentPresetId: null
 });
 
 export const postprocessingActions = {
@@ -510,15 +499,6 @@ export const postprocessingActions = {
 			state.depthEffect.enabled = false;
 			postprocessingPresetsState.currentPresetId = null;
 		}
-		// Clear from global/scene preset assignments
-		if (postprocessingPresetsState.globalPresetId === presetId) {
-			postprocessingPresetsState.globalPresetId = null;
-			try {
-				localStorage.removeItem(GLOBAL_PRESET_KEY);
-			} catch {
-				/* ignore */
-			}
-		}
 	},
 
 	renamePreset(presetId: string, newName: string) {
@@ -538,20 +518,6 @@ export const postprocessingActions = {
 			(p) => p.id === postprocessingPresetsState.currentPresetId
 		);
 		return preset?.name ?? null;
-	},
-
-	setGlobalPreset(presetId: string | null) {
-		const preset = presetId
-			? postprocessingPresetsState.presets.find((p) => p.id === presetId)
-			: null;
-		postprocessingPresetsState.globalPresetId = presetId;
-		try {
-			if (presetId) localStorage.setItem(GLOBAL_PRESET_KEY, presetId);
-			else localStorage.removeItem(GLOBAL_PRESET_KEY);
-		} catch {
-			/* ignore */
-		}
-		logPostprocessing.info(`Global preset: ${preset ? `"${preset.name}"` : 'none'}`);
 	},
 
 	updatePreset(presetId: string): { success: boolean; error?: string } {
