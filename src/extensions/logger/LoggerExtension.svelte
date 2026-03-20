@@ -15,7 +15,7 @@
 
 <slot />
 
-<ToolbarItem position="left">
+<ToolbarItem position="right">
 	<DropDownPane icon="mdiConsole" title="Logger">
 		<Checkbox
 			label="Engine"
