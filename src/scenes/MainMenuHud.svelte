@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { sceneActions } from '$extensions/scene/scene.svelte';
 	import { soundActions } from '$core/GlobalAudio.svelte';
-	import { BASE_URL } from '$extensions/settings/settings.svelte';
 	import SettingsHud from '$scenes/SettingsHud.svelte';
 	import { planetDemoActions, planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
 	import { getPlanetVariantName, hashCode } from '$lib/PlanetDemo/procedural.svelte';
+	import PlanetIcon from '$lib/PlanetDemo/PlanetIcon.svelte';
 
 	let showSettings = $state(false);
 
@@ -18,7 +18,13 @@
 	<div class="pointer-events-auto">
 		<!-- Menu Title -->
 		<div class="absolute top-[20%] left-1/2 -translate-x-1/2 text-center">
-			<img src="{BASE_URL}favicon.ico" alt="Logo" class="w-20 h-20 mx-auto mb-4" />
+			<PlanetIcon
+				planetId={planetDemoState.planetId}
+				temperature={planetDemoState.temperature}
+				size={80}
+				class="mx-auto mb-4"
+				getSvgDataUri={(uri) => (planetDemoState.faviconUri = uri)}
+			/>
 			<h1 class="text-5xl text-white font-bold m-0" style="text-shadow: 0 0 20px #4a90d9;">
 				SPACEPLATE ENGINE
 			</h1>

@@ -4,7 +4,7 @@
 	import * as THREE from 'three';
 	import { settingsState } from '$extensions/settings/settings.svelte';
 	import { hashCode, seededRandom, getPlanetColors } from './procedural.svelte';
-	import { planetGeometryCache, planetUniformsCache } from './cache.svelte';
+	import { planetGeometryCache, planetUniformsCache } from '$core/cache.svelte';
 
 	interface Props {
 		planetId?: string;

@@ -8,7 +8,7 @@ export const loggerState = $state<LoggerState>({
 	sound: true,
 	postprocessing: true,
 	skybox: true,
-	cache: false
+	cache: true
 });
 
 export const channelStyles: Record<LoggerChannel, LoggerStyle & { label: string }> = {

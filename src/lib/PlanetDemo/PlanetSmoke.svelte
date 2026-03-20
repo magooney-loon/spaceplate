@@ -4,7 +4,7 @@
 	import * as THREE from 'three';
 	import { BASE_URL, settingsState } from '$extensions/settings/settings.svelte';
 	import { hashCode, getPlanetAtmosphericColors } from './procedural.svelte';
-	import { planetSmokeCache, createPlanetSmokeCacheKey } from './cache.svelte';
+	import { planetSmokeCache, createPlanetSmokeCacheKey } from '$core/cache.svelte';
 
 	interface Props {
 		planetId?: string;

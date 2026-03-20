@@ -9,6 +9,7 @@
 	import GlobalAudio from '$core/GlobalAudio.svelte';
 	import * as THREE from 'three';
 	import { settingsState, generalActions } from '$extensions/settings/settings.svelte';
+	import { planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
 	import './app.css';
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -43,6 +44,12 @@
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
+
+<svelte:head>
+	{#if planetDemoState.faviconUri}
+		<link rel="icon" type="image/svg+xml" href={planetDemoState.faviconUri} />
+	{/if}
+</svelte:head>
 
 <Canvas {createRenderer} {dpr}>
 	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}

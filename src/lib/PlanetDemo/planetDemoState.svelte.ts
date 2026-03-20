@@ -5,7 +5,8 @@ const randomTemp = () => Math.floor(Math.random() * 160) - 60; // -60 to 100°C 
 
 export const planetDemoState = $state({
 	planetId: randomId(),
-	temperature: randomTemp()
+	temperature: randomTemp(),
+	faviconUri: ''
 });
 
 export const planetDemoActions = {

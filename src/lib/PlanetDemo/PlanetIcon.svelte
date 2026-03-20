@@ -17,10 +17,9 @@
 		getSvgDataUri
 	}: Props = $props();
 
-	import { hashCode, getPlanetColors, seededRandom } from '$lib/game/utils/procedural.svelte.js';
-	import { planetIconCache, createPlanetIconCacheKey } from '$lib/game/utils/cache.svelte.js';
-	import { settingsState } from '$lib/settings/settings.svelte.js';
-	import { highlightOnChange } from '$lib/game/utils/attachments';
+	import { hashCode, getPlanetColors, seededRandom } from './procedural.svelte';
+	import { planetIconCache, createPlanetIconCacheKey } from '$core/cache.svelte';
+	import { settingsState } from '$extensions/settings/settings.svelte';
 
 	const planetSvg = $derived.by(() => {
 		const cacheKey = createPlanetIconCacheKey(
@@ -197,5 +196,4 @@
 	alt="{celestialType === 'Moon' ? 'Moon' : 'Planet'} {planetId}"
 	class="drop-shadow-2xl {celestialType === 'Moon' ? 'brightness-110' : 'saturate-150'} {className}"
 	style="width: {size}px; height: {size}px;"
-	{@attach highlightOnChange(temperature)}
 />
