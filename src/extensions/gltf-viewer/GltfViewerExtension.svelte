@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
+	import { Folder, Slider, Checkbox, Button, Separator } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { gltfViewerState, gltfViewerActions } from './gltfViewer.svelte';
 	import { extensionScope } from './types';
@@ -35,11 +35,6 @@
 
 	const isInDemoScene = $derived(sceneState.currentScene === 'demoScene');
 
-	// Per-model helpers — need plain values for on:change handlers
-	const getClipOptions = (clips: string[]) => [
-		{ value: null as string | null, text: '— None —' },
-		...clips.map((c) => ({ value: c as string | null, text: c }))
-	];
 </script>
 
 <!-- Hidden file input lives outside the tweakpane portal -->
@@ -190,20 +185,26 @@
 
 					{#if model.animationClips.length > 0}
 						<Folder title="Animations ({model.animationClips.length})" expanded={false}>
-							<List
-								label="Clip"
-								options={getClipOptions(model.animationClips)}
-								value={model.activeAnimation}
-								on:change={(e) => gltfViewerActions.setAnimation(model.id, e.detail.value as string | null)}
-							/>
-							{#if model.activeAnimation}
+							{#each model.animationClips as clip (clip)}
+								<Checkbox
+									label={clip}
+									value={model.activeAnimations.includes(clip)}
+									on:change={() => gltfViewerActions.toggleAnimation(model.id, clip)}
+								/>
+							{/each}
+							{#if model.activeAnimations.length > 0}
+								<Separator />
 								<Button
-									title={model.playing ? '⏸ Pause' : '▶ Play'}
-									on:click={() => gltfViewerActions.setPlaying(model.id, !model.playing)}
+									title={model.playState === 'playing' ? '⏸ Pause' : '▶ Play'}
+									on:click={() =>
+										gltfViewerActions.setPlayState(
+											model.id,
+											model.playState === 'playing' ? 'paused' : 'playing'
+										)}
 								/>
 								<Button
 									title="⏹ Stop"
-									on:click={() => gltfViewerActions.setPlaying(model.id, false)}
+									on:click={() => gltfViewerActions.setPlayState(model.id, 'stopped')}
 								/>
 								<Slider
 									label="Speed"

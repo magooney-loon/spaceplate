@@ -34,20 +34,23 @@
 		const allActions = $actions;
 		if (!allActions) return;
 
-		// Stop any clip that is no longer the active one
+		// Stop any clip not in activeAnimations
 		Object.entries(allActions).forEach(([name, a]) => {
-			if (name !== model.activeAnimation) a?.stop();
+			if (!model.activeAnimations.includes(name)) a?.stop();
 		});
 
-		if (model.activeAnimation) {
-			const action = allActions[model.activeAnimation];
-			if (action) {
-				action.setLoop(model.loop ? LoopRepeat : LoopOnce, Infinity);
-				action.setEffectiveTimeScale(model.animationSpeed);
-				// Start the action if it isn't running yet, then use paused to freeze/resume
-				// so that pause keeps the current frame rather than resetting
-				if (!action.isRunning()) action.play();
-				action.paused = !model.playing;
+		for (const clipName of model.activeAnimations) {
+			const action = allActions[clipName];
+			if (!action) continue;
+			action.setLoop(model.loop ? LoopRepeat : LoopOnce, Infinity);
+			action.setEffectiveTimeScale(model.animationSpeed);
+
+			if (model.playState === 'stopped') {
+				action.stop(); // resets time to frame 0
+			} else {
+				// reset().play() handles: first start, replay after LoopOnce finished, and resume from stop
+				if (!action.isRunning()) action.reset().play();
+				action.paused = model.playState === 'paused';
 			}
 		}
 	});

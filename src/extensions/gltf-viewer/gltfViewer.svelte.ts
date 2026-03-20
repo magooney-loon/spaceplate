@@ -13,10 +13,10 @@ const makeModel = (name: string, url: string, isBlobUrl: boolean): GltfViewerMod
 	rotation: [0, 0, 0],
 	scale: 1,
 	animationClips: [],
-	activeAnimation: null,
+	activeAnimations: [],
+	playState: 'stopped',
 	animationSpeed: 1,
 	loop: true,
-	playing: false,
 	visible: true
 });
 
@@ -96,17 +96,24 @@ export const gltfViewerActions = {
 		if (m) m.scale = v;
 	},
 
-	setAnimation(id: string, clipName: string | null) {
+	toggleAnimation(id: string, clipName: string) {
 		const m = find(id);
 		if (!m) return;
-		m.activeAnimation = clipName;
-		m.playing = clipName !== null;
-		logGltf.info('Animation:', m.name, '→', clipName ?? '(none)');
+		const idx = m.activeAnimations.indexOf(clipName);
+		if (idx === -1) {
+			m.activeAnimations = [...m.activeAnimations, clipName];
+			if (m.playState === 'stopped') m.playState = 'playing';
+			logGltf.info('Animation on:', m.name, '→', clipName);
+		} else {
+			m.activeAnimations = m.activeAnimations.filter((c) => c !== clipName);
+			if (m.activeAnimations.length === 0) m.playState = 'stopped';
+			logGltf.info('Animation off:', m.name, '→', clipName);
+		}
 	},
 
-	setPlaying(id: string, playing: boolean) {
+	setPlayState(id: string, state: 'playing' | 'paused' | 'stopped') {
 		const m = find(id);
-		if (m) m.playing = playing;
+		if (m) m.playState = state;
 	},
 
 	setSpeed(id: string, speed: number) {

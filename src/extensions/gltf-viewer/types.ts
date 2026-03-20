@@ -9,10 +9,10 @@ export type GltfViewerModel = {
 	rotation: [number, number, number]; // euler degrees X/Y/Z
 	scale: number; // uniform
 	animationClips: string[]; // populated after GLTF loads
-	activeAnimation: string | null;
+	activeAnimations: string[]; // clips currently enabled (can be multiple)
+	playState: 'playing' | 'paused' | 'stopped';
 	animationSpeed: number;
 	loop: boolean;
-	playing: boolean;
 	visible: boolean;
 };
 

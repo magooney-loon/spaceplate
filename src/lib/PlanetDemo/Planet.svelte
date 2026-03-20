@@ -19,6 +19,9 @@
 	const avgTemp = $derived(temperature);
 
 	// Noise functions shared between vertex and fragment shaders
+	//	Simplex 3D Noise
+	//	by Ian McEwan, Ashima Arts
+	// Modified by magooney-loon
 	const noiseFunctions = `
 		const float PI = 3.14159265;
 
