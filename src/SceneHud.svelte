@@ -8,13 +8,17 @@
 
 <!-- HTML overlay — rendered as a sibling to <Canvas> in App.svelte -->
 {#if settingsState.general.uiVisible}
-	<div transition:fade={{ duration: 150 }}>
+	<div>
 		{#if sceneState.currentScene === 'mainMenu'}
-			<MainMenuHud />
+			<div transition:fade={{ duration: 150 }}>
+				<MainMenuHud />
+			</div>
 		{/if}
 
 		{#if sceneState.currentScene === 'demoScene'}
-			<DemoSceneHud />
+			<div transition:fade={{ duration: 150 }}>
+				<DemoSceneHud />
+			</div>
 		{/if}
 	</div>
 {/if}

@@ -27,7 +27,7 @@
 
 {#if !isFinished}
 	<div
-		transition:fade={{ duration: 400 }}
+		out:fade={{ duration: 900 }}
 		class="absolute inset-0 z-200 flex flex-col items-center justify-center bg-black text-white"
 	>
 		<p class="m-0 mb-6 text-xs tracking-[0.15em] uppercase opacity-40">Loading</p>

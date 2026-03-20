@@ -1,12 +1,9 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
 	import { useGameTasks } from '$core/tasks';
-	// import { useSceneManager } from '$core/SceneManager.svelte.ts';
 
 	const { createUiTask } = useGameTasks();
-	// const { actions: sceneActions } = useSceneManager();
 
-	// Menu animation task - runs on UI stage
 	let menuRotation = $state(0);
 
 	createUiTask((delta) => {
@@ -33,5 +30,3 @@
 		<T.MeshBasicMaterial color="#4ad94a" wireframe />
 	</T.Mesh>
 </T.Group>
-
-<!-- Note: Menu UI buttons would be in SceneHud.svelte -->

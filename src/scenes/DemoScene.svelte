@@ -1,12 +1,11 @@
 <script lang="ts">
-	import { T, useTask } from '@threlte/core';
+	import { T } from '@threlte/core';
 	import { PositionalAudio, HTML, interactivity } from '@threlte/extras';
 	import { useGameTasks } from '$core/tasks';
 	import { useSound } from '$extensions/sound/useSound';
 	import { settingsState, BASE_URL } from '$extensions/settings/settings.svelte';
 	import { soundActions } from '$core/GlobalAudio.svelte';
 	import { Spring } from 'svelte/motion';
-	import { cubicOut } from 'svelte/easing';
 	import * as THREE from 'three';
 
 	interactivity();
@@ -21,13 +20,6 @@
 	let rotatingIco = $state.raw<THREE.Mesh>();
 	let bouncingSphere = $state.raw<THREE.Mesh>();
 	let time = $state(0);
-	let introT = $state(0);
-	let rotation = $state(0);
-
-	useTask((delta) => {
-		rotation += delta * 0.5;
-		if (introT < 1) introT = Math.min(1, introT + delta * 2.5);
-	});
 
 	createPhysicsTask((delta) => {
 		time += delta;
@@ -47,12 +39,11 @@
 	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 </script>
 
-<T.Group scale={cubicOut(introT)}>
+<T.Group>
 	<T.DirectionalLight position={[0, 10, 0]} intensity={0.5} castShadow />
 
 	<T.Mesh
 		bind:ref={rotatingIco}
-		rotation.y={rotation}
 		position.y={2.5}
 		scale={scale.current}
 		onpointerenter={() => (scale.target = 1.5)}
