@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Folder, Slider, Checkbox, Button, Separator } from 'svelte-tweakpane-ui';
+	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import {
 		skyboxState,
@@ -8,6 +8,9 @@
 		transitionState,
 		skyboxActions,
 		skyboxPresetsState,
+		environmentState,
+		ENV_TEXTURES,
+		CUBE_TEXTURES,
 		SKY_PRESETS,
 		STAR_PRESETS,
 		TRANSITION_DURATIONS
@@ -53,10 +56,75 @@
 	};
 
 	const isDurationSelected = (value: number) => transitionState.transitionDuration === value;
+
+	const envTextureOptions = $derived([
+		{ value: null as string | null, text: '— None —' },
+		...ENV_TEXTURES.map((t) => ({ value: t.id as string | null, text: t.name }))
+	]);
+
+	const cubeTextureOptions = $derived([
+		{ value: null as string | null, text: '— None —' },
+		...CUBE_TEXTURES.map((t) => ({ value: t.id as string | null, text: t.name }))
+	]);
 </script>
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiWeatherSunny" title="Sky">
+
+		<Folder title="Mode" expanded={true}>
+			<Button
+				title={environmentState.mode === 'sky' ? '✓ Procedural Sky' : 'Procedural Sky'}
+				on:click={() => skyboxActions.setMode('sky')}
+			/>
+			<Button
+				title={environmentState.mode === 'environment' ? '✓ HDR / EXR Environment' : 'HDR / EXR Environment'}
+				on:click={() => skyboxActions.setMode('environment')}
+			/>
+			<Button
+				title={environmentState.mode === 'cube' ? '✓ Cube Map' : 'Cube Map'}
+				on:click={() => skyboxActions.setMode('cube')}
+			/>
+		</Folder>
+
+		{#if environmentState.mode === 'environment'}
+			<Folder title="Environment Texture" expanded={true}>
+				{#if ENV_TEXTURES.length === 0}
+					<span style="font-size: 11px; color: rgba(255,255,255,0.4);">
+						No textures — add HDR/EXR files to<br />public/textures/skybox/ and register in envTextures.ts
+					</span>
+				{:else}
+					<List
+						label="Texture"
+						options={envTextureOptions}
+						value={environmentState.envTextureId}
+						on:change={(e) => skyboxActions.setEnvTexture(e.detail.value as string | null)}
+					/>
+				{/if}
+				<Checkbox label="Use as Background" bind:value={environmentState.envIsBackground} />
+				<Checkbox label="Ground Projection" bind:value={environmentState.envGround} />
+			</Folder>
+			<Separator />
+		{/if}
+
+		{#if environmentState.mode === 'cube'}
+			<Folder title="Cube Map Texture" expanded={true}>
+				{#if CUBE_TEXTURES.length === 0}
+					<span style="font-size: 11px; color: rgba(255,255,255,0.4);">
+						No cube maps — add 6-face sets to<br />public/textures/skybox/cube/ and register in envTextures.ts
+					</span>
+				{:else}
+					<List
+						label="Cube Map"
+						options={cubeTextureOptions}
+						value={environmentState.cubeTextureId}
+						on:change={(e) => skyboxActions.setCubeTexture(e.detail.value as string | null)}
+					/>
+				{/if}
+				<Checkbox label="Use as Background" bind:value={environmentState.cubeIsBackground} />
+			</Folder>
+			<Separator />
+		{/if}
+
 		<Folder title="Saved Presets" expanded={false}>
 			{#each skyboxPresetsState.presets as preset (preset.id)}
 				{@const isBundled = BUNDLED_SKYBOX_PRESETS.find((b) => b.id === preset.id)}

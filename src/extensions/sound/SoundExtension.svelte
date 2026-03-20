@@ -112,7 +112,7 @@
 
 		<Separator />
 
-		<Folder title="Positional Audio" expanded={false}>
+		<Folder title="Positional Audio" expanded={true}>
 			<List
 				label="Panning Model"
 				value={extState.panningModel}

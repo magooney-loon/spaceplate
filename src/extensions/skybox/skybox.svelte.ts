@@ -1,5 +1,6 @@
 import { logSkybox } from '$extensions/logger/logger.svelte';
 import { BUNDLED_SKYBOX_PRESETS } from './bundledPresets';
+import { ENV_TEXTURES, CUBE_TEXTURES } from './envTextures';
 import type {
 	SkyState,
 	SkyPreset,
@@ -7,8 +8,11 @@ import type {
 	StarsState,
 	TransitionState,
 	SkyboxUserPreset,
-	SkyboxPresetsState
+	SkyboxPresetsState,
+	EnvironmentState
 } from './types';
+
+export { ENV_TEXTURES, CUBE_TEXTURES } from './envTextures';
 
 export type {
 	SkyPreset,
@@ -19,7 +23,11 @@ export type {
 	ExtensionState,
 	ExtensionActions,
 	SkyboxUserPreset,
-	SkyboxPresetsState
+	SkyboxPresetsState,
+	EnvironmentState,
+	SkyboxMode,
+	EnvTextureEntry,
+	CubeTextureEntry
 } from './types';
 
 export const STAR_PRESETS: Record<string, StarPreset> = {
@@ -621,6 +629,27 @@ const applyPresetObject = (preset: SkyPreset) => {
 	}
 };
 
+const ENV_MODE_KEY = 'spaceplate-skybox-env-mode';
+const ENV_TEXTURE_KEY = 'spaceplate-skybox-env-texture';
+const ENV_CUBE_KEY = 'spaceplate-skybox-env-cube';
+
+const loadEnvState = (): EnvironmentState => {
+	try {
+		return {
+			mode: (localStorage.getItem(ENV_MODE_KEY) as EnvironmentState['mode']) ?? 'sky',
+			envTextureId: localStorage.getItem(ENV_TEXTURE_KEY),
+			envIsBackground: true,
+			envGround: false,
+			cubeTextureId: localStorage.getItem(ENV_CUBE_KEY),
+			cubeIsBackground: true
+		};
+	} catch {
+		return { mode: 'sky', envTextureId: null, envIsBackground: true, envGround: false, cubeTextureId: null, cubeIsBackground: true };
+	}
+};
+
+export const environmentState = $state<EnvironmentState>(loadEnvState());
+
 export const skyboxActions = {
 	reset() {
 		if (animationFrameId !== null) {
@@ -829,5 +858,43 @@ export const skyboxActions = {
 		skyboxPresetsState.scenePresets[sceneId] = presetId;
 		try { localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(skyboxPresetsState.scenePresets)); } catch { /* ignore */ }
 		logSkybox.info(`Skybox scene preset [${sceneId}]: ${preset ? `"${preset.name}"` : 'none'}`);
+	},
+
+	setMode(mode: EnvironmentState['mode']) {
+		environmentState.mode = mode;
+		try { localStorage.setItem(ENV_MODE_KEY, mode); } catch { /* ignore */ }
+		logSkybox.info(`Skybox mode: ${mode}`);
+	},
+
+	setEnvTexture(id: string | null) {
+		environmentState.envTextureId = id;
+		try {
+			if (id) localStorage.setItem(ENV_TEXTURE_KEY, id);
+			else localStorage.removeItem(ENV_TEXTURE_KEY);
+		} catch { /* ignore */ }
+		const entry = id ? ENV_TEXTURES.find((t) => t.id === id) : null;
+		logSkybox.info(`Environment texture: ${entry?.name ?? 'none'}`);
+	},
+
+	setCubeTexture(id: string | null) {
+		environmentState.cubeTextureId = id;
+		try {
+			if (id) localStorage.setItem(ENV_CUBE_KEY, id);
+			else localStorage.removeItem(ENV_CUBE_KEY);
+		} catch { /* ignore */ }
+		const entry = id ? CUBE_TEXTURES.find((t) => t.id === id) : null;
+		logSkybox.info(`Cube texture: ${entry?.name ?? 'none'}`);
+	},
+
+	toggleEnvBackground() {
+		environmentState.envIsBackground = !environmentState.envIsBackground;
+	},
+
+	toggleCubeBackground() {
+		environmentState.cubeIsBackground = !environmentState.cubeIsBackground;
+	},
+
+	toggleEnvGround() {
+		environmentState.envGround = !environmentState.envGround;
 	}
 };
