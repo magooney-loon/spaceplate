@@ -44,11 +44,15 @@
 		postprocessingState,
 		postprocessingPresetsState
 	} from '$extensions/postprocessing/postprocessing.svelte';
-	import { sceneState } from '$extensions/scene/scene.svelte';
+	import { SCENES, sceneState, scenePresetsOverrides } from '$extensions/scene/scene.svelte';
 
 	const s = $derived.by((): typeof postprocessingState => {
-		const { globalPresetId, scenePresets, presets } = postprocessingPresetsState;
-		const scenePresetId = scenePresets[sceneState.currentScene] ?? null;
+		const { globalPresetId, presets } = postprocessingPresetsState;
+		const override = scenePresetsOverrides[sceneState.currentScene];
+		const scenePresetId =
+			override && 'postprocessing' in override
+				? (override.postprocessing ?? null)
+				: (SCENES.find((sc) => sc.id === sceneState.currentScene)?.presets?.postprocessing ?? null);
 
 		const globalSettings = globalPresetId
 			? (presets.find((p) => p.id === globalPresetId)?.settings ?? null)

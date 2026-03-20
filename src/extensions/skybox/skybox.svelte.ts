@@ -398,7 +398,6 @@ export const TRANSITION_DURATIONS = [
 
 const USER_PRESETS_KEY = 'spaceplate-skybox-presets';
 const GLOBAL_PRESET_KEY = 'spaceplate-skybox-global-preset';
-const SCENE_PRESETS_KEY = 'spaceplate-skybox-scene-presets';
 
 const loadUserPresets = (): SkyboxUserPreset[] => {
 	let stored: SkyboxUserPreset[] = [];
@@ -425,19 +424,9 @@ const loadGlobalPresetId = (): string | null => {
 	}
 };
 
-const loadScenePresets = (): Record<string, string | null> => {
-	try {
-		const stored = localStorage.getItem(SCENE_PRESETS_KEY);
-		return stored ? JSON.parse(stored) : {};
-	} catch {
-		return {};
-	}
-};
-
 export const skyboxPresetsState = $state<SkyboxPresetsState>({
 	presets: loadUserPresets(),
-	globalPresetId: loadGlobalPresetId(),
-	scenePresets: loadScenePresets()
+	globalPresetId: loadGlobalPresetId()
 });
 
 let animationFrameId: number | null = null;
@@ -858,7 +847,7 @@ export const skyboxActions = {
 		} catch {
 			/* ignore */
 		}
-		// Clear global/scene assignments pointing to deleted preset
+		// Clear global assignment if it pointed to the deleted preset
 		if (skyboxPresetsState.globalPresetId === presetId) {
 			skyboxPresetsState.globalPresetId = null;
 			try {
@@ -866,16 +855,6 @@ export const skyboxActions = {
 			} catch {
 				/* ignore */
 			}
-		}
-		for (const sceneId of Object.keys(skyboxPresetsState.scenePresets)) {
-			if (skyboxPresetsState.scenePresets[sceneId] === presetId) {
-				skyboxPresetsState.scenePresets[sceneId] = null;
-			}
-		}
-		try {
-			localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(skyboxPresetsState.scenePresets));
-		} catch {
-			/* ignore */
 		}
 		logSkybox.info(`Skybox preset deleted: "${preset?.name}"`);
 	},
@@ -890,17 +869,6 @@ export const skyboxActions = {
 			/* ignore */
 		}
 		logSkybox.info(`Skybox global preset: ${preset ? `"${preset.name}"` : 'none'}`);
-	},
-
-	setScenePreset(sceneId: string, presetId: string | null) {
-		const preset = presetId ? skyboxPresetsState.presets.find((p) => p.id === presetId) : null;
-		skyboxPresetsState.scenePresets[sceneId] = presetId;
-		try {
-			localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(skyboxPresetsState.scenePresets));
-		} catch {
-			/* ignore */
-		}
-		logSkybox.info(`Skybox scene preset [${sceneId}]: ${preset ? `"${preset.name}"` : 'none'}`);
 	},
 
 	setMode(mode: EnvironmentState['mode']) {

@@ -40,7 +40,6 @@ export type {
 
 const PRESETS_KEY = 'spaceplate-postprocessing-presets';
 const GLOBAL_PRESET_KEY = 'spaceplate-pp-global-preset';
-const SCENE_PRESETS_KEY = 'spaceplate-pp-scene-presets';
 
 const defaultBloom = (): BloomState => ({
 	enabled: false,
@@ -338,27 +337,16 @@ const loadGlobalPresetId = (): string | null => {
 	}
 };
 
-const loadScenePresets = (): Record<string, string | null> => {
-	try {
-		const stored = localStorage.getItem(SCENE_PRESETS_KEY);
-		return stored ? JSON.parse(stored) : {};
-	} catch {
-		return {};
-	}
-};
-
 export const postprocessingState = $state<PostProcessingState>(defaultState());
 
 export const postprocessingPresetsState = $state<{
 	presets: PostProcessingPreset[];
 	currentPresetId: string | null;
 	globalPresetId: string | null;
-	scenePresets: Record<string, string | null>;
 }>({
 	presets: loadPresets(),
 	currentPresetId: null,
-	globalPresetId: loadGlobalPresetId(),
-	scenePresets: loadScenePresets()
+	globalPresetId: loadGlobalPresetId()
 });
 
 export const postprocessingActions = {
@@ -531,17 +519,6 @@ export const postprocessingActions = {
 				/* ignore */
 			}
 		}
-		const scenePresets = postprocessingPresetsState.scenePresets;
-		for (const sceneId of Object.keys(scenePresets)) {
-			if (scenePresets[sceneId] === presetId) {
-				scenePresets[sceneId] = null;
-			}
-		}
-		try {
-			localStorage.setItem(SCENE_PRESETS_KEY, JSON.stringify(scenePresets));
-		} catch {
-			/* ignore */
-		}
 	},
 
 	renamePreset(presetId: string, newName: string) {
@@ -592,19 +569,4 @@ export const postprocessingActions = {
 		return { success: true };
 	},
 
-	setScenePreset(sceneId: string, presetId: string | null) {
-		const preset = presetId
-			? postprocessingPresetsState.presets.find((p) => p.id === presetId)
-			: null;
-		postprocessingPresetsState.scenePresets[sceneId] = presetId;
-		try {
-			localStorage.setItem(
-				SCENE_PRESETS_KEY,
-				JSON.stringify(postprocessingPresetsState.scenePresets)
-			);
-		} catch {
-			/* ignore */
-		}
-		logPostprocessing.info(`Scene preset [${sceneId}]: ${preset ? `"${preset.name}"` : 'none'}`);
-	}
 };

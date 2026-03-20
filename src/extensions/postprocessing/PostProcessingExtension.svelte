@@ -143,6 +143,14 @@
 		actions: {}
 	});
 
+	// Only remount effect folders when a preset is *loaded* (non-null id), not when reset clears it
+	let foldersKey = $state(postprocessingPresetsState.currentPresetId ?? '');
+	$effect(() => {
+		if (postprocessingPresetsState.currentPresetId !== null) {
+			foldersKey = postprocessingPresetsState.currentPresetId;
+		}
+	});
+
 	const saveAsPreset = () => {
 		const name = prompt('Enter preset name:');
 		if (name) {
@@ -191,7 +199,7 @@
 
 		<Separator />
 
-		{#key postprocessingPresetsState.currentPresetId}
+		{#key foldersKey}
 		<Folder title="Bloom" expanded={s.bloom.enabled}>
 			<Checkbox bind:value={s.bloom.enabled} label="Enabled" />
 			{#if s.bloom.enabled}

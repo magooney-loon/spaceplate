@@ -11,10 +11,14 @@
 		ENV_TEXTURES,
 		CUBE_TEXTURES
 	} from '$extensions/skybox/skybox.svelte';
-	import { sceneState } from '$extensions/scene/scene.svelte';
+	import { SCENES, sceneState, scenePresetsOverrides } from '$extensions/scene/scene.svelte';
 
 	$effect(() => {
-		const scenePresetId = skyboxPresetsState.scenePresets[sceneState.currentScene] ?? null;
+		const override = scenePresetsOverrides[sceneState.currentScene];
+		const scenePresetId =
+			override && 'skybox' in override
+				? (override.skybox ?? null)
+				: (SCENES.find((sc) => sc.id === sceneState.currentScene)?.presets?.skybox ?? null);
 		const presetId = scenePresetId ?? skyboxPresetsState.globalPresetId;
 		if (presetId) skyboxActions.loadUserPreset(presetId);
 	});
