@@ -185,6 +185,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('bloom')} />
 			{/if}
 		</Folder>
 
@@ -202,6 +203,7 @@
 					label="Predication"
 					options={smaaPredicationOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('smaa')} />
 			{/if}
 		</Folder>
 
@@ -217,6 +219,7 @@
 					max={1}
 					step={0.01}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('fxaa')} />
 			{/if}
 		</Folder>
 
@@ -230,6 +233,7 @@
 					label="Technique"
 					options={vignetteTechniqueOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('vignette')} />
 			{/if}
 		</Folder>
 
@@ -243,6 +247,7 @@
 					max={100}
 					step={1}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('pixelation')} />
 			{/if}
 		</Folder>
 
@@ -261,6 +266,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('glitch')} />
 			{/if}
 		</Folder>
 
@@ -273,6 +279,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('noise')} />
 			{/if}
 		</Folder>
 
@@ -306,6 +313,10 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button
+					title="Reset"
+					on:click={() => postprocessingActions.resetEffect('chromaticAberration')}
+				/>
 			{/if}
 		</Folder>
 
@@ -331,6 +342,10 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button
+					title="Reset"
+					on:click={() => postprocessingActions.resetEffect('brightnessContrast')}
+				/>
 			{/if}
 		</Folder>
 
@@ -350,6 +365,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('hueSaturation')} />
 			{/if}
 		</Folder>
 
@@ -362,6 +378,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('sepia')} />
 			{/if}
 		</Folder>
 
@@ -375,6 +392,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('dotScreen')} />
 			{/if}
 		</Folder>
 
@@ -395,6 +413,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('scanline')} />
 			{/if}
 		</Folder>
 
@@ -417,6 +436,7 @@
 					max={0.25}
 					step={0.001}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('shockWave')} />
 			{/if}
 		</Folder>
 
@@ -425,6 +445,7 @@
 			{#if s.ascii.enabled}
 				<Slider bind:value={s.ascii.cellSize} label="Cell Size" min={4} max={64} step={1} />
 				<Checkbox bind:value={s.ascii.inverted} label="Inverted" />
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('ascii')} />
 			{/if}
 		</Folder>
 
@@ -479,6 +500,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('toneMapping')} />
 			{/if}
 		</Folder>
 
@@ -492,6 +514,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('grid')} />
 			{/if}
 		</Folder>
 
@@ -514,6 +537,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('tiltShift')} />
 			{/if}
 		</Folder>
 
@@ -563,6 +587,10 @@
 					step={0.01}
 				/>
 				<Slider bind:value={s.lensDistortion.skew} label="Skew" min={0} max={1} step={0.01} />
+				<Button
+					title="Reset"
+					on:click={() => postprocessingActions.resetEffect('lensDistortion')}
+				/>
 			{/if}
 		</Folder>
 
@@ -575,6 +603,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('colorDepth')} />
 			{/if}
 		</Folder>
 
@@ -614,6 +643,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('depthOfField')} />
 			{/if}
 		</Folder>
 
@@ -645,6 +675,7 @@
 				<Slider bind:value={s.godRays.sunY} label="Sun Y" min={-50} max={50} step={0.1} />
 				<Slider bind:value={s.godRays.sunZ} label="Sun Z" min={-50} max={50} step={0.1} />
 				<Slider bind:value={s.godRays.sunColor} label="Sun Color" min={0} max={0xffffff} step={1} />
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('godRays')} />
 			{/if}
 		</Folder>
 
@@ -713,6 +744,7 @@
 					max={1}
 					step={0.1}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('ssao')} />
 			{/if}
 		</Folder>
 
@@ -756,6 +788,7 @@
 					max={1}
 					step={0.1}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('outline')} />
 			{/if}
 		</Folder>
 
@@ -768,6 +801,7 @@
 					label="Blend Function"
 					options={blendFunctionOptions}
 				/>
+				<Button title="Reset" on:click={() => postprocessingActions.resetEffect('depthEffect')} />
 			{/if}
 		</Folder>
 

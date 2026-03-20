@@ -338,6 +338,46 @@ export const postprocessingActions = {
 		logPostprocessing.info('All effects reset to defaults');
 	},
 
+	resetEffect(effectName: string) {
+		const state = postprocessingState;
+		const defaults: Record<string, () => any> = {
+			bloom: defaultBloom,
+			smaa: defaultSMAA,
+			fxaa: defaultFXAA,
+			vignette: defaultVignette,
+			pixelation: defaultPixelation,
+			glitch: defaultGlitch,
+			noise: defaultNoise,
+			chromaticAberration: defaultChromaticAberration,
+			brightnessContrast: defaultBrightnessContrast,
+			hueSaturation: defaultHueSaturation,
+			sepia: defaultSepia,
+			dotScreen: defaultDotScreen,
+			scanline: defaultScanline,
+			shockWave: defaultShockWave,
+			ascii: defaultASCII,
+			toneMapping: defaultToneMapping,
+			grid: defaultGrid,
+			tiltShift: defaultTiltShift,
+			lensDistortion: defaultLensDistortion,
+			colorDepth: defaultColorDepth,
+			depthOfField: defaultDepthOfField,
+			godRays: defaultGodRays,
+			ssao: defaultSSAO,
+			outline: defaultOutline,
+			depthEffect: defaultDepthEffect
+		};
+
+		const defaultFn = defaults[effectName];
+		if (!defaultFn) {
+			logPostprocessing.warn(`Unknown effect: ${effectName}`);
+			return;
+		}
+
+		(state as any)[effectName] = defaultFn();
+		logPostprocessing.info(`Reset effect: ${effectName}`);
+	},
+
 	savePreset(name: string): { success: boolean; error?: string } {
 		const trimmedName = name.trim();
 		if (!trimmedName) {
