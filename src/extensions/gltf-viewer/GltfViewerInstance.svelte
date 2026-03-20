@@ -13,6 +13,9 @@
 	const gltf = useGltf(untrack(() => model.url));
 	const { actions } = useGltfAnimations(gltf);
 
+	// Track which clips were active on the previous effect run so we can diff for fade in/out
+	let prevActive = new Set<string>();
+
 	// Log when GLTF scene finishes loading
 	$effect(() => {
 		const scene = $gltf?.scene;
@@ -34,10 +37,19 @@
 		const allActions = $actions;
 		if (!allActions) return;
 
-		// Stop any clip not in activeAnimations
-		Object.entries(allActions).forEach(([name, a]) => {
-			if (!model.activeAnimations.includes(name)) a?.stop();
-		});
+		const currentActive = new Set(model.activeAnimations);
+		const dur = model.crossfadeDuration;
+
+		// Fade out (or stop instantly) clips that were just disabled
+		for (const name of prevActive) {
+			if (!currentActive.has(name)) {
+				const a = allActions[name];
+				if (a) {
+					if (dur > 0) a.fadeOut(dur);
+					else a.stop();
+				}
+			}
+		}
 
 		for (const clipName of model.activeAnimations) {
 			const action = allActions[clipName];
@@ -48,11 +60,19 @@
 			if (model.playState === 'stopped') {
 				action.stop(); // resets time to frame 0
 			} else {
-				// reset().play() handles: first start, replay after LoopOnce finished, and resume from stop
-				if (!action.isRunning()) action.reset().play();
+				if (!action.isRunning()) {
+					// New clip, replay after LoopOnce ended, or resume after stop
+					if (dur > 0) action.reset().fadeIn(dur).play();
+					else action.reset().play();
+				} else if (!prevActive.has(clipName)) {
+					// Was fading out and re-enabled — reverse the fade
+					if (dur > 0) action.fadeIn(dur);
+				}
 				action.paused = model.playState === 'paused';
 			}
 		}
+
+		prevActive = currentActive;
 	});
 
 	const deg2rad = (d: number) => (d * Math.PI) / 180;

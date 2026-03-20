@@ -12,6 +12,7 @@ export type GltfViewerModel = {
 	activeAnimations: string[]; // clips currently enabled (can be multiple)
 	playState: 'playing' | 'paused' | 'stopped';
 	animationSpeed: number;
+	crossfadeDuration: number; // seconds — 0 = instant
 	loop: boolean;
 	visible: boolean;
 };

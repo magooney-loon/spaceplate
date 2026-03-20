@@ -214,6 +214,14 @@
 									step={0.05}
 									on:change={(e) => gltfViewerActions.setSpeed(model.id, e.detail.value)}
 								/>
+								<Slider
+									label="Crossfade"
+									value={model.crossfadeDuration}
+									min={0}
+									max={2}
+									step={0.05}
+									on:change={(e) => gltfViewerActions.setCrossfadeDuration(model.id, e.detail.value)}
+								/>
 								<Checkbox
 									label="Loop"
 									value={model.loop}

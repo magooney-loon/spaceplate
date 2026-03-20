@@ -16,6 +16,7 @@ const makeModel = (name: string, url: string, isBlobUrl: boolean): GltfViewerMod
 	activeAnimations: [],
 	playState: 'stopped',
 	animationSpeed: 1,
+	crossfadeDuration: 0.3,
 	loop: true,
 	visible: true
 });
@@ -119,6 +120,11 @@ export const gltfViewerActions = {
 	setSpeed(id: string, speed: number) {
 		const m = find(id);
 		if (m) m.animationSpeed = speed;
+	},
+
+	setCrossfadeDuration(id: string, duration: number) {
+		const m = find(id);
+		if (m) m.crossfadeDuration = duration;
 	},
 
 	setLoop(id: string, loop: boolean) {
