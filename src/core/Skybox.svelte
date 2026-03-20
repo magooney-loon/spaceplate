@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
-	import { Stars as StarsComponent } from '@threlte/extras';
+	import { Sky, Stars as StarsComponent } from '@threlte/extras';
 
 	import { settingsState } from '$extensions/settings/settings.svelte';
+	import { skyboxState } from '$extensions/skybox/skybox.svelte';
 
-	// ─── Quality-based star counts ────────────────────────────────────────────
 	const starCounts = $derived.by(() => {
 		switch (settingsState.graphics.quality) {
 			case 'low':
@@ -17,7 +17,21 @@
 	});
 </script>
 
-<!-- Background stars — Layer 1 (inner, faster) -->
+<T.Group userData={{ hideInTree: true, selectable: false }}>
+	<Sky
+		turbidity={skyboxState.turbidity}
+		rayleigh={skyboxState.rayleigh}
+		azimuth={skyboxState.azimuth}
+		elevation={skyboxState.elevation}
+		mieCoefficient={skyboxState.mieCoefficient}
+		mieDirectionalG={skyboxState.mieDirectionalG}
+		setEnvironment={skyboxState.setEnvironment}
+		cubeMapSize={skyboxState.cubeMapSize}
+		scale={skyboxState.scale}
+		userData={{ hideInTree: true, selectable: false }}
+	/>
+</T.Group>
+
 <T.Group userData={{ hideInTree: true, selectable: false }}>
 	<StarsComponent
 		count={starCounts.stars1}
@@ -33,7 +47,6 @@
 	/>
 </T.Group>
 
-<!-- Background stars — Layer 2 (outer, slower for depth parallax) -->
 <T.Group userData={{ hideInTree: true, selectable: false }}>
 	<StarsComponent
 		count={starCounts.stars2}

@@ -49,9 +49,15 @@
 		{#await import('@threlte/extras') then { PerfMonitor }}
 			<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} />
 		{/await}
-		{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: PostProcessingExtension }, { default: SoundExtension }, { default: LoggerExtension }]}
+		{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: PostProcessingExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: SkyboxExtension }]}
 			<Studio
-				extensions={[SceneExtension, PostProcessingExtension, SoundExtension, LoggerExtension]}
+				extensions={[
+					SceneExtension,
+					PostProcessingExtension,
+					SoundExtension,
+					LoggerExtension,
+					SkyboxExtension
+				]}
 			>
 				<Camera />
 				<GlobalAudio />

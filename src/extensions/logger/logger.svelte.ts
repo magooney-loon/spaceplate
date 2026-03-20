@@ -6,14 +6,16 @@ export const loggerState = $state<LoggerState>({
 	engine: true,
 	settings: true,
 	sound: true,
-	postprocessing: true
+	postprocessing: true,
+	skybox: true
 });
 
 const channelStyles: Record<LoggerChannel, LoggerStyle> = {
 	engine: { color: '#61afef', bg: 'background:#1e3a5f', text: '⬡' },
 	settings: { color: '#98c379', bg: 'background:#2d4a2d', text: '⚙' },
 	sound: { color: '#c678dd', bg: 'background:#3d2d4a', text: '♪' },
-	postprocessing: { color: '#e5c07b', bg: 'background:#4a4020', text: '◈' }
+	postprocessing: { color: '#e5c07b', bg: 'background:#4a4020', text: '◈' },
+	skybox: { color: '#56b6c2', bg: 'background:#2d4a4a', text: '☀' }
 };
 
 const formatTime = () => {
@@ -68,6 +70,7 @@ export const logEngine = createLogger('engine', 'engine');
 export const logSettings = createLogger('settings', 'settings');
 export const logSound = createLogger('sound', 'sound');
 export const logPostprocessing = createLogger('postprocessing', 'postprocessing');
+export const logSkybox = createLogger('skybox', 'skybox');
 
 export const loggerActions = {
 	toggleChannel(channel: LoggerChannel) {
