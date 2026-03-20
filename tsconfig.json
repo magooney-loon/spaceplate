@@ -1,28 +1,38 @@
 {
-  "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"],
-    "module": "ESNext",
-    "skipLibCheck": true,
+	"compilerOptions": {
+		"target": "ES2020",
+		"useDefineForClassFields": true,
+		"lib": ["ES2020", "DOM", "DOM.Iterable"],
+		"types": ["vite/client"],
+		"module": "ESNext",
+		"skipLibCheck": true,
 
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "noEmit": true,
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"isolatedModules": true,
+		"moduleDetection": "force",
+		"noEmit": true,
 
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true,
 
-    "paths": {
-      "$lib": ["./src/lib"],
-      "$lib/*": ["./src/lib/*"]
-    }
-  },
-  "include": ["src", "vite.config.ts"]
+		"paths": {
+			"$lib": ["./src/lib"],
+			"$lib/*": ["./src/lib/*"],
+			"$bindings": ["./src/module_bindings"],
+			"$bindings/*": ["./src/module_bindings/*"],
+			"$root": ["./src"],
+			"$root/*": ["./src/*"],
+			"$core": ["./src/core"],
+			"$core/*": ["./src/core/*"],
+			"$extensions": ["./src/extensions"],
+			"$extensions/*": ["./src/extensions/*"],
+			"$scenes": ["./src/scenes"],
+			"$scenes/*": ["./src/scenes/*"]
+		}
+	},
+	"include": ["src", "vite.config.ts"]
 }

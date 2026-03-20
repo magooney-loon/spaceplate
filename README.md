@@ -15,6 +15,7 @@
       <td align="center"><a href="https://spacetimedb.com"><img src="https://img.shields.io/badge/SpacetimeDB-2.0-7b2ff7.svg" alt="SpacetimeDB"></a></td>
       <td align="center"><a href="https://vitejs.dev"><img src="https://img.shields.io/badge/Vite-6-646cff.svg" alt="Vite 6"></a></td>
       <td align="center"><a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5-blue.svg" alt="TypeScript 5"></a></td>
+      <td align="center"><a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/TailwindCSS-4-38bdf8.svg" alt="TailwindCSS 4"></a></td>
     </tr>
   </table>
 </div>
@@ -25,13 +26,67 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 
 ## What's included
 
-- **Stage system** — simple state machine (`home` / `galaxy` / `settings`) with per-stage camera positions, animated transitions, and a HUD router
-- **Threlte Studio integration** — dev-only toolbar extension for switching stages; easily extend with your own controls
-- **Sound system** — polyphonic + one-shot audio, never unmounts, safe from race conditions
-- **Settings** — persistent audio, graphics quality (DPR + power preference), and UI visibility — all saved to localStorage
-- **Post-processing** — Bloom, SMAA, Vignette via `postprocessing`
-- **SpacetimeDB wiring** — connection setup, generated bindings, example table subscription in `HomeHud`
-- **Debug logging** — env-gated log channels (`VITE_GAME_ENGINE_LOGS`)
+- **Scene Manager** — Application state machine (`mainMenu` / `demoScene` / `settings`) with transitions and scene-specific HUD routing
+- **Task Scheduling** — Threlte-based render pipeline with specialized stages:
+  - `physicsStage` — Game logic (runs only in demoScene, pauses in menus)
+  - `renderStage` — 3D rendering (default)
+  - `uiStage` — UI updates (after render)
+  - `audioStage` — Audio updates (always runs)
+- **Extensions** — Threlte Studio toolbar extensions:
+  - `StageExtension` — Scene switcher buttons
+  - `CameraControlsExtension` — Camera position/angle controls
+  - `PostProcessingExtension` — Full post-processing stack (Bloom, SSAO, GodRays, etc.)
+- **Sound system** — Polyphonic + one-shot audio, never unmounts, safe from race conditions
+- **Settings** — Persistent audio, graphics quality (DPR + power preference), UI visibility — saved to localStorage
+- **SpacetimeDB wiring** — Connection setup, generated bindings, example table subscription
+- **Debug logging** — Env-gated log channels (`VITE_GAME_ENGINE_LOGS`)
+- **TailwindCSS** — Utility-first CSS framework via `@tailwindcss/vite`
+
+---
+
+## Architecture
+
+### Scene System
+```
+src/
+├── core/
+│   ├── SceneManager.svelte.ts    # App state & transitions
+│   └── tasks.ts                   # Task scheduling hook
+├── scenes/
+│   ├── MainMenu.svelte + HUD     # Menu scene
+│   ├── DemoScene.svelte + HUD    # Demo with physics
+│   └── SettingsHud.svelte        # Settings panel
+└── Scene.svelte                  # Scene router
+```
+
+### Task Scheduling
+```typescript
+import { useGameTasks } from '$core/tasks';
+
+const { createPhysicsTask, createUiTask } = useGameTasks();
+
+// Physics only runs in demoScene
+createPhysicsTask((delta) => {
+  // Update game objects
+});
+
+// UI runs in all scenes
+createUiTask((delta) => {
+  // Animate UI
+});
+```
+
+### Extensions
+Each extension is self-contained with state, actions, and UI:
+```
+extensions/
+├── StageExtension.svelte         # Scene switcher toolbar
+├── camera/                       # Camera controls
+└── postprocessing/               # 27 post-processing effects
+    ├── PostProcessingExtension.svelte
+    ├── types.ts
+    └── usePostProcessing.ts
+```
 
 ---
 

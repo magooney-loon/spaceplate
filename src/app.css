@@ -1,0 +1,23 @@
+@import 'tailwindcss';
+
+#body {
+	background: #333333;
+	margin: 0;
+}
+
+#app {
+	width: 100dvw;
+	height: 100dvh;
+	user-select: none;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	-webkit-user-drag: none;
+	cursor: crosshair;
+}
+img,
+canvas,
+svg {
+	user-select: none;
+	-webkit-user-drag: none;
+}

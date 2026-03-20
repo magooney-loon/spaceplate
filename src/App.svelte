@@ -2,13 +2,15 @@
 	import { Canvas } from '@threlte/core';
 	import Scene from './Scene.svelte';
 	import SceneHud from './SceneHud.svelte';
-	import Skybox from './Skybox.svelte';
-	import Camera from './Camera.svelte';
-	import Renderer from './Renderer.svelte';
-	import Sound from './Sound.svelte';
-	import Loader from './Loader.svelte';
+	import Skybox from '$core/Skybox.svelte';
+	import Camera from '$core/Camera.svelte';
+	import Renderer from '$core/Renderer.svelte';
+	import Loader from '$core/Loader.svelte';
+	import GlobalAudio from '$core/GlobalAudio.svelte';
 	import * as THREE from 'three';
-	import { settingsState, generalActions } from './settings.svelte.js';
+	import { settingsState, generalActions } from '$extensions/settings/settings.svelte';
+	import { planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
+	import './app.css';
 
 	function handleKeydown(e: KeyboardEvent) {
 		// Ctrl+H — toggle HUD visibility
@@ -33,42 +35,52 @@
 		switch (settingsState.graphics.quality) {
 			case 'low':
 				return 1;
-			case 'mid':
-				return Math.min(deviceDPR, 1.5);
 			case 'high':
 				return deviceDPR;
 			default:
-				return Math.min(deviceDPR, 1.5);
+				return deviceDPR;
 		}
 	});
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div style="position: relative; width: 100%; height: 100%;">
-	<Canvas {createRenderer} {dpr}>
-		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-			{#await import('@threlte/extras') then { PerfMonitor }}
-				<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} />
-			{/await}
-			{#await Promise.all([import('@threlte/studio'), import('./extensions/StageExtension.svelte')]) then [{ Studio }, { default: StageExtension }]}
-				<Studio extensions={[StageExtension]}>
-					<Camera />
-					<Sound />
-					<Skybox />
-					<Renderer />
-					<Scene />
-				</Studio>
-			{/await}
-		{:else}
-			<Camera />
-			<Sound />
-			<Skybox />
-			<Renderer />
-			<Scene />
-		{/if}
-	</Canvas>
+<svelte:head>
+	{#if planetDemoState.faviconUri}
+		<link rel="icon" type="image/svg+xml" href={planetDemoState.faviconUri} />
+	{/if}
+</svelte:head>
 
-	<SceneHud />
-	<Loader />
-</div>
+<Canvas {createRenderer} {dpr}>
+	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
+		{#await import('@threlte/extras') then { PerfMonitor }}
+			<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} />
+		{/await}
+		{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: PostProcessingExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: SkyboxExtension }]}
+			<Studio
+				extensions={[
+					SceneExtension,
+					PostProcessingExtension,
+					SkyboxExtension,
+					SoundExtension,
+					LoggerExtension
+				]}
+			>
+				<Camera />
+				<GlobalAudio />
+				<Skybox />
+				<Renderer />
+				<Scene />
+			</Studio>
+		{/await}
+	{:else}
+		<Camera />
+		<GlobalAudio />
+		<Skybox />
+		<Renderer />
+		<Scene />
+	{/if}
+</Canvas>
+
+<SceneHud />
+<Loader />
