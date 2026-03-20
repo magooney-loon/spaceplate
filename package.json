@@ -10,6 +10,7 @@
 		"generate": "pnpm --dir spacetimedb install && cargo run -p gen-bindings -- --out-dir src/module_bindings --module-path spacetimedb && prettier --write src/module_bindings",
 		"spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
 		"spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
+		"spacetime:publish:local:fresh": "spacetime publish --module-path spacetimedb --server local --delete-data --yes",
 		"spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
 	},
 	"dependencies": {
