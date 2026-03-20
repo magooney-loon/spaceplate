@@ -1,0 +1,15 @@
+diff --git a/dist/extensions/scene-hierarchy/SceneHierarchy.svelte b/dist/extensions/scene-hierarchy/SceneHierarchy.svelte
+index 1e0de3081a1be13e220e25b9e8d3e0d75fd68677..6c027eaec3857621a680cc466a4923be434aaee3 100644
+--- a/dist/extensions/scene-hierarchy/SceneHierarchy.svelte
++++ b/dist/extensions/scene-hierarchy/SceneHierarchy.svelte
+@@ -47,6 +47,10 @@
+     if (!contentEl) return
+     contentEl.style.maxHeight = '50vh'
+     contentEl.style.overflow = 'auto'
++    contentEl.style.minWidth = 'max-content'
++
++    pane.element.style.width = '13.4vw'
++    pane.element.style.overflow = 'auto'
+   })
+ </script>
+ 
