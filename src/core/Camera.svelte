@@ -4,6 +4,9 @@
 </script>
 
 <T.PerspectiveCamera
+	fov={60}
+	near={0.001}
+	far={144}
 	makeDefault
 	position={[0, 5, 20]}
 	oncreate={(ref) => {
