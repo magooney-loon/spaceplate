@@ -22,7 +22,7 @@ interface CacheConfig {
 /**
  * Interface for caches that support TTL (time-to-live) functionality
  */
-interface TTLCache<T> {
+interface TTLCache<_T> {
 	cleanupExpired(): number;
 }
 
@@ -809,7 +809,7 @@ export const logCacheDetails = (): void => {
 
 	console.group('🔍 Cache Details');
 	const caches = CacheManager.getAllCaches();
-	Object.entries(caches).forEach(([key, cache]) => {
+	Object.entries(caches).forEach(([, cache]) => {
 		const details = getCacheDetails(cache.getName());
 		if (details) {
 			console.group(`📦 ${details.name} (${details.usagePercent.toFixed(1)}% full)`);
