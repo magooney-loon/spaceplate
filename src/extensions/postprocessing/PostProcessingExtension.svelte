@@ -93,9 +93,9 @@
 		{ value: 4 as ToneMappingMode, text: 'Uncharted2' },
 		{ value: 5 as ToneMappingMode, text: 'Optimized Cineon' },
 		{ value: 6 as ToneMappingMode, text: 'Cineon' },
-		{ value: 11 as ToneMappingMode, text: 'ACES Filmic' },
-		{ value: 12 as ToneMappingMode, text: 'AGX' },
-		{ value: 13 as ToneMappingMode, text: 'Neutral' }
+		{ value: 7 as ToneMappingMode, text: 'ACES Filmic' },
+		{ value: 8 as ToneMappingMode, text: 'AGX' },
+		{ value: 9 as ToneMappingMode, text: 'Neutral' }
 	];
 
 	const blendFunctionOptions = [

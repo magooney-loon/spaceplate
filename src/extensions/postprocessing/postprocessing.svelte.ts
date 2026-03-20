@@ -160,7 +160,7 @@ const defaultASCII = (): ASCIIState => ({
 
 const defaultToneMapping = (): ToneMappingState => ({
 	enabled: false,
-	mode: 11 as ToneMappingMode,
+	mode: 7 as ToneMappingMode, // ToneMappingMode.ACES_FILMIC
 	whitePoint: 4.0,
 	middleGrey: 0.6,
 	blendFunction: 23 as BlendFunction,
