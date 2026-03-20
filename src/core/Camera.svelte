@@ -5,7 +5,7 @@
 
 <T.PerspectiveCamera
 	makeDefault
-	position={[0, 2, 69]}
+	position={[0, 5, 20]}
 	oncreate={(ref) => {
 		ref.lookAt(0, 0, 0);
 	}}

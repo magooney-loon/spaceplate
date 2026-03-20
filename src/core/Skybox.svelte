@@ -2,18 +2,14 @@
 	import { T } from '@threlte/core';
 	import { Sky, Stars as StarsComponent } from '@threlte/extras';
 
-	import { settingsState } from '$extensions/settings/settings.svelte';
-	import { skyboxState } from '$extensions/skybox/skybox.svelte';
+	import { skyboxState, starsState } from '$extensions/skybox/skybox.svelte';
 
-	const starCounts = $derived.by(() => {
-		switch (settingsState.graphics.quality) {
-			case 'low':
-				return { stars1: 200, stars2: 180 };
-			case 'high':
-				return { stars1: 720, stars2: 540 };
-			default:
-				return { stars1: 720, stars2: 540 };
-		}
+	const effectiveLayer1Count = $derived.by(() => {
+		return Math.round(starsState.layer1Count);
+	});
+
+	const effectiveLayer2Count = $derived.by(() => {
+		return Math.round(starsState.layer2Count);
 	});
 </script>
 
@@ -32,32 +28,36 @@
 	/>
 </T.Group>
 
-<T.Group userData={{ hideInTree: true, selectable: false }}>
-	<StarsComponent
-		count={starCounts.stars1}
-		radius={4.5}
-		depth={12}
-		factor={1.45}
-		fade={true}
-		lightness={0.4}
-		opacity={1}
-		saturation={0.45}
-		speed={0.72}
-		userData={{ hideInTree: true, selectable: false }}
-	/>
-</T.Group>
+{#if starsState.enabled && effectiveLayer1Count > 0}
+	<T.Group userData={{ hideInTree: true, selectable: false }}>
+		<StarsComponent
+			count={effectiveLayer1Count}
+			radius={starsState.radius}
+			depth={starsState.depth * 0.8}
+			factor={starsState.layer1Factor}
+			fade={starsState.fade}
+			lightness={starsState.lightness}
+			opacity={starsState.opacity}
+			saturation={starsState.saturation}
+			speed={starsState.layer1Speed}
+			userData={{ hideInTree: true, selectable: false }}
+		/>
+	</T.Group>
+{/if}
 
-<T.Group userData={{ hideInTree: true, selectable: false }}>
-	<StarsComponent
-		count={starCounts.stars2}
-		radius={4.5}
-		depth={9}
-		factor={1.9}
-		fade={true}
-		lightness={0.4}
-		opacity={1}
-		saturation={0.45}
-		speed={0.2}
-		userData={{ hideInTree: true, selectable: false }}
-	/>
-</T.Group>
+{#if starsState.enabled && effectiveLayer2Count > 0}
+	<T.Group userData={{ hideInTree: true, selectable: false }}>
+		<StarsComponent
+			count={effectiveLayer2Count}
+			radius={starsState.radius}
+			depth={starsState.depth * 0.6}
+			factor={starsState.layer2Factor}
+			fade={starsState.fade}
+			lightness={starsState.lightness * 0.8}
+			opacity={starsState.opacity * 0.8}
+			saturation={starsState.saturation}
+			speed={starsState.layer2Speed}
+			userData={{ hideInTree: true, selectable: false }}
+		/>
+	</T.Group>
+{/if}
