@@ -39,7 +39,7 @@
 					soundActions.playClick();
 					sceneActions.goToDemoScene();
 				}}
-				class="px-8 py-4 text-xl bg-linear-to-br from-[#4a90d9] to-[#357abd] text-white border-none rounded-lg cursor-pointer min-w-50"
+				class="px-8 py-4 text-xl bg-black/70 text-white/70 border border-white/20 rounded-lg cursor-pointer min-w-50 hover:bg-white/70 hover:text-black transition-colors"
 			>
 				🚀 Start Demo
 			</button>
@@ -49,7 +49,7 @@
 					soundActions.playClick();
 					showSettings = true;
 				}}
-				class="px-8 py-4 text-xl bg-white/10 text-white border-2 border-[#4a90d9] rounded-lg cursor-pointer min-w-50"
+				class="px-8 py-4 text-xl bg-black/70 text-white/70 border border-white/20 rounded-lg cursor-pointer min-w-50 hover:bg-white/70 hover:text-black transition-colors"
 			>
 				⚙️ Settings
 			</button>
@@ -59,7 +59,7 @@
 					soundActions.playClick();
 					planetDemoActions.randomize();
 				}}
-				class="px-8 py-4 text-xl bg-white/5 text-white/70 border border-white/20 rounded-lg cursor-pointer min-w-50 hover:bg-white/10 hover:text-white transition-colors"
+				class="px-8 py-4 text-xl bg-black/70 text-white/70 border border-white/20 rounded-lg cursor-pointer min-w-50 hover:bg-white/70 hover:text-black transition-colors"
 			>
 				🌍 Randomize Planet
 			</button>

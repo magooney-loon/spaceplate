@@ -342,7 +342,7 @@ export const SKY_PRESETS: Record<string, SkyPreset> = {
 };
 
 const defaultState = (): SkyState => ({
-	turbidity: 10,
+	turbidity: 1,
 	rayleigh: 3,
 	azimuth: 180,
 	elevation: -0.9,
