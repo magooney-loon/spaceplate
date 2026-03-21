@@ -45,7 +45,7 @@
 	{/await}
 {/if}
 
-<T.Group userData={{ hideInTree: true, selectable: false }}>
+<T.Group>
 	<T.Mesh
 		bind:ref={rotatingIco}
 		position.y={2.5}
