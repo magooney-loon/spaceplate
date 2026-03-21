@@ -4,8 +4,10 @@
 	import SceneHud from './SceneHud.svelte';
 	import Renderer from '$core/Renderer.svelte';
 	import Loader from '$core/Loader.svelte';
-
+	import { World } from '@threlte/rapier';
+	import { physicsState } from '$extensions/physics/physics.svelte';
 	import * as THREE from 'three';
+	import { HTML } from '@threlte/extras';
 	import { settingsState, generalActions } from '$extensions/settings/settings.svelte';
 	import { planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
 	import './app.css';
@@ -57,28 +59,42 @@
 
 <Canvas {createRenderer} {dpr}>
 	<Renderer />
-	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-		{#await import('@threlte/extras') then { PerfMonitor }}
-			<PerfMonitor anchorX="right" anchorY="bottom" logsPerSecond={30} backgroundOpacity={0.2} />
-		{/await}
-		{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: PostProcessingExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: SkyboxExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }]}
-			<Studio
-				extensions={[
-					SceneExtension,
-					PostProcessingExtension,
-					SkyboxExtension,
-					SoundExtension,
-					LoggerExtension,
-					GltfViewerExtension,
-					PhysicsExtension
-				]}
-			>
-				<Scene />
-			</Studio>
-		{/await}
-	{:else}
-		<Scene />
-	{/if}
+	<World
+		gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]}
+		framerate={physicsState.framerate}
+	>
+		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
+			{#await import('@threlte/extras') then { PerfMonitor }}
+				<PerfMonitor anchorX="right" anchorY="bottom" logsPerSecond={30} backgroundOpacity={0.2} />
+			{/await}
+			{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: PostProcessingExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: SkyboxExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }]}
+				<Studio
+					extensions={[
+						SceneExtension,
+						PostProcessingExtension,
+						SkyboxExtension,
+						SoundExtension,
+						LoggerExtension,
+						GltfViewerExtension,
+						PhysicsExtension
+					]}
+				>
+					<Scene />
+				</Studio>
+			{/await}
+		{:else}
+			<Scene />
+		{/if}
+		{#snippet fallback()}
+			<HTML transform>
+				<p>
+					It seems your browser<br />
+					doesn't support WASM.<br />
+					I'm sorry.
+				</p>
+			</HTML>
+		{/snippet}
+	</World>
 </Canvas>
 
 <SceneHud />
