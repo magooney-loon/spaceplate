@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
+	import { Folder, Slider, Checkbox, Button, Separator } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { gltfViewerState, gltfViewerActions } from './gltfViewer.svelte';
-	import { extensionScope, type GltfColliderShape } from './types';
+	import { extensionScope } from './types';
 	import { sceneState } from '$extensions/scene/scene.svelte';
 
 	interface Props {
@@ -64,28 +64,6 @@
 					/>
 
 					<Separator />
-
-					<Folder title="Physics" expanded={false}>
-						<Checkbox
-							label="Collider Enabled"
-							value={model.colliderEnabled}
-							on:change={() => gltfViewerActions.setColliderEnabled(model.id, !model.colliderEnabled)}
-						/>
-						{#if model.colliderEnabled}
-							<List
-								label="Shape"
-								value={model.colliderShape}
-								options={[
-									{ value: 'convexHull', text: 'Convex Hull (default)' },
-									{ value: 'trimesh', text: 'Trimesh (exact, static only)' },
-									{ value: 'cuboid', text: 'Cuboid (bounding box)' },
-									{ value: 'ball', text: 'Ball (bounding sphere)' },
-									{ value: 'capsule', text: 'Capsule' }
-								]}
-								on:change={(e) => gltfViewerActions.setColliderShape(model.id, e.detail.value as GltfColliderShape)}
-							/>
-						{/if}
-					</Folder>
 
 					{#if model.animationClips.length > 0}
 						<Folder title="Animations ({model.animationClips.length})" expanded={false}>

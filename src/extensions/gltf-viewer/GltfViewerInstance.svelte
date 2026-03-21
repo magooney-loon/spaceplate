@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
 	import { useGltf, useGltfAnimations } from '@threlte/extras';
-	import { AutoColliders, RigidBody } from '@threlte/rapier'; // RigidBody used for fixed collider
 	import { LoopRepeat, LoopOnce } from 'three';
 	import { untrack } from 'svelte';
 	import { gltfViewerActions } from './gltfViewer.svelte';
@@ -86,19 +85,5 @@
 </script>
 
 {#if model.visible && $gltf}
-	{#if model.colliderEnabled}
-		<T.Group userData={{ selectable: false, hideInTree: true }}>
-			{#key model.colliderShape}
-				<RigidBody type="fixed">
-					<T.Group userData={{ selectable: false, hideInTree: true }}>
-						<AutoColliders shape={model.colliderShape}>
-							<T is={$gltf.scene} />
-						</AutoColliders>
-					</T.Group>
-				</RigidBody>
-			{/key}
-		</T.Group>
-	{:else}
-		<T is={$gltf.scene} />
-	{/if}
+	<T is={$gltf.scene} />
 {/if}
