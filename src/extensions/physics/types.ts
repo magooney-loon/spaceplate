@@ -33,6 +33,7 @@ export type PhysicsState = {
 	spawnGravityScale: number;
 	spawnCcd: boolean;
 	spawnCanSleep: boolean;
+	spawnRandom: boolean;
 	// Attractor
 	attractorEnabled: boolean;
 	attractorStrength: number;
@@ -50,6 +51,7 @@ export type PhysicsActions = {
 	setGravityZ(v: number): void;
 	setFramerate(v: PhysicsFramerate): void;
 	toggleDebug(): void;
+	resetWorld(): void;
 	setSpawnRestitution(v: number): void;
 	setSpawnFriction(v: number): void;
 	setSpawnLinearDamping(v: number): void;
@@ -57,11 +59,14 @@ export type PhysicsActions = {
 	setSpawnGravityScale(v: number): void;
 	setSpawnCcd(v: boolean): void;
 	setSpawnCanSleep(v: boolean): void;
+	setSpawnRandom(v: boolean): void;
+	resetSpawnDefaults(): void;
 	toggleAttractor(): void;
 	setAttractorStrength(v: number): void;
 	setAttractorRange(v: number): void;
 	setAttractorGravityType(v: GravityType): void;
 	setAttractorPosition(x: number, y: number, z: number): void;
+	resetAttractor(): void;
 	spawnBall(): void;
 	spawnBox(): void;
 	clearBodies(): void;

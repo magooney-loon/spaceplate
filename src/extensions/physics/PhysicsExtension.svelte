@@ -68,6 +68,7 @@
 				value={physicsState.debug}
 				on:change={() => physicsActions.toggleDebug()}
 			/>
+			<Button title="Reset World" on:click={() => physicsActions.resetWorld()} />
 		</Folder>
 
 		<Separator />
@@ -123,6 +124,12 @@
 				value={physicsState.spawnCanSleep}
 				on:change={() => physicsActions.setSpawnCanSleep(!physicsState.spawnCanSleep)}
 			/>
+			<Checkbox
+				label="Spawn Random"
+				value={physicsState.spawnRandom}
+				on:change={() => physicsActions.setSpawnRandom(!physicsState.spawnRandom)}
+			/>
+			<Button title="Reset Spawn Defaults" on:click={() => physicsActions.resetSpawnDefaults()} />
 		</Folder>
 
 		<Separator />
@@ -185,6 +192,7 @@
 					on:change={(e) => physicsActions.setAttractorPosition(physicsState.attractorX, physicsState.attractorY, e.detail.value)}
 				/>
 			{/if}
+			<Button title="Reset Attractor" on:click={() => physicsActions.resetAttractor()} />
 		</Folder>
 
 		<Separator />

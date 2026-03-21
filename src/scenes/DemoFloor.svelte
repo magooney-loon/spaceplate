@@ -5,7 +5,7 @@
 	const { world, rapier } = useRapier();
 
 	// Imperative creation — bypasses T.Group transform inheritance issues
-	const desc = rapier.ColliderDesc.cylinder(0.1, 20).setTranslation(0, -0.1, -0.9);
+	const desc = rapier.ColliderDesc.cylinder(1, 20).setTranslation(0, -1, 0);
 	const collider = world.createCollider(desc);
 
 	$effect(() => {
@@ -13,7 +13,7 @@
 	});
 </script>
 
-<T.Mesh position={[0, 0, -0.9]} rotation.x={-Math.PI / 2} receiveShadow>
+<T.Mesh position={[0, 0, 0]} rotation.x={-Math.PI / 2} receiveShadow>
 	<T.CircleGeometry args={[20, 40]} />
-	<T.MeshStandardMaterial color="white" opacity={0.45} transparent={true} />
+	<T.MeshStandardMaterial color="gray" />
 </T.Mesh>
