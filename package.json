@@ -15,13 +15,13 @@
 	},
 	"dependencies": {
 		"@tailwindcss/vite": "^4.2.2",
-		"@threlte/core": "^8.4.1",
-		"@threlte/extras": "^9.8.1",
+		"@threlte/core": "^8.5.0",
+		"@threlte/extras": "^9.9.0",
 		"@threlte/studio": "^0.4.0",
-		"svelte-tweakpane-ui": "^1.5.15",
 		"@types/three": "^0.183.1",
 		"postprocessing": "^6.38.3",
 		"spacetimedb": "^2.0.3",
+		"svelte-tweakpane-ui": "^1.5.15",
 		"tailwindcss": "^4.2.2",
 		"three": "^0.183.2"
 	},

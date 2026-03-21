@@ -45,7 +45,7 @@
 	{/await}
 {/if}
 
-<T.Group>
+<T.Group userData={{ hideInTree: true, selectable: false }}>
 	<T.DirectionalLight position={[0, 10, 0]} intensity={0.5} castShadow />
 
 	<T.Mesh

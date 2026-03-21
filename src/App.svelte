@@ -2,11 +2,9 @@
 	import { Canvas } from '@threlte/core';
 	import Scene from './Scene.svelte';
 	import SceneHud from './SceneHud.svelte';
-	import Skybox from '$core/Skybox.svelte';
-	import Camera from '$core/Camera.svelte';
-	import Renderer from '$core/Renderer.svelte';
+
 	import Loader from '$core/Loader.svelte';
-	import GlobalAudio from '$core/GlobalAudio.svelte';
+
 	import * as THREE from 'three';
 	import { settingsState, generalActions } from '$extensions/settings/settings.svelte';
 	import { planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
@@ -51,6 +49,8 @@
 	{/if}
 </svelte:head>
 
+<Loader />
+
 <Canvas {createRenderer} {dpr}>
 	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 		{#await import('@threlte/extras') then { PerfMonitor }}
@@ -67,21 +67,12 @@
 					GltfViewerExtension
 				]}
 			>
-				<Camera />
-				<GlobalAudio />
-				<Skybox />
-				<Renderer />
 				<Scene />
 			</Studio>
 		{/await}
 	{:else}
-		<Camera />
-		<GlobalAudio />
-		<Skybox />
-		<Renderer />
 		<Scene />
 	{/if}
 </Canvas>
 
 <SceneHud />
-<Loader />

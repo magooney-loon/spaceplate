@@ -1,4 +1,8 @@
 <script lang="ts">
+	import Skybox from '$core/Skybox.svelte';
+	import Camera from '$core/Camera.svelte';
+	import Renderer from '$core/Renderer.svelte';
+	import GlobalAudio from '$core/GlobalAudio.svelte';
 	import { T, useTask } from '@threlte/core';
 	import { backOut, cubicOut } from 'svelte/easing';
 	import { sceneState } from '$extensions/scene/scene.svelte';
@@ -19,6 +23,11 @@
 	const scale = $derived(0.85 + backOut(introT) * 0.15);
 	const posY = $derived((1 - cubicOut(introT)) * 0.5);
 </script>
+
+<Camera />
+<Renderer />
+<GlobalAudio />
+<Skybox />
 
 {#if sceneState.currentScene === 'mainMenu'}
 	<T.Group position={[0, posY, 0]} {scale}>

@@ -49,21 +49,6 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 
 ---
 
-## Architecture
-
-### Scene System
-```
-src/
-├── core/
-│   ├── SceneManager.svelte.ts    # App state & transitions
-│   └── tasks.ts                   # Task scheduling hook
-├── scenes/
-│   ├── MainMenu.svelte + HUD     # Menu scene
-│   ├── DemoScene.svelte + HUD    # Demo with physics
-│   └── SettingsHud.svelte        # Settings panel
-└── Scene.svelte                  # Scene router
-```
-
 ### Task Scheduling
 ```typescript
 import { useGameTasks } from '$core/tasks';
@@ -120,6 +105,9 @@ spacetime start
 
 # publish module (local)
 npm run spacetime:publish:local
+
+# publish module (local, wipe db)
+npm run spacetime:publish:local:fresh
 
 # publish module (maincloud)
 npm run spacetime:publish

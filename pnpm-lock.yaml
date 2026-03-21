@@ -17,10 +17,10 @@ importers:
         specifier: ^4.2.2
         version: 4.2.2(vite@6.4.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(sass@1.98.0))
       '@threlte/core':
-        specifier: ^8.4.1
+        specifier: ^8.5.0
         version: 8.5.0(svelte@5.54.0)(three@0.183.2)
       '@threlte/extras':
-        specifier: ^9.8.1
+        specifier: ^9.9.0
         version: 9.9.0(@types/three@0.183.1)(svelte@5.54.0)(three@0.183.2)
       '@threlte/studio':
         specifier: ^0.4.0
