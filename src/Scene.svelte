@@ -24,7 +24,6 @@
 </script>
 
 <Camera />
-
 <GlobalAudio />
 <Skybox />
 

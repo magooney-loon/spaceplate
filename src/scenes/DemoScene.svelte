@@ -1,33 +1,26 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
-	import { PositionalAudio, HTML, interactivity } from '@threlte/extras';
+	import { PositionalAudio, interactivity } from '@threlte/extras';
+	import { World, RigidBody, Collider, Debug } from '@threlte/rapier';
 	import { useGameTasks } from '$core/tasks';
 	import { useSound } from '$extensions/sound/useSound';
 	import { settingsState, BASE_URL } from '$extensions/settings/settings.svelte';
-	import { soundActions } from '$core/GlobalAudio.svelte';
-	import { Spring } from 'svelte/motion';
 	import * as THREE from 'three';
+	import { physicsState } from '$extensions/physics/physics.svelte';
+	import PhysicsController from '$extensions/physics/PhysicsController.svelte';
+	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
+	import DemoFloor from './DemoFloor.svelte';
 
 	interactivity();
 
 	const { createPhysicsTask } = useGameTasks();
 	const { state: soundState } = useSound();
 
-	const scale = new Spring(1);
-	const colors = ['#4488ff', '#ff4466', '#44ff88', '#ff8844', '#aa44ff', '#ffdd44'];
-	let colorIndex = $state(0);
-
-	let rotatingIco = $state.raw<THREE.Mesh>();
 	let bouncingSphere = $state.raw<THREE.Mesh>();
 	let time = $state(0);
 
 	createPhysicsTask((delta) => {
 		time += delta;
-
-		if (rotatingIco) {
-			rotatingIco.rotation.y += delta * 0.5;
-		}
-
 		if (bouncingSphere) {
 			bouncingSphere.position.x = Math.sin(time * 0.5) * 15;
 			bouncingSphere.position.z = Math.cos(time * 0.5) * 9;
@@ -39,40 +32,40 @@
 	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 </script>
 
-{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-	{#await import('$extensions/gltf-viewer/GltfViewerScene.svelte') then { default: GltfViewerScene }}
-		<GltfViewerScene />
-	{/await}
-{/if}
+<World gravity={[0, -9.81, 0]}>
+	<PhysicsController />
 
-<T.Group>
-	<T.Mesh
-		bind:ref={rotatingIco}
-		position.y={2.5}
-		scale={scale.current}
-		onpointerenter={() => (scale.target = 1.5)}
-		onpointerleave={() => (scale.target = 1)}
-		onclick={() => {
-			colorIndex = (colorIndex + 1) % colors.length;
-			soundActions.playClick();
-		}}
-		castShadow
-	>
-		<T.IcosahedronGeometry args={[1, 1]} />
-		<T.MeshStandardMaterial color={colors[colorIndex]} flatShading />
-	</T.Mesh>
+	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
+		{#if physicsState.debug}
+			<Debug />
+		{/if}
+	{/if}
 
-	<HTML position.y={4.5} center transform zIndexRange={[0, 0]}>
-		<div
-			class="text-[18px] font-bold"
-			style="color: {colors[colorIndex]}; text-shadow: 0 0 6px {colors[
-				colorIndex
-			]}, 0 1px 3px rgba(0,0,0,0.8);"
-		>
-			{colors[colorIndex]}
-		</div>
-	</HTML>
+	<DemoFloor />
+	<DemoPhysicsBodies />
 
+	<!-- Spawned physics bodies -->
+	{#each physicsState.bodies as body (body.id)}
+		<T.Group position={body.position}>
+			<RigidBody type="dynamic" ccd={true}>
+				{#if body.type === 'ball'}
+					<Collider shape="ball" args={[0.4]} restitution={0.5} friction={0.8} />
+					<T.Mesh castShadow>
+						<T.SphereGeometry args={[0.4, 16, 16]} />
+						<T.MeshStandardMaterial color={body.color} flatShading />
+					</T.Mesh>
+				{:else}
+					<Collider shape="cuboid" args={[0.4, 0.4, 0.4]} restitution={0.3} friction={0.8} />
+					<T.Mesh castShadow>
+						<T.BoxGeometry args={[0.8, 0.8, 0.8]} />
+						<T.MeshStandardMaterial color={body.color} flatShading />
+					</T.Mesh>
+				{/if}
+			</RigidBody>
+		</T.Group>
+	{/each}
+
+	<!-- Animated bouncing sphere (non-physics) -->
 	<T.Mesh bind:ref={bouncingSphere} position={[2.5, 0, 0]} castShadow>
 		<T.SphereGeometry args={[0.5, 32, 32]} />
 		<T.MeshStandardMaterial color="#d94a4a" flatShading />
@@ -89,8 +82,9 @@
 		/>
 	</T.Mesh>
 
-	<T.Mesh position.z={-0.9} rotation.x={-Math.PI / 2} receiveShadow>
-		<T.CircleGeometry args={[2, 40]} />
-		<T.MeshStandardMaterial color="white" />
-	</T.Mesh>
-</T.Group>
+	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
+		{#await import('$extensions/gltf-viewer/GltfViewerScene.svelte') then { default: GltfViewerScene }}
+			<GltfViewerScene />
+		{/await}
+	{/if}
+</World>

@@ -15,4 +15,17 @@
 >
 	<AudioListener />
 </T.PerspectiveCamera>
-<T.DirectionalLight position={[0, 10, 0]} intensity={Math.PI / 4} castShadow />
+<T.DirectionalLight
+	position={[0, 10, 0]}
+	intensity={Math.PI / 4}
+	castShadow
+	shadow.camera.left={-20}
+	shadow.camera.right={20}
+	shadow.camera.top={20}
+	shadow.camera.bottom={-20}
+	shadow.camera.near={0.1}
+	shadow.camera.far={50}
+	shadow.mapSize.width={2048}
+	shadow.mapSize.height={2048}
+	oncreate={(ref) => ref.shadow.camera.updateProjectionMatrix()}
+/>
