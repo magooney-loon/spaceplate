@@ -1,5 +1,7 @@
 export const extensionScope = 'physics';
 
+export type GravityType = 'static' | 'linear' | 'newtonian';
+export type PhysicsFramerate = 'varying' | number;
 export type PhysicsBodyType = 'ball' | 'box';
 
 export type PhysicsBody = {
@@ -7,17 +9,59 @@ export type PhysicsBody = {
 	type: PhysicsBodyType;
 	position: [number, number, number];
 	color: string;
+	restitution: number;
+	friction: number;
+	linearDamping: number;
+	angularDamping: number;
+	gravityScale: number;
+	ccd: boolean;
+	canSleep: boolean;
 };
 
 export type PhysicsState = {
-	gravity: number;
+	// World
+	gravityX: number;
+	gravityY: number;
+	gravityZ: number;
+	framerate: PhysicsFramerate;
 	debug: boolean;
+	// Spawn defaults
+	spawnRestitution: number;
+	spawnFriction: number;
+	spawnLinearDamping: number;
+	spawnAngularDamping: number;
+	spawnGravityScale: number;
+	spawnCcd: boolean;
+	spawnCanSleep: boolean;
+	// Attractor
+	attractorEnabled: boolean;
+	attractorStrength: number;
+	attractorRange: number;
+	attractorGravityType: GravityType;
+	attractorX: number;
+	attractorY: number;
+	attractorZ: number;
 	bodies: PhysicsBody[];
 };
 
 export type PhysicsActions = {
-	setGravity(v: number): void;
+	setGravityX(v: number): void;
+	setGravityY(v: number): void;
+	setGravityZ(v: number): void;
+	setFramerate(v: PhysicsFramerate): void;
 	toggleDebug(): void;
+	setSpawnRestitution(v: number): void;
+	setSpawnFriction(v: number): void;
+	setSpawnLinearDamping(v: number): void;
+	setSpawnAngularDamping(v: number): void;
+	setSpawnGravityScale(v: number): void;
+	setSpawnCcd(v: boolean): void;
+	setSpawnCanSleep(v: boolean): void;
+	toggleAttractor(): void;
+	setAttractorStrength(v: number): void;
+	setAttractorRange(v: number): void;
+	setAttractorGravityType(v: GravityType): void;
+	setAttractorPosition(x: number, y: number, z: number): void;
 	spawnBall(): void;
 	spawnBox(): void;
 	clearBodies(): void;

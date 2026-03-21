@@ -5,6 +5,6 @@
 	const { world } = useRapier();
 
 	$effect(() => {
-		world.gravity = { x: 0, y: physicsState.gravity, z: 0 };
+		world.gravity = { x: physicsState.gravityX, y: physicsState.gravityY, z: physicsState.gravityZ };
 	});
 </script>

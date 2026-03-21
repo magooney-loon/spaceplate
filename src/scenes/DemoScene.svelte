@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
 	import { PositionalAudio, interactivity } from '@threlte/extras';
-	import { World, RigidBody, Collider, Debug } from '@threlte/rapier';
+	import { World, RigidBody, Collider, Debug, Attractor } from '@threlte/rapier';
 	import { useGameTasks } from '$core/tasks';
 	import { useSound } from '$extensions/sound/useSound';
 	import { settingsState, BASE_URL } from '$extensions/settings/settings.svelte';
@@ -32,7 +32,7 @@
 	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 </script>
 
-<World gravity={[0, -9.81, 0]}>
+<World gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]} framerate={physicsState.framerate}>
 	<PhysicsController />
 
 	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
@@ -41,21 +41,37 @@
 		{/if}
 	{/if}
 
+	{#if physicsState.attractorEnabled}
+		<Attractor
+			position={[physicsState.attractorX, physicsState.attractorY, physicsState.attractorZ]}
+			strength={physicsState.attractorStrength}
+			range={physicsState.attractorRange}
+			gravityType={physicsState.attractorGravityType}
+		/>
+	{/if}
+
 	<DemoFloor />
 	<DemoPhysicsBodies />
 
 	<!-- Spawned physics bodies -->
 	{#each physicsState.bodies as body (body.id)}
 		<T.Group position={body.position}>
-			<RigidBody type="dynamic" ccd={true}>
+			<RigidBody
+				type="dynamic"
+				ccd={body.ccd}
+				canSleep={body.canSleep}
+				linearDamping={body.linearDamping}
+				angularDamping={body.angularDamping}
+				gravityScale={body.gravityScale}
+			>
 				{#if body.type === 'ball'}
-					<Collider shape="ball" args={[0.4]} restitution={0.5} friction={0.8} />
+					<Collider shape="ball" args={[0.4]} restitution={body.restitution} friction={body.friction} />
 					<T.Mesh castShadow>
 						<T.SphereGeometry args={[0.4, 16, 16]} />
 						<T.MeshStandardMaterial color={body.color} flatShading />
 					</T.Mesh>
 				{:else}
-					<Collider shape="cuboid" args={[0.4, 0.4, 0.4]} restitution={0.3} friction={0.8} />
+					<Collider shape="cuboid" args={[0.4, 0.4, 0.4]} restitution={body.restitution} friction={body.friction} />
 					<T.Mesh castShadow>
 						<T.BoxGeometry args={[0.8, 0.8, 0.8]} />
 						<T.MeshStandardMaterial color={body.color} flatShading />
