@@ -23,7 +23,11 @@
 		const powerPreference =
 			settingsState.graphics.quality === 'low' ? 'low-power' : 'high-performance';
 
-		return new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference });
+		return new THREE.WebGLRenderer({
+			canvas,
+			antialias: false,
+			powerPreference
+		});
 	};
 
 	const dpr = $derived.by(() => {
@@ -52,6 +56,7 @@
 <Loader />
 
 <Canvas {createRenderer} {dpr}>
+	<Renderer />
 	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 		{#await import('@threlte/extras') then { PerfMonitor }}
 			<PerfMonitor anchorX="left" anchorY="bottom" logsPerSecond={30} backgroundOpacity={0.2} />
@@ -73,7 +78,6 @@
 	{:else}
 		<Scene />
 	{/if}
-	<Renderer />
 </Canvas>
 
 <SceneHud />
