@@ -86,9 +86,13 @@
 </script>
 
 {#if model.visible && $gltf}
-	{#key `${model.id}:${model.colliderShape}`}
-		<AutoColliders shape={model.colliderShape}>
-			<T is={$gltf.scene} />
-		</AutoColliders>
-	{/key}
+	<T.Group name={model.name}>
+		{#if model.colliderEnabled}
+			<AutoColliders shape={model.colliderShape}>
+				<T is={$gltf.scene} userData={{ hideInTree: true, selectable: false }} />
+			</AutoColliders>
+		{:else}
+			<T is={$gltf.scene} userData={{ hideInTree: true, selectable: false }} />
+		{/if}
+	</T.Group>
 {/if}

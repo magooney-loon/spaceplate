@@ -16,6 +16,7 @@ const makeModel = (name: string, url: string, isBlobUrl: boolean): GltfViewerMod
 	crossfadeDuration: 0.3,
 	loop: true,
 	visible: true,
+	colliderEnabled: false,
 	colliderShape: 'trimesh'
 });
 
@@ -131,5 +132,10 @@ export const gltfViewerActions = {
 	setColliderShape(id: string, shape: GltfViewerColliderShape) {
 		const m = find(id);
 		if (m) m.colliderShape = shape;
+	},
+
+	setColliderEnabled(id: string, enabled: boolean) {
+		const m = find(id);
+		if (m) m.colliderEnabled = enabled;
 	}
 };

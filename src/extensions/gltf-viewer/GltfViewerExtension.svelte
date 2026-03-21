@@ -127,6 +127,11 @@
 					{/if}
 
 					<Separator />
+					<Checkbox
+						label="Collider Enabled"
+						value={model.colliderEnabled}
+						on:change={() => gltfViewerActions.setColliderEnabled(model.id, !model.colliderEnabled)}
+					/>
 					<List
 						label="Collider"
 						value={model.colliderShape}

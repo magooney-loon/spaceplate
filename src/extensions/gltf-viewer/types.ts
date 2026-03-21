@@ -14,6 +14,7 @@ export type GltfViewerModel = {
 	crossfadeDuration: number; // seconds — 0 = instant
 	loop: boolean;
 	visible: boolean;
+	colliderEnabled: boolean;
 	colliderShape: GltfViewerColliderShape;
 };
 
