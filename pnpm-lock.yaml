@@ -13,6 +13,9 @@ importers:
 
   .:
     dependencies:
+      '@dimforge/rapier3d-compat':
+        specifier: ^0.19.3
+        version: 0.19.3
       '@tailwindcss/vite':
         specifier: ^4.2.2
         version: 4.2.2(vite@6.4.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(sass@1.98.0))
@@ -22,6 +25,9 @@ importers:
       '@threlte/extras':
         specifier: ^9.9.0
         version: 9.9.0(@types/three@0.183.1)(svelte@5.54.0)(three@0.183.2)
+      '@threlte/rapier':
+        specifier: ^3.4.0
+        version: 3.4.0(@dimforge/rapier3d-compat@0.19.3)(svelte@5.54.0)(three@0.183.2)
       '@threlte/studio':
         specifier: ^0.4.0
         version: 0.4.0(patch_hash=5567bc9ba3a4aee2adf8c140babddceb1ad526e8d2d72a028b4df8608d4f7311)(svelte@5.54.0)(three@0.183.2)(tweakpane@4.0.5)(vite@6.4.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(sass@1.98.0))
@@ -76,6 +82,9 @@ packages:
 
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
+
+  '@dimforge/rapier3d-compat@0.19.3':
+    resolution: {integrity: sha512-mMVdSj1PRTT108s9Swbu2GQOmHbn8kbJANRV5xfczL3s0T4vkgZAuoMRgvBzQcHanpKusbC0ZJj6z3mC3aj3vg==}
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -671,6 +680,13 @@ packages:
     peerDependencies:
       svelte: '>=5'
       three: '>=0.160'
+
+  '@threlte/rapier@3.4.0':
+    resolution: {integrity: sha512-UWtdQ7OsD0tujyJYo1eGjyZpQyDKIZ/D5r4PzY4oYKIs0GsW01rJ5gxXB2Lr/w+S2zr0EEhIJj/32qXPXTcnkA==}
+    peerDependencies:
+      '@dimforge/rapier3d-compat': '>=0.16'
+      svelte: '>=5'
+      three: '>=0.152'
 
   '@threlte/studio@0.4.0':
     resolution: {integrity: sha512-na/E7D/pM8qFMUHwB0T+bWMiA2reT1m1TLNwLXu5Q1QVRPk+Y4eJvOYd8C7x6QX7QTv0bLQIZADkw5IE3hJDNw==}
@@ -1336,6 +1352,8 @@ snapshots:
 
   '@dimforge/rapier3d-compat@0.12.0': {}
 
+  '@dimforge/rapier3d-compat@0.19.3': {}
+
   '@esbuild/aix-ppc64@0.25.12':
     optional: true
 
@@ -1750,6 +1768,12 @@ snapshots:
       troika-three-text: 0.52.4(three@0.183.2)
     transitivePeerDependencies:
       - '@types/three'
+
+  '@threlte/rapier@3.4.0(@dimforge/rapier3d-compat@0.19.3)(svelte@5.54.0)(three@0.183.2)':
+    dependencies:
+      '@dimforge/rapier3d-compat': 0.19.3
+      svelte: 5.54.0
+      three: 0.183.2
 
   '@threlte/studio@0.4.0(patch_hash=5567bc9ba3a4aee2adf8c140babddceb1ad526e8d2d72a028b4df8608d4f7311)(svelte@5.54.0)(three@0.183.2)(tweakpane@4.0.5)(vite@6.4.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(sass@1.98.0))':
     dependencies:

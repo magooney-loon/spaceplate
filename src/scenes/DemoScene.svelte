@@ -10,7 +10,10 @@
 	interactivity();
 </script>
 
-<World gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]} framerate={physicsState.framerate}>
+<World
+	gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]}
+	framerate={physicsState.framerate}
+>
 	<PhysicsController />
 
 	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
@@ -43,13 +46,23 @@
 				gravityScale={body.gravityScale}
 			>
 				{#if body.type === 'ball'}
-					<Collider shape="ball" args={[0.4]} restitution={body.restitution} friction={body.friction} />
+					<Collider
+						shape="ball"
+						args={[0.4]}
+						restitution={body.restitution}
+						friction={body.friction}
+					/>
 					<T.Mesh castShadow>
 						<T.SphereGeometry args={[0.4, 16, 16]} />
 						<T.MeshStandardMaterial color={body.color} flatShading />
 					</T.Mesh>
 				{:else}
-					<Collider shape="cuboid" args={[0.4, 0.4, 0.4]} restitution={body.restitution} friction={body.friction} />
+					<Collider
+						shape="cuboid"
+						args={[0.4, 0.4, 0.4]}
+						restitution={body.restitution}
+						friction={body.friction}
+					/>
 					<T.Mesh castShadow>
 						<T.BoxGeometry args={[0.8, 0.8, 0.8]} />
 						<T.MeshStandardMaterial color={body.color} flatShading />
@@ -59,7 +72,7 @@
 		</T.Group>
 	{/each}
 
-{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
+	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 		{#await import('$extensions/gltf-viewer/GltfViewerScene.svelte') then { default: GltfViewerScene }}
 			<GltfViewerScene />
 		{/await}
