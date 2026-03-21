@@ -115,7 +115,31 @@ This order holds even after DefaultCamera re-mounts, because its new task is alw
 
 ---
 
-## Bug 4 — OutlineEffect Conflicts with Studio Selection
+## Bug 4 — Selection Outline Leaves a Trail (autoClear leak)
+
+**Cause:** The `postprocessing` EffectComposer **constructor** calls `renderer.autoClear = false`
+(permanently, by design — it manages clearing itself). This is never restored. Every subsequent
+`renderer.render()` call anywhere in the app — including Studio's `RenderSelectedObjects`
+rendering into its `WebGLRenderTarget` — skips clearing. The previous frame's outline is drawn
+on top of the new one every frame, producing the growing trail.
+
+**Fix:** Restore `autoClear = true` immediately after creating the EffectComposer, then
+explicitly toggle it only around our own `composer.render()` call:
+
+```ts
+const composer = new EffectComposer(renderer);
+renderer.autoClear = true; // undo what the constructor just did
+
+useTask((delta) => {
+  renderer.autoClear = false; // re-disable for composer (it needs this)
+  composer.render(delta);
+  renderer.autoClear = true;  // restore for the next frame's Studio renders
+}, { after: autoRenderTask, autoInvalidate: false })
+```
+
+---
+
+## Bug 5 — OutlineEffect Conflicts with Studio Selection
 
 The `postprocessing` library's `OutlineEffect` conflicts with Studio's own selection outline
 system (`RenderSelectedObjects`). Having both active produces visual artifacts.

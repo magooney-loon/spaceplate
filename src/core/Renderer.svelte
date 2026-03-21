@@ -15,6 +15,12 @@ import type { Camera } from 'three';
 
 	// Adapt the default WebGLRenderer: https://github.com/pmndrs/postprocessing#usage
 	const composer = new EffectComposer(renderer);
+	// EffectComposer constructor permanently sets renderer.autoClear = false (by design —
+	// it manages clearing itself). Restore it immediately so that Studio's tasks
+	// (RenderSelectedObjects, DefaultCamera) which call renderer.render() directly will
+	// still clear their render targets correctly. We re-disable it only during our own
+	// composer.render() call in the task below.
+	renderer.autoClear = true;
 
 	const setupEffectComposer = (camera: Camera) => {
 		composer.removeAllPasses();
@@ -70,7 +76,12 @@ import type { Camera } from 'three';
 	// See src/core/Renderer.md for the full explanation.
 	useTask(
 		(delta) => {
+			// Disable autoClear for the composer (it manages clearing itself),
+			// then restore immediately so the next frame's Studio tasks (RSO,
+			// DefaultCamera) get autoClear=true and clear their render targets.
+			renderer.autoClear = false;
 			composer.render(delta);
+			renderer.autoClear = true;
 		},
 		{ after: autoRenderTask, autoInvalidate: false }
 	);
