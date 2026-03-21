@@ -80,7 +80,7 @@
 			time += delta;
 			const x = Math.sin(time * 0.5) * 15;
 			const z = Math.cos(time * 0.5) * 9;
-			const y = Math.sin(time) * 1.5 + 2;
+			const y = Math.sin(time) * 1.5 + 2.5;
 			const rotQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(time, 0, 0));
 			sphereRb.setNextKinematicTranslation({ x, y, z });
 			sphereRb.setNextKinematicRotation({ x: rotQ.x, y: rotQ.y, z: rotQ.z, w: rotQ.w });
