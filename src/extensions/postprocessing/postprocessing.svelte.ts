@@ -390,6 +390,10 @@ export const postprocessingActions = {
 		logPostprocessing.info(`Reset effect: ${effectName}`);
 	},
 
+	explodeShockWave() {
+		postprocessingState.shockWave.triggered = true;
+	},
+
 	savePreset(name: string): { success: boolean; error?: string } {
 		const trimmedName = name.trim();
 		if (!trimmedName) {

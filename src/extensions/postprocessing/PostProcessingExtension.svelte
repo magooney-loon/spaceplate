@@ -556,6 +556,7 @@
 						max={0.25}
 						step={0.001}
 					/>
+					<Button title="Explode" on:click={() => postprocessingActions.explodeShockWave()} />
 					<Button title="Reset" on:click={() => postprocessingActions.resetEffect('shockWave')} />
 				{/if}
 			</Folder>
