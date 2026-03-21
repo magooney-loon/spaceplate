@@ -341,12 +341,6 @@
 	});
 </script>
 
-<Float floatIntensity={0.15} userData={{ hideInTree: true, selectable: false }}>
-	<T.Mesh
-		rotation.y={rotation}
-		geometry={planetGeometry}
-		material={planetMaterial}
-		scale={0.12}
-		userData={{ hideInTree: true, selectable: false }}
-	/>
+<Float floatIntensity={0.15} name="Planet">
+	<T.Mesh rotation.y={rotation} geometry={planetGeometry} material={planetMaterial} scale={0.12} />
 </Float>

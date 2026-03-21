@@ -47,51 +47,53 @@
 
 <!-- Rotating icosahedron — kinematic, spins in place, spawned bodies bounce off it -->
 <T.Group userData={{ selectable: false, hideInTree: true }}>
-<RigidBody type="kinematicPosition" bind:rigidBody={icoRb}>
-	<Collider shape="ball" args={[1]} />
-	<T.Mesh
-		scale={scale.current}
-		onpointerenter={() => (scale.target = 1.5)}
-		onpointerleave={() => (scale.target = 1)}
-		onclick={() => {
-			colorIndex = (colorIndex + 1) % colors.length;
-			soundActions.playClick();
-		}}
-		castShadow
-	>
-		<T.IcosahedronGeometry args={[1, 1]} />
-		<T.MeshStandardMaterial color={colors[colorIndex]} flatShading />
-	</T.Mesh>
-
-	<HTML position.y={2} center transform zIndexRange={[0, 0]}>
-		<div
-			class="text-[18px] font-bold"
-			style="color: {colors[colorIndex]}; text-shadow: 0 0 6px {colors[colorIndex]}, 0 1px 3px rgba(0,0,0,0.8);"
+	<RigidBody type="kinematicPosition" bind:rigidBody={icoRb}>
+		<Collider shape="ball" args={[1]} />
+		<T.Mesh
+			scale={scale.current}
+			onpointerenter={() => (scale.target = 1.5)}
+			onpointerleave={() => (scale.target = 1)}
+			onclick={() => {
+				colorIndex = (colorIndex + 1) % colors.length;
+				soundActions.playClick();
+			}}
+			castShadow
 		>
-			{colors[colorIndex]}
-		</div>
-	</HTML>
-</RigidBody>
+			<T.IcosahedronGeometry args={[1, 1]} />
+			<T.MeshStandardMaterial color={colors[colorIndex]} flatShading />
+		</T.Mesh>
+
+		<HTML position.y={2} center transform zIndexRange={[0, 0]}>
+			<div
+				class="text-[18px] font-bold"
+				style="color: {colors[colorIndex]}; text-shadow: 0 0 6px {colors[
+					colorIndex
+				]}, 0 1px 3px rgba(0,0,0,0.8);"
+			>
+				{colors[colorIndex]}
+			</div>
+		</HTML>
+	</RigidBody>
 </T.Group>
 
 <!-- Orbiting bouncing sphere — kinematic, collides with dynamic bodies -->
 <T.Group userData={{ selectable: false, hideInTree: true }}>
-<RigidBody type="kinematicPosition" bind:rigidBody={sphereRb}>
-	<Collider shape="ball" args={[0.5]} />
-	<T.Mesh castShadow>
-		<T.SphereGeometry args={[0.5, 32, 32]} />
-		<T.MeshStandardMaterial color="#d94a4a" flatShading />
+	<RigidBody type="kinematicPosition" bind:rigidBody={sphereRb}>
+		<Collider shape="ball" args={[0.5]} />
+		<T.Mesh castShadow>
+			<T.SphereGeometry args={[0.5, 32, 32]} />
+			<T.MeshStandardMaterial color="#d94a4a" flatShading />
 
-		<PositionalAudio
-			src={POS_URL}
-			volume={settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0}
-			refDistance={soundState.refDistance}
-			maxDistance={soundState.maxDistance}
-			rolloffFactor={soundState.rolloffFactor}
-			panningModel={soundState.panningModel}
-			loop
-			autoplay={settingsState.audio.sfxEnabled}
-		/>
-	</T.Mesh>
-</RigidBody>
+			<PositionalAudio
+				src={POS_URL}
+				volume={settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0}
+				refDistance={soundState.refDistance}
+				maxDistance={soundState.maxDistance}
+				rolloffFactor={soundState.rolloffFactor}
+				panningModel={soundState.panningModel}
+				loop
+				autoplay={settingsState.audio.sfxEnabled}
+			/>
+		</T.Mesh>
+	</RigidBody>
 </T.Group>

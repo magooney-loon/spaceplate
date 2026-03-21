@@ -262,12 +262,11 @@
 	});
 </script>
 
-<T.Group position={[0, 0, 0.9]} scale={0.009} userData={{ hideInTree: true, selectable: false }}>
-	<Float floatIntensity={1.3} userData={{ hideInTree: true, selectable: false }}>
+<T.Group position={[0, 0, 0.9]} scale={0.009} name="Smoke">
+	<Float floatIntensity={1.3}>
 		{#if particleCount > 0 && settingsState.graphics.quality !== 'low' && $smokeTexture}
 			<T.InstancedMesh
 				args={[undefined, undefined, particleCount]}
-				userData={{ hideInTree: true, selectable: false }}
 				oncreate={handleCloudMeshCreate}
 			>
 				<T.PlaneGeometry args={[270, 270]} attach="geometry" />

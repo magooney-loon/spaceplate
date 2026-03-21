@@ -6,7 +6,7 @@
 </script>
 
 <!-- Main Menu 3D — procedural planet background -->
-<T.Group position={[0, 0, 0]}>
+<T.Group position={[0, 0, 0]} name="DemoPlanet">
 	<Planet planetId={planetDemoState.planetId} temperature={planetDemoState.temperature} />
 	<PlanetSmoke planetId={planetDemoState.planetId} temperature={planetDemoState.temperature} />
 </T.Group>

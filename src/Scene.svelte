@@ -28,13 +28,13 @@
 <Skybox />
 
 {#if sceneState.currentScene === 'mainMenu'}
-	<T.Group position={[0, posY, 0]} {scale}>
+	<T.Group name="MainMenu" position={[0, posY, 0]} {scale}>
 		<MainMenu />
 	</T.Group>
 {/if}
 
 {#if sceneState.currentScene === 'demoScene'}
-	<T.Group position={[0, posY, 0]} {scale}>
+	<T.Group name="DemoScene" position={[0, posY, 0]} {scale}>
 		<DemoScene />
 	</T.Group>
 {/if}
