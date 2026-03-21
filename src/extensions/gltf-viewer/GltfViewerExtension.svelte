@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Folder, Slider, Checkbox, Button, Separator } from 'svelte-tweakpane-ui';
+	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { gltfViewerState, gltfViewerActions } from './gltfViewer.svelte';
-	import { extensionScope } from './types';
+	import { extensionScope, type GltfViewerColliderShape } from './types';
 	import { sceneState } from '$extensions/scene/scene.svelte';
 
 	interface Props {
@@ -33,12 +33,20 @@
 	const isInDemoScene = $derived(sceneState.currentScene === 'demoScene');
 </script>
 
-<input bind:this={fileInput} type="file" accept=".gltf,.glb" style="display:none" onchange={handleFileChange} />
+<input
+	bind:this={fileInput}
+	type="file"
+	accept=".gltf,.glb"
+	style="display:none"
+	onchange={handleFileChange}
+/>
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiCubeOutline" title="GLTF Viewer">
 		{#if !isInDemoScene}
-			<span style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-bottom:4px; line-height:1.6; white-space:normal;">
+			<span
+				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-bottom:4px; line-height:1.6; white-space:normal;"
+			>
 				⚠️ Models render in <strong>Demo Scene</strong>.<br />Loading will switch automatically.
 			</span>
 		{/if}
@@ -78,21 +86,63 @@
 								<Separator />
 								<Button
 									title={model.playState === 'playing' ? '⏸ Pause' : '▶ Play'}
-									on:click={() => gltfViewerActions.setPlayState(model.id, model.playState === 'playing' ? 'paused' : 'playing')}
+									on:click={() =>
+										gltfViewerActions.setPlayState(
+											model.id,
+											model.playState === 'playing' ? 'paused' : 'playing'
+										)}
 								/>
-								<Button title="⏹ Stop" on:click={() => gltfViewerActions.setPlayState(model.id, 'stopped')} />
-								<Slider label="Speed" value={model.animationSpeed} min={0.1} max={3} step={0.05}
-									on:change={(e) => gltfViewerActions.setSpeed(model.id, e.detail.value)} />
-								<Slider label="Crossfade" value={model.crossfadeDuration} min={0} max={2} step={0.05}
-									on:change={(e) => gltfViewerActions.setCrossfadeDuration(model.id, e.detail.value)} />
-								<Checkbox label="Loop" value={model.loop}
-									on:change={() => gltfViewerActions.setLoop(model.id, !model.loop)} />
+								<Button
+									title="⏹ Stop"
+									on:click={() => gltfViewerActions.setPlayState(model.id, 'stopped')}
+								/>
+								<Slider
+									label="Speed"
+									value={model.animationSpeed}
+									min={0.1}
+									max={3}
+									step={0.05}
+									on:change={(e) => gltfViewerActions.setSpeed(model.id, e.detail.value)}
+								/>
+								<Slider
+									label="Crossfade"
+									value={model.crossfadeDuration}
+									min={0}
+									max={2}
+									step={0.05}
+									on:change={(e) =>
+										gltfViewerActions.setCrossfadeDuration(model.id, e.detail.value)}
+								/>
+								<Checkbox
+									label="Loop"
+									value={model.loop}
+									on:change={() => gltfViewerActions.setLoop(model.id, !model.loop)}
+								/>
 							{/if}
 						</Folder>
 					{:else}
-						<span style="font-size:11px; color:rgba(255,255,255,0.35);">No animations — loading…</span>
+						<span style="font-size:11px; color:rgba(255,255,255,0.35);"
+							>No animations — loading…</span
+						>
 					{/if}
 
+					<Separator />
+					<List
+						label="Collider"
+						value={model.colliderShape}
+						options={[
+							{ value: 'trimesh', text: 'Trimesh' },
+							{ value: 'convexHull', text: 'Convex Hull' },
+							{ value: 'cuboid', text: 'Cuboid' },
+							{ value: 'ball', text: 'Ball' },
+							{ value: 'capsule', text: 'Capsule' }
+						]}
+						on:change={(e) =>
+							gltfViewerActions.setColliderShape(
+								model.id,
+								e.detail.value as GltfViewerColliderShape
+							)}
+					/>
 					<Separator />
 					<Button title="✕ Remove" on:click={() => gltfViewerActions.removeModel(model.id)} />
 				</Folder>

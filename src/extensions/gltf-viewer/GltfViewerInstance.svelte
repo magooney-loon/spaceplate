@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
 	import { useGltf, useGltfAnimations } from '@threlte/extras';
+	import { AutoColliders } from '@threlte/rapier';
 	import { LoopRepeat, LoopOnce } from 'three';
 	import { untrack } from 'svelte';
 	import { gltfViewerActions } from './gltfViewer.svelte';
@@ -85,5 +86,9 @@
 </script>
 
 {#if model.visible && $gltf}
-	<T is={$gltf.scene} />
+	{#key `${model.id}:${model.colliderShape}`}
+		<AutoColliders shape={model.colliderShape}>
+			<T is={$gltf.scene} />
+		</AutoColliders>
+	{/key}
 {/if}

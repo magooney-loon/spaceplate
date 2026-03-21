@@ -1,6 +1,6 @@
 import { sceneActions } from '$extensions/scene/scene.svelte';
 import { logGltf } from '$extensions/logger/logger.svelte';
-import type { GltfViewerModel, GltfViewerState } from './types';
+import type { GltfViewerColliderShape, GltfViewerModel, GltfViewerState } from './types';
 
 export type { GltfViewerModel, GltfViewerState } from './types';
 
@@ -15,7 +15,8 @@ const makeModel = (name: string, url: string, isBlobUrl: boolean): GltfViewerMod
 	animationSpeed: 1,
 	crossfadeDuration: 0.3,
 	loop: true,
-	visible: true
+	visible: true,
+	colliderShape: 'trimesh'
 });
 
 export const gltfViewerState = $state<GltfViewerState>({
@@ -38,7 +39,11 @@ export const gltfViewerActions = {
 	},
 
 	loadFromPath(path: string) {
-		const name = path.split('/').pop()?.replace(/\.(gltf|glb)$/i, '') ?? path;
+		const name =
+			path
+				.split('/')
+				.pop()
+				?.replace(/\.(gltf|glb)$/i, '') ?? path;
 		const model = makeModel(name, path, false);
 		gltfViewerState.models.push(model);
 		gltfViewerState.selectedId = model.id;
@@ -76,7 +81,11 @@ export const gltfViewerActions = {
 		const m = find(id);
 		if (!m) return;
 		m.animationClips = clips;
-		logGltf.info('Clips discovered for', m.name + ':', clips.length > 0 ? clips.join(', ') : '(none)');
+		logGltf.info(
+			'Clips discovered for',
+			m.name + ':',
+			clips.length > 0 ? clips.join(', ') : '(none)'
+		);
 	},
 
 	toggleAnimation(id: string, clipName: string) {
@@ -117,5 +126,10 @@ export const gltfViewerActions = {
 	setVisible(id: string, visible: boolean) {
 		const m = find(id);
 		if (m) m.visible = visible;
+	},
+
+	setColliderShape(id: string, shape: GltfViewerColliderShape) {
+		const m = find(id);
+		if (m) m.colliderShape = shape;
 	}
 };
