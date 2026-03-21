@@ -1,4 +1,5 @@
 import { logEngine } from '$extensions/logger/logger.svelte';
+import { sceneActions } from '$extensions/scene/scene.svelte';
 import type { PhysicsState, PhysicsActions, PhysicsBody } from './types';
 
 export type { PhysicsState, PhysicsActions, PhysicsBody } from './types';
@@ -21,6 +22,7 @@ export const physicsActions: PhysicsActions = {
 		physicsState.debug = !physicsState.debug;
 	},
 	spawnBall() {
+		sceneActions.setScene('demoScene');
 		const body: PhysicsBody = {
 			id: crypto.randomUUID(),
 			type: 'ball',
@@ -31,6 +33,7 @@ export const physicsActions: PhysicsActions = {
 		logEngine.info('Spawned ball:', body.id);
 	},
 	spawnBox() {
+		sceneActions.setScene('demoScene');
 		const body: PhysicsBody = {
 			id: crypto.randomUUID(),
 			type: 'box',

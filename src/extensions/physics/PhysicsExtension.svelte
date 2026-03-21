@@ -3,6 +3,7 @@
 	import { Folder, Slider, Checkbox, Button, Separator } from 'svelte-tweakpane-ui';
 	import { extensionScope } from './types';
 	import { physicsState, physicsActions } from './physics.svelte';
+	import { sceneState } from '$extensions/scene/scene.svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -12,10 +13,19 @@
 
 	const { createExtension } = useStudio();
 	createExtension({ scope: extensionScope, state: () => ({}), actions: {} });
+
+	const isInDemoScene = $derived(sceneState.currentScene === 'demoScene');
 </script>
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiAtom" title="Physics">
+		{#if !isInDemoScene}
+			<span
+				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-bottom:4px; line-height:1.6; white-space:normal;"
+			>
+				⚠️ Physics runs in <strong>Demo Scene</strong>.<br />Spawning will switch automatically.
+			</span>
+		{/if}
 		<Folder title="World" expanded={true}>
 			<Slider
 				label="Gravity"
