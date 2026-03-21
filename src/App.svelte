@@ -2,7 +2,7 @@
 	import { Canvas } from '@threlte/core';
 	import Scene from './Scene.svelte';
 	import SceneHud from './SceneHud.svelte';
-
+	import Renderer from '$core/Renderer.svelte';
 	import Loader from '$core/Loader.svelte';
 
 	import * as THREE from 'three';
@@ -73,6 +73,7 @@
 	{:else}
 		<Scene />
 	{/if}
+	<Renderer />
 </Canvas>
 
 <SceneHud />

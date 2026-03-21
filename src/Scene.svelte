@@ -1,7 +1,6 @@
 <script lang="ts">
 	import Skybox from '$core/Skybox.svelte';
 	import Camera from '$core/Camera.svelte';
-	import Renderer from '$core/Renderer.svelte';
 	import GlobalAudio from '$core/GlobalAudio.svelte';
 	import { T, useTask } from '@threlte/core';
 	import { backOut, cubicOut } from 'svelte/easing';
@@ -25,7 +24,7 @@
 </script>
 
 <Camera />
-<Renderer />
+
 <GlobalAudio />
 <Skybox />
 
