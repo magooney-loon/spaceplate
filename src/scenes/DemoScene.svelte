@@ -1,13 +1,47 @@
 <script lang="ts">
+	import { onDestroy, onMount } from 'svelte';
 	import { T } from '@threlte/core';
 	import { interactivity } from '@threlte/extras';
-	import { RigidBody, Collider, Debug, Attractor } from '@threlte/rapier';
+	import { RigidBody, Collider, Debug, Attractor, useRapier } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics/physics.svelte';
 	import PhysicsController from '$extensions/physics/PhysicsController.svelte';
+	import { logPhysics } from '$extensions/logger/logger.svelte';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
 	import DemoFloor from './DemoFloor.svelte';
 
 	interactivity();
+
+	const sceneMountId = crypto.randomUUID().slice(0, 8);
+	const { world, rigidBodyObjects, colliderObjects } = useRapier();
+
+	const snapshotWorld = () => {
+		let rigidBodies = 0;
+		let colliders = 0;
+
+		world.forEachRigidBody(() => {
+			rigidBodies += 1;
+		});
+
+		world.forEachCollider(() => {
+			colliders += 1;
+		});
+
+		return {
+			rigidBodies,
+			colliders,
+			rigidBodyObjects: rigidBodyObjects.size,
+			colliderObjects: colliderObjects.size,
+			spawnedBodies: physicsState.bodies.length
+		};
+	};
+
+	onMount(() => {
+		logPhysics.info(`DemoScene mount [${sceneMountId}]`, snapshotWorld());
+	});
+
+	onDestroy(() => {
+		logPhysics.info(`DemoScene destroy [${sceneMountId}]`, snapshotWorld());
+	});
 </script>
 
 <PhysicsController />
@@ -41,6 +75,20 @@
 			angularDamping={body.angularDamping}
 			gravityScale={body.gravityScale}
 			userData={{ selectable: false, hideInTree: true }}
+			oncreate={(rigidBody) => {
+				logPhysics.info(`Spawned body create [${sceneMountId}]`, {
+					id: body.id,
+					type: body.type,
+					initialPosition: body.position,
+					handle: rigidBody.handle
+				});
+			}}
+			onsleep={() => {
+				logPhysics.info(`Spawned body sleep [${sceneMountId}]`, { id: body.id });
+			}}
+			onwake={() => {
+				logPhysics.info(`Spawned body wake [${sceneMountId}]`, { id: body.id });
+			}}
 		>
 			{#if body.type === 'ball'}
 				<Collider

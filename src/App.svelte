@@ -6,6 +6,7 @@
 	import Loader from '$core/Loader.svelte';
 	import { World } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics/physics.svelte';
+	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
 	import * as THREE from 'three';
 	import { HTML } from '@threlte/extras';
 	import { settingsState, generalActions } from '$extensions/settings/settings.svelte';
@@ -63,6 +64,7 @@
 		gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]}
 		framerate={physicsState.framerate}
 	>
+		<PhysicsWorldLogger />
 		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 			{#await import('@threlte/extras') then { PerfMonitor }}
 				<PerfMonitor anchorX="right" anchorY="bottom" logsPerSecond={30} backgroundOpacity={0.2} />

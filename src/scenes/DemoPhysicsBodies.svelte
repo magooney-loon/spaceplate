@@ -1,16 +1,20 @@
 <script lang="ts">
+	import { onDestroy, onMount } from 'svelte';
 	import { T } from '@threlte/core';
 	import { HTML, PositionalAudio } from '@threlte/extras';
-	import { RigidBody, Collider, usePhysicsTask } from '@threlte/rapier';
+	import { RigidBody, Collider, usePhysicsTask, useRapier } from '@threlte/rapier';
 	import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';
 	import * as THREE from 'three';
 	import { Spring } from 'svelte/motion';
 	import { soundActions } from '$core/GlobalAudio.svelte';
+	import { logPhysics } from '$extensions/logger/logger.svelte';
 	import { useSound } from '$extensions/sound/useSound';
 	import { settingsState, BASE_URL } from '$extensions/settings/settings.svelte';
 
 	const { state: soundState } = useSound();
+	const { world } = useRapier();
 	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
+	const mountId = crypto.randomUUID().slice(0, 8);
 
 	// Icosahedron
 	const colors = ['#4488ff', '#ff4466', '#44ff88', '#ff8844', '#aa44ff', '#ffdd44'];
@@ -22,6 +26,45 @@
 	// Bouncing sphere
 	let sphereRb = $state.raw<RapierRigidBody>();
 	let time = 0;
+	let heartbeat = 0;
+
+	const snapshotWorld = () => {
+		let rigidBodies = 0;
+		let colliders = 0;
+
+		world.forEachRigidBody(() => {
+			rigidBodies += 1;
+		});
+
+		world.forEachCollider(() => {
+			colliders += 1;
+		});
+
+		return { rigidBodies, colliders };
+	};
+
+	const readTranslation = (body?: RapierRigidBody) => {
+		if (!body) return null;
+		try {
+			if (!body.isValid()) return null;
+			const t = body.translation();
+			return { x: t.x, y: t.y, z: t.z };
+		} catch {
+			return null;
+		}
+	};
+
+	onMount(() => {
+		logPhysics.info(`DemoPhysicsBodies mount [${mountId}]`, snapshotWorld());
+	});
+
+	onDestroy(() => {
+		logPhysics.info(`DemoPhysicsBodies destroy [${mountId}]`, {
+			...snapshotWorld(),
+			ico: readTranslation(icoRb),
+			sphere: readTranslation(sphereRb)
+		});
+	});
 
 	usePhysicsTask((delta) => {
 		// Icosahedron spin
@@ -42,12 +85,38 @@
 			sphereRb.setNextKinematicTranslation({ x, y, z });
 			sphereRb.setNextKinematicRotation({ x: rotQ.x, y: rotQ.y, z: rotQ.z, w: rotQ.w });
 		}
+
+		heartbeat += delta;
+		if (heartbeat >= 1) {
+			heartbeat = 0;
+			logPhysics.info(`DemoPhysicsBodies heartbeat [${mountId}]`, {
+				icoAngle: Number(icoAngle.toFixed(3)),
+				time: Number(time.toFixed(3)),
+				ico: readTranslation(icoRb),
+				sphere: readTranslation(sphereRb)
+			});
+		}
 	});
 </script>
 
 <!-- Rotating icosahedron — kinematic, spins in place, spawned bodies bounce off it -->
 <T.Group userData={{ selectable: false, hideInTree: true }}>
-	<RigidBody type="kinematicPosition" bind:rigidBody={icoRb}>
+	<RigidBody
+		type="kinematicPosition"
+		bind:rigidBody={icoRb}
+		oncreate={(rigidBody) => {
+			logPhysics.info(`Icosahedron create [${mountId}]`, {
+				handle: rigidBody.handle,
+				translation: readTranslation(rigidBody)
+			});
+		}}
+		onsleep={() => {
+			logPhysics.info(`Icosahedron sleep [${mountId}]`);
+		}}
+		onwake={() => {
+			logPhysics.info(`Icosahedron wake [${mountId}]`);
+		}}
+	>
 		<Collider shape="ball" args={[1]} />
 		<T.Mesh
 			scale={scale.current}
@@ -78,7 +147,22 @@
 
 <!-- Orbiting bouncing sphere — kinematic, collides with dynamic bodies -->
 <T.Group userData={{ selectable: false, hideInTree: true }}>
-	<RigidBody type="kinematicPosition" bind:rigidBody={sphereRb}>
+	<RigidBody
+		type="kinematicPosition"
+		bind:rigidBody={sphereRb}
+		oncreate={(rigidBody) => {
+			logPhysics.info(`Orbit sphere create [${mountId}]`, {
+				handle: rigidBody.handle,
+				translation: readTranslation(rigidBody)
+			});
+		}}
+		onsleep={() => {
+			logPhysics.info(`Orbit sphere sleep [${mountId}]`);
+		}}
+		onwake={() => {
+			logPhysics.info(`Orbit sphere wake [${mountId}]`);
+		}}
+	>
 		<Collider shape="ball" args={[0.5]} />
 		<T.Mesh castShadow>
 			<T.SphereGeometry args={[0.5, 32, 32]} />

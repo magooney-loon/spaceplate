@@ -10,7 +10,7 @@ export const loggerState = $state<LoggerState>({
 	skybox: true,
 	cache: true,
 	gltf: true,
-	physics: true
+	physics: false
 });
 
 export const channelStyles: Record<LoggerChannel, LoggerStyle & { label: string }> = {

@@ -4,6 +4,7 @@
 	import GlobalAudio from '$core/GlobalAudio.svelte';
 	import { T, useTask } from '@threlte/core';
 	import { backOut, cubicOut } from 'svelte/easing';
+	import { physicsActions } from '$extensions/physics/physics.svelte';
 	import { sceneState } from '$extensions/scene/scene.svelte';
 	import MainMenu from '$scenes/MainMenu.svelte';
 	import DemoScene from '$scenes/DemoScene.svelte';
@@ -13,6 +14,9 @@
 
 	useTask((delta) => {
 		if (sceneState.currentScene !== prevScene) {
+			if (prevScene === 'demoScene' && sceneState.currentScene !== 'demoScene') {
+				physicsActions.clearBodies();
+			}
 			prevScene = sceneState.currentScene;
 			introT = 0;
 		}
