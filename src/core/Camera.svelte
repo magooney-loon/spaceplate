@@ -15,3 +15,4 @@
 >
 	<AudioListener />
 </T.PerspectiveCamera>
+<T.DirectionalLight position={[0, 10, 0]} intensity={Math.PI / 4} castShadow />
