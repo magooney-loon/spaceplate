@@ -1,19 +1,13 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
-	import { useRapier } from '@threlte/rapier';
-
-	const { world, rapier } = useRapier();
-
-	// Imperative creation — bypasses T.Group transform inheritance issues
-	const desc = rapier.ColliderDesc.cylinder(1, 20).setTranslation(0, -1, 0);
-	const collider = world.createCollider(desc);
-
-	$effect(() => {
-		return () => world.removeCollider(collider, false);
-	});
+	import { AutoColliders } from '@threlte/rapier';
 </script>
 
-<T.Mesh position={[0, 0, 0]} rotation.x={-Math.PI / 2} receiveShadow>
-	<T.CircleGeometry args={[20, 40]} />
-	<T.MeshStandardMaterial color="gray" />
-</T.Mesh>
+<T.Group position={[0, -0.5, 0]}>
+	<AutoColliders shape="cuboid">
+		<T.Mesh receiveShadow>
+			<T.BoxGeometry args={[20, 1, 20]} />
+			<T.MeshStandardMaterial color="gray" />
+		</T.Mesh>
+	</AutoColliders>
+</T.Group>
