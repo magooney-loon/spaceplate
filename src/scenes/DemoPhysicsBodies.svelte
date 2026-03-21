@@ -46,6 +46,7 @@
 </script>
 
 <!-- Rotating icosahedron — kinematic, spins in place, spawned bodies bounce off it -->
+<T.Group userData={{ selectable: false, hideInTree: true }}>
 <RigidBody type="kinematicPosition" bind:rigidBody={icoRb}>
 	<Collider shape="ball" args={[1]} />
 	<T.Mesh
@@ -71,8 +72,10 @@
 		</div>
 	</HTML>
 </RigidBody>
+</T.Group>
 
 <!-- Orbiting bouncing sphere — kinematic, collides with dynamic bodies -->
+<T.Group userData={{ selectable: false, hideInTree: true }}>
 <RigidBody type="kinematicPosition" bind:rigidBody={sphereRb}>
 	<Collider shape="ball" args={[0.5]} />
 	<T.Mesh castShadow>
@@ -91,3 +94,4 @@
 		/>
 	</T.Mesh>
 </RigidBody>
+</T.Group>

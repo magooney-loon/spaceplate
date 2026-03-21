@@ -36,7 +36,7 @@
 
 	<!-- Spawned physics bodies -->
 	{#each physicsState.bodies as body (body.id)}
-		<T.Group position={body.position}>
+		<T.Group position={body.position} userData={{ selectable: false, hideInTree: true }}>
 			<RigidBody
 				type="dynamic"
 				ccd={body.ccd}
@@ -44,6 +44,7 @@
 				linearDamping={body.linearDamping}
 				angularDamping={body.angularDamping}
 				gravityScale={body.gravityScale}
+				userData={{ selectable: false, hideInTree: true }}
 			>
 				{#if body.type === 'ball'}
 					<Collider

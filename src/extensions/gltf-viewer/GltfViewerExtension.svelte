@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Folder, Slider, Checkbox, Button, Separator } from 'svelte-tweakpane-ui';
+	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { gltfViewerState, gltfViewerActions } from './gltfViewer.svelte';
-	import { extensionScope } from './types';
+	import { extensionScope, type GltfColliderShape } from './types';
 	import { sceneState } from '$extensions/scene/scene.svelte';
 
 	interface Props {
@@ -14,16 +14,13 @@
 	const { createExtension } = useStudio();
 	createExtension({ scope: extensionScope, state: () => ({}), actions: {} });
 
-	// Hidden file input
 	let fileInput: HTMLInputElement;
-
 	const triggerFileInput = () => fileInput?.click();
 
 	const handleFileChange = (e: Event) => {
 		const file = (e.target as HTMLInputElement).files?.[0];
 		if (file) {
 			gltfViewerActions.loadFromFile(file);
-			// Reset so the same file can be re-selected
 			(e.target as HTMLInputElement).value = '';
 		}
 	};
@@ -34,24 +31,14 @@
 	};
 
 	const isInDemoScene = $derived(sceneState.currentScene === 'demoScene');
-
 </script>
 
-<!-- Hidden file input lives outside the tweakpane portal -->
-<input
-	bind:this={fileInput}
-	type="file"
-	accept=".gltf,.glb"
-	style="display:none"
-	onchange={handleFileChange}
-/>
+<input bind:this={fileInput} type="file" accept=".gltf,.glb" style="display:none" onchange={handleFileChange} />
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiCubeOutline" title="GLTF Viewer">
 		{#if !isInDemoScene}
-			<span
-				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-bottom:4px; line-height:1.6; white-space:normal;"
-			>
+			<span style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-bottom:4px; line-height:1.6; white-space:normal;">
 				⚠️ Models render in <strong>Demo Scene</strong>.<br />Loading will switch automatically.
 			</span>
 		{/if}
@@ -78,109 +65,26 @@
 
 					<Separator />
 
-					<Folder title="Transform" expanded={false}>
-						<Slider
-							label="Pos X"
-							value={model.position[0]}
-							min={-50}
-							max={50}
-							step={0.1}
-							on:change={(e) =>
-								gltfViewerActions.setPosition(
-									model.id,
-									e.detail.value,
-									model.position[1],
-									model.position[2]
-								)}
+					<Folder title="Physics" expanded={false}>
+						<Checkbox
+							label="Collider Enabled"
+							value={model.colliderEnabled}
+							on:change={() => gltfViewerActions.setColliderEnabled(model.id, !model.colliderEnabled)}
 						/>
-						<Slider
-							label="Pos Y"
-							value={model.position[1]}
-							min={-50}
-							max={50}
-							step={0.1}
-							on:change={(e) =>
-								gltfViewerActions.setPosition(
-									model.id,
-									model.position[0],
-									e.detail.value,
-									model.position[2]
-								)}
-						/>
-						<Slider
-							label="Pos Z"
-							value={model.position[2]}
-							min={-50}
-							max={50}
-							step={0.1}
-							on:change={(e) =>
-								gltfViewerActions.setPosition(
-									model.id,
-									model.position[0],
-									model.position[1],
-									e.detail.value
-								)}
-						/>
-						<Separator />
-						<Slider
-							label="Rot X°"
-							value={model.rotation[0]}
-							min={-180}
-							max={180}
-							step={1}
-							on:change={(e) =>
-								gltfViewerActions.setRotation(
-									model.id,
-									e.detail.value,
-									model.rotation[1],
-									model.rotation[2]
-								)}
-						/>
-						<Slider
-							label="Rot Y°"
-							value={model.rotation[1]}
-							min={-180}
-							max={180}
-							step={1}
-							on:change={(e) =>
-								gltfViewerActions.setRotation(
-									model.id,
-									model.rotation[0],
-									e.detail.value,
-									model.rotation[2]
-								)}
-						/>
-						<Slider
-							label="Rot Z°"
-							value={model.rotation[2]}
-							min={-180}
-							max={180}
-							step={1}
-							on:change={(e) =>
-								gltfViewerActions.setRotation(
-									model.id,
-									model.rotation[0],
-									model.rotation[1],
-									e.detail.value
-								)}
-						/>
-						<Separator />
-						<Slider
-							label="Scale"
-							value={model.scale}
-							min={0.01}
-							max={10}
-							step={0.01}
-							on:change={(e) => gltfViewerActions.setScale(model.id, e.detail.value)}
-						/>
-						<Button
-							title="Reset Transform"
-							on:click={() => {
-								gltfViewerActions.setPosition(model.id, 0, 0, 0);
-								gltfViewerActions.setRotation(model.id, 0, 0, 0);
-								gltfViewerActions.setScale(model.id, 1);
-							}}
-						/>
+						{#if model.colliderEnabled}
+							<List
+								label="Shape"
+								value={model.colliderShape}
+								options={[
+									{ value: 'convexHull', text: 'Convex Hull (default)' },
+									{ value: 'trimesh', text: 'Trimesh (exact, static only)' },
+									{ value: 'cuboid', text: 'Cuboid (bounding box)' },
+									{ value: 'ball', text: 'Ball (bounding sphere)' },
+									{ value: 'capsule', text: 'Capsule' }
+								]}
+								on:change={(e) => gltfViewerActions.setColliderShape(model.id, e.detail.value as GltfColliderShape)}
+							/>
+						{/if}
 					</Folder>
 
 					{#if model.animationClips.length > 0}
@@ -196,43 +100,19 @@
 								<Separator />
 								<Button
 									title={model.playState === 'playing' ? '⏸ Pause' : '▶ Play'}
-									on:click={() =>
-										gltfViewerActions.setPlayState(
-											model.id,
-											model.playState === 'playing' ? 'paused' : 'playing'
-										)}
+									on:click={() => gltfViewerActions.setPlayState(model.id, model.playState === 'playing' ? 'paused' : 'playing')}
 								/>
-								<Button
-									title="⏹ Stop"
-									on:click={() => gltfViewerActions.setPlayState(model.id, 'stopped')}
-								/>
-								<Slider
-									label="Speed"
-									value={model.animationSpeed}
-									min={0.1}
-									max={3}
-									step={0.05}
-									on:change={(e) => gltfViewerActions.setSpeed(model.id, e.detail.value)}
-								/>
-								<Slider
-									label="Crossfade"
-									value={model.crossfadeDuration}
-									min={0}
-									max={2}
-									step={0.05}
-									on:change={(e) => gltfViewerActions.setCrossfadeDuration(model.id, e.detail.value)}
-								/>
-								<Checkbox
-									label="Loop"
-									value={model.loop}
-									on:change={() => gltfViewerActions.setLoop(model.id, !model.loop)}
-								/>
+								<Button title="⏹ Stop" on:click={() => gltfViewerActions.setPlayState(model.id, 'stopped')} />
+								<Slider label="Speed" value={model.animationSpeed} min={0.1} max={3} step={0.05}
+									on:change={(e) => gltfViewerActions.setSpeed(model.id, e.detail.value)} />
+								<Slider label="Crossfade" value={model.crossfadeDuration} min={0} max={2} step={0.05}
+									on:change={(e) => gltfViewerActions.setCrossfadeDuration(model.id, e.detail.value)} />
+								<Checkbox label="Loop" value={model.loop}
+									on:change={() => gltfViewerActions.setLoop(model.id, !model.loop)} />
 							{/if}
 						</Folder>
 					{:else}
-						<span style="font-size:11px; color:rgba(255,255,255,0.35);">
-							No animations — loading…
-						</span>
+						<span style="font-size:11px; color:rgba(255,255,255,0.35);">No animations — loading…</span>
 					{/if}
 
 					<Separator />

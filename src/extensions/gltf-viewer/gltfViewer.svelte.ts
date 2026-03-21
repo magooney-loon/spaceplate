@@ -1,17 +1,16 @@
 import { sceneActions } from '$extensions/scene/scene.svelte';
 import { logGltf } from '$extensions/logger/logger.svelte';
-import type { GltfViewerModel, GltfViewerState } from './types';
+import type { GltfViewerModel, GltfViewerState, GltfColliderShape } from './types';
 
-export type { GltfViewerModel, GltfViewerState } from './types';
+export type { GltfViewerModel, GltfViewerState, GltfColliderShape } from './types';
 
 const makeModel = (name: string, url: string, isBlobUrl: boolean): GltfViewerModel => ({
 	id: crypto.randomUUID(),
 	name,
 	url,
 	isBlobUrl,
-	position: [0, 0, 0],
-	rotation: [0, 0, 0],
-	scale: 1,
+	colliderEnabled: false,
+	colliderShape: 'trimesh',
 	animationClips: [],
 	activeAnimations: [],
 	playState: 'stopped',
@@ -82,19 +81,14 @@ export const gltfViewerActions = {
 		logGltf.info('Clips discovered for', m.name + ':', clips.length > 0 ? clips.join(', ') : '(none)');
 	},
 
-	setPosition(id: string, x: number, y: number, z: number) {
+	setColliderEnabled(id: string, enabled: boolean) {
 		const m = find(id);
-		if (m) m.position = [x, y, z];
+		if (m) m.colliderEnabled = enabled;
 	},
 
-	setRotation(id: string, x: number, y: number, z: number) {
+	setColliderShape(id: string, shape: GltfColliderShape) {
 		const m = find(id);
-		if (m) m.rotation = [x, y, z];
-	},
-
-	setScale(id: string, v: number) {
-		const m = find(id);
-		if (m) m.scale = v;
+		if (m) m.colliderShape = shape;
 	},
 
 	toggleAnimation(id: string, clipName: string) {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { T } from '@threlte/core';
 	import { useGltf, useGltfAnimations } from '@threlte/extras';
+	import { AutoColliders, RigidBody } from '@threlte/rapier'; // RigidBody used for fixed collider
 	import { LoopRepeat, LoopOnce } from 'three';
 	import { untrack } from 'svelte';
 	import { gltfViewerActions } from './gltfViewer.svelte';
@@ -20,7 +21,12 @@
 	$effect(() => {
 		const scene = $gltf?.scene;
 		if (scene) {
-			logGltf.info('Loaded:', untrack(() => model.name), '— meshes:', scene.children.length);
+			logGltf.info(
+				'Loaded:',
+				untrack(() => model.name),
+				'— meshes:',
+				scene.children.length
+			);
 		}
 	});
 
@@ -28,7 +34,10 @@
 	$effect(() => {
 		const clips = $gltf?.animations;
 		if (clips && clips.length > 0 && model.animationClips.length === 0) {
-			gltfViewerActions.setModelClips(untrack(() => model.id), clips.map((c) => c.name));
+			gltfViewerActions.setModelClips(
+				untrack(() => model.id),
+				clips.map((c) => c.name)
+			);
 		}
 	});
 
@@ -74,20 +83,22 @@
 
 		prevActive = currentActive;
 	});
-
-	const deg2rad = (d: number) => (d * Math.PI) / 180;
 </script>
 
 {#if model.visible && $gltf}
-	<T.Group
-		position.x={model.position[0]}
-		position.y={model.position[1]}
-		position.z={model.position[2]}
-		rotation.x={deg2rad(model.rotation[0])}
-		rotation.y={deg2rad(model.rotation[1])}
-		rotation.z={deg2rad(model.rotation[2])}
-		scale={model.scale}
-	>
+	{#if model.colliderEnabled}
+		<T.Group userData={{ selectable: false, hideInTree: true }}>
+			{#key model.colliderShape}
+				<RigidBody type="fixed">
+					<T.Group userData={{ selectable: false, hideInTree: true }}>
+						<AutoColliders shape={model.colliderShape}>
+							<T is={$gltf.scene} />
+						</AutoColliders>
+					</T.Group>
+				</RigidBody>
+			{/key}
+		</T.Group>
+	{:else}
 		<T is={$gltf.scene} />
-	</T.Group>
+	{/if}
 {/if}
