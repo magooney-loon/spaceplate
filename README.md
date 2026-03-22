@@ -30,19 +30,21 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 
 - **Scene Manager** — Application state machine (`mainMenu` / `demoScene`) with animated transitions, per-scene HUD routing, and a preset assignment system for PP/skybox
 - **Task Scheduling** — Threlte-based render pipeline with ordered stages:
-  - `physicsStage` — Game logic (runs only in demoScene, pauses in menus)
+  - `physicsStage` — Game logic (typically runs in `demoScene`, pauses in menus)
   - `renderStage` — 3D rendering (default)
   - `uiStage` — UI updates (after render)
   - `audioStage` — Audio (always runs)
 - **Studio Extensions** (`VITE_GAME_ENGINE=true`) — Threlte Studio toolbar panels:
   - `SceneExtension` — Scene switcher + preset manager (assign PP/skybox presets per scene or globally)
   - `PostProcessingExtension` — 25+ effects, preset save/load/update, bundled presets, conflict detection
-  - `SkyboxExtension` — 11 sky presets, 5 star configs, animated transitions, user presets
+  - `SkyboxExtension` — Sky/stars presets, animated transitions, environment textures, user presets
   - `SoundExtension` — Volume controls + audio channel toggles
-  - `LoggerExtension` — Per-channel log toggles (engine, settings, sound, postprocessing, skybox, cache, gltf)
-  - `GltfViewerExtension` — Load GLTF/GLB from file or path; transform, multi-animation with crossfade blending
+  - `LoggerExtension` — Per-channel log toggles (`engine`, `settings`, `sound`, `postprocessing`, `skybox`, `cache`, `gltf`, `physics`)
+  - `GltfViewerExtension` — Load GLTF/GLB from file or path; inspect animations and colliders in `demoScene`
+  - `PhysicsExtension` — Rapier world controls, spawn defaults, attractor controls, and quick body spawning
 - **Sound system** — Polyphonic + one-shot audio, never unmounts, safe from race conditions
 - **Settings** — Persistent audio, graphics quality (DPR + power preference), UI visibility — saved to localStorage
+- **Physics sandbox** — `@threlte/rapier` world wiring, debug collider toggle, attractor modes, and spawnable balls/boxes
 - **SpacetimeDB wiring** — Connection setup, generated bindings, example table subscription
 - **Debug logging** — Multi-channel styled logging with timestamp; channels auto-generate Studio UI checkboxes
 - **TailwindCSS** — Utility-first CSS framework via `@tailwindcss/vite`
@@ -74,13 +76,23 @@ extensions/
 ├── scene/              # Scene state machine + preset assignment system
 ├── settings/           # Persistent audio/graphics/general settings
 ├── postprocessing/     # 25+ effects, presets, bundledPresets.ts
-├── skybox/             # Sky + stars presets, bundledPresets.ts
+├── skybox/             # Sky + stars presets, envTextures.ts, bundledPresets.ts
 ├── sound/              # Positional audio state
 ├── logger/             # Multi-channel styled logging
-└── gltf-viewer/        # GLTF/GLB loader with animation + crossfade (dev only)
+├── gltf-viewer/        # GLTF/GLB loader, animation controls, collider toggles (dev only)
+└── physics/            # Rapier world state, attractor, debug controls, spawnable bodies
 ```
 
 State always works in production — Studio panels are purely dev-time UI on top of the same state.
+
+### Physics
+The boilerplate includes a ready-to-tweak Rapier sandbox inside the demo scene.
+
+- World controls for gravity, framerate, and debug colliders
+- Spawn defaults for restitution, friction, damping, CCD, sleep, and random spawn positions
+- Attractor controls with `static`, `linear`, and `newtonian` gravity falloff
+- Quick body spawning via `physicsActions.spawnBall()` / `spawnBox()`
+- Leaving `demoScene` clears spawned physics bodies automatically
 
 ---
 

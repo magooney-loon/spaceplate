@@ -51,6 +51,7 @@ src/
     skybox/
       skybox.svelte.ts     — Sky/stars presets + animated transitions
       bundledPresets.ts    — Built-in skybox presets (not stored in localStorage)
+      envTextures.ts       — HDR/cubemap environment texture registry
       SkyboxExtension.svelte — Studio extension
       types.ts
     postprocessing/
@@ -63,9 +64,15 @@ src/
       logger.svelte.ts     — Multi-channel styled logging
       LoggerExtension.svelte — Studio extension (auto-generates checkboxes from channelStyles)
       types.ts
+    physics/
+      physics.svelte.ts    — Rapier world state, attractor, spawn defaults, spawn actions
+      PhysicsExtension.svelte — Studio extension: world tuning + body spawning
+      PhysicsController.svelte — Applies per-body forces and attractor logic
+      PhysicsWorldLogger.svelte — Logs Rapier world lifecycle/debug info
+      types.ts
     gltf-viewer/
       gltfViewer.svelte.ts  — GLTF/GLB model state + actions (dev-only, DemoScene)
-      GltfViewerExtension.svelte — Studio extension: load, transform, animate models
+      GltfViewerExtension.svelte — Studio extension: load, transform, animate models, toggle colliders
       GltfViewerInstance.svelte  — Per-model component: useGltf + animation mixer
       GltfViewerScene.svelte     — Renders all loaded models inside DemoScene
       types.ts
@@ -108,7 +115,7 @@ src/
 ### Task Pipeline (`core/tasks.ts`)
 - Four ordered stages per frame: `physicsStage` (BEFORE render) → `renderStage` (default) → `uiStage` (AFTER) → `audioStage` (AFTER ui)
 - `useGameTasks()` returns `{ stages, createPhysicsTask, createUiTask, createAudioTask }`
-- `physicsStage` only active in DemoScene; `uiStage` paused during transitions; `audioStage` always runs
+- Boilerplate convention: physics-style game tasks usually run in DemoScene; `uiStage` pauses during transitions; `audioStage` always runs
 - Use tasks instead of raw `useTask` to ensure correct execution order
 
 ### Skybox System (`extensions/skybox/skybox.svelte.ts`)
@@ -117,6 +124,7 @@ src/
 - `skyboxActions.applyPreset(id)` — instant or animated transition via `requestAnimationFrame`
 - Individual setters: `setTurbidity`, `setAzimuth`, `setElevation`, etc.
 - `skyboxState` / `starsState` / `transitionState` — all reactive, drive `core/Skybox.svelte`
+- `ENV_TEXTURES` / `CUBE_TEXTURES` from `envTextures.ts` provide image-based environment options in addition to procedural sky
 - **User presets**: `skyboxActions.savePreset(name)` / `loadUserPreset(id)` / `deletePreset(id)` — persisted to localStorage
 - **Bundled presets**: add to `extensions/skybox/bundledPresets.ts` — always available, not stored in localStorage
 - **Scene preset assignment**: owned by the scene manager — use `resolveScenePreset` / `resolveGlobalPreset` from `$extensions/scene/scene.svelte`; `core/Skybox.svelte` reads these reactively
@@ -217,7 +225,7 @@ export const useMyFeature = () => {
 #### Registering extensions in App.svelte
 ```svelte
 {#await import('@threlte/studio') then { Studio }}
-  <Studio extensions={[SceneExtension, PostProcessingExtension, SkyboxExtension, SoundExtension, LoggerExtension, GltfViewerExtension]}>
+  <Studio extensions={[SceneExtension, PostProcessingExtension, SkyboxExtension, SoundExtension, LoggerExtension, GltfViewerExtension, PhysicsExtension]}>
     <!-- app content -->
   </Studio>
 {/await}
@@ -233,14 +241,16 @@ export const useMyFeature = () => {
 | `postprocessing` | `postprocessingState`, `postprocessingPresetsState` | `postprocessingActions` | `PostProcessingExtension.svelte` |
 | `skybox` | `skyboxState`, `starsState`, `transitionState` | `skyboxActions` | `SkyboxExtension.svelte` |
 | `sound` | `soundState` | (via `settingsState.audio`) | `SoundExtension.svelte` |
+| `physics` | `physicsState` | `physicsActions` | `PhysicsExtension.svelte` |
 | `gltf-viewer` | `gltfViewerState` | `gltfViewerActions` | `GltfViewerExtension.svelte` (dev only) |
 
-**Logger named exports:** `logEngine`, `logSettings`, `logSound`, `logPostprocessing`, `logSkybox`, `logCache`, `logGltf`
+**Logger named exports:** `logEngine`, `logSettings`, `logSound`, `logPostprocessing`, `logSkybox`, `logCache`, `logGltf`, `logPhysics`
 ```typescript
-import { logEngine, logSettings, logGltf } from '$extensions/logger/logger.svelte';
+import { logEngine, logSettings, logGltf, logPhysics } from '$extensions/logger/logger.svelte';
 logEngine.info('Scene:', scene);   // console.log
 logSettings.warn('Bad value');     // console.warn
 logGltf.error('Failed:', err);     // console.error
+logPhysics.info('Spawned body');
 ```
 
 #### Common patterns
@@ -327,7 +337,7 @@ useTask((delta) => { if (composer && !isUpdatingEffects) composer.render(delta);
 
 Styled multi-channel logging with timestamp + color-coded channel prefix.
 
-**Channels:** `engine` (blue), `settings` (green), `sound` (purple), `postprocessing` (yellow), `skybox` (cyan), `cache` (orange), `gltf` (teal)
+**Channels:** `engine` (blue), `settings` (green), `sound` (purple), `postprocessing` (yellow), `skybox` (cyan), `cache` (orange), `gltf` (teal), `physics` (orange)
 
 ```ts
 import { logEngine, logSound, logGltf } from '$extensions/logger/logger.svelte';
@@ -360,8 +370,36 @@ export const logGame = createLogger('game', 'game');
 - `extensions/scene/scene.svelte.ts` — every scene transition (`mainMenu → demoScene`)
 - `extensions/settings/settings.svelte.ts` — quality changes, volume changes, HUD toggle
 - `extensions/skybox/skybox.svelte.ts` — preset applied
+- `extensions/physics/physics.svelte.ts` — gravity changes, spawns, reset/clear actions
 - `extensions/gltf-viewer/gltfViewer.svelte.ts` — model load, remove, animation changes
 - `extensions/gltf-viewer/GltfViewerInstance.svelte` — GLTF scene loaded, clips discovered
+
+### Physics (`extensions/physics/`)
+
+Rapier-backed sandbox controls exposed through both reactive state and a Studio panel.
+
+**State:** `physicsState`
+- World: `gravityX/Y/Z`, `framerate`, `debug`
+- Spawn defaults: restitution, friction, damping, gravity scale, CCD, sleep, random spawn
+- Attractor: enabled flag, strength, range, gravity type, position
+- Bodies: `PhysicsBody[]` with `ball`/`box`, color, spawn position, and per-body material values
+
+**Key actions:**
+```typescript
+import { physicsActions } from '$extensions/physics/physics.svelte';
+
+physicsActions.setGravityY(-9.8);
+physicsActions.spawnBall();
+physicsActions.spawnBox();
+physicsActions.clearBodies();
+physicsActions.toggleAttractor();
+physicsActions.setAttractorGravityType('newtonian');
+```
+
+**Behavior notes:**
+- Spawning a body auto-switches to `demoScene`
+- Leaving `demoScene` clears spawned bodies in `Scene.svelte`
+- `PhysicsExtension.svelte` is editor UI only; runtime logic stays in `physics.svelte.ts` and controller components
 
 ### GLTF Viewer (`extensions/gltf-viewer/`)
 
