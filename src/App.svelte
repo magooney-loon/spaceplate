@@ -12,6 +12,7 @@
 	import { HTML } from '@threlte/extras';
 	import { settingsState } from '$extensions/settings/settings.svelte';
 	import { planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
+	import './app.css';
 
 	// Create custom renderer — antialias disabled in favour of SMAA post-processing
 	const createRenderer = (canvas: HTMLCanvasElement): THREE.WebGLRenderer => {

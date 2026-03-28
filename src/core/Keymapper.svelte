@@ -36,6 +36,9 @@
 		if (!btn) return;
 		inputState.runtime.mousePressed[btn] = true;
 		inputState.runtime.lastInputSource = 'mouse';
+		// Don't capture mouse clicks on UI elements (buttons, inputs, etc.)
+		const target = e.target as HTMLElement;
+		if (target.closest('button, input, select, textarea, a, label')) return;
 		if (
 			inputState.capture.active &&
 			inputState.capture.bindingType === 'action' &&
