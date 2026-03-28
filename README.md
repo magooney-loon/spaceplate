@@ -14,9 +14,9 @@
       <td align="center"><a href="https://svelte.dev"><img src="https://img.shields.io/badge/Svelte-5-ff3e00.svg" alt="Svelte 5"></a></td>
       <td align="center"><a href="https://threlte.xyz"><img src="https://img.shields.io/badge/Threlte-8-ff3e00.svg" alt="Threlte 8"></a></td>
       <td align="center"><a href="https://threejs.org"><img src="https://img.shields.io/badge/Three.js-000000?style=flat&logo=three.js" alt="Three.js"></a></td>
-      <td align="center"><a href="https://spacetimedb.com"><img src="https://img.shields.io/badge/SpacetimeDB-2.0-7b2ff7.svg" alt="SpacetimeDB"></a></td>
-      <td align="center"><a href="https://vitejs.dev"><img src="https://img.shields.io/badge/Vite-6-646cff.svg" alt="Vite 6"></a></td>
-      <td align="center"><a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5-blue.svg" alt="TypeScript 5"></a></td>
+      <td align="center"><a href="https://spacetimedb.com"><img src="https://img.shields.io/badge/SpacetimeDB-2.1-7b2ff7.svg" alt="SpacetimeDB 2.1"></a></td>
+      <td align="center"><a href="https://vitejs.dev"><img src="https://img.shields.io/badge/Vite-8-646cff.svg" alt="Vite 8"></a></td>
+      <td align="center"><a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-6-blue.svg" alt="TypeScript 6"></a></td>
       <td align="center"><a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/TailwindCSS-4-38bdf8.svg" alt="TailwindCSS 4"></a></td>
     </tr>
   </table>
@@ -34,16 +34,17 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
   - `renderStage` — 3D rendering (default)
   - `uiStage` — UI updates (after render)
   - `audioStage` — Audio (always runs)
+- **Input System** — Action-based keyboard/mouse/gamepad mapping with per-player bindings, rebinding UI, and localStorage persistence
 - **Studio Extensions** (`VITE_GAME_ENGINE=true`) — Threlte Studio toolbar panels:
   - `SceneExtension` — Scene switcher + preset manager (assign PP/skybox presets per scene or globally)
   - `PostProcessingExtension` — 25+ effects, preset save/load/update, bundled presets, conflict detection
   - `SkyboxExtension` — Sky/stars presets, animated transitions, environment textures, user presets
   - `SoundExtension` — Volume controls + audio channel toggles
-  - `LoggerExtension` — Per-channel log toggles (`engine`, `settings`, `sound`, `postprocessing`, `skybox`, `cache`, `gltf`, `physics`)
+  - `LoggerExtension` — Per-channel log toggles (`engine`, `settings`, `sound`, `postprocessing`, `skybox`, `cache`, `gltf`, `physics`, `input`)
   - `GltfViewerExtension` — Load GLTF/GLB from file or path; inspect animations and colliders in `demoScene`
   - `PhysicsExtension` — Rapier world controls, spawn defaults, attractor controls, and quick body spawning
 - **Sound system** — Polyphonic + one-shot audio, never unmounts, safe from race conditions
-- **Settings** — Persistent audio, graphics quality (DPR + power preference), UI visibility — saved to localStorage
+- **Settings** — Tabbed settings HUD (General / Audio / Controls) — all persistent via localStorage
 - **Physics sandbox** — `@threlte/rapier` world wiring, debug collider toggle, attractor modes, and spawnable balls/boxes
 - **SpacetimeDB wiring** — Connection setup, generated bindings, example table subscription
 - **Debug logging** — Multi-channel styled logging with timestamp; channels auto-generate Studio UI checkboxes
@@ -68,13 +69,45 @@ createUiTask((delta) => {
 });
 ```
 
+### Input System
+Action-based input that works in production without any editor tooling.
+
+```typescript
+import { inputQueries, advanceInputFrame } from '$extensions/input/input.svelte';
+
+// In a frame task
+createPhysicsTask((delta) => {
+  advanceInputFrame(); // advance wasPressed edge detection
+
+  const { x, y } = inputQueries.getMoveVector('player1');
+  if (inputQueries.wasPressed('player1', 'jump')) { /* ... */ }
+  if (inputQueries.isPressed('player1', 'sprint')) { /* ... */ }
+});
+```
+
+Default player1 bindings out of the box:
+
+| Keys | Action |
+|---|---|
+| W A S D / Arrows | Move |
+| Space | Jump |
+| Shift | Sprint |
+| E | Interact |
+| LMB / Q | Primary / Secondary |
+| R F C X Z T | Reload / Use / Crouch / Drop / Prone / Emote |
+| 1 2 3 4 | Slots |
+| Esc | Pause |
+
+Players can rebind everything from the in-game **Settings → Controls** tab.
+
 ### Extensions
-Each extension is self-contained: reactive state (`.svelte.ts`), actions, and a Studio UI panel (dev only).
+Each extension is self-contained: reactive state (`.svelte.ts`), actions, and an optional Studio UI panel (dev only).
 
 ```
 extensions/
 ├── scene/              # Scene state machine + preset assignment system
 ├── settings/           # Persistent audio/graphics/general settings
+├── input/              # Action-based input mapping, bindings, queries
 ├── postprocessing/     # 25+ effects, presets, bundledPresets.ts
 ├── skybox/             # Sky + stars presets, envTextures.ts, bundledPresets.ts
 ├── sound/              # Positional audio state
@@ -100,7 +133,7 @@ The boilerplate includes a ready-to-tweak Rapier sandbox inside the demo scene.
 
 ```sh
 # install dependencies
-npm install       # or pnpm install
+npm install
 
 # run dev server
 npm run dev
