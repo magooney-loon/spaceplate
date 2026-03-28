@@ -4,22 +4,14 @@
 	import SceneHud from './SceneHud.svelte';
 	import Renderer from '$core/Renderer.svelte';
 	import Loader from '$core/Loader.svelte';
+	import Keymapper from '$core/Keymapper.svelte';
 	import { World } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics/physics.svelte';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
 	import * as THREE from 'three';
 	import { HTML } from '@threlte/extras';
-	import { settingsState, generalActions } from '$extensions/settings/settings.svelte';
+	import { settingsState } from '$extensions/settings/settings.svelte';
 	import { planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
-	import './app.css';
-
-	function handleKeydown(e: KeyboardEvent) {
-		// Ctrl+H — toggle HUD visibility
-		if (e.ctrlKey && e.key === 'h') {
-			e.preventDefault();
-			generalActions.toggleUiVisible();
-		}
-	}
 
 	// Create custom renderer — antialias disabled in favour of SMAA post-processing
 	const createRenderer = (canvas: HTMLCanvasElement): THREE.WebGLRenderer => {
@@ -48,7 +40,7 @@
 	});
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<Keymapper />
 
 <svelte:head>
 	{#if planetDemoState.faviconUri}
