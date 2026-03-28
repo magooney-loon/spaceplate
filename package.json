@@ -7,7 +7,7 @@
 		"dev": "vite",
 		"build": "vite build",
 		"preview": "vite preview",
-		"generate": "pnpm --dir spacetimedb install && cargo run -p gen-bindings -- --out-dir src/module_bindings --module-path spacetimedb && prettier --write src/module_bindings",
+		"generate": "npm install --prefix spacetimedb && cargo run -p gen-bindings -- --out-dir src/module_bindings --module-path spacetimedb && prettier --write src/module_bindings",
 		"spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
 		"spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
 		"spacetime:publish:local:fresh": "spacetime publish --module-path spacetimedb --server local --delete-data --yes",
@@ -16,26 +16,26 @@
 	"dependencies": {
 		"@dimforge/rapier3d-compat": "^0.19.3",
 		"@tailwindcss/vite": "^4.2.2",
-		"@threlte/core": "^8.5.0",
-		"@threlte/extras": "^9.9.0",
-		"@threlte/rapier": "^3.4.0",
-		"@threlte/studio": "^0.4.0",
+		"@threlte/core": "^8.5.3",
+		"@threlte/extras": "^9.13.0",
+		"@threlte/rapier": "^3.4.1",
+		"@threlte/studio": "^0.4.2",
 		"@types/three": "^0.183.1",
-		"postprocessing": "^6.38.3",
-		"spacetimedb": "^2.0.3",
+		"postprocessing": "^6.39.0",
+		"spacetimedb": "^2.1.0",
 		"svelte-tweakpane-ui": "^1.5.15",
 		"tailwindcss": "^4.2.2",
 		"three": "^0.183.2"
 	},
 	"devDependencies": {
-		"@sveltejs/vite-plugin-svelte": "^5.1.1",
-		"@types/node": "^25.3.5",
+		"@sveltejs/vite-plugin-svelte": "^7.0.0",
+		"@types/node": "^25.5.0",
 		"prettier": "^3.8.1",
 		"prettier-plugin-svelte": "^3.5.1",
 		"rollup-plugin-visualizer": "^7.0.1",
-		"svelte": "^5.54.0",
-		"svelte-check": "^4.0.0",
-		"typescript": "~5.6.2",
-		"vite": "^6.4.1"
+		"svelte": "^5.55.0",
+		"svelte-check": "^4.4.5",
+		"typescript": "~6.0.2",
+		"vite": "^8.0.3"
 	}
 }
