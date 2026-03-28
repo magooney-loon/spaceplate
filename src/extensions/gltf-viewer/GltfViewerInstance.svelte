@@ -89,10 +89,10 @@
 	<T.Group name={model.name}>
 		{#if model.colliderEnabled}
 			<AutoColliders shape={model.colliderShape}>
-				<T is={$gltf.scene} userData={{ hideInTree: true, selectable: false }} />
+				<T is={$gltf.scene} />
 			</AutoColliders>
 		{:else}
-			<T is={$gltf.scene} userData={{ hideInTree: true, selectable: false }} />
+			<T is={$gltf.scene} />
 		{/if}
 	</T.Group>
 {/if}

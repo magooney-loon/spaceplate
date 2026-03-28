@@ -6,8 +6,8 @@
 	import { backOut, cubicOut } from 'svelte/easing';
 	import { physicsActions } from '$extensions/physics/physics.svelte';
 	import { sceneState } from '$extensions/scene/scene.svelte';
-	import MainMenu from '$scenes/MainMenu.svelte';
-	import DemoScene from '$scenes/DemoScene.svelte';
+	import MainMenu from '$scenes/MainMenu/MainMenu.svelte';
+	import DemoScene from '$scenes/DemoScene/DemoScene.svelte';
 
 	let introT = $state(0);
 	let prevScene = $state(sceneState.currentScene);

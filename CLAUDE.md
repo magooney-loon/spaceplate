@@ -22,19 +22,28 @@ src/
     Camera.svelte        — PerspectiveCamera + AudioListener
     GlobalAudio.svelte   — All Audio components; re-exports from globalAudio.svelte.ts
     globalAudio.svelte.ts — soundTriggers + soundActions singleton (import from here in .ts files)
+    Keymapper.svelte     — Global keyboard/mouse event listeners; routes into input extension
     Loader.svelte        — Asset loading screen (useProgress, shown until finishedOnce)
     Renderer.svelte      — Post-processing (25+ effects, quality-gated)
     Skybox.svelte        — Sky + dual-layer stars (state-driven)
     tasks.ts             — Task pipeline: physicsStage, renderStage, uiStage, audioStage
 
   scenes/
-    MainMenu.svelte    — Example 3D scene 1 (inside Canvas)
-    MainMenuHud.svelte — HTML overlay for main menu (SpacetimeDB example)
-    DemoScene.svelte   — Example 3D scene 2 (inside Canvas)
-    DemoSceneHud.svelte — HTML overlay for demo scene
-    SettingsHud.svelte — Settings overlay
+    SettingsHud.svelte   — Settings overlay (tabbed: General, Audio, Controls/keybindings)
+    MainMenu/
+      MainMenu.svelte    — Example 3D scene 1 (inside Canvas)
+      MainMenuHud.svelte — HTML overlay for main menu (SpacetimeDB example)
+    DemoScene/
+      DemoScene.svelte   — Example 3D scene 2 (inside Canvas)
+      DemoSceneHud.svelte — HTML overlay for demo scene
+      DemoFloor.svelte   — Floor plane with collider
+      DemoPhysicsBodies.svelte — Spawned physics bodies renderer
 
   extensions/
+    input/
+      input.svelte.ts      — Action-based input state, bindings, queries, persistence
+      types.ts             — InputAction, InputAxisAction, binding types, state shape
+      useInput.ts          — Hook returning { state, actions, queries }
     scene/
       scene.svelte.ts      — Scene state machine + SCENES config array
       bundledPresets.ts    — Code-committed preset assignments per scene + global
@@ -243,14 +252,16 @@ export const useMyFeature = () => {
 | `sound` | `soundState` | (via `settingsState.audio`) | `SoundExtension.svelte` |
 | `physics` | `physicsState` | `physicsActions` | `PhysicsExtension.svelte` |
 | `gltf-viewer` | `gltfViewerState` | `gltfViewerActions` | `GltfViewerExtension.svelte` (dev only) |
+| `input` | `inputState` | `inputActions`, `inputQueries`, `advanceInputFrame` | none (runtime only) |
 
-**Logger named exports:** `logEngine`, `logSettings`, `logSound`, `logPostprocessing`, `logSkybox`, `logCache`, `logGltf`, `logPhysics`
+**Logger named exports:** `logEngine`, `logSettings`, `logSound`, `logPostprocessing`, `logSkybox`, `logCache`, `logGltf`, `logPhysics`, `logInput`
 ```typescript
-import { logEngine, logSettings, logGltf, logPhysics } from '$extensions/logger/logger.svelte';
+import { logEngine, logSettings, logGltf, logPhysics, logInput } from '$extensions/logger/logger.svelte';
 logEngine.info('Scene:', scene);   // console.log
 logSettings.warn('Bad value');     // console.warn
 logGltf.error('Failed:', err);     // console.error
 logPhysics.info('Spawned body');
+logInput.info('Binding captured'); // input channel (off by default)
 ```
 
 #### Common patterns
@@ -323,7 +334,7 @@ useTask((delta) => { if (composer && !isUpdatingEffects) composer.render(delta);
 
 ### SpacetimeDB Client
 - Connection is set up in `Root.svelte` via `DbConnection.builder()` + `createSpacetimeDBProvider`
-- Module bindings are in `src/module_bindings/` — regenerate with `pnpm spacetime:generate`
+- Module bindings are in `src/module_bindings/` — regenerate with `npm run spacetime:generate`
 - Use `useTable(tables.x)` from `spacetimedb/svelte` — returns `[rows, isLoading]`
 - SpacetimeDB UI lives in HUD components (HTML), not 3D scene components
 
@@ -432,6 +443,71 @@ gltfViewerActions.setCrossfadeDuration(id, 0.3); // Seconds; 0 = instant cuts
 - `crossfadeDuration = 0` → hard cuts (same as before)
 
 **GltfViewerScene.svelte** — drop inside DemoScene (dev-only); renders one `GltfViewerInstance` per model. Each instance owns its own `useGltf` + `useGltfAnimations` lifecycle, preventing mixer conflicts between models.
+
+### Input System (`extensions/input/` + `core/Keymapper.svelte`)
+
+Action-based input mapping with keyboard, mouse, and gamepad support. Persists to localStorage. Works in production without Studio.
+
+**`core/Keymapper.svelte`** — mounted once in `App.svelte`, owns all `<svelte:window>` event listeners:
+- `keydown` / `keyup` → updates `inputState.runtime.keyboardPressed`
+- `mousedown` / `mouseup` → updates `inputState.runtime.mousePressed`; skips UI elements (buttons, inputs, labels)
+- `blur` → clears all pressed state to avoid stuck keys
+- `Ctrl+H` is intercepted here as a global engine shortcut before input routing
+
+**State:** `inputState`
+- `players: Record<PlayerId, PlayerInputMap>` — per-player bindings (player1–player4)
+- `capture` — transient rebinding UI state (active, target action, started time)
+- `runtime` — transient pressed state (keyboardPressed, mousePressed, connectedGamepads)
+
+**Player binding map:**
+- `actions: Record<InputAction, AnyBinding[]>` — each action can have multiple bindings
+- `axes: Record<InputAxisAction, GamepadAxisBinding | null>` — analog axis assignments
+- `gamepad: { enabled, index, deadzoneLeftStick, deadzoneRightStick }`
+
+**InputAction values:** `moveForward` `moveBackward` `moveLeft` `moveRight` `jump` `sprint` `interact` `primaryAction` `secondaryAction` `reload` `use` `crouch` `drop` `prone` `emote` `slot1`–`slot4` `pause` `toggleUi` `openSettings`
+
+**InputAxisAction values:** `moveX` `moveY` `lookX` `lookY`
+
+**Binding types:** `KeyboardBinding` (code) | `MouseBinding` (left/right/middle) | `GamepadButtonBinding` | `GamepadAxisBinding`
+
+**Default player1 keyboard/mouse bindings:**
+```
+W/A/S/D + Arrows → movement    Space → jump       Shift → sprint
+E → interact                   Q + RMB → secondary LMB → primary
+R → reload                     F → use            C → crouch
+X → drop                       Z → prone          T → emote
+1–4 → slot1–slot4              Esc → pause        , → openSettings
+```
+
+**Key actions:**
+```typescript
+import { inputActions, inputQueries, inputState } from '$extensions/input/input.svelte';
+
+// Gameplay queries
+inputQueries.isPressed('player1', 'jump')           // boolean — current frame
+inputQueries.wasPressed('player1', 'primaryAction') // boolean — edge detect (needs advanceInputFrame)
+inputQueries.getMoveVector('player1')               // { x: number; y: number }
+inputQueries.getAxis('player1', 'lookX')            // number
+
+// Rebinding
+inputActions.startCapture('player1', 'jump', 'action') // enter capture mode
+inputActions.bindKeyboard('player1', 'jump', 'Space')
+inputActions.bindMouse('player1', 'primaryAction', 'left')
+inputActions.removeBinding('player1', 'jump', bindingId)
+inputActions.resetAction('player1', 'jump')
+inputActions.resetPlayerBindings('player1')
+inputActions.resetAllInputSettings()
+```
+
+**`advanceInputFrame()`** — call once per frame task to enable `wasPressed` edge detection:
+```typescript
+import { advanceInputFrame } from '$extensions/input/input.svelte';
+useTask(() => { advanceInputFrame(); });
+```
+
+**Persistence:** `spaceplate-input-settings` in localStorage — only player bindings and gamepad config, never transient pressed state.
+
+**`SettingsHud.svelte`** — tabbed UI: **General** (graphics quality) | **Audio** (SFX/music/ambient) | **Controls** (full keybinding editor per action group with add/remove/reset per binding).
 
 ---
 

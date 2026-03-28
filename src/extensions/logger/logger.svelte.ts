@@ -10,7 +10,8 @@ export const loggerState = $state<LoggerState>({
 	skybox: true,
 	cache: true,
 	gltf: true,
-	physics: false
+	physics: false,
+	input: false
 });
 
 export const channelStyles: Record<LoggerChannel, LoggerStyle & { label: string }> = {
@@ -21,7 +22,8 @@ export const channelStyles: Record<LoggerChannel, LoggerStyle & { label: string 
 	skybox: { color: '#56b6c2', bg: 'background:#2d4a4a', text: '☀', label: 'Skybox' },
 	cache: { color: '#d19a66', bg: 'background:#4a3010', text: '⬡', label: 'Cache' },
 	gltf: { color: '#4ec9b0', bg: 'background:#1a3a35', text: '◈', label: 'GLTF' },
-	physics: { color: '#fd9644', bg: 'background:#4a2e10', text: '⬡', label: 'Physics' }
+	physics: { color: '#fd9644', bg: 'background:#4a2e10', text: '⬡', label: 'Physics' },
+	input: { color: '#e06c75', bg: 'background:#4a1a1a', text: '⌨', label: 'Input' }
 };
 
 const formatTime = () => {
@@ -80,6 +82,7 @@ export const logSkybox = createLogger('skybox', 'skybox');
 export const logCache = createLogger('cache', 'cache');
 export const logGltf = createLogger('gltf', 'gltf');
 export const logPhysics = createLogger('physics', 'physics');
+export const logInput = createLogger('input', 'input');
 
 export const loggerActions = {
 	toggleChannel(channel: LoggerChannel) {

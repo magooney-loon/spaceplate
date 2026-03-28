@@ -1,6 +1,6 @@
 export const extensionScope = 'logger';
 
-export type LoggerChannel = 'engine' | 'settings' | 'sound' | 'postprocessing' | 'skybox' | 'cache' | 'gltf' | 'physics';
+export type LoggerChannel = 'engine' | 'settings' | 'sound' | 'postprocessing' | 'skybox' | 'cache' | 'gltf' | 'physics' | 'input';
 
 export type LoggerState = {
 	engine: boolean;
@@ -11,6 +11,7 @@ export type LoggerState = {
 	cache: boolean;
 	gltf: boolean;
 	physics: boolean;
+	input: boolean;
 };
 
 export type ExtensionState = LoggerState;
