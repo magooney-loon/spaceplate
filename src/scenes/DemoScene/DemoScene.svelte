@@ -8,6 +8,7 @@
 	import { logPhysics } from '$extensions/logger/logger.svelte';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
 	import DemoFloor from './DemoFloor.svelte';
+	import DemoDistanceMarkers from './DemoDistanceMarkers.svelte';
 
 	interactivity();
 
@@ -62,6 +63,7 @@
 {/if}
 
 <DemoFloor />
+<DemoDistanceMarkers />
 <DemoPhysicsBodies />
 
 <!-- Spawned physics bodies -->
