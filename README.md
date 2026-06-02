@@ -1,7 +1,11 @@
 <div align="center">
   <h1>🪐 Spaceplate</h1>
   <p>Svelte 5 + Threlte + SpacetimeDB boilerplate for real-time 3D web apps</p>
-  <p>Example Game: <a href="https://github.com/magooney-loon/JustSurvive">⚔️ JustSurvive</a></p>
+  <p>Example Games:</p>
+  <p><a href="https://therite.magooney.org/">⚔️ TheRite</a></p>
+  <p><a href="https://github.com/magooney-loon/JustSurvive">⚔️ JustSurvive</a></p>
+  <p><a href="https://github.com/magooney-loon/mouse-hole">⚔️ MouseHole</a></p>
+
 </div>
 
 <img width="2507" height="1587" alt="engi1" src="https://github.com/user-attachments/assets/19b9ee92-866d-427c-a03a-a6618447d0ed" />
