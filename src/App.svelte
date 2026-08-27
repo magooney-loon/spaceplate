@@ -11,7 +11,6 @@
 	import { WebGPURenderer } from 'three/webgpu';
 	import { HTML } from '@threlte/extras';
 	import { settingsState } from '$extensions/settings/settings.svelte';
-	import { planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
 	import './app.css';
 
 	// WebGPURenderer auto-falls back to WebGL when WebGPU isn't available.
@@ -43,12 +42,6 @@
 </script>
 
 <Keymapper />
-
-<svelte:head>
-	{#if planetDemoState.faviconUri}
-		<link rel="icon" type="image/svg+xml" href={planetDemoState.faviconUri} />
-	{/if}
-</svelte:head>
 
 <Loader />
 
