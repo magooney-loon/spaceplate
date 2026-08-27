@@ -31,10 +31,10 @@ src/
     tasks.ts             — Task pipeline: physicsStage, renderStage, uiStage, audioStage
 
   scenes/
-    SettingsHud.svelte   — Settings overlay (tabbed: General, Audio, Controls/keybindings) — rendered globally from SceneHud via `overlayState`
     MainMenu/
       MainMenu.svelte    — Example 3D scene 1 (inside Canvas)
-      MainMenuHud.svelte — HTML overlay for main menu (SpacetimeDB example)
+      MainMenuHud.svelte — HTML overlay for main menu
+      SettingsHud.svelte — Settings overlay (tabbed: General, Audio, Controls/keybindings) — rendered globally from SceneHud via `overlayState` (SpacetimeDB example)
     DemoScene/
       DemoScene.svelte   — Example 3D scene 2 (inside Canvas)
       DemoSceneHud.svelte — HTML overlay for demo scene

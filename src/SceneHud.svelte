@@ -3,7 +3,7 @@
 	import { settingsState, overlayState } from '$extensions/settings/settings.svelte';
 	import MainMenuHud from '$scenes/MainMenu/MainMenuHud.svelte';
 	import DemoSceneHud from '$scenes/DemoScene/DemoSceneHud.svelte';
-	import SettingsHud from '$scenes/SettingsHud.svelte';
+	import SettingsHud from '$scenes/MainMenu/SettingsHud.svelte';
 </script>
 
 <!-- HTML overlay — rendered as a sibling to <Canvas> in App.svelte -->
