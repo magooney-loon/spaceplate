@@ -2,7 +2,8 @@
 	import {
 		settingsState,
 		graphicsActions,
-		audioActions
+		audioActions,
+		generalActions
 	} from '$extensions/settings/settings.svelte';
 	import { soundActions } from '$core/GlobalAudio.svelte';
 	import { inputState, inputActions } from '$extensions/input/input.svelte';
@@ -220,11 +221,55 @@
 					</div>
 				</div>
 
-				<div class="section hint">
+				<div class="section">
+					<p class="section-label">Mouse Sensitivity</p>
+					<div class="sens-row">
+						<span class="sens-label">Look</span>
+						<input
+							type="range"
+							min="0.05"
+							max="1"
+							step="0.01"
+							value={settingsState.general.mouseSensitivity}
+							oninput={(e) =>
+								generalActions.setMouseSensitivity(
+									parseFloat((e.target as HTMLInputElement).value)
+								)}
+							class="sens-slider"
+						/>
+						<span class="sens-value">
+							{Math.round(settingsState.general.mouseSensitivity * 100)}
+						</span>
+					</div>
+					<div class="sens-row">
+						<span class="sens-label">Aim</span>
+						<input
+							type="range"
+							min="0.05"
+							max="1"
+							step="0.01"
+							value={settingsState.general.aimSensitivity}
+							oninput={(e) =>
+								generalActions.setAimSensitivity(parseFloat((e.target as HTMLInputElement).value))}
+							class="sens-slider"
+						/>
+						<span class="sens-value">
+							{Math.round(settingsState.general.aimSensitivity * 100)}
+						</span>
+					</div>
+				</div>
+
+				<div class="section">
+					<p class="section-label">Engine Shortcuts</p>
 					<div class="hint-row">
 						<span>Toggle HUD</span>
 						<kbd>Ctrl+H</kbd>
 					</div>
+					<div class="hint-row">
+						<span>Cancel Binding</span>
+						<kbd>Esc</kbd>
+					</div>
+					<p class="section-note">Reserved engine shortcuts. Not rebindable.</p>
 				</div>
 
 				<!-- Audio tab -->
@@ -434,18 +479,15 @@
 		background: rgba(255, 255, 255, 0.2);
 	}
 
-	.hint {
-		font-size: 0.875rem;
-		opacity: 0.5;
-	}
-
 	.hint-row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		font-size: 0.875rem;
+		opacity: 0.5;
 	}
 
-	.hint kbd {
+	.hint-row kbd {
 		padding: 0.125rem 0.5rem;
 		font-family:
 			ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
@@ -454,6 +496,40 @@
 		background: rgba(255, 255, 255, 0.08);
 		border: 1px solid rgba(255, 255, 255, 0.2);
 		border-radius: 0.25rem;
+	}
+
+	.section-note {
+		margin-top: 0.5rem;
+		font-size: 11px;
+		opacity: 0.3;
+	}
+
+	.sens-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.sens-row + .sens-row {
+		margin-top: 0.5rem;
+	}
+
+	.sens-label {
+		width: 2.5rem;
+		font-size: 0.875rem;
+		opacity: 0.7;
+	}
+
+	.sens-slider {
+		flex: 1;
+		accent-color: rgba(255, 255, 255, 0.8);
+	}
+
+	.sens-value {
+		min-width: 2rem;
+		font-size: 0.75rem;
+		text-align: right;
+		opacity: 0.5;
 	}
 
 	/* Audio tab */

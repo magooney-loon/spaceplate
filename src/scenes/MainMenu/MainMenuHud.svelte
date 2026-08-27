@@ -1,51 +1,40 @@
 <script lang="ts">
 	import { sceneActions } from '$extensions/scene/scene.svelte';
 	import { soundActions } from '$core/GlobalAudio.svelte';
-	import SettingsHud from '$scenes/SettingsHud.svelte';
-
-	let showSettings = $state(false);
+	import { overlayState } from '$lib/stores/overlayState.svelte';
 </script>
 
 <!-- Main Menu HUD -->
-{#if !showSettings}
-	<div class="hud">
-		<!-- Menu Title -->
-		<div class="title">
-			<h1 style="text-shadow: 0 0 20px #4a90d9;">SPACEPLATE ENGINE</h1>
-			<p class="subtitle">Threlte/Svelte/Spacetime</p>
-		</div>
-
-		<!-- Menu Buttons -->
-		<div class="menu-buttons">
-			<button
-				onclick={() => {
-					soundActions.playClick();
-					sceneActions.goToDemoScene();
-				}}
-				class="menu-button"
-			>
-				🚀 Start Demo
-			</button>
-
-			<button
-				onclick={() => {
-					soundActions.playClick();
-					showSettings = true;
-				}}
-				class="menu-button"
-			>
-				⚙️ Settings
-			</button>
-		</div>
+<div class="hud">
+	<!-- Menu Title -->
+	<div class="title">
+		<h1 style="text-shadow: 0 0 20px #4a90d9;">SPACEPLATE ENGINE</h1>
+		<p class="subtitle">Threlte/Svelte/Spacetime</p>
 	</div>
-{:else}
-	<SettingsHud
-		onBack={() => {
-			soundActions.playClick();
-			showSettings = false;
-		}}
-	/>
-{/if}
+
+	<!-- Menu Buttons -->
+	<div class="menu-buttons">
+		<button
+			onclick={() => {
+				soundActions.playClick();
+				sceneActions.goToDemoScene();
+			}}
+			class="menu-button"
+		>
+			🚀 Start Demo
+		</button>
+
+		<button
+			onclick={() => {
+				soundActions.playClick();
+				overlayState.settingsOpen = true;
+			}}
+			class="menu-button"
+		>
+			⚙️ Settings
+		</button>
+	</div>
+</div>
 
 <style>
 	.hud {

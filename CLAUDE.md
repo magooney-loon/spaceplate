@@ -15,21 +15,25 @@ src/
   Root.svelte         — SpacetimeDB provider wrapper (wraps App)
   main.ts             — Entry point
   Scene.svelte        — 3D scene router (inside Canvas, Threlte context)
-  SceneHud.svelte     — HTML overlay router (sibling to Canvas)
+  SceneHud.svelte      — HTML overlay router (sibling to Canvas) + global Settings overlay (`overlayState.settingsOpen`)
   module_bindings/    — Generated SpacetimeDB client bindings (do not edit)
+
+  lib/
+    stores/
+      overlayState.svelte.ts — HUD overlay state (global settings overlay)
 
   core/
     Camera.svelte        — PerspectiveCamera + AudioListener
     GlobalAudio.svelte   — All Audio components; re-exports from globalAudio.svelte.ts
     globalAudio.svelte.ts — soundTriggers + soundActions singleton (import from here in .ts files)
-    Keymapper.svelte     — Global keyboard/mouse event listeners; routes into input extension
+    Keymapper.svelte     — Global keyboard/mouse event listeners; routes into input extension; intercepts Ctrl+H (HUD toggle) and the openSettings key (global settings overlay)
     Loader.svelte       — Asset loading screen (useProgress) + sound enable prompt (autoplay policy unlock)
     Renderer.svelte      — Post-processing (25+ effects, quality-gated)
     Skybox.svelte        — Sky + dual-layer stars (state-driven)
     tasks.ts             — Task pipeline: physicsStage, renderStage, uiStage, audioStage
 
   scenes/
-    SettingsHud.svelte   — Settings overlay (tabbed: General, Audio, Controls/keybindings)
+    SettingsHud.svelte   — Settings overlay (tabbed: General, Audio, Controls/keybindings) — rendered globally from SceneHud via `overlayState`
     MainMenu/
       MainMenu.svelte    — Example 3D scene 1 (inside Canvas)
       MainMenuHud.svelte — HTML overlay for main menu (SpacetimeDB example)
@@ -324,8 +328,8 @@ useTask((delta) => { if (composer && !isUpdatingEffects) composer.render(delta);
 - All settings persist to localStorage automatically
 - Audio: `musicVolume/musicEnabled`, `ambienceVolume/ambienceEnabled`, `sfxVolume/sfxEnabled`
 - Graphics: `quality` (`"low"` | `"high"`) — affects DPR and whether post-processing runs
-- General: `uiVisible` (toggled with `Ctrl+H`)
-- Actions: `audioActions.toggleMusic/Ambience/Sfx()`, `setMusicVolume(v)`, `graphicsActions.setQuality(q)`, `generalActions.toggleUiVisible()`
+- General: `uiVisible` (toggled with Ctrl+H), `mouseSensitivity`, `aimSensitivity`
+- Actions: `audioActions.toggleMusic/Ambience/Sfx()`, `setMusicVolume(v)`, `graphicsActions.setQuality(q)`, `generalActions.toggleUiVisible()`, `generalActions.setMouseSensitivity(v)`, `generalActions.setAimSensitivity(v)`
 - **`BASE_URL`** — always import and use this for static asset paths; never hardcode `/` or relative paths
   ```ts
   import { BASE_URL } from '$extensions/settings/settings.svelte';
@@ -453,6 +457,8 @@ Action-based input mapping with keyboard, mouse, and gamepad support. Persists t
 - `mousedown` / `mouseup` → updates `inputState.runtime.mousePressed`; skips UI elements (buttons, inputs, labels)
 - `blur` → clears all pressed state to avoid stuck keys
 - `Ctrl+H` is intercepted here as a global engine shortcut before input routing
+- The key bound to `openSettings` is intercepted here to toggle the global settings overlay (`overlayState.settingsOpen`) — in-game it only opens (use Back to close); ignored while rebinding or typing in inputs
+- `Escape` cancels an active binding capture instead of binding
 
 **State:** `inputState`
 - `players: Record<PlayerId, PlayerInputMap>` — per-player bindings (player1–player4)
@@ -507,7 +513,7 @@ useTask(() => { advanceInputFrame(); });
 
 **Persistence:** `spaceplate-input-settings` in localStorage — only player bindings and gamepad config, never transient pressed state.
 
-**`SettingsHud.svelte`** — tabbed UI: **General** (graphics quality) | **Audio** (SFX/music/ambient) | **Controls** (full keybinding editor per action group with add/remove/reset per binding).
+**`SettingsHud.svelte`** — tabbed UI: **General** (graphics quality, mouse/aim sensitivity, reserved engine shortcuts) | **Audio** (SFX/music/ambient) | **Controls** (full keybinding editor per action group with add/remove/reset per binding).
 
 ---
 

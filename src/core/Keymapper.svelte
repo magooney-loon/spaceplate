@@ -2,6 +2,28 @@
 	import { inputState, inputActions } from '$extensions/input/input.svelte';
 	import type { InputAction, MouseButton } from '$extensions/input/types';
 	import { generalActions } from '$extensions/settings/settings.svelte';
+	import { sceneState } from '$extensions/scene/scene.svelte';
+	import { overlayState } from '$lib/stores/overlayState.svelte';
+
+	function isTypingTarget(target: EventTarget | null): boolean {
+		if (!(target instanceof HTMLElement)) return false;
+		return !!target.closest('input, textarea, select, [contenteditable="true"]');
+	}
+
+	function isActionBoundToKey(action: InputAction, code: string): boolean {
+		return (inputState.players.player1.actions[action] ?? []).some(
+			(binding) => binding.device === 'keyboard' && binding.code === code
+		);
+	}
+
+	function toggleSettingsOverlay() {
+		if (sceneState.currentScene === 'mainMenu') {
+			overlayState.settingsOpen = !overlayState.settingsOpen;
+		} else {
+			// In-game: the settings key only opens, never closes — use the Back button to close
+			overlayState.settingsOpen = true;
+		}
+	}
 
 	function handleKeydown(e: KeyboardEvent) {
 		// Ctrl+H — global engine shortcut, not routed through keymapper
@@ -11,6 +33,16 @@
 			return;
 		}
 		if (e.repeat) return;
+
+		if (
+			!inputState.capture.active &&
+			!isTypingTarget(e.target) &&
+			isActionBoundToKey('openSettings', e.code)
+		) {
+			e.preventDefault();
+			toggleSettingsOverlay();
+		}
+
 		inputState.runtime.keyboardPressed[e.code] = true;
 		inputState.runtime.lastInputSource = 'keyboard';
 		if (inputState.capture.active && inputState.capture.bindingType === 'action') {

@@ -13,6 +13,8 @@ export const BASE_URL = import.meta.env.BASE_URL;
 
 const GRAPHICS_KEY = 'graphics-quality';
 const UI_VISIBLE_KEY = 'ui-visible';
+const MOUSE_SENSITIVITY_KEY = 'mouse-sensitivity';
+const AIM_SENSITIVITY_KEY = 'aim-sensitivity';
 const MUSIC_VOLUME_KEY = 'music-volume';
 const MUSIC_ENABLED_KEY = 'music-enabled';
 const AMBIENCE_VOLUME_KEY = 'ambience-volume';
@@ -61,7 +63,9 @@ export const settingsState = $state<ExtensionState>({
 		quality: loadQuality()
 	},
 	general: {
-		uiVisible: fromStorage(UI_VISIBLE_KEY, 'true') !== 'false'
+		uiVisible: fromStorage(UI_VISIBLE_KEY, 'true') !== 'false',
+		mouseSensitivity: loadVolume(MOUSE_SENSITIVITY_KEY, 0.5),
+		aimSensitivity: loadVolume(AIM_SENSITIVITY_KEY, 0.3)
 	}
 });
 
@@ -111,5 +115,15 @@ export const generalActions: GeneralActions = {
 		settingsState.general.uiVisible = !settingsState.general.uiVisible;
 		toStorage(UI_VISIBLE_KEY, String(settingsState.general.uiVisible));
 		logSettings.info('HUD visible:', settingsState.general.uiVisible);
+	},
+	setMouseSensitivity(v: number) {
+		settingsState.general.mouseSensitivity = v;
+		toStorage(MOUSE_SENSITIVITY_KEY, String(v));
+		logSettings.info('Mouse sensitivity:', v);
+	},
+	setAimSensitivity(v: number) {
+		settingsState.general.aimSensitivity = v;
+		toStorage(AIM_SENSITIVITY_KEY, String(v));
+		logSettings.info('Aim sensitivity:', v);
 	}
 };

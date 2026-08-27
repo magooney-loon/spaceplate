@@ -17,6 +17,8 @@ export type GraphicsSettings = {
 
 export type GeneralSettings = {
 	uiVisible: boolean;
+	mouseSensitivity: number;
+	aimSensitivity: number;
 };
 
 export type SettingsState = {
@@ -42,6 +44,8 @@ export type GraphicsActions = {
 
 export type GeneralActions = {
 	toggleUiVisible: () => void;
+	setMouseSensitivity: (v: number) => void;
+	setAimSensitivity: (v: number) => void;
 };
 
 export type ExtensionActions = AudioActions & GraphicsActions & GeneralActions;
