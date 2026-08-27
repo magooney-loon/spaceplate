@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { fly } from 'svelte/transition';
 	import {
 		settingsState,
 		graphicsActions,
@@ -187,25 +186,15 @@
 	}
 </script>
 
-<div class="pointer-events-auto">
-	<div
-		transition:fly={{ y: -16, duration: 220 }}
-		class="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-md"
-	>
-		<div
-			class="bg-white/8 border border-white/15 rounded-2xl p-8 text-white flex flex-col
-				{activeTab === 'controls' ? 'w-150' : 'w-90'}"
-		>
-			<h2 class="m-0 mb-5 text-2xl font-semibold">Settings</h2>
+<div class="hud">
+	<div class="overlay">
+		<div class="panel" class:wide={activeTab === 'controls'}>
+			<h2>Settings</h2>
 
 			<!-- Tab bar -->
-			<div class="flex gap-1 mb-6 bg-white/5 rounded-xl p-1">
-				{#each [['general', 'General'], ['audio', 'Audio'], ['controls', 'Controls']] as const as [id, label]}
-					<button
-						onclick={() => switchTab(id)}
-						class="flex-1 py-1.5 rounded-lg text-sm font-medium transition-all cursor-pointer
-							{activeTab === id ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white/80'}"
-					>
+			<div class="tabs">
+				{#each [['general', 'General'], ['audio', 'Audio'], ['controls', 'Controls']] as const as [id, label] (id)}
+					<button onclick={() => switchTab(id)} class="tab" class:active={activeTab === id}>
 						{label}
 					</button>
 				{/each}
@@ -213,19 +202,17 @@
 
 			<!-- General tab -->
 			{#if activeTab === 'general'}
-				<div class="mb-6">
-					<p class="m-0 mb-2 opacity-70 text-sm">Graphics Quality</p>
-					<div class="flex gap-2">
-						{#each ['low', 'high'] as level}
+				<div class="section">
+					<p class="section-label">Graphics Quality</p>
+					<div class="quality-row">
+						{#each ['low', 'high'] as level (level)}
 							<button
 								onclick={() => {
 									soundActions.playClick();
 									graphicsActions.setQuality(level as QualityLevel);
 								}}
-								class="flex-1 px-4 py-2 rounded-lg border transition-all capitalize cursor-pointer
-									{settingsState.graphics.quality === level
-									? 'border-white/60 bg-white/20'
-									: 'border-white/20 bg-transparent hover:bg-white/10'}"
+								class="quality-button"
+								class:selected={settingsState.graphics.quality === level}
 							>
 								{level}
 							</button>
@@ -233,26 +220,24 @@
 					</div>
 				</div>
 
-				<div class="mb-6 text-sm opacity-50">
-					<div class="flex justify-between items-center">
+				<div class="section hint">
+					<div class="hint-row">
 						<span>Toggle HUD</span>
-						<kbd class="bg-white/8 border border-white/20 rounded px-2 py-0.5 font-mono text-xs">
-							Ctrl+H
-						</kbd>
+						<kbd>Ctrl+H</kbd>
 					</div>
 				</div>
 
 				<!-- Audio tab -->
 			{:else if activeTab === 'audio'}
-				<div class="mb-6 flex flex-col gap-4">
-					{#each [{ key: 'sfx', label: 'Sound Effects', enabled: settingsState.audio.sfxEnabled, volume: settingsState.audio.sfxVolume, toggle: audioActions.toggleSfx, setVol: audioActions.setSfxVolume }, { key: 'music', label: 'Music', enabled: settingsState.audio.musicEnabled, volume: settingsState.audio.musicVolume, toggle: audioActions.toggleMusic, setVol: audioActions.setMusicVolume }, { key: 'ambience', label: 'Ambient', enabled: settingsState.audio.ambienceEnabled, volume: settingsState.audio.ambienceVolume, toggle: audioActions.toggleAmbience, setVol: audioActions.setAmbienceVolume }] as ch}
-						<div class="flex flex-col gap-1.5">
-							<label class="flex items-center gap-2 cursor-pointer text-sm">
+				<div class="audio-section">
+					{#each [{ key: 'sfx', label: 'Sound Effects', enabled: settingsState.audio.sfxEnabled, volume: settingsState.audio.sfxVolume, toggle: audioActions.toggleSfx, setVol: audioActions.setSfxVolume }, { key: 'music', label: 'Music', enabled: settingsState.audio.musicEnabled, volume: settingsState.audio.musicVolume, toggle: audioActions.toggleMusic, setVol: audioActions.setMusicVolume }, { key: 'ambience', label: 'Ambient', enabled: settingsState.audio.ambienceEnabled, volume: settingsState.audio.ambienceVolume, toggle: audioActions.toggleAmbience, setVol: audioActions.setAmbienceVolume }] as ch (ch.key)}
+						<div class="channel">
+							<label class="channel-label">
 								<input
 									type="checkbox"
 									checked={ch.enabled}
 									onchange={() => ch.toggle()}
-									class="w-4 h-4"
+									class="channel-checkbox"
 								/>
 								{ch.label}
 							</label>
@@ -264,7 +249,7 @@
 								aria-label="{ch.label} volume"
 								value={ch.volume}
 								oninput={(e) => ch.setVol(+(e.target as HTMLInputElement).value)}
-								class="w-full accent-white/80"
+								class="volume"
 							/>
 						</div>
 					{/each}
@@ -274,59 +259,47 @@
 			{:else if activeTab === 'controls'}
 				<!-- Capture banner -->
 				{#if isCapturing && captureAction}
-					<div
-						class="mb-4 flex items-center justify-between gap-3 bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm"
-					>
-						<span class="animate-pulse">
+					<div class="capture-banner">
+						<span class="pulse">
 							Binding <strong>{ACTION_LABELS[captureAction]}</strong> — press a key or click…
 						</span>
-						<button
-							onclick={cancelCapture}
-							class="text-white/60 hover:text-white transition-colors cursor-pointer text-xs border border-white/20 rounded px-2 py-0.5"
-						>
-							Cancel
-						</button>
+						<button onclick={cancelCapture} class="cancel-button"> Cancel </button>
 					</div>
 				{/if}
 
-				<div class="overflow-y-auto max-h-[52vh] flex flex-col gap-5 pr-1">
-					{#each ACTION_GROUPS as group}
+				<div class="bindings">
+					{#each ACTION_GROUPS as group (group.label)}
 						<div>
-							<p class="m-0 mb-2 text-xs font-semibold uppercase tracking-widest opacity-40">
+							<p class="group-label">
 								{group.label}
 							</p>
-							<div class="flex flex-col gap-1">
-								{#each group.actions as action}
+							<div class="action-list">
+								{#each group.actions as action (action)}
 									{@const bindings = inputState.players.player1.actions[action] ?? []}
 									{@const capturing = isCapturing && captureAction === action}
-									<div
-										class="flex items-center gap-2 rounded-lg px-3 py-1.5 transition-colors
-											{capturing ? 'bg-white/12 border border-white/25' : 'hover:bg-white/5'}"
-									>
+									<div class="action-row" class:capturing>
 										<!-- Action name -->
-										<span class="text-sm w-36 shrink-0 opacity-80">{ACTION_LABELS[action]}</span>
+										<span class="action-name">{ACTION_LABELS[action]}</span>
 
 										<!-- Binding chips -->
-										<div class="flex flex-wrap gap-1 flex-1 min-w-0">
+										<div class="chips">
 											{#each bindings as b (b.id)}
-												<span
-													class="inline-flex items-center gap-1 bg-white/10 border border-white/20 rounded px-1.5 py-0.5"
-												>
-													<kbd class="font-mono text-xs leading-none">{formatBinding(b)}</kbd>
+												<span class="chip">
+													<kbd>{formatBinding(b)}</kbd>
 													<button
 														onclick={() => removeBinding(action, b.id)}
-														class="opacity-40 hover:opacity-100 transition-opacity cursor-pointer leading-none text-xs"
+														class="chip-remove"
 														aria-label="Remove binding">×</button
 													>
 												</span>
 											{/each}
 
 											{#if capturing}
-												<span class="text-xs opacity-50 italic self-center">waiting…</span>
+												<span class="waiting">waiting…</span>
 											{:else}
 												<button
 													onclick={() => startBind(action)}
-													class="text-xs opacity-40 hover:opacity-80 transition-opacity cursor-pointer border border-white/20 rounded px-1.5 py-0.5 leading-none"
+													class="chip-add"
 													aria-label="Add binding">+</button
 												>
 											{/if}
@@ -336,8 +309,7 @@
 										<button
 											onclick={() => resetAction(action)}
 											title="Reset to default"
-											class="opacity-30 hover:opacity-70 transition-opacity cursor-pointer text-sm shrink-0"
-											>↺</button
+											class="action-reset">↺</button
 										>
 									</div>
 								{/each}
@@ -347,12 +319,7 @@
 				</div>
 
 				<!-- Reset all -->
-				<button
-					onclick={resetAllControls}
-					class="mt-4 w-full py-1.5 text-sm text-white/50 border border-white/15 rounded-lg hover:bg-white/8 hover:text-white/80 transition-all cursor-pointer"
-				>
-					Reset All Controls
-				</button>
+				<button onclick={resetAllControls} class="reset-all"> Reset All Controls </button>
 			{/if}
 
 			<!-- Back -->
@@ -362,10 +329,345 @@
 					if (isCapturing) inputActions.cancelCapture();
 					onBack();
 				}}
-				class="mt-4 w-full px-4 py-2.5 bg-white/15 text-white border border-white/30 rounded-lg cursor-pointer hover:bg-white/20 transition-colors"
+				class="back-button"
 			>
 				Back
 			</button>
 		</div>
 	</div>
 </div>
+
+<style>
+	.hud {
+		pointer-events: auto;
+	}
+
+	.overlay {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.6);
+		backdrop-filter: blur(12px);
+	}
+
+	.panel {
+		display: flex;
+		flex-direction: column;
+		width: 22.5rem;
+		padding: 2rem;
+		color: #fff;
+		background: rgba(255, 255, 255, 0.08);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 1rem;
+	}
+
+	.panel.wide {
+		width: 37.5rem;
+	}
+
+	h2 {
+		margin-bottom: 1.25rem;
+		font-size: 1.5rem;
+		font-weight: 600;
+	}
+
+	/* Tab bar */
+	.tabs {
+		display: flex;
+		gap: 0.25rem;
+		margin-bottom: 1.5rem;
+		padding: 0.25rem;
+		background: rgba(255, 255, 255, 0.05);
+		border-radius: 0.75rem;
+	}
+
+	.tab {
+		flex: 1;
+		padding: 0.375rem 0;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.5);
+		border-radius: 0.5rem;
+	}
+
+	.tab:hover {
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.tab.active {
+		background: rgba(255, 255, 255, 0.2);
+		color: #fff;
+	}
+
+	/* General tab */
+	.section {
+		margin-bottom: 1.5rem;
+	}
+
+	.section-label {
+		margin-bottom: 0.5rem;
+		font-size: 0.875rem;
+		opacity: 0.7;
+	}
+
+	.quality-row {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.quality-button {
+		flex: 1;
+		padding: 0.5rem 1rem;
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 0.5rem;
+		text-transform: capitalize;
+	}
+
+	.quality-button:hover {
+		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.quality-button.selected {
+		border-color: rgba(255, 255, 255, 0.6);
+		background: rgba(255, 255, 255, 0.2);
+	}
+
+	.hint {
+		font-size: 0.875rem;
+		opacity: 0.5;
+	}
+
+	.hint-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.hint kbd {
+		padding: 0.125rem 0.5rem;
+		font-family:
+			ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+			monospace;
+		font-size: 0.75rem;
+		background: rgba(255, 255, 255, 0.08);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 0.25rem;
+	}
+
+	/* Audio tab */
+	.audio-section {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.channel {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+
+	.channel-label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.875rem;
+		cursor: pointer;
+	}
+
+	.channel-checkbox {
+		width: 1rem;
+		height: 1rem;
+	}
+
+	.volume {
+		width: 100%;
+		accent-color: rgba(255, 255, 255, 0.8);
+	}
+
+	/* Controls tab */
+	.capture-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+		padding: 0.625rem 1rem;
+		font-size: 0.875rem;
+		background: rgba(255, 255, 255, 0.1);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 0.75rem;
+	}
+
+	.pulse {
+		animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+	}
+
+	@keyframes pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.5;
+		}
+	}
+
+	.cancel-button {
+		padding: 0.125rem 0.5rem;
+		font-size: 0.75rem;
+		color: rgba(255, 255, 255, 0.6);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 0.25rem;
+	}
+
+	.cancel-button:hover {
+		color: #fff;
+	}
+
+	.bindings {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		max-height: 52vh;
+		overflow-y: auto;
+		padding-right: 0.25rem;
+	}
+
+	.group-label {
+		margin-bottom: 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		opacity: 0.4;
+	}
+
+	.action-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.action-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.375rem 0.75rem;
+		border-radius: 0.5rem;
+		border: 1px solid transparent;
+	}
+
+	.action-row:not(.capturing):hover {
+		background: rgba(255, 255, 255, 0.05);
+	}
+
+	.action-row.capturing {
+		background: rgba(255, 255, 255, 0.12);
+		border-color: rgba(255, 255, 255, 0.25);
+	}
+
+	.action-name {
+		flex-shrink: 0;
+		width: 9rem;
+		font-size: 0.875rem;
+		opacity: 0.8;
+	}
+
+	.chips {
+		display: flex;
+		flex: 1;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0.125rem 0.375rem;
+		background: rgba(255, 255, 255, 0.1);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 0.25rem;
+	}
+
+	.chip kbd {
+		font-family:
+			ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+			monospace;
+		font-size: 0.75rem;
+		line-height: 1;
+	}
+
+	.chip-remove {
+		font-size: 0.75rem;
+		line-height: 1;
+		opacity: 0.4;
+	}
+
+	.chip-remove:hover {
+		opacity: 1;
+	}
+
+	.waiting {
+		align-self: center;
+		font-size: 0.75rem;
+		font-style: italic;
+		opacity: 0.5;
+	}
+
+	.chip-add {
+		padding: 0.125rem 0.375rem;
+		font-size: 0.75rem;
+		line-height: 1;
+		opacity: 0.4;
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 0.25rem;
+	}
+
+	.chip-add:hover {
+		opacity: 0.8;
+	}
+
+	.action-reset {
+		flex-shrink: 0;
+		font-size: 0.875rem;
+		opacity: 0.3;
+	}
+
+	.action-reset:hover {
+		opacity: 0.7;
+	}
+
+	.reset-all {
+		margin-top: 1rem;
+		width: 100%;
+		padding: 0.375rem 0;
+		font-size: 0.875rem;
+		color: rgba(255, 255, 255, 0.5);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 0.5rem;
+	}
+
+	.reset-all:hover {
+		background: rgba(255, 255, 255, 0.08);
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.back-button {
+		margin-top: 1rem;
+		width: 100%;
+		padding: 0.625rem 1rem;
+		background: rgba(255, 255, 255, 0.15);
+		border: 1px solid rgba(255, 255, 255, 0.3);
+		border-radius: 0.5rem;
+	}
+
+	.back-button:hover {
+		background: rgba(255, 255, 255, 0.2);
+	}
+</style>

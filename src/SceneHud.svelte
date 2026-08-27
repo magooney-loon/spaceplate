@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { fade } from 'svelte/transition';
 	import { sceneState } from '$extensions/scene/scene.svelte';
 	import { settingsState } from '$extensions/settings/settings.svelte';
 	import MainMenuHud from '$scenes/MainMenu/MainMenuHud.svelte';
@@ -8,7 +7,7 @@
 
 <!-- HTML overlay — rendered as a sibling to <Canvas> in App.svelte -->
 {#if settingsState.general.uiVisible}
-	<div transition:fade={{ duration: 150 }}>
+	<div>
 		{#if sceneState.currentScene === 'mainMenu'}
 			<MainMenuHud />
 		{/if}

@@ -9,22 +9,59 @@
 </script>
 
 <!-- Demo Scene HUD -->
-<div class="pointer-events-auto">
+<div class="hud">
 	<!-- Back Button -->
 	<button
 		onclick={() => {
 			soundActions.playClick();
 			sceneActions.goToMainMenu();
 		}}
-		class="absolute bottom-14 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/50 text-white border border-[#4a90d9] rounded cursor-pointer hover:bg-black/60 transition-colors"
+		class="back-button"
 	>
 		← Back to Menu
 	</button>
 
 	<!-- Demo Instructions -->
-	<div
-		class="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/50 rounded text-white text-center"
-	>
-		<p class="m-0 text-sm">Physics running at {framerateLabel} | Objects update in physics stage</p>
+	<div class="info">
+		<p>Physics running at {framerateLabel} | Objects update in physics stage</p>
 	</div>
 </div>
+
+<style>
+	.hud {
+		pointer-events: auto;
+	}
+
+	.back-button {
+		position: absolute;
+		bottom: 3.5rem;
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 0.5rem 1rem;
+		background: rgba(0, 0, 0, 0.5);
+		color: #fff;
+		border: 1px solid #4a90d9;
+		border-radius: 0.25rem;
+		cursor: pointer;
+	}
+
+	.back-button:hover {
+		background: rgba(0, 0, 0, 0.6);
+	}
+
+	.info {
+		position: absolute;
+		bottom: 1rem;
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 0.5rem 1rem;
+		background: rgba(0, 0, 0, 0.5);
+		border-radius: 0.25rem;
+		color: #fff;
+		text-align: center;
+	}
+
+	.info p {
+		font-size: 0.875rem;
+	}
+</style>

@@ -109,7 +109,7 @@ src/
 - `sceneActions.setScene(scene)` transitions scene (plays swoosh, logs)
 - Convenience: `sceneActions.goToMainMenu()` / `goToDemoScene()` / `goBack()`
 - Read current scene via `sceneState.currentScene`
-- `sceneState.isTransitioning` — set during animated transitions (`sceneActions.transitionTo`)
+- `sceneState.isTransitioning` — set during scene switches (`sceneActions.transitionTo`)
 
 #### Preset Assignment System (`extensions/scene/bundledPresets.ts`)
 - **Single source of truth** for which PP/skybox presets load per scene — all in code, not localStorage
@@ -341,8 +341,8 @@ useTask((delta) => { if (composer && !isUpdatingEffects) composer.render(delta);
 ### Key Svelte 5 Patterns Used
 - `$state.raw<T>()` for Three.js class instances (avoids Proxy breakage)
 - All extension state lives in `.svelte.ts` modules — exported as `fooState` / `fooActions` singletons
-- `transition:fly` on each HUD component's root element — `transition:fade` on the uiVisible wrapper
-- Separate `{#if}` blocks (not `{:else if}`) for scene HUD routing — ensures transitions fire on switch
+- Separate `{#if}` blocks (not `{:else if}`) for scene HUD routing
+- Plain scoped CSS in components — no Tailwind, no CSS or Svelte transitions
 
 ### Debug Logging (`extensions/logger/logger.svelte.ts`)
 

@@ -8,23 +8,21 @@
 
 <!-- Main Menu HUD -->
 {#if !showSettings}
-	<div class="pointer-events-auto">
+	<div class="hud">
 		<!-- Menu Title -->
-		<div class="absolute top-[20%] left-1/2 -translate-x-1/2 text-center">
-			<h1 class="text-5xl text-white font-bold m-0" style="text-shadow: 0 0 20px #4a90d9;">
-				SPACEPLATE ENGINE
-			</h1>
-			<p class="text-[#aaa] mt-2">Threlte/Svelte/Spacetime</p>
+		<div class="title">
+			<h1 style="text-shadow: 0 0 20px #4a90d9;">SPACEPLATE ENGINE</h1>
+			<p class="subtitle">Threlte/Svelte/Spacetime</p>
 		</div>
 
 		<!-- Menu Buttons -->
-		<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-4">
+		<div class="menu-buttons">
 			<button
 				onclick={() => {
 					soundActions.playClick();
 					sceneActions.goToDemoScene();
 				}}
-				class="px-8 py-4 text-xl bg-black/70 text-white/70 border border-white/20 rounded-lg cursor-pointer min-w-50 hover:bg-white/70 hover:text-black transition-colors"
+				class="menu-button"
 			>
 				🚀 Start Demo
 			</button>
@@ -34,7 +32,7 @@
 					soundActions.playClick();
 					showSettings = true;
 				}}
-				class="px-8 py-4 text-xl bg-black/70 text-white/70 border border-white/20 rounded-lg cursor-pointer min-w-50 hover:bg-white/70 hover:text-black transition-colors"
+				class="menu-button"
 			>
 				⚙️ Settings
 			</button>
@@ -48,3 +46,54 @@
 		}}
 	/>
 {/if}
+
+<style>
+	.hud {
+		pointer-events: auto;
+	}
+
+	.title {
+		position: absolute;
+		top: 20%;
+		left: 50%;
+		transform: translateX(-50%);
+		text-align: center;
+	}
+
+	.title h1 {
+		font-size: 3rem;
+		font-weight: 700;
+		color: #fff;
+	}
+
+	.subtitle {
+		margin-top: 0.5rem;
+		color: #aaa;
+	}
+
+	.menu-buttons {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.menu-button {
+		min-width: 12.5rem;
+		padding: 1rem 2rem;
+		font-size: 1.25rem;
+		background: rgba(0, 0, 0, 0.7);
+		color: rgba(255, 255, 255, 0.7);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 0.5rem;
+		cursor: pointer;
+	}
+
+	.menu-button:hover {
+		background: rgba(255, 255, 255, 0.7);
+		color: #000;
+	}
+</style>

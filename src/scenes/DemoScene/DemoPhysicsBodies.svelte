@@ -134,10 +134,9 @@
 
 		<HTML position.y={2} center transform zIndexRange={[0, 0]}>
 			<div
-				class="text-[18px] font-bold"
 				style="color: {colors[colorIndex]}; text-shadow: 0 0 6px {colors[
 					colorIndex
-				]}, 0 1px 3px rgba(0,0,0,0.8);"
+				]}, 0 1px 3px rgba(0,0,0,0.8); font-size: 18px; font-weight: 700;"
 			>
 				{colors[colorIndex]}
 			</div>

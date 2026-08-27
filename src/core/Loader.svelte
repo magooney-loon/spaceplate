@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { fade } from 'svelte/transition';
 	import { Tween } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
 	import { useProgress } from '@threlte/extras';
@@ -26,28 +25,90 @@
 </script>
 
 {#if !isFinished}
-	<div
-		out:fade={{ duration: 900 }}
-		class="absolute inset-0 z-200 flex flex-col items-center justify-center bg-black text-white"
-	>
-		<p class="m-0 mb-6 text-xs tracking-[0.15em] uppercase opacity-40">Loading</p>
+	<div class="loader">
+		<p class="label">Loading</p>
 
 		<!-- Progress bar -->
-		<div class="w-50 h-0.5 bg-white/10 rounded-full overflow-hidden">
-			<div class="h-full bg-white rounded-full" style="width: {tweened.current * 100}%;"></div>
+		<div class="track">
+			<div class="fill" style="width: {tweened.current * 100}%;"></div>
 		</div>
 
-		<p class="mt-4 text-xs opacity-25 font-mono">
+		<p class="percent">
 			{Math.round(tweened.current * 100)}%
 		</p>
 
 		{#if $active}
-			<p class="mt-2 text-[11px] opacity-20 max-w-60 text-center font-mono">
+			<p class="item">
 				{truncatePath($item)}
 			</p>
-			<p class="mt-0.5 text-[10px] opacity-15 font-mono">
+			<p class="count">
 				{$loaded} / {$total}
 			</p>
 		{/if}
 	</div>
 {/if}
+
+<style>
+	.loader {
+		position: absolute;
+		inset: 0;
+		z-index: 200;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		background: #000;
+		color: #fff;
+	}
+
+	.label {
+		margin-bottom: 1.5rem;
+		font-size: 0.75rem;
+		letter-spacing: 0.15em;
+		text-transform: uppercase;
+		opacity: 0.4;
+	}
+
+	.track {
+		width: 12.5rem;
+		height: 0.125rem;
+		background: rgba(255, 255, 255, 0.1);
+		border-radius: 9999px;
+		overflow: hidden;
+	}
+
+	.fill {
+		height: 100%;
+		background: #fff;
+		border-radius: 9999px;
+	}
+
+	.percent {
+		margin-top: 1rem;
+		font-family:
+			ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+			monospace;
+		font-size: 0.75rem;
+		opacity: 0.25;
+	}
+
+	.item {
+		margin-top: 0.5rem;
+		max-width: 15rem;
+		font-family:
+			ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+			monospace;
+		font-size: 11px;
+		text-align: center;
+		opacity: 0.2;
+	}
+
+	.count {
+		margin-top: 0.125rem;
+		font-family:
+			ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+			monospace;
+		font-size: 10px;
+		opacity: 0.15;
+	}
+</style>

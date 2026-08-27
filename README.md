@@ -21,7 +21,6 @@
       <td align="center"><a href="https://spacetimedb.com"><img src="https://img.shields.io/badge/SpacetimeDB-2.1-7b2ff7.svg" alt="SpacetimeDB 2.1"></a></td>
       <td align="center"><a href="https://vitejs.dev"><img src="https://img.shields.io/badge/Vite-8-646cff.svg" alt="Vite 8"></a></td>
       <td align="center"><a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-6-blue.svg" alt="TypeScript 6"></a></td>
-      <td align="center"><a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/TailwindCSS-4-38bdf8.svg" alt="TailwindCSS 4"></a></td>
     </tr>
   </table>
 </div>
@@ -32,7 +31,7 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 
 ## What's included
 
-- **Scene Manager** — Application state machine (`mainMenu` / `demoScene`) with animated transitions, per-scene HUD routing, and a preset assignment system for PP/skybox
+- **Scene Manager** — Application state machine (`mainMenu` / `demoScene`) with instant switching, per-scene HUD routing, and a preset assignment system for PP/skybox
 - **Task Scheduling** — Threlte-based render pipeline with ordered stages:
   - `physicsStage` — Game logic (typically runs in `demoScene`, pauses in menus)
   - `renderStage` — 3D rendering (default)
@@ -52,7 +51,6 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 - **Physics sandbox** — `@threlte/rapier` world wiring, debug collider toggle, attractor modes, and spawnable balls/boxes
 - **SpacetimeDB wiring** — Connection setup, generated bindings, example table subscription
 - **Debug logging** — Multi-channel styled logging with timestamp; channels auto-generate Studio UI checkboxes
-- **TailwindCSS** — Utility-first CSS framework via `@tailwindcss/vite`
 
 ---
 

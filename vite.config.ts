@@ -2,7 +2,6 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { threlteStudio } from '@threlte/studio/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
-import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 
 const dirname = import.meta.dirname;
@@ -13,7 +12,6 @@ export default defineConfig({
 	plugins: [
 		threlteStudio(),
 		svelte(),
-		tailwindcss(),
 		visualizer({
 			filename: 'stats.html',
 			open: false,

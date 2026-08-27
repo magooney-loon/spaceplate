@@ -16,7 +16,6 @@
 	},
 	"dependencies": {
 		"@dimforge/rapier3d-compat": "^0.20.0",
-		"@tailwindcss/vite": "^4.3.3",
 		"@threlte/core": "^8.6.0",
 		"@threlte/extras": "^9.21.1",
 		"@threlte/rapier": "^3.5.0",
@@ -24,7 +23,6 @@
 		"@types/three": "^0.185.4",
 		"spacetimedb": "^2.8.3",
 		"svelte-tweakpane-ui": "^1.5.20",
-		"tailwindcss": "^4.3.3",
 		"three": "^0.185.1"
 	},
 	"devDependencies": {
