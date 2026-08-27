@@ -29,6 +29,9 @@ importers:
       spacetimedb:
         specifier: ^2.8.3
         version: 2.8.3(svelte@5.56.10)
+      stats-gl:
+        specifier: ^4.2.3
+        version: 4.2.3(three@0.185.1)
       svelte-tweakpane-ui:
         specifier: ^1.5.20
         version: 1.5.20(svelte@5.56.10)
@@ -854,6 +857,14 @@ packages:
       vue:
         optional: true
 
+  stats-gl@4.2.3:
+    resolution: {integrity: sha512-XxDFKl4kpB9siOTQ5szzT095uvJjj6Q3KLd7AbaceH8lJzRTnFARhBt4AnqKOpdY37iJGK+2H8W9bntMIUghYw==}
+    peerDependencies:
+      three: '*'
+    peerDependenciesMeta:
+      three:
+        optional: true
+
   statuses@2.0.2:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
     engines: {node: '>= 0.8'}
@@ -1637,6 +1648,10 @@ snapshots:
       url-polyfill: 1.1.14
     optionalDependencies:
       svelte: 5.56.10
+
+  stats-gl@4.2.3(three@0.185.1):
+    optionalDependencies:
+      three: 0.185.1
 
   statuses@2.0.2: {}
 

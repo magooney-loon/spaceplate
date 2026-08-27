@@ -22,6 +22,7 @@
 		"@threlte/studio": "^0.4.3",
 		"@types/three": "^0.185.4",
 		"spacetimedb": "^2.8.3",
+		"stats-gl": "^4.2.3",
 		"svelte-tweakpane-ui": "^1.5.20",
 		"three": "^0.185.1"
 	},
