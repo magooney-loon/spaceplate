@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { T } from '@threlte/core';
+	import { T } from '@threlte/core/webgpu';
 	import { AudioListener } from '@threlte/extras';
 </script>
 

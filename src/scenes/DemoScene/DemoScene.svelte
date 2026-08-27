@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { T } from '@threlte/core';
+	import { T } from '@threlte/core/webgpu';
 	import { interactivity } from '@threlte/extras';
 	import { RigidBody, Collider, Debug, Attractor, useRapier } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics/physics.svelte';

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { T } from '@threlte/core';
+	import { T } from '@threlte/core/webgpu';
 	import Planet from '$lib/PlanetDemo/Planet.svelte';
 	import PlanetSmoke from '$lib/PlanetDemo/PlanetSmoke.svelte';
 	import { planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';

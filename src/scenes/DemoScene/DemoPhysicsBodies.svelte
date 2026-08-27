@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { T } from '@threlte/core';
+	import { T } from '@threlte/core/webgpu';
 	import { HTML, PositionalAudio } from '@threlte/extras';
 	import { RigidBody, Collider, usePhysicsTask, useRapier } from '@threlte/rapier';
 	import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';

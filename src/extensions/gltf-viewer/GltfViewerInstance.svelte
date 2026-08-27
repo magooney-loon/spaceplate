@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { T } from '@threlte/core';
+	import { T } from '@threlte/core/webgpu';
 	import { useGltf, useGltfAnimations } from '@threlte/extras';
 	import { AutoColliders } from '@threlte/rapier';
 	import { LoopRepeat, LoopOnce } from 'three';

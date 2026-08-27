@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Canvas } from '@threlte/core';
+	import { Canvas } from '@threlte/core/webgpu';
 	import Scene from './Scene.svelte';
 	import SceneHud from './SceneHud.svelte';
 	import Renderer from '$core/Renderer.svelte';
@@ -8,18 +8,19 @@
 	import { World } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics/physics.svelte';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
-	import * as THREE from 'three';
+	import { WebGPURenderer } from 'three/webgpu';
 	import { HTML } from '@threlte/extras';
 	import { settingsState } from '$extensions/settings/settings.svelte';
 	import { planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
 	import './app.css';
 
-	// Create custom renderer — antialias disabled in favour of SMAA post-processing
-	const createRenderer = (canvas: HTMLCanvasElement): THREE.WebGLRenderer => {
+	// WebGPURenderer auto-falls back to WebGL when WebGPU isn't available.
+	// antialias disabled in favour of post-processing anti-aliasing.
+	const createRenderer = (canvas: HTMLCanvasElement): WebGPURenderer => {
 		const powerPreference =
 			settingsState.graphics.quality === 'low' ? 'low-power' : 'high-performance';
 
-		return new THREE.WebGLRenderer({
+		return new WebGPURenderer({
 			canvas,
 			antialias: false,
 			powerPreference
@@ -59,9 +60,9 @@
 	>
 		<PhysicsWorldLogger />
 		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-			{#await import('@threlte/extras') then { PerfMonitor }}
+		<!-- 	{#await import('@threlte/extras') then { PerfMonitor }}
 				<PerfMonitor anchorX="right" anchorY="bottom" logsPerSecond={30} backgroundOpacity={0.2} />
-			{/await}
+			{/await} -->
 			{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: PostProcessingExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: SkyboxExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }]}
 				<Studio
 					extensions={[

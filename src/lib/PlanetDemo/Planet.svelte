@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { T, useTask } from '@threlte/core';
+	import { T, useTask } from '@threlte/core/webgpu';
 	import { Float } from '@threlte/extras';
-	import * as THREE from 'three';
+	import * as THREE from 'three/webgpu';
 	import { untrack } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { settingsState } from '$extensions/settings/settings.svelte';

@@ -1,4 +1,4 @@
-import { useStage, useTask, useThrelte, type Task } from '@threlte/core';
+import { useStage, useTask, useThrelte, type Task } from '@threlte/core/webgpu';
 import { sceneState } from '$extensions/scene/scene.svelte';
 
 // ============================================================================
