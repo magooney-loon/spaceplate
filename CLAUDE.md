@@ -19,9 +19,11 @@ src/
   module_bindings/    — Generated SpacetimeDB client bindings (do not edit)
 
   core/
-    Camera.svelte        — PerspectiveCamera + AudioListener
+    Camera.svelte        — PerspectiveCamera + AudioListener; orbits origin in demoScene via mouse look
     GlobalAudio.svelte   — All Audio components; re-exports from globalAudio.svelte.ts
     globalAudio.svelte.ts — soundTriggers + soundActions singleton (import from here in .ts files)
+    mouseLook.svelte.ts  — Mouse look state + pointer lock lifecycle (cross-browser hardened)
+    MouseLook.svelte     — Mouse-look rig component (mount in a scene to enable pointer-locked look)
     Keymapper.svelte     — Global keyboard/mouse event listeners; routes into input extension; intercepts Ctrl+H (HUD toggle) and the openSettings key (global settings overlay)
     Loader.svelte       — Asset loading screen (useProgress) + sound enable prompt (autoplay policy unlock)
     Renderer.svelte      — Post-processing (25+ effects, quality-gated)
@@ -126,6 +128,24 @@ src/
 - `useGameTasks()` returns `{ stages, createPhysicsTask, createUiTask, createAudioTask }`
 - Boilerplate convention: physics-style game tasks usually run in DemoScene; `uiStage` pauses during transitions; `audioStage` always runs
 - Use tasks instead of raw `useTask` to ensure correct execution order
+
+### Mouse Look & Pointer Lock (`core/mouseLook.svelte.ts` + `core/MouseLook.svelte`)
+
+Cross-browser-consistent mouse look, driven by `settingsState.general.mouseSensitivity` / `aimSensitivity`:
+
+- `BASE_SENS = 0.004` radians per pixel × user sensitivity (`aiming` flag switches to `aimSensitivity`)
+- Deltas (`movementX/Y`) are only consumed **while pointer-locked** — locked deltas are CSS pixels everywhere; unlocked deltas differ per browser/DPI
+- Single-event deltas clamped (±300px) — guards against the lock-engagement spike burst some browsers emit
+- Pointer lock is requested on `document.body` (never the canvas — avoids WebGL driver interaction)
+- Handles promise-based and legacy `requestPointerLock()`, `pointerlockerror` → 800ms retry cooldown, in-flight guard
+- Never locks in Studio mode (`VITE_GAME_ENGINE=true`) or while the settings overlay is open; the overlay opening always releases the lock
+- `MouseLook.svelte` rig: mount inside a scene (DemoScene does) — auto-requests lock on mount, falls back to first non-UI click/keydown, releases on unmount
+- Demo wiring: `secondaryAction` (RMB / Q) engages aim sensitivity; the context menu is suppressed while locked
+
+```ts
+import { mouseLookState, mouseLookActions, BASE_SENS } from '$core/mouseLook.svelte';
+// yaw/pitch in radians — apply to your camera (DemoScene orbits the origin with them)
+```
 
 ### Skybox System (`extensions/skybox/skybox.svelte.ts`)
 - **Sky presets**: 11 time-of-day options (dawn, day, dusk, night, sunset, sunrise, cloudy, overcast, aurora, vacuum)
@@ -483,6 +503,8 @@ R → reload                     F → use            C → crouch
 X → drop                       Z → prone          T → emote
 1–4 → slot1–slot4              Esc → settings
 ```
+
+(`secondaryAction` doubles as the aim-sensitivity demo in DemoScene — see Mouse Look & Pointer Lock)
 
 **Key actions:**
 ```typescript

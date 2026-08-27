@@ -9,6 +9,7 @@
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
 	import DemoFloor from './DemoFloor.svelte';
 	import DemoDistanceMarkers from './DemoDistanceMarkers.svelte';
+	import MouseLook from '$core/MouseLook.svelte';
 
 	interactivity();
 
@@ -46,6 +47,7 @@
 </script>
 
 <PhysicsController />
+<MouseLook />
 
 {#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 	{#if physicsState.debug}
