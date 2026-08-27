@@ -1,7 +1,24 @@
 # WebGPU Migration Roadmap
 
-Status: **planning — no code changed yet**
+Status: **Phase 3 (core renderer swap) landed — post-processing inert, Phase 4/5 not started**
 Sources consulted: `DOCS/threlte-main` (`apps/docs/src/content/learn/advanced/webgpu.mdx`, `packages/core/src/lib/webgpu/*`, `packages/studio/src`), `DOCS/three.js-dev` (`examples/webgpu_postprocessing_*.html`, `examples/jsm/tsl/display/*`, `src/nodes/display/*`)
+
+## 0. Implementation log
+
+### Phase 2 — pnpm migration: done
+- Root + `spacetimedb/` moved to a pnpm workspace (`pnpm-workspace.yaml`), npm lockfiles removed, `packageManager` pinned.
+- All deps bumped to latest **except** `typescript`, held at latest 6.x (`~6.0.3`) — the `latest`-tagged `typescript@7.0.2` is a native-compiler rewrite that `svelte-check` can't consume as a drop-in (needs a dual TS6+TS7 install plus a `--tsgo` flag); using it directly broke type-checking outright.
+- Fallout fixed: `@threlte/extras`'s `Audio` component's types degraded to `any` upstream — added explicit `ThreeAudio` annotations to `GlobalAudio.svelte`'s `oncreate` callbacks. Vite 8's new config loader flagged `__dirname` (switched to `import.meta.dirname`). Vite 8's dep scanner was crawling all of `DOCS/three.js-dev`'s example HTML files looking for entry points — constrained via `optimizeDeps.entries: ['index.html']` and `server.fs.deny: ['DOCS/**']`.
+- Verified: `pnpm install`, `pnpm run build`, `pnpm exec svelte-check` (0 errors), real dev-server boot all clean.
+
+### Phase 3 — core renderer swap: done, unverified in-browser
+- `vite.config.ts`: added `build.target: 'esnext'` for WebGPU's top-level-await detection. Note: Threlte's docs also suggest `optimizeDeps.esbuildOptions.target: 'esnext'`, but Vite 8 has moved dep pre-bundling onto Rolldown and deprecated `esbuildOptions` in favor of `rolldownOptions` — turned out to be unnecessary anyway since Rolldown's own default transform target is already `esnext` (no downleveling), so nothing was added there.
+- `App.svelte`: `Canvas` now imported from `@threlte/core/webgpu`; `createRenderer` builds `WebGPURenderer` from `three/webgpu` instead of `THREE.WebGLRenderer`.
+- Mechanical swap of `@threlte/core` → `@threlte/core/webgpu` across every file in the Canvas subtree (`Scene.svelte`, `Camera.svelte`, `Skybox.svelte`, `tasks.ts`, `scenes/**`, `gltf-viewer/GltfViewerInstance.svelte`, `PlanetDemo/*`).
+- Swapped `three` → `three/webgpu` in files that construct scene-graph objects (meshes/materials) added to the Canvas tree: `PlanetSmoke.svelte`, `Planet.svelte`. Left plain `'three'` imports alone where usage is pure math/value types or non-rendered (e.g. `THREE.Color` in `procedural.svelte.ts`, `THREE.Audio` in `GlobalAudio.svelte`, `Quaternion`/`Euler` in `DemoPhysicsBodies.svelte`, geometry/material *types* in `cache.svelte.ts`) — three.js's renderer dispatches on `isMesh`/`isLight`-style boolean flags rather than `instanceof`, so mixing these is safe; only actual node-material construction needs `three/webgpu`.
+- `Renderer.svelte`: **gutted to a no-op stub.** pmndrs/postprocessing's `EffectComposer` is built against `THREE.WebGLRenderer` and cannot run against a `WebGPURenderer` instance at all (regardless of WebGPU-vs-WebGL-fallback backend) — so all 25 post-processing effects are currently inert. Threlte's default `autoRender` handles rendering in the meantime. `postprocessingState`/`PostProcessingExtension.svelte` (Studio UI) are untouched and still toggle state — it just has no visual effect until Phase 4. Deleted the dead `RendererFixExample.svelte` reference file. `Renderer.md`'s documented Studio task-ordering rules (gizmo/PiP/selection-outline vs. `autoRenderTask`) still apply and must be re-applied once Phase 4's TSL pipeline replaces this stub.
+- Verified (headless): `pnpm run build` and `pnpm exec svelte-check` both clean after all of the above.
+- **Not verified**: an actual in-browser boot. The three biggest open risks from §7 below — (1) does `@threlte/studio` actually work mounted under a `WebGPURenderer`, (2) does `@threlte/extras`'s `<Sky>` (raw `ShaderMaterial`) render or error under native WebGPU, (3) does `Planet.svelte`'s raw-GLSL terrain `ShaderMaterial` force the whole renderer back to WebGL or fail per-object — are all still **open**. Automated browser verification was attempted and declined this session; needs a manual pass: `pnpm run dev`, open DevTools console, visit both `mainMenu` (Sky) and `demoScene` (Planet + Studio interactions), watch for console errors and visual corruption (black meshes, missing sky, broken gizmo/outline/PiP).
 
 ## 1. Goal
 
