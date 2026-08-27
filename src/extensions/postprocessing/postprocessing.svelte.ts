@@ -1,4 +1,3 @@
-import type { KernelSize, BlendFunction, ToneMappingMode } from 'postprocessing';
 import { logPostprocessing } from '$extensions/logger/logger.svelte';
 import { BUNDLED_PP_PRESETS } from './bundledPresets';
 import type {
@@ -42,41 +41,30 @@ const PRESETS_KEY = 'spaceplate-postprocessing-presets';
 
 const defaultBloom = (): BloomState => ({
 	enabled: false,
-	intensity: 10.5,
-	luminanceThreshold: 0.06,
-	luminanceSmoothing: 0.03,
-	kernelSize: 4 as KernelSize,
-	blendFunction: 28 as BlendFunction,
-	mipmapBlur: true,
-	radius: 0.85,
-	levels: 8,
-	resolutionScale: 0.5
+	strength: 1,
+	radius: 0,
+	threshold: 0
 });
 
 const defaultSMAA = (): SMAAState => ({
-	enabled: false,
-	preset: 2,
-	edgeDetectionMode: 2,
-	predicationMode: 0
+	enabled: false
 });
 
 const defaultFXAA = (): FXAAState => ({
-	enabled: false,
-	minEdgeThreshold: 0.05,
-	maxEdgeThreshold: 0.12,
-	subpixelQuality: 0.75
+	enabled: false
 });
 
 const defaultVignette = (): VignetteState => ({
 	enabled: false,
-	offset: 0.5,
-	darkness: 0.5,
-	technique: 0
+	intensity: 0.4,
+	smoothness: 0.5
 });
 
 const defaultPixelation = (): PixelationState => ({
 	enabled: false,
-	granularity: 30.0
+	pixelSize: 6,
+	normalEdgeStrength: 0.3,
+	depthEdgeStrength: 0.4
 });
 
 const defaultGlitch = (): GlitchState => ({
@@ -87,58 +75,48 @@ const defaultGlitch = (): GlitchState => ({
 	ratio: 0.85,
 	columns: 0.05,
 	mode: 1,
-	blendFunction: 23 as BlendFunction,
 	dtSize: 64
 });
 
 const defaultNoise = (): NoiseState => ({
 	enabled: false,
-	premultiply: false,
-	blendFunction: 28 as BlendFunction
+	intensity: 0.35
 });
 
 const defaultChromaticAberration = (): ChromaticAberrationState => ({
 	enabled: false,
-	radialModulation: false,
-	modulationOffset: 0.15,
-	offsetX: 0.01,
-	offsetY: 0.01,
-	blendFunction: 23 as BlendFunction
+	strength: 0.5,
+	scale: 1.1
 });
 
 const defaultBrightnessContrast = (): BrightnessContrastState => ({
 	enabled: false,
 	brightness: 0,
-	contrast: 0,
-	blendFunction: 23 as BlendFunction
+	contrast: 0
 });
 
 const defaultHueSaturation = (): HueSaturationState => ({
 	enabled: false,
 	hue: 0,
-	saturation: 0,
-	blendFunction: 23 as BlendFunction
+	saturation: 1
 });
 
 const defaultSepia = (): SepiaState => ({
 	enabled: false,
-	intensity: 1.0,
-	blendFunction: 23 as BlendFunction
+	intensity: 1.0
 });
 
 const defaultDotScreen = (): DotScreenState => ({
 	enabled: false,
 	angle: 1.57,
-	scale: 1.0,
-	blendFunction: 23 as BlendFunction
+	scale: 1.0
 });
 
 const defaultScanline = (): ScanlineState => ({
 	enabled: false,
-	density: 1.25,
-	opacity: 0.5,
-	scrollSpeed: 0,
-	blendFunction: 25 as BlendFunction
+	intensity: 0.3,
+	count: 240,
+	speed: 0
 });
 
 const defaultShockWave = (): ShockWaveState => ({
@@ -161,21 +139,14 @@ const defaultASCII = (): ASCIIState => ({
 
 const defaultToneMapping = (): ToneMappingState => ({
 	enabled: false,
-	mode: 7 as ToneMappingMode, // ToneMappingMode.ACES_FILMIC
-	whitePoint: 4.0,
-	middleGrey: 0.6,
-	blendFunction: 23 as BlendFunction,
-	resolution: 256,
-	minLuminance: 0.01,
-	averageLuminance: 1.0,
-	adaptationRate: 1.0
+	mode: 4, // THREE.ACESFilmicToneMapping
+	exposure: 1.0
 });
 
 const defaultGrid = (): GridState => ({
 	enabled: false,
 	scale: 1.0,
-	lineWidth: 0.0,
-	blendFunction: 25 as BlendFunction
+	lineWidth: 0.02
 });
 
 const defaultTiltShift = (): TiltShiftState => ({
@@ -183,94 +154,60 @@ const defaultTiltShift = (): TiltShiftState => ({
 	offset: 0.0,
 	rotation: 0.0,
 	focusArea: 0.4,
-	feather: 0.3,
-	kernelSize: 3 as KernelSize,
-	blendFunction: 23 as BlendFunction
+	feather: 0.3
 });
 
 const defaultLensDistortion = (): LensDistortionState => ({
 	enabled: false,
-	distortionX: 0.0,
-	distortionY: 0.0,
-	principalX: 0.0,
-	principalY: 0.0,
-	focalLengthX: 1.0,
-	focalLengthY: 1.0,
-	skew: 0.0
+	curvature: 0.1
 });
 
 const defaultColorDepth = (): ColorDepthState => ({
 	enabled: false,
-	bits: 16,
-	blendFunction: 23 as BlendFunction
+	steps: 16
 });
 
 const defaultDepthOfField = (): DepthOfFieldState => ({
 	enabled: false,
-	focusDistance: 3.0,
-	focusRange: 2.0,
-	bokehScale: 1.0,
-	blendFunction: 23 as BlendFunction,
-	resolutionScale: 0.5
+	focusDistance: 1,
+	focalLength: 1,
+	bokehScale: 1
 });
 
 const defaultGodRays = (): GodRaysState => ({
 	enabled: false,
 	samples: 60,
-	density: 0.96,
-	decay: 0.9,
-	weight: 0.4,
-	exposure: 0.6,
-	clampMax: 1.0,
-	blur: true,
-	kernelSize: 1 as KernelSize,
-	blendFunction: 28 as BlendFunction,
+	density: 0.7,
+	maxDensity: 0.5,
+	distanceAttenuation: 2,
+	resolutionScale: 0.5,
 	sunX: 0,
 	sunY: 5,
 	sunZ: 0,
-	sunColor: 0xffddaa,
-	resolutionScale: 0.5
+	sunColor: 0xffddaa
 });
 
 const defaultSSAO = (): SSAOState => ({
 	enabled: false,
-	samples: 9,
-	rings: 7,
-	radius: 0.1825,
-	intensity: 1.0,
-	bias: 0.025,
-	fade: 0.01,
-	luminanceInfluence: 0.7,
-	blendFunction: 7 as BlendFunction,
-	worldDistanceThreshold: 0.97,
-	worldDistanceFalloff: 0.03,
-	worldProximityThreshold: 0.0005,
-	worldProximityFalloff: 0.001,
-	minRadiusScale: 0.1,
-	color: 0x000000,
-	depthAwareUpsampling: true,
-	resolutionScale: 1.0
+	radius: 0.25,
+	thickness: 1,
+	scale: 1,
+	samples: 16
 });
 
 const defaultOutline = (): OutlineState => ({
 	enabled: false,
-	edgeStrength: 1.0,
-	visibleEdgeColor: 0xffffff,
-	hiddenEdgeColor: 0x22090a,
+	edgeStrength: 3.0,
+	edgeGlow: 0.0,
+	edgeThickness: 1.0,
 	pulseSpeed: 0.0,
-	xRay: true,
-	blur: false,
-	kernelSize: 1 as KernelSize,
-	blendFunction: 22 as BlendFunction,
-	patternScale: 1.0,
-	multisampling: 0,
-	resolutionScale: 0.5
+	visibleEdgeColor: 0xffffff,
+	hiddenEdgeColor: 0x22090a
 });
 
 const defaultDepthEffect = (): DepthEffectState => ({
 	enabled: false,
-	inverted: false,
-	blendFunction: 23 as BlendFunction
+	inverted: false
 });
 
 const defaultState = (): PostProcessingState => ({
@@ -538,6 +475,5 @@ export const postprocessingActions = {
 		savePresets(postprocessingPresetsState.presets);
 		logPostprocessing.info(`Preset updated: "${preset.name}"`);
 		return { success: true };
-	},
-
+	}
 };

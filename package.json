@@ -22,7 +22,6 @@
 		"@threlte/rapier": "^3.5.0",
 		"@threlte/studio": "^0.4.3",
 		"@types/three": "^0.185.4",
-		"postprocessing": "^6.39.4",
 		"spacetimedb": "^2.8.3",
 		"svelte-tweakpane-ui": "^1.5.20",
 		"tailwindcss": "^4.3.3",

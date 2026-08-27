@@ -29,9 +29,6 @@ importers:
       '@types/three':
         specifier: ^0.185.4
         version: 0.185.4
-      postprocessing:
-        specifier: ^6.39.4
-        version: 6.39.4(three@0.185.1)
       spacetimedb:
         specifier: ^2.8.3
         version: 2.8.3(svelte@5.56.10)
@@ -933,11 +930,6 @@ packages:
   postcss@8.5.26:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
     engines: {node: ^10 || ^12 || >=14}
-
-  postprocessing@6.39.4:
-    resolution: {integrity: sha512-oAS/PjAbc/xT3OzjUrGsorJ4J064XwhVD2t0OwKLP/E8QwDMUJ0oOv6ZI1SYMtLchv4g0ySEx+JcLy92+48vlA==}
-    peerDependencies:
-      three: '>= 0.168.0 < 0.186.0'
 
   powershell-utils@0.1.0:
     resolution: {integrity: sha512-dM0jVuXJPsDN6DvRpea484tCUaMiXWjuCn++HGTqUWzGDjv5tZkEZldAJ/UMlqRYGFrD/etByo4/xOuC/snX2A==}
@@ -1874,10 +1866,6 @@ snapshots:
       nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
-
-  postprocessing@6.39.4(three@0.185.1):
-    dependencies:
-      three: 0.185.1
 
   powershell-utils@0.1.0: {}
 
