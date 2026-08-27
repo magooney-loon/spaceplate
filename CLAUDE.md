@@ -15,12 +15,8 @@ src/
   Root.svelte         — SpacetimeDB provider wrapper (wraps App)
   main.ts             — Entry point
   Scene.svelte        — 3D scene router (inside Canvas, Threlte context)
-  SceneHud.svelte      — HTML overlay router (sibling to Canvas) + global Settings overlay (`overlayState.settingsOpen`)
+  SceneHud.svelte      — HTML overlay router (sibling to Canvas) + global Settings overlay (`overlayState` from settings extension)
   module_bindings/    — Generated SpacetimeDB client bindings (do not edit)
-
-  lib/
-    stores/
-      overlayState.svelte.ts — HUD overlay state (global settings overlay)
 
   core/
     Camera.svelte        — PerspectiveCamera + AudioListener
@@ -249,7 +245,7 @@ export const useMyFeature = () => {
 | Extension | State export | Actions export | Has Studio UI |
 |-----------|-------------|----------------|---------------|
 | `scene` | `sceneState` | `sceneActions`, `resolveScenePreset`, `resolveGlobalPreset` | `SceneExtension.svelte` |
-| `settings` | `settingsState` | `audioActions`, `graphicsActions`, `generalActions` | none (state-only) |
+| `settings` | `settingsState`, `overlayState` | `audioActions`, `graphicsActions`, `generalActions` | none (state-only) |
 | `logger` | `loggerState` | `loggerActions.toggleChannel(ch)` | `LoggerExtension.svelte` |
 | `postprocessing` | `postprocessingState`, `postprocessingPresetsState` | `postprocessingActions` | `PostProcessingExtension.svelte` |
 | `skybox` | `skyboxState`, `starsState`, `transitionState` | `skyboxActions` | `SkyboxExtension.svelte` |
@@ -329,6 +325,7 @@ useTask((delta) => { if (composer && !isUpdatingEffects) composer.render(delta);
 - Audio: `musicVolume/musicEnabled`, `ambienceVolume/ambienceEnabled`, `sfxVolume/sfxEnabled`
 - Graphics: `quality` (`"low"` | `"high"`) — affects DPR and whether post-processing runs
 - General: `uiVisible` (toggled with Ctrl+H), `mouseSensitivity`, `aimSensitivity`
+- `overlayState` (same module) — transient settings-overlay open state; UI-only, never persisted
 - Actions: `audioActions.toggleMusic/Ambience/Sfx()`, `setMusicVolume(v)`, `graphicsActions.setQuality(q)`, `generalActions.toggleUiVisible()`, `generalActions.setMouseSensitivity(v)`, `generalActions.setAimSensitivity(v)`
 - **`BASE_URL`** — always import and use this for static asset paths; never hardcode `/` or relative paths
   ```ts
@@ -470,7 +467,9 @@ Action-based input mapping with keyboard, mouse, and gamepad support. Persists t
 - `axes: Record<InputAxisAction, GamepadAxisBinding | null>` — analog axis assignments
 - `gamepad: { enabled, index, deadzoneLeftStick, deadzoneRightStick }`
 
-**InputAction values:** `moveForward` `moveBackward` `moveLeft` `moveRight` `jump` `sprint` `interact` `primaryAction` `secondaryAction` `reload` `use` `crouch` `drop` `prone` `emote` `slot1`–`slot4` `pause` `toggleUi` `openSettings`
+**InputAction values:** `moveForward` `moveBackward` `moveLeft` `moveRight` `jump` `sprint` `interact` `primaryAction` `secondaryAction` `reload` `use` `crouch` `drop` `prone` `emote` `slot1`–`slot4` `toggleUi` `openSettings`
+
+**Engine-reserved actions:** `toggleUi`, `openSettings` exist as actions but are hidden from the rebind UI — `openSettings` is routed by the Keymapper to the global settings overlay (default `Esc`), `Ctrl+H` (HUD toggle) and `Esc` (cancel binding) are hardcoded engine shortcuts
 
 **InputAxisAction values:** `moveX` `moveY` `lookX` `lookY`
 
@@ -482,7 +481,7 @@ W/A/S/D + Arrows → movement    Space → jump       Shift → sprint
 E → interact                   Q + RMB → secondary LMB → primary
 R → reload                     F → use            C → crouch
 X → drop                       Z → prone          T → emote
-1–4 → slot1–slot4              Esc → pause        , → openSettings
+1–4 → slot1–slot4              Esc → settings
 ```
 
 **Key actions:**

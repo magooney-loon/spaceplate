@@ -22,7 +22,6 @@ export type InputAction =
 	| 'slot2'
 	| 'slot3'
 	| 'slot4'
-	| 'pause'
 	| 'toggleUi'
 	| 'openSettings';
 

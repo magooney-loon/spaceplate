@@ -29,7 +29,7 @@ export type {
 } from './types';
 
 const INPUT_SETTINGS_KEY = 'spaceplate-input-settings';
-const SETTINGS_VERSION = 1;
+const SETTINGS_VERSION = 2;
 
 let _idCounter = 0;
 const newId = () => `b${++_idCounter}`;
@@ -41,10 +41,7 @@ const gp = (button: GamepadButton): GamepadButtonBinding => ({
 	device: 'gamepad',
 	button
 });
-const ga = (
-	axis: GamepadAxis,
-	direction?: 'positive' | 'negative'
-): GamepadAxisBinding => ({
+const ga = (axis: GamepadAxis, direction?: 'positive' | 'negative'): GamepadAxisBinding => ({
 	id: newId(),
 	device: 'gamepad-axis',
 	axis,
@@ -71,11 +68,9 @@ const ALL_ACTIONS: InputAction[] = [
 	'slot2',
 	'slot3',
 	'slot4',
-	'pause',
 	'toggleUi',
 	'openSettings'
 ];
-
 
 const defaultPlayer1Actions = (): Record<InputAction, AnyBinding[]> => ({
 	moveForward: [kb('KeyW'), kb('ArrowUp'), gp('directionalTop')],
@@ -97,9 +92,8 @@ const defaultPlayer1Actions = (): Record<InputAction, AnyBinding[]> => ({
 	slot2: [kb('Digit2')],
 	slot3: [kb('Digit3')],
 	slot4: [kb('Digit4')],
-	pause: [kb('Escape'), gp('start')],
 	toggleUi: [],
-	openSettings: [kb('Comma'), gp('select')]
+	openSettings: [kb('Escape'), gp('select')]
 });
 
 const defaultPlayer1Axes = (): Record<InputAxisAction, GamepadAxisBinding | null> => ({
@@ -152,7 +146,10 @@ const loadFromStorage = (): Record<PlayerId, PlayerInputMap> | null => {
 
 const saveToStorage = (players: Record<PlayerId, PlayerInputMap>): void => {
 	try {
-		localStorage.setItem(INPUT_SETTINGS_KEY, JSON.stringify({ version: SETTINGS_VERSION, players }));
+		localStorage.setItem(
+			INPUT_SETTINGS_KEY,
+			JSON.stringify({ version: SETTINGS_VERSION, players })
+		);
 	} catch {
 		/* ignore */
 	}

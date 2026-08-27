@@ -98,7 +98,7 @@ Default player1 bindings out of the box:
 | LMB / Q | Primary / Secondary |
 | R F C X Z T | Reload / Use / Crouch / Drop / Prone / Emote |
 | 1 2 3 4 | Slots |
-| Esc | Pause |
+| Esc | Settings |
 
 Players can rebind everything from the in-game **Settings → Controls** tab.
 

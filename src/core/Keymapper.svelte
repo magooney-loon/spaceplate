@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { inputState, inputActions } from '$extensions/input/input.svelte';
 	import type { InputAction, MouseButton } from '$extensions/input/types';
-	import { generalActions } from '$extensions/settings/settings.svelte';
+	import { generalActions, overlayState } from '$extensions/settings/settings.svelte';
 	import { sceneState } from '$extensions/scene/scene.svelte';
-	import { overlayState } from '$lib/stores/overlayState.svelte';
 
 	function isTypingTarget(target: EventTarget | null): boolean {
 		if (!(target instanceof HTMLElement)) return false;

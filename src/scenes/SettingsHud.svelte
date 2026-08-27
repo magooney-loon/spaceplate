@@ -41,14 +41,12 @@
 		{
 			label: 'Slots',
 			actions: ['slot1', 'slot2', 'slot3', 'slot4']
-		},
-		{
-			label: 'UI',
-			actions: ['pause', 'openSettings', 'toggleUi']
 		}
 	];
 
-	const ACTION_LABELS: Record<InputAction, string> = {
+	// Engine-reserved actions (toggleUi, openSettings) are intentionally not
+	// listed here — they are routed by the engine and cannot be rebound from the UI.
+	const ACTION_LABELS: Partial<Record<InputAction, string>> = {
 		moveForward: 'Move Forward',
 		moveBackward: 'Move Backward',
 		moveLeft: 'Move Left',
@@ -67,10 +65,7 @@
 		slot1: 'Slot 1',
 		slot2: 'Slot 2',
 		slot3: 'Slot 3',
-		slot4: 'Slot 4',
-		pause: 'Pause',
-		toggleUi: 'Toggle UI',
-		openSettings: 'Open Settings'
+		slot4: 'Slot 4'
 	};
 
 	const GAMEPAD_BUTTON_LABELS: Record<string, string> = {
@@ -155,6 +150,12 @@
 
 	const isCapturing = $derived(inputState.capture.active);
 	const captureAction = $derived(inputState.capture.action as InputAction | null);
+
+	const settingsKeyLabel = $derived.by(() => {
+		const bindings = inputState.players.player1.actions.openSettings ?? [];
+		const keyboard = bindings.find((b) => b.device === 'keyboard');
+		return keyboard ? formatBinding(keyboard) : null;
+	});
 
 	function startBind(action: InputAction) {
 		soundActions.playClick();
@@ -261,13 +262,15 @@
 
 				<div class="section">
 					<p class="section-label">Engine Shortcuts</p>
+					{#if settingsKeyLabel}
+						<div class="hint-row">
+							<span>Settings</span>
+							<kbd>{settingsKeyLabel}</kbd>
+						</div>
+					{/if}
 					<div class="hint-row">
 						<span>Toggle HUD</span>
 						<kbd>Ctrl+H</kbd>
-					</div>
-					<div class="hint-row">
-						<span>Cancel Binding</span>
-						<kbd>Esc</kbd>
 					</div>
 					<p class="section-note">Reserved engine shortcuts. Not rebindable.</p>
 				</div>

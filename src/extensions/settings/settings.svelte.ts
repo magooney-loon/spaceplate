@@ -69,6 +69,11 @@ export const settingsState = $state<ExtensionState>({
 	}
 });
 
+/**
+ * Transient settings overlay state — UI-only, never persisted.
+ */
+export const overlayState = $state({ settingsOpen: false });
+
 export const audioActions: AudioActions = {
 	toggleMusic() {
 		settingsState.audio.musicEnabled = !settingsState.audio.musicEnabled;
