@@ -2,7 +2,7 @@
 	import { T, useTask } from '@threlte/core/webgpu';
 	import { AudioListener } from '@threlte/extras';
 	import type { PerspectiveCamera } from 'three/webgpu';
-	import { sceneState } from '$extensions/scene/scene.svelte';
+	import { sceneState } from '$extensions/scene';
 	import { mouseLookState } from '$core/mouseLook.svelte';
 
 	let camera = $state.raw<PerspectiveCamera>();

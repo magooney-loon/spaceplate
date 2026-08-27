@@ -3,12 +3,11 @@
 		settingsState,
 		graphicsActions,
 		audioActions,
-		generalActions
-	} from '$extensions/settings/settings.svelte';
+		generalActions,
+		type QualityLevel
+	} from '$extensions/settings';
 	import { soundActions } from '$core';
-	import { inputState, inputActions } from '$extensions/input/input.svelte';
-	import type { InputAction, AnyBinding } from '$extensions/input/types';
-	import type { QualityLevel } from '$extensions/settings/settings.svelte';
+	import { inputState, inputActions, type InputAction, type AnyBinding } from '$extensions/input';
 
 	type Props = { onBack: () => void };
 	let { onBack }: Props = $props();

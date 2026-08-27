@@ -8,13 +8,11 @@
 		SCENES,
 		resolveScenePreset,
 		resolveGlobalPreset
-	} from '$extensions/scene/scene.svelte';
-	import type { SceneType } from '$extensions/scene/types';
-	import { BUNDLED_SCENE_PRESETS, BUNDLED_GLOBAL_PRESETS } from '$extensions/scene/bundledPresets';
-	import { postprocessingPresetsState } from '$extensions/postprocessing/postprocessing.svelte';
-	import { BUNDLED_PP_PRESETS } from '$extensions/postprocessing/bundledPresets';
-	import { skyboxPresetsState } from '$extensions/skybox/skybox.svelte';
-	import { BUNDLED_SKYBOX_PRESETS } from '$extensions/skybox/bundledPresets';
+	} from './scene.svelte';
+	import type { SceneType } from './types';
+	import { BUNDLED_SCENE_PRESETS, BUNDLED_GLOBAL_PRESETS } from './bundledPresets';
+	import { postprocessingPresetsState, BUNDLED_PP_PRESETS } from '$extensions/postprocessing';
+	import { skyboxPresetsState, BUNDLED_SKYBOX_PRESETS } from '$extensions/skybox';
 
 	const { createExtension } = useStudio();
 

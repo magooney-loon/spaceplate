@@ -5,7 +5,7 @@
 	import { LoopRepeat, LoopOnce } from 'three';
 	import { untrack } from 'svelte';
 	import { gltfViewerActions } from './gltfViewer.svelte';
-	import { logGltf } from '$extensions/logger/logger.svelte';
+	import { logGltf } from '$extensions/logger';
 	import type { GltfViewerModel } from './types';
 
 	let { model }: { model: GltfViewerModel } = $props();

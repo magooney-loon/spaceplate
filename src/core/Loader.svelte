@@ -2,8 +2,8 @@
 	import { Tween } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
 	import { useProgress } from '@threlte/extras';
-	import { logEngine } from '$extensions/logger/logger.svelte';
-	import { audioActions } from '$extensions/settings/settings.svelte';
+	import { logEngine } from '$extensions/logger';
+	import { audioActions } from '$extensions/settings';
 
 	const { progress, finishedOnce, active, item, loaded, total } = useProgress();
 

@@ -3,7 +3,7 @@
 	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
 	import { extensionScope, type GravityType, type PhysicsFramerate } from './types';
 	import { physicsState, physicsActions } from './physics.svelte';
-	import { sceneState } from '$extensions/scene/scene.svelte';
+	import { sceneState } from '$extensions/scene';
 	import type { Snippet } from 'svelte';
 
 	interface Props {

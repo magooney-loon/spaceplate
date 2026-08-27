@@ -4,7 +4,7 @@
 	import type { Snippet } from 'svelte';
 	import { gltfViewerState, gltfViewerActions } from './gltfViewer.svelte';
 	import { extensionScope, type GltfViewerColliderShape } from './types';
-	import { sceneState } from '$extensions/scene/scene.svelte';
+	import { sceneState } from '$extensions/scene';
 
 	interface Props {
 		children?: Snippet;

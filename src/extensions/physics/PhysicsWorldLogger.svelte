@@ -2,7 +2,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import type { World as RapierWorld } from '@dimforge/rapier3d-compat';
 	import { useRapier } from '@threlte/rapier';
-	import { logPhysics } from '$extensions/logger/logger.svelte';
+	import { logPhysics } from '$extensions/logger';
 	import { physicsState } from './physics.svelte';
 
 	const { world } = useRapier();

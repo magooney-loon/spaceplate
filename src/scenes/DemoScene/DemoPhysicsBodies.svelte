@@ -7,9 +7,9 @@
 	import * as THREE from 'three';
 	import { Spring } from 'svelte/motion';
 	import { soundActions } from '$core';
-	import { logPhysics } from '$extensions/logger/logger.svelte';
+	import { logPhysics } from '$extensions/logger';
 	import { useSound } from '$extensions/sound/useSound';
-	import { settingsState, BASE_URL } from '$extensions/settings/settings.svelte';
+	import { settingsState, BASE_URL } from '$extensions/settings';
 
 	const { state: soundState } = useSound();
 	const { world } = useRapier();

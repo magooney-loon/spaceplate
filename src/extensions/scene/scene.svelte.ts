@@ -1,4 +1,4 @@
-import { logEngine } from '$extensions/logger/logger.svelte';
+import { logEngine } from '$extensions/logger';
 import { soundActions } from '$core';
 import { BUNDLED_SCENE_PRESETS, BUNDLED_GLOBAL_PRESETS } from './bundledPresets';
 import type {

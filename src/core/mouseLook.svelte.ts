@@ -1,5 +1,5 @@
-import { settingsState, overlayState } from '$extensions/settings/settings.svelte';
-import { logInput } from '$extensions/logger/logger.svelte';
+import { settingsState, overlayState } from '$extensions/settings';
+import { logInput } from '$extensions/logger';
 
 /**
  * Radians per pixel of mouse movement at sensitivity 1.0.

@@ -3,7 +3,7 @@
 	import { Folder, Slider, Checkbox, Button, List, Separator } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { extensionScope, type ExtensionState, type ExtensionActions } from './types';
-	import { settingsState } from '$extensions/settings/settings.svelte';
+	import { settingsState } from '$extensions/settings';
 
 	interface Props {
 		children?: Snippet;

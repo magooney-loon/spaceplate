@@ -1,4 +1,4 @@
-import { logSettings, logSound } from '$extensions/logger/logger.svelte';
+import { logSettings, logSound } from '$extensions/logger';
 import type {
 	QualityLevel,
 	ExtensionState,

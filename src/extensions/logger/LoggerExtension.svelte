@@ -3,7 +3,7 @@
 	import { Folder, Checkbox } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { extensionScope, type LoggerChannel } from './types';
-	import { loggerState, loggerActions, channelStyles } from '$extensions/logger/logger.svelte';
+	import { loggerState, loggerActions, channelStyles } from './logger.svelte';
 
 	interface Props {
 		children?: Snippet;

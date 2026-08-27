@@ -14,14 +14,26 @@
 		SKY_PRESETS,
 		STAR_PRESETS,
 		TRANSITION_DURATIONS
-	} from '$extensions/skybox/skybox.svelte';
+	import {
+		skyboxState,
+		starsState,
+		transitionState,
+		skyboxActions,
+		skyboxPresetsState,
+		environmentState,
+		ENV_TEXTURES,
+		CUBE_TEXTURES,
+		SKY_PRESETS,
+		STAR_PRESETS,
+		TRANSITION_DURATIONS
+	} from './skybox.svelte';
 	import { BUNDLED_SKYBOX_PRESETS } from './bundledPresets';
 	import {
 		resolveScenePreset,
 		resolveGlobalPreset,
 		sceneState,
 		SCENES
-	} from '$extensions/scene/scene.svelte';
+	} from '$extensions/scene';
 
 	interface Props {
 		children?: Snippet;

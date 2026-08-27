@@ -1,5 +1,5 @@
-import { logPhysics } from '$extensions/logger/logger.svelte';
-import { sceneActions } from '$extensions/scene/scene.svelte';
+import { logPhysics } from '$extensions/logger';
+import { sceneActions } from '$extensions/scene';
 import type {
 	GravityType,
 	PhysicsFramerate,

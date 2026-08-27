@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { useRapier } from '@threlte/rapier';
-	import { logPhysics } from '$extensions/logger/logger.svelte';
+	import { logPhysics } from '$extensions/logger';
 	import { physicsState } from './physics.svelte';
 
 	const { world, rigidBodyObjects, colliderObjects } = useRapier();

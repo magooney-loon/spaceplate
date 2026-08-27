@@ -38,17 +38,10 @@
 	import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
 	import { film } from 'three/addons/tsl/display/FilmNode.js';
 	import { vignette, scanlines, barrelUV, barrelMask } from 'three/addons/tsl/display/CRT.js';
-	import { settingsState } from '$extensions/settings/settings.svelte';
-	import { logPostprocessing } from '$extensions/logger/logger.svelte';
-	import {
-		postprocessingState,
-		postprocessingPresetsState
-	} from '$extensions/postprocessing/postprocessing.svelte';
-	import {
-		resolveScenePreset,
-		resolveGlobalPreset,
-		sceneState
-	} from '$extensions/scene/scene.svelte';
+	import { settingsState } from '$extensions/settings';
+	import { logPostprocessing } from '$extensions/logger';
+	import { postprocessingState, postprocessingPresetsState } from '$extensions/postprocessing';
+	import { resolveScenePreset, resolveGlobalPreset, sceneState } from '$extensions/scene';
 
 	const s = $derived.by((): typeof postprocessingState => {
 		const { presets } = postprocessingPresetsState;

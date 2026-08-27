@@ -1,4 +1,4 @@
-import { logSkybox } from '$extensions/logger/logger.svelte';
+import { logSkybox } from '$extensions/logger';
 import { BUNDLED_SKYBOX_PRESETS } from './bundledPresets';
 import { ENV_TEXTURES, CUBE_TEXTURES } from './envTextures';
 import type {

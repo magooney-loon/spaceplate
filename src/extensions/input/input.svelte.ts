@@ -1,4 +1,4 @@
-import { logInput } from '$extensions/logger/logger.svelte';
+import { logInput } from '$extensions/logger';
 import type {
 	InputState,
 	InputActions,

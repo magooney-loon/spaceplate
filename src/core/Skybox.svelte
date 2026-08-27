@@ -9,12 +9,8 @@
 		environmentState,
 		ENV_TEXTURES,
 		CUBE_TEXTURES
-	} from '$extensions/skybox/skybox.svelte';
-	import {
-		resolveScenePreset,
-		resolveGlobalPreset,
-		sceneState
-	} from '$extensions/scene/scene.svelte';
+	} from '$extensions/skybox';
+	import { resolveScenePreset, resolveGlobalPreset, sceneState } from '$extensions/scene';
 
 	$effect(() => {
 		const presetId =

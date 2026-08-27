@@ -1,5 +1,5 @@
 import type { EnvTextureEntry, CubeTextureEntry } from './types';
-import { BASE_URL } from '$extensions/settings/settings.svelte';
+import { BASE_URL } from '$extensions/settings';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Equirectangular / HDR / EXR textures  →  used with <Environment>

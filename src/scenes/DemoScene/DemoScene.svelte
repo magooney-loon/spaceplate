@@ -3,9 +3,9 @@
 	import { T } from '@threlte/core/webgpu';
 	import { interactivity } from '@threlte/extras';
 	import { RigidBody, Collider, Debug, Attractor, useRapier } from '@threlte/rapier';
-	import { physicsState } from '$extensions/physics/physics.svelte';
+	import { physicsState } from '$extensions/physics';
 	import PhysicsController from '$extensions/physics/PhysicsController.svelte';
-	import { logPhysics } from '$extensions/logger/logger.svelte';
+	import { logPhysics } from '$extensions/logger';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
 	import DemoFloor from './DemoFloor.svelte';
 	import DemoDistanceMarkers from './DemoDistanceMarkers.svelte';

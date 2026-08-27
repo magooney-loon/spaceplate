@@ -4,11 +4,11 @@
 	import SceneHud from './SceneHud.svelte';
 	import { Renderer, Loader, Keymapper } from '$core';
 	import { World } from '@threlte/rapier';
-	import { physicsState } from '$extensions/physics/physics.svelte';
+	import { physicsState } from '$extensions/physics';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
 	import { WebGPURenderer } from 'three/webgpu';
 	import { HTML } from '@threlte/extras';
-	import { settingsState } from '$extensions/settings/settings.svelte';
+	import { settingsState } from '$extensions/settings';
 	import './app.css';
 
 	// WebGPURenderer auto-falls back to WebGL when WebGPU isn't available.

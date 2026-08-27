@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { sceneState } from '$extensions/scene/scene.svelte';
-	import { settingsState, overlayState } from '$extensions/settings/settings.svelte';
+	import { sceneState } from '$extensions/scene';
+	import { settingsState, overlayState } from '$extensions/settings';
 	import MainMenuHud from '$scenes/MainMenu/MainMenuHud.svelte';
 	import DemoSceneHud from '$scenes/DemoScene/DemoSceneHud.svelte';
 	import SettingsHud from '$scenes/MainMenu/SettingsHud.svelte';

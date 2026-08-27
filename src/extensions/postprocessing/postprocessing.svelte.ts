@@ -1,4 +1,4 @@
-import { logPostprocessing } from '$extensions/logger/logger.svelte';
+import { logPostprocessing } from '$extensions/logger';
 import { BUNDLED_PP_PRESETS } from './bundledPresets';
 import type {
 	PostProcessingState,

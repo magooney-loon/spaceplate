@@ -5,8 +5,8 @@
 <script lang="ts">
 	import { Audio } from '@threlte/extras';
 	import { Audio as ThreeAudio } from 'three';
-	import { settingsState, BASE_URL } from '$extensions/settings/settings.svelte';
-	import { logSound } from '$extensions/logger/logger.svelte';
+	import { settingsState, BASE_URL } from '$extensions/settings';
+	import { logSound } from '$extensions/logger';
 	import { soundTriggers } from './globalAudio.svelte';
 
 	const OST_URL = `${BASE_URL}sounds/ost.ogg`;

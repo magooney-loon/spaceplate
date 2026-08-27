@@ -1,5 +1,5 @@
-import { sceneActions } from '$extensions/scene/scene.svelte';
-import { logGltf } from '$extensions/logger/logger.svelte';
+import { sceneActions } from '$extensions/scene';
+import { logGltf } from '$extensions/logger';
 import type { GltfViewerColliderShape, GltfViewerModel, GltfViewerState } from './types';
 
 export type { GltfViewerModel, GltfViewerState } from './types';

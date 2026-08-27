@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { mouseLookState, mouseLookActions } from '$core/mouseLook.svelte';
-	import { overlayState } from '$extensions/settings/settings.svelte';
-	import { inputQueries } from '$extensions/input/input.svelte';
+	import { overlayState } from '$extensions/settings';
+	import { inputQueries } from '$extensions/input';
 
 	/**
 	 * Mouse-look rig — mount inside a scene to enable pointer-locked mouse look.

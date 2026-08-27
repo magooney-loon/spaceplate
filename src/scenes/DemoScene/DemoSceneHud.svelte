@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { sceneActions } from '$extensions/scene/scene.svelte';
+	import { sceneActions } from '$extensions/scene';
 	import { soundActions } from '$core';
-	import { physicsState } from '$extensions/physics/physics.svelte';
+	import { physicsState } from '$extensions/physics';
 
 	const framerateLabel = $derived(
 		physicsState.framerate === 'varying' ? 'Varying' : `${physicsState.framerate} Hz`

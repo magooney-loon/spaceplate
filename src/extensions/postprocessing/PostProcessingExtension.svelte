@@ -5,14 +5,8 @@
 		postprocessingState as s,
 		postprocessingPresetsState,
 		postprocessingActions
-	} from '$extensions/postprocessing/postprocessing.svelte';
-	import { BUNDLED_PP_PRESETS } from './bundledPresets';
-	import {
-		resolveScenePreset,
-		resolveGlobalPreset,
-		sceneState,
-		SCENES
-	} from '$extensions/scene/scene.svelte';
+	} from './postprocessing.svelte';
+	import { resolveScenePreset, resolveGlobalPreset, sceneState, SCENES } from '$extensions/scene';
 
 	import type { Snippet } from 'svelte';
 

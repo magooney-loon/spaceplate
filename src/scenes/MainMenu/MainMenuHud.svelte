@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { sceneActions } from '$extensions/scene/scene.svelte';
+	import { sceneActions } from '$extensions/scene';
 	import { soundActions } from '$core';
-	import { overlayState } from '$extensions/settings/settings.svelte';
+	import { overlayState } from '$extensions/settings';
 </script>
 
 <!-- Main Menu HUD -->
