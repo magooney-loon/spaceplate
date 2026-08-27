@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@threlte/studio@0.4.3': 5248e121c2708847f76742d23613e403d2b3338f4069893274319e80567df536
+
 importers:
 
   .:
@@ -22,7 +25,7 @@ importers:
         version: 3.5.0(@dimforge/rapier3d-compat@0.20.0)(svelte@5.56.10)(three@0.185.1)
       '@threlte/studio':
         specifier: ^0.4.3
-        version: 0.4.3(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
+        version: 0.4.3(patch_hash=5248e121c2708847f76742d23613e403d2b3338f4069893274319e80567df536)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
       '@types/three':
         specifier: ^0.185.4
         version: 0.185.4
@@ -1287,7 +1290,7 @@ snapshots:
       svelte: 5.56.10
       three: 0.185.1
 
-  '@threlte/studio@0.4.3(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))':
+  '@threlte/studio@0.4.3(patch_hash=5248e121c2708847f76742d23613e403d2b3338f4069893274319e80567df536)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))':
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@mdi/js': 7.4.47

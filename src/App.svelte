@@ -3,6 +3,8 @@
 	import Scene from './Scene.svelte';
 	import SceneHud from './SceneHud.svelte';
 	import { Renderer, Loader, Keymapper } from '$core';
+	import { patchRendererForStudio } from '$extensions/studio-webgpu';
+	import StudioWebgpuCompat from '$extensions/studio-webgpu/StudioWebgpuCompat.svelte';
 	import { World } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
@@ -17,11 +19,16 @@
 		const powerPreference =
 			settingsState.graphics.quality === 'low' ? 'low-power' : 'high-performance';
 
-		return new WebGPURenderer({
+		const renderer = new WebGPURenderer({
 			canvas,
 			antialias: false,
 			powerPreference
 		});
+
+		// @threlte/studio still assumes WebGLRenderer — see $extensions/studio-webgpu.
+		patchRendererForStudio(renderer);
+
+		return renderer;
 	};
 
 	const dpr = $derived.by(() => {
@@ -44,6 +51,9 @@
 <Loader />
 
 <Canvas {createRenderer} {dpr}>
+	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
+		<StudioWebgpuCompat />
+	{/if}
 	<Renderer />
 	<World
 		gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]}
@@ -51,12 +61,14 @@
 	>
 		<PhysicsWorldLogger />
 		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-			{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: PostProcessingExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: SkyboxExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }]}
+			<!-- PostProcessingExtension / SkyboxExtension are temporarily unregistered:
+			     their Studio panels are broken post-WebGPU migration. The underlying
+			     state modules still drive core/Renderer.svelte and core/Skybox.svelte,
+			     so presets and effects keep working — only the toolbar UI is absent. -->
+			{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }]}
 				<Studio
 					extensions={[
 						SceneExtension,
-						PostProcessingExtension,
-						SkyboxExtension,
 						SoundExtension,
 						LoggerExtension,
 						GltfViewerExtension,

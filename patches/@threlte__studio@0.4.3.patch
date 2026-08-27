@@ -1,0 +1,142 @@
+diff --git a/dist/extensions/editor-camera/CameraControls.svelte b/dist/extensions/editor-camera/CameraControls.svelte
+index 58651b111f72f3143b1a465e1f35ec36d3124115..768b8325b219079ecab3fc82ddbac558590d3bfd 100644
+--- a/dist/extensions/editor-camera/CameraControls.svelte
++++ b/dist/extensions/editor-camera/CameraControls.svelte
+@@ -111,4 +111,19 @@
+   })
+ </script>
+ 
+-<Gizmo controls={cameraControls} />
++<!-- PATCH (spaceplate): WebGPU compat.
++     three-viewport-gizmo draws the axis stems with a LineMaterial that extends raw
++     ShaderMaterial. three's NodeLibrary has no ShaderMaterial mapping, so on
++     WebGPURenderer those lines get swapped for a blank NodeMaterial and render as
++     garbage. The axis handles themselves (MeshBasicMaterial spheres + SpriteMaterial
++     labels) are already WebGPU-safe, so disabling just the lines leaves a fully
++     functional gizmo -- picking, hover and fly-to all still work. -->
++<Gizmo
++  controls={cameraControls}
++  x={{ line: false }}
++  y={{ line: false }}
++  z={{ line: false }}
++  nx={{ line: false }}
++  ny={{ line: false }}
++  nz={{ line: false }}
++/>
+diff --git a/dist/extensions/object-selection/RenderSelectedObjects.svelte b/dist/extensions/object-selection/RenderSelectedObjects.svelte
+index 0cf31db85f00eaf03a99752717d276aa2e797fad..8913c6f329e8afa6db4305ca762eea116fd4d12c 100644
+--- a/dist/extensions/object-selection/RenderSelectedObjects.svelte
++++ b/dist/extensions/object-selection/RenderSelectedObjects.svelte
+@@ -12,10 +12,28 @@
+     type Material
+   } from 'three'
+   import { useStudioObjectsRegistry } from '../studio-objects-registry/useStudioObjectsRegistry.svelte.js'
+-  import { fragmentShader } from './shader/fragment.js'
+-  import { vertexShader } from './shader/vertex.js'
+   import { useObjectSelection } from './useObjectSelection.svelte.js'
+ 
++  // PATCH (spaceplate): WebGPU compat.
++  // The selection outline used a raw ShaderMaterial (./shader/{vertex,fragment}.js).
++  // NodeLibrary has no ShaderMaterial mapping, so on WebGPURenderer it was replaced
++  // with a blank NodeMaterial and outlines never drew. This is a direct TSL port of
++  // that same 8-tap edge detect, driven by a NodeMaterial instead.
++  import { NodeMaterial } from 'three/webgpu'
++  import {
++    dFdx,
++    dFdy,
++    float,
++    length,
++    smoothstep,
++    step,
++    texture,
++    uniform,
++    uv,
++    vec2,
++    vec4
++  } from 'three/tsl'
++
+   const { invalidate } = useThrelte()
+   const objectSelection = useObjectSelection()
+   const { addObject, removeObject } = useStudioObjectsRegistry()
+@@ -109,6 +127,53 @@
+     }
+   )
+ 
++  // PATCH (spaceplate): TSL port of the original outline shader.
++  // Samples the 8 neighbours of each texel in the selected-objects render target and
++  // marks a pixel as "edge" whenever a neighbour's colour differs by more than
++  // edgeFactor -- identical maths to the GLSL it replaces, expressed as nodes.
++  const outlineColor = uniform(new Color('#FFFF00'))
++  const lineWidth = uniform(1.5)
++  const edgeFactor = uniform(0.0001)
++
++  const outlineMaterial = new NodeMaterial()
++  outlineMaterial.transparent = true
++  outlineMaterial.depthWrite = false
++  outlineMaterial.depthTest = false
++
++  {
++    const vUv = uv()
++    // Screen-space derivatives give a line width that stays constant in pixels.
++    const sampleStep = vec2(dFdx(vUv.x), dFdy(vUv.y)).mul(lineWidth)
++    const currentColor = texture(renderTarget.texture, vUv)
++
++    const neighbourOffsets = [
++      [-1, 1], // top-left
++      [0, 1], // top
++      [1, 1], // top-right
++      [1, 0], // right
++      [1, -1], // bottom-right
++      [0, -1], // bottom
++      [-1, -1], // bottom-left
++      [-1, 0] // left
++    ] as const
++
++    let edgeDetectValue = float(0)
++
++    for (const [offsetX, offsetY] of neighbourOffsets) {
++      const neighbour = texture(
++        renderTarget.texture,
++        vUv.add(vec2(sampleStep.x.mul(offsetX), sampleStep.y.mul(offsetY)))
++      )
++      edgeDetectValue = edgeDetectValue.add(
++        step(edgeFactor, length(currentColor.rgb.sub(neighbour.rgb)))
++      )
++    }
++
++    // fragmentNode (not colorNode) mirrors the original gl_FragColor write: the
++    // outline is a flat unlit overlay and must not pick up material lighting.
++    outlineMaterial.fragmentNode = vec4(outlineColor, smoothstep(0.1, 3, edgeDetectValue))
++  }
++
+   const selectionMesh = new Mesh()
+   selectionMesh.raycast = () => {}
+   selectionMesh.position.z = -5
+@@ -154,26 +219,6 @@
+   <T is={selectionMesh} attach={$camera}>
+     <T.PlaneGeometry />
+ 
+-    <T.ShaderMaterial
+-      {fragmentShader}
+-      {vertexShader}
+-      uniforms={{
+-        outlinedObjectsTexture: {
+-          value: renderTarget.texture
+-        },
+-        lineWidth: {
+-          value: 1.5
+-        },
+-        outlineColor: {
+-          value: new Color('#FFFF00')
+-        },
+-        edgeFactor: {
+-          value: 0.0001
+-        }
+-      }}
+-      depthWrite={false}
+-      depthTest={false}
+-      transparent
+-    />
++    <T is={outlineMaterial} attach="material" />
+   </T>
+ {/key}
