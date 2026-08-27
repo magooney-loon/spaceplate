@@ -7,7 +7,6 @@ export type AudioSettings = {
 	musicEnabled: boolean;
 	ambienceVolume: number;
 	ambienceEnabled: boolean;
-	effectsVolume: number;
 	sfxVolume: number;
 	sfxEnabled: boolean;
 };
@@ -35,7 +34,6 @@ export type AudioActions = {
 	setMusicVolume: (v: number) => void;
 	setAmbienceVolume: (v: number) => void;
 	setSfxVolume: (v: number) => void;
-	setEffectsVolume: (v: number) => void;
 };
 
 export type GraphicsActions = {

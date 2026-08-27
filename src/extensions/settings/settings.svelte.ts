@@ -17,7 +17,6 @@ const MUSIC_VOLUME_KEY = 'music-volume';
 const MUSIC_ENABLED_KEY = 'music-enabled';
 const AMBIENCE_VOLUME_KEY = 'ambience-volume';
 const AMBIENCE_ENABLED_KEY = 'ambience-enabled';
-const EFFECTS_VOLUME_KEY = 'effects-volume';
 const SFX_VOLUME_KEY = 'sfx-volume';
 const SFX_ENABLED_KEY = 'sfx-enabled';
 
@@ -51,12 +50,11 @@ const loadVolume = (key: string, fallback: number): number => {
 
 export const settingsState = $state<ExtensionState>({
 	audio: {
-		musicVolume: loadVolume(MUSIC_VOLUME_KEY, 0),
+		musicVolume: loadVolume(MUSIC_VOLUME_KEY, 0.7),
 		musicEnabled: false,
-		ambienceVolume: loadVolume(AMBIENCE_VOLUME_KEY, 0),
+		ambienceVolume: loadVolume(AMBIENCE_VOLUME_KEY, 0.5),
 		ambienceEnabled: false,
-		effectsVolume: loadVolume(EFFECTS_VOLUME_KEY, 0),
-		sfxVolume: loadVolume(SFX_VOLUME_KEY, 0),
+		sfxVolume: loadVolume(SFX_VOLUME_KEY, 0.9),
 		sfxEnabled: false
 	},
 	graphics: {
@@ -97,11 +95,6 @@ export const audioActions: AudioActions = {
 		settingsState.audio.sfxVolume = v;
 		toStorage(SFX_VOLUME_KEY, String(v));
 		logSound.info('SFX volume:', v);
-	},
-	setEffectsVolume(v: number) {
-		settingsState.audio.effectsVolume = v;
-		toStorage(EFFECTS_VOLUME_KEY, String(v));
-		logSound.info('Effects volume:', v);
 	}
 };
 

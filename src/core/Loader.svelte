@@ -3,10 +3,14 @@
 	import { cubicOut } from 'svelte/easing';
 	import { useProgress } from '@threlte/extras';
 	import { logEngine } from '$extensions/logger/logger.svelte';
+	import { audioActions } from '$extensions/settings/settings.svelte';
 
 	const { progress, finishedOnce, active, item, loaded, total } = useProgress();
 
 	const isFinished = $derived($finishedOnce || ($total === 0 && !$active));
+
+	let readyToHide = $state(false);
+	let showPrompt = $state(false);
 
 	const tweened = new Tween(0, { duration: 600, easing: cubicOut });
 	$effect(() => {
@@ -14,8 +18,27 @@
 	});
 
 	$effect(() => {
-		if (isFinished) logEngine.info('Assets loaded');
+		if (isFinished) {
+			logEngine.info('Assets loaded');
+			const timeout = setTimeout(() => {
+				showPrompt = true;
+			}, 1200);
+			return () => clearTimeout(timeout);
+		}
 	});
+
+	function handleEnableSounds() {
+		audioActions.toggleMusic();
+		audioActions.toggleAmbience();
+		audioActions.toggleSfx();
+		logEngine.info('Sounds enabled by user');
+		readyToHide = true;
+	}
+
+	function handleSkipSounds() {
+		logEngine.info('Sounds skipped by user');
+		readyToHide = true;
+	}
 
 	function truncatePath(path: string | undefined): string {
 		if (!path) return '';
@@ -24,26 +47,47 @@
 	}
 </script>
 
-{#if !isFinished}
+{#if !readyToHide}
 	<div class="loader">
-		<p class="label">Loading</p>
+		{#if showPrompt}
+			<!-- Sound enable prompt -->
+			<div class="prompt">
+				<p class="prompt-title">Enable sounds?</p>
+				<p class="prompt-hint">
+					Change audio, graphics, and controls settings<br />
+					via the <strong>Settings</strong> button in the Main Menu.
+				</p>
 
-		<!-- Progress bar -->
-		<div class="track">
-			<div class="fill" style="width: {tweened.current * 100}%;"></div>
-		</div>
+				<div class="prompt-buttons">
+					<button onclick={handleEnableSounds} class="prompt-yes">Yes</button>
+					<button onclick={handleSkipSounds} class="prompt-no">No</button>
+				</div>
+			</div>
+		{:else}
+			<!-- Loading screen -->
+			<p class="label">{isFinished ? 'Preparing the game...' : 'Loading'}</p>
 
-		<p class="percent">
-			{Math.round(tweened.current * 100)}%
-		</p>
+			<!-- Progress bar -->
+			<div class="track">
+				<div class="fill" style="width: {tweened.current * 100}%;"></div>
+			</div>
 
-		{#if $active}
-			<p class="item">
-				{truncatePath($item)}
+			<p class="percent">
+				{Math.round(tweened.current * 100)}%
 			</p>
-			<p class="count">
-				{$loaded} / {$total}
-			</p>
+
+			<div class="status">
+				{#if isFinished}
+					<p class="done">All assets loaded</p>
+				{:else if $active}
+					<p class="item">
+						{truncatePath($item)}
+					</p>
+					<p class="count">
+						{$loaded} / {$total}
+					</p>
+				{/if}
+			</div>
 		{/if}
 	</div>
 {/if}
@@ -92,8 +136,15 @@
 		opacity: 0.25;
 	}
 
-	.item {
+	.status {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		min-height: 2rem;
 		margin-top: 0.5rem;
+	}
+
+	.item {
 		max-width: 15rem;
 		font-family:
 			ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
@@ -110,5 +161,74 @@
 			monospace;
 		font-size: 10px;
 		opacity: 0.15;
+	}
+
+	.done {
+		font-family:
+			ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+			monospace;
+		font-size: 11px;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		opacity: 0.2;
+	}
+
+	.prompt {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1.5rem;
+	}
+
+	.prompt-title {
+		font-size: 0.875rem;
+		letter-spacing: 0.025em;
+		opacity: 0.7;
+	}
+
+	.prompt-hint {
+		max-width: 18rem;
+		font-size: 11px;
+		line-height: 1.625;
+		text-align: center;
+		opacity: 0.3;
+	}
+
+	.prompt-hint strong {
+		opacity: 0.6;
+		font-weight: 600;
+	}
+
+	.prompt-buttons {
+		display: flex;
+		gap: 1rem;
+	}
+
+	.prompt-yes,
+	.prompt-no {
+		padding: 0.5rem 1.5rem;
+		font-size: 0.875rem;
+		letter-spacing: 0.025em;
+		border-radius: 0.25rem;
+		cursor: pointer;
+	}
+
+	.prompt-yes {
+		background: rgba(255, 255, 255, 0.1);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+	}
+
+	.prompt-yes:hover {
+		background: rgba(255, 255, 255, 0.2);
+	}
+
+	.prompt-no {
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		opacity: 0.5;
+	}
+
+	.prompt-no:hover {
+		background: rgba(255, 255, 255, 0.1);
 	}
 </style>

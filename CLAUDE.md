@@ -23,7 +23,7 @@ src/
     GlobalAudio.svelte   — All Audio components; re-exports from globalAudio.svelte.ts
     globalAudio.svelte.ts — soundTriggers + soundActions singleton (import from here in .ts files)
     Keymapper.svelte     — Global keyboard/mouse event listeners; routes into input extension
-    Loader.svelte        — Asset loading screen (useProgress, shown until finishedOnce)
+    Loader.svelte       — Asset loading screen (useProgress) + sound enable prompt (autoplay policy unlock)
     Renderer.svelte      — Post-processing (25+ effects, quality-gated)
     Skybox.svelte        — Sky + dual-layer stars (state-driven)
     tasks.ts             — Task pipeline: physicsStage, renderStage, uiStage, audioStage
@@ -322,7 +322,7 @@ useTask((delta) => { if (composer && !isUpdatingEffects) composer.render(delta);
 
 ### Settings (`extensions/settings/settings.svelte.ts`)
 - All settings persist to localStorage automatically
-- Audio: `musicVolume/musicEnabled`, `ambienceVolume/ambienceEnabled`, `sfxVolume/sfxEnabled`, `effectsVolume`
+- Audio: `musicVolume/musicEnabled`, `ambienceVolume/ambienceEnabled`, `sfxVolume/sfxEnabled`
 - Graphics: `quality` (`"low"` | `"high"`) — affects DPR and whether post-processing runs
 - General: `uiVisible` (toggled with `Ctrl+H`)
 - Actions: `audioActions.toggleMusic/Ambience/Sfx()`, `setMusicVolume(v)`, `graphicsActions.setQuality(q)`, `generalActions.toggleUiVisible()`
