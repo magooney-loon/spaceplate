@@ -1,5 +1,5 @@
 import { logEngine } from '$extensions/logger/logger.svelte';
-import { soundActions } from '$core/globalAudio.svelte';
+import { soundActions } from '$core';
 import { BUNDLED_SCENE_PRESETS, BUNDLED_GLOBAL_PRESETS } from './bundledPresets';
 import type {
 	SceneType,

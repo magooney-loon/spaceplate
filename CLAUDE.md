@@ -19,6 +19,7 @@ src/
   module_bindings/    — Generated SpacetimeDB client bindings (do not edit)
 
   core/
+    index.ts            — Barrel — import engine parts from '$core' (components + sound/mouse-look/task exports)
     Camera.svelte        — PerspectiveCamera + AudioListener; orbits origin in demoScene via mouse look
     GlobalAudio.svelte   — All Audio components; re-exports from globalAudio.svelte.ts
     globalAudio.svelte.ts — soundTriggers + soundActions singleton (import from here in .ts files)
@@ -100,7 +101,7 @@ src/
 - `core/GlobalAudio.svelte` owns all `<Audio>` Threlte components — never unmounts (no race conditions)
 - `soundTriggers` and `soundActions` live in `core/globalAudio.svelte.ts` — imported from there in `.ts` files
 - **Always import from `.ts` file, not the `.svelte` file** — named exports from `<script module>` in `.svelte` are not visible to TypeScript in `.ts` imports
-- Import: `import { soundActions } from '$core/globalAudio.svelte'`
+- Import: `import { soundActions } from '$core'`
 - `soundActions.playSwoosh()` — polyphonic (clone per call → overlapping instances)
 - `soundActions.playClick()` — one-shot (stop+restart)
 - `$state.raw<ThreeAudio>()` — prevents Svelte 5 Proxy wrapping THREE.js class instances
@@ -143,7 +144,7 @@ Cross-browser-consistent mouse look, driven by `settingsState.general.mouseSensi
 - Demo wiring: `secondaryAction` (RMB / Q) engages aim sensitivity; the context menu is suppressed while locked
 
 ```ts
-import { mouseLookState, mouseLookActions, BASE_SENS } from '$core/mouseLook.svelte';
+import { mouseLookState, mouseLookActions, BASE_SENS } from '$core';
 // yaw/pitch in radians — apply to your camera (DemoScene orbits the origin with them)
 ```
 

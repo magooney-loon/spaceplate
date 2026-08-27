@@ -5,7 +5,7 @@
 		audioActions,
 		generalActions
 	} from '$extensions/settings/settings.svelte';
-	import { soundActions } from '$core/GlobalAudio.svelte';
+	import { soundActions } from '$core';
 	import { inputState, inputActions } from '$extensions/input/input.svelte';
 	import type { InputAction, AnyBinding } from '$extensions/input/types';
 	import type { QualityLevel } from '$extensions/settings/settings.svelte';

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { sceneActions } from '$extensions/scene/scene.svelte';
-	import { soundActions } from '$core/GlobalAudio.svelte';
+	import { soundActions } from '$core';
 	import { physicsState } from '$extensions/physics/physics.svelte';
 
 	const framerateLabel = $derived(

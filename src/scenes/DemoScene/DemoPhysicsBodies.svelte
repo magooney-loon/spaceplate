@@ -6,7 +6,7 @@
 	import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';
 	import * as THREE from 'three';
 	import { Spring } from 'svelte/motion';
-	import { soundActions } from '$core/GlobalAudio.svelte';
+	import { soundActions } from '$core';
 	import { logPhysics } from '$extensions/logger/logger.svelte';
 	import { useSound } from '$extensions/sound/useSound';
 	import { settingsState, BASE_URL } from '$extensions/settings/settings.svelte';

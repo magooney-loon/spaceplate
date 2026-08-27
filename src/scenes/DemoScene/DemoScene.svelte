@@ -9,7 +9,7 @@
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
 	import DemoFloor from './DemoFloor.svelte';
 	import DemoDistanceMarkers from './DemoDistanceMarkers.svelte';
-	import MouseLook from '$core/MouseLook.svelte';
+	import { MouseLook } from '$core';
 
 	interactivity();
 

@@ -1,7 +1,5 @@
 <script lang="ts">
-	import Skybox from '$core/Skybox.svelte';
-	import Camera from '$core/Camera.svelte';
-	import GlobalAudio from '$core/GlobalAudio.svelte';
+	import { Skybox, Camera, GlobalAudio } from '$core';
 	import { T, useTask } from '@threlte/core/webgpu';
 	import { physicsActions } from '$extensions/physics/physics.svelte';
 	import { sceneState } from '$extensions/scene/scene.svelte';

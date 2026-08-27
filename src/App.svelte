@@ -2,9 +2,7 @@
 	import { Canvas } from '@threlte/core/webgpu';
 	import Scene from './Scene.svelte';
 	import SceneHud from './SceneHud.svelte';
-	import Renderer from '$core/Renderer.svelte';
-	import Loader from '$core/Loader.svelte';
-	import Keymapper from '$core/Keymapper.svelte';
+	import { Renderer, Loader, Keymapper } from '$core';
 	import { World } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics/physics.svelte';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
