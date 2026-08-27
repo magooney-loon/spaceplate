@@ -78,7 +78,7 @@
 <Audio
 	src={OST_URL}
 	loop
-	oncreate={(a) => {
+	oncreate={(a: ThreeAudio) => {
 		ostAudio = a;
 		logSound.info('Audio loaded: OST');
 	}}
@@ -88,7 +88,7 @@
 <Audio
 	src={AMBIENCE_URL}
 	loop
-	oncreate={(a) => {
+	oncreate={(a: ThreeAudio) => {
 		ambienceAudio = a;
 		logSound.info('Audio loaded: Ambience');
 	}}
@@ -97,7 +97,7 @@
 
 <Audio
 	src={CLICK_URL}
-	oncreate={(a) => {
+	oncreate={(a: ThreeAudio) => {
 		clickAudio = a;
 		logSound.info('Audio loaded: Click');
 	}}
@@ -106,7 +106,7 @@
 
 <Audio
 	src={SWOOSH_URL}
-	oncreate={(a) => {
+	oncreate={(a: ThreeAudio) => {
 		swooshAudio = a;
 		logSound.info('Audio loaded: Swoosh');
 	}}

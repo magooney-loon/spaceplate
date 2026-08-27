@@ -334,7 +334,7 @@ useTask((delta) => { if (composer && !isUpdatingEffects) composer.render(delta);
 
 ### SpacetimeDB Client
 - Connection is set up in `Root.svelte` via `DbConnection.builder()` + `createSpacetimeDBProvider`
-- Module bindings are in `src/module_bindings/` — regenerate with `npm run spacetime:generate`
+- Module bindings are in `src/module_bindings/` — regenerate with `pnpm run spacetime:generate`
 - Use `useTable(tables.x)` from `spacetimedb/svelte` — returns `[rows, isLoading]`
 - SpacetimeDB UI lives in HUD components (HTML), not 3D scene components
 

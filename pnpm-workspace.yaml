@@ -1,0 +1,9 @@
+packages:
+  - '.'
+  - 'spacetimedb'
+allowBuilds:
+  '@parcel/watcher': true
+minimumReleaseAgeExclude:
+  - '@threlte/core@8.6.0'
+  - '@threlte/extras@9.21.1'
+  - '@types/node@26.4.0'

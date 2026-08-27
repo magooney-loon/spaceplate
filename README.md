@@ -137,13 +137,13 @@ The boilerplate includes a ready-to-tweak Rapier sandbox inside the demo scene.
 
 ```sh
 # install dependencies
-npm install
+pnpm install
 
 # run dev server
-npm run dev
+pnpm run dev
 
 # build for production
-npm run build
+pnpm run build
 ```
 
 ### SpacetimeDB
@@ -153,16 +153,16 @@ npm run build
 spacetime start
 
 # publish module (local)
-npm run spacetime:publish:local
+pnpm run spacetime:publish:local
 
 # publish module (local, wipe db)
-npm run spacetime:publish:local:fresh
+pnpm run spacetime:publish:local:fresh
 
 # publish module (maincloud)
-npm run spacetime:publish
+pnpm run spacetime:publish
 
 # regenerate client bindings after schema changes
-npm run spacetime:generate
+pnpm run spacetime:generate
 ```
 
 ---

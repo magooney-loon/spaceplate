@@ -5,7 +5,7 @@ Physics via `@threlte/rapier` (Rust WASM, deterministic, fast).
 ## Installation
 
 ```bash
-npm install @threlte/rapier @dimforge/rapier3d-compat
+pnpm add @threlte/rapier @dimforge/rapier3d-compat
 ```
 
 ---
