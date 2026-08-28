@@ -1,5 +1,5 @@
 diff --git a/dist/components/Gizmo/Gizmo.svelte b/dist/components/Gizmo/Gizmo.svelte
-index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..8095f3039f2f215cc29ee3a53aab15e2bcceb9a7 100644
+index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..5f1ff14ea90797047c2c63b52de5634713a32228 100644
 --- a/dist/components/Gizmo/Gizmo.svelte
 +++ b/dist/components/Gizmo/Gizmo.svelte
 @@ -1,7 +1,9 @@
@@ -12,10 +12,61 @@ index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..8095f3039f2f215cc29ee3a53aab15e2
      Vector4,
      type OrthographicCamera,
      type PerspectiveCamera,
-@@ -25,14 +27,36 @@
+@@ -9,6 +11,8 @@
+   } from 'three'
+   import type { GizmoProps, Controls } from './types.js'
+   import { ViewportGizmo } from 'three-viewport-gizmo'
++  // PATCH (spaceplate): see `useWebGPULineMaterial` below.
++  import { Line2NodeMaterial } from 'three/webgpu'
+   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+   import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js'
+ 
+@@ -25,14 +29,80 @@
    const parent = useParent()
    const { camera, renderer, dom, autoRenderTask, shouldRender, size, invalidate } = useThrelte()
  
++  // PATCH (spaceplate): gates every WebGPU-specific workaround below.
++  const isWebGPU = (renderer as unknown as { isWebGPURenderer?: boolean }).isWebGPURenderer === true
++
++  // PATCH (spaceplate): WebGPU compat -- draw the axis stems with a node material.
++  //
++  // three-viewport-gizmo vendors its own copy of three's fat-line stack. Its
++  // `LineMaterial` extends raw `ShaderMaterial`, which `NodeLibrary` has no mapping
++  // for, so under WebGPURenderer three logs `Material "LineMaterial" is not compatible`
++  // and substitutes a blank NodeMaterial -- the stems silently vanish and you get bare
++  // floating axis handles.
++  //
++  // three r185 ships `Line2NodeMaterial`, the node-based equivalent, and it is a
++  // drop-in here: it reads the same `instanceStart` / `instanceEnd` /
++  // `instanceColorStart` attributes the vendored geometry already provides, so only
++  // the material is swapped and the library's own object and geometry stay untouched.
++  //
++  // Two details that make the in-place swap safe:
++  //  - The vendored `LineSegments2.onBeforeRender` pushes the viewport size into
++  //    `material.uniforms.resolution`, but it is guarded on `material.uniforms` being
++  //    present. `Line2NodeMaterial` has no `.uniforms`, so it no-ops -- and it does not
++  //    need the hint: `Line2NodeMaterial` derives the resolution from the `viewport`
++  //    node itself, which is already the gizmo's own small viewport at draw time. That
++  //    keeps `linewidth` in pixels, exactly as before.
++  //  - The vendored `raycast()` would read `material.resolution`, which is absent here,
++  //    but the gizmo only ever raycasts its handle meshes (`_intersections`); the stems
++  //    are never picked.
++  const useWebGPULineMaterial = (target: ViewportGizmo) => {
++    for (const child of target.children) {
++      const line = child as unknown as {
++        isLineSegments2?: boolean
++        material?: { linewidth?: number; dispose?: () => void }
++      }
++      if (line.isLineSegments2 !== true) continue
++      const previous = line.material
++      line.material = new Line2NodeMaterial({
++        linewidth: previous?.linewidth ?? 4,
++        vertexColors: true
++      })
++      previous?.dispose?.()
++    }
++  }
++
 +  // PATCH (spaceplate): WebGPU compat.
 +  //
 +  // `camera.current` was read tracked here, so every camera swap rebuilt the whole
@@ -42,7 +93,7 @@ index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..8095f3039f2f215cc29ee3a53aab15e2
 -      size: 86,
 -      ...rest
 -    })
-+    return new ViewportGizmo(
++    const instance = new ViewportGizmo(
 +      untrack(() => camera.current) as PerspectiveCamera | OrthographicCamera,
 +      renderer,
 +      {
@@ -52,16 +103,15 @@ index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..8095f3039f2f215cc29ee3a53aab15e2
 +        ...rest
 +      }
 +    )
++    if (isWebGPU) useWebGPULineMaterial(instance)
++    return instance
    })
  
    $effect.pre(() => {
-@@ -43,6 +67,43 @@
+@@ -43,6 +113,40 @@
  
    const viewport = new Vector4()
  
-+  // PATCH (spaceplate): gates every WebGPU-specific workaround below.
-+  const isWebGPU = (renderer as unknown as { isWebGPURenderer?: boolean }).isWebGPURenderer === true
-+
 +  // PATCH (spaceplate): WebGPU compat.
 +  //
 +  // WebGL's `gl.viewport` has its origin at the BOTTOM-left of the drawing buffer;
@@ -99,7 +149,7 @@ index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..8095f3039f2f215cc29ee3a53aab15e2
    const cameraControls = $derived(controls ?? ($parent as Controls))
  
    useTask(
-@@ -52,12 +113,34 @@
+@@ -52,12 +156,34 @@
          const toneMapping = renderer.toneMapping
  
          renderer.getViewport(viewport)
@@ -137,7 +187,7 @@ index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..8095f3039f2f215cc29ee3a53aab15e2
        }
      },
      {
-@@ -137,7 +220,52 @@
+@@ -137,7 +263,52 @@
      }
    )
  

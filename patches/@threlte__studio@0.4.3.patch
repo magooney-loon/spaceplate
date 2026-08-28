@@ -1,46 +1,22 @@
 diff --git a/dist/extensions/editor-camera/CameraControls.svelte b/dist/extensions/editor-camera/CameraControls.svelte
-index 58651b111f72f3143b1a465e1f35ec36d3124115..24ac8f731fc17ada786385eac50e8f42740f7c84 100644
+index 58651b111f72f3143b1a465e1f35ec36d3124115..6024faef69a114cd38b4c0589d0c7290193feda9 100644
 --- a/dist/extensions/editor-camera/CameraControls.svelte
 +++ b/dist/extensions/editor-camera/CameraControls.svelte
-@@ -109,6 +109,37 @@
+@@ -109,6 +109,14 @@
    $effect(() => {
      cameraControls.enabled = !anyInUse
    })
 +
-+  // PATCH (spaceplate): WebGPU compat -- see the <Gizmo> options below.
  </script>
  
--<Gizmo controls={cameraControls} />
 +<!--
-+  PATCH (spaceplate): WebGPU compat.
-+
-+  three-viewport-gizmo vendors its own copy of three's fat-line LineMaterial, which
-+  extends raw ShaderMaterial. NodeLibrary has no ShaderMaterial mapping, so on
-+  WebGPURenderer three logs `Material "LineMaterial" is not compatible` and draws the
-+  axis stems as a blank NodeMaterial. Unlike the studio AxesHelper there is no WebGPU
-+  build of the vendored material to swap in, so the lines are switched off instead.
-+
-+  The per-axis `line` option is the library's own supported path. Its option merge
-+  (`wt`) only substitutes a default when the user value is `undefined`, so `false`
-+  survives; the line builder then destructures `{ enabled, line }` per axis and bails
-+  early, leaving the positions array empty and returning null before any LineMaterial
-+  is constructed.
-+
-+  Defaults only set `line: true` on x/y/z (and only for the sphere gizmo), but all six
-+  axes are listed so this keeps holding if a future default enables the negatives.
-+
-+  Only the stems are lost. The handles are MeshBasicMaterial spheres with SpriteMaterial
-+  labels -- already WebGPU-safe -- so picking, hover and fly-to all still work.
++  PATCH (spaceplate): the axis stems used to be switched off here with
++  `x={{ line: false }}` and friends, because three-viewport-gizmo draws them through its
++  own vendored `LineMaterial` (a raw ShaderMaterial, which WebGPU has no mapping for).
++  patches/@threlte__extras swaps that material for `Line2NodeMaterial` right after the
++  ViewportGizmo is constructed, so the stems draw again and the defaults are fine.
 +-->
-+<Gizmo
-+  controls={cameraControls}
-+  x={{ line: false }}
-+  y={{ line: false }}
-+  z={{ line: false }}
-+  nx={{ line: false }}
-+  ny={{ line: false }}
-+  nz={{ line: false }}
-+/>
+ <Gizmo controls={cameraControls} />
 diff --git a/dist/extensions/editor-camera/DefaultCamera.svelte b/dist/extensions/editor-camera/DefaultCamera.svelte
 index 52248d1d951c4296a996afb75f46f172c7da8448..b14242590c0ed2815781025d9728d397a5a543da 100644
 --- a/dist/extensions/editor-camera/DefaultCamera.svelte
