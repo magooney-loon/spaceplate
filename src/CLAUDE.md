@@ -81,8 +81,10 @@ Two things are currently torn out — don't assume they work:
   `toneMapping` option. Never also write `renderer.toneMapping` from a component — two owners for
   one property caused several of the earlier bugs.
 
-Background: `DOCS/graphics-rework.md` and `DOCS/webgpu-migration-roadmap.md`.
-`core/RendererWebGlStudioIssue.md` covers the Studio/WebGL interaction that `patches/@threlte__studio` fixes.
+Background: `DOCS/webgpu-notes.md` — WebGPU gotchas, the Studio task-ordering rules any new
+pipeline must follow, and the reactivity rules. Read it before debugging anything renderer-shaped.
+The post-processing rebuild is planned in `DOCS/post-processing.md`; the sky/weather rework in
+`DOCS/weather-system.md`.
 
 ### Sound system
 - `core/GlobalAudio.svelte` owns all `<Audio>` Threlte components — never unmounts (no race conditions).
@@ -102,14 +104,16 @@ Background: `DOCS/graphics-rework.md` and `DOCS/webgpu-migration-roadmap.md`.
   convenience `goToMainMenu()` / `goToDemoScene()` / `goBack()`; async `transitionTo(scene, ms)`.
 - Read via `sceneState.currentScene`; `sceneState.isTransitioning` is set during `transitionTo`.
 
-**Preset assignment** (`extensions/scene/bundledPresets.ts`) — single source of truth for which
-PP/skybox preset loads per scene, in code rather than localStorage:
-- `BUNDLED_SCENE_PRESETS` (per scene) and `BUNDLED_GLOBAL_PRESETS` (baseline; scene wins on conflict).
-- `resolveScenePreset(sceneId, type)` / `resolveGlobalPreset(type)` — localStorage studio override →
-  bundled → `null`. Both currently resolve to `null`: the bundled lists ship empty and
-  `core/Skybox.svelte` no longer calls them (the resolution `$effect` read and wrote
-  `transitionState` in one pass — an unconditional infinite loop).
-- The Studio SceneExtension can still set assignments at runtime and copy the code to paste back in.
+**Per-scene look is not configured here — yet.** The preset-assignment layer that used to live in
+this extension (`bundledPresets.ts`, two resolvers, two localStorage override maps, four actions)
+was **deleted**: it resolved to `null` for every input and held zero presets, and its resolution
+`$effect` in `core/Skybox.svelte` read and wrote `transitionState` in one pass — an unconditional
+infinite loop.
+
+Its replacement is a declarative `environment` block on each `SCENES` entry (post-processing
+overrides + clock/time/weather), applied imperatively from `setScene()` and **never** from an
+`$effect`. Not implemented yet — see `DOCS/scene-environment.md`. Until it lands, `SCENES` entries
+carry only `id` / `label` / `icon`, and `SceneExtension.svelte` is a plain scene switcher.
 
 ### Task pipeline (`core/tasks.ts`)
 - Four ordered stages per frame: `physicsStage` (before render) → `renderStage` (default) →
@@ -363,7 +367,7 @@ production. Add the import to the `Promise.all([...])` and the component to `ext
 
 | Extension | State | Actions | Studio UI |
 |-----------|-------|---------|-----------|
-| `scene` | `sceneState` | `sceneActions`, `resolveScenePreset`, `resolveGlobalPreset` | `SceneExtension.svelte` ✅ registered |
+| `scene` | `sceneState` | `sceneActions` | `SceneExtension.svelte` ✅ registered |
 | `settings` | `settingsState`, `overlayState` | `audioActions`, `graphicsActions`, `generalActions` | none (state-only) |
 | `input` | `inputState` | `inputActions`, `inputQueries`, `advanceInputFrame` | none (runtime only) |
 | `logger` | `loggerState` | `loggerActions.toggleChannel(ch)` | `LoggerExtension.svelte` ✅ |

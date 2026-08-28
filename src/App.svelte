@@ -49,7 +49,7 @@
      RenderPipeline to drive, so Threlte's autoRenderTask does the rendering.
      If a pipeline returns, set autoRender={false} here as a Canvas option -- never
      by toggling it from an $effect, which self-invalidates
-     (DOCS/graphics-rework.md §1.1). -->
+     (DOCS/webgpu-notes.md §3.1). -->
 <Canvas {createRenderer} {dpr}>
 	<Renderer />
 	<World

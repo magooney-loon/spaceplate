@@ -3,9 +3,11 @@
 	//
 	// This component used to build a ~300-line TSL RenderPipeline covering 25 effects.
 	// It was torn out because the pipeline rebuilt itself continuously (see
-	// DOCS/graphics-rework.md §1.2) and the graph was too entangled to fix
+	// DOCS/post-processing.md §1) and the graph was too entangled to fix
 	// incrementally. Rendering is now plain: Threlte's own autoRenderTask draws the
 	// scene, with no composer or render pipeline in between.
+	//
+	// The rebuild is planned in DOCS/post-processing.md.
 	//
 	// Tone mapping is deliberately NOT set here. Threlte's renderer context already
 	// owns renderer.toneMapping (defaulting to AgX) and drives it from the <Canvas>

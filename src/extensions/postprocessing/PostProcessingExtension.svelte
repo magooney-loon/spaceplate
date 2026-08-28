@@ -7,7 +7,6 @@
 		postprocessingActions
 	} from './postprocessing.svelte';
 	import { BUNDLED_PP_PRESETS } from './bundledPresets';
-	import { resolveScenePreset, resolveGlobalPreset, sceneState, SCENES } from '$extensions/scene';
 
 	import type { Snippet } from 'svelte';
 
@@ -90,51 +89,15 @@
 		}
 	};
 
-	// Active scene/global preset warning
-	const activePPPresetId = $derived(
-		resolveScenePreset(sceneState.currentScene, 'postprocessing') ??
-			resolveGlobalPreset('postprocessing')
-	);
-	const activePPPreset = $derived(
-		activePPPresetId
-			? (postprocessingPresetsState.presets.find((p) => p.id === activePPPresetId) ?? null)
-			: null
-	);
-	const activePPSource = $derived(
-		activePPPresetId
-			? resolveScenePreset(sceneState.currentScene, 'postprocessing') === activePPPresetId
-				? (SCENES.find((s) => s.id === sceneState.currentScene)?.label ?? sceneState.currentScene)
-				: 'Global'
-			: null
-	);
-
-	// Delete guard — block if preset is assigned in Scene Manager
-	const deletePPPreset = (presetId: string) => {
-		const usages: string[] = [];
-		if (resolveGlobalPreset('postprocessing') === presetId) usages.push('Global');
-		for (const scene of SCENES) {
-			if (resolveScenePreset(scene.id, 'postprocessing') === presetId) usages.push(scene.label);
-		}
-		if (usages.length > 0) {
-			alert(
-				`Cannot delete: this preset is assigned in the Scene Manager:\n${usages.map((u) => `  • ${u}`).join('\n')}\n\nRemove it from Scene Manager first.`
-			);
-			return;
-		}
-		postprocessingActions.deletePreset(presetId);
-	};
+	// The "a scene/global preset is overriding you" banner and the delete guard that
+	// blocked removing an assigned preset both lived here. The scene preset-assignment
+	// layer they queried is gone (DOCS/scene-environment.md §1), so nothing can assign
+	// a preset to a scene and neither check had an input left.
+	const deletePPPreset = (presetId: string) => postprocessingActions.deletePreset(presetId);
 </script>
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiImageFilterHdr" title="Post Processing">
-		{#if activePPPreset}
-			<span
-				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-bottom:4px; line-height:1.6; word-break:break-word; white-space:normal;"
-			>
-				⚠️ <strong>{activePPPreset.name}</strong> ({activePPSource}) is active.<br />
-				Manual changes are overridden. Clear in <em>Scenes</em> first.
-			</span>
-		{/if}
 		<Folder title="Saved Presets" expanded={false}>
 			{#each postprocessingPresetsState.presets as preset (preset.id)}
 				{@const isBundled = BUNDLED_PP_PRESETS.find((b) => b.id === preset.id)}

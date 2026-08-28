@@ -14,7 +14,10 @@ spacetimedb/       — SpacetimeDB module (server): tables, reducers, views
 src/module_bindings/ — Generated client bindings — DO NOT EDIT, regenerate instead
 public/            — Static assets (sounds, models, textures)
 patches/           — pnpm patches for @threlte/extras and @threlte/studio
-DOCS/              — Working notes: graphics-rework.md, webgpu-migration-roadmap.md,
+DOCS/              — Working notes: post-processing.md (rebuild plan),
+                     weather-system.md (sky/weather concept + impl plan),
+                     scene-environment.md (per-scene look: PP + time + weather),
+                     webgpu-notes.md (WebGPU/Studio gotchas — read before debugging),
                      plus vendored three.js / threlte sources for reference
 RAPIER.md          — Rapier physics notes
 ```

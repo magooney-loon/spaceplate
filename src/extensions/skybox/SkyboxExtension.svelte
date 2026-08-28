@@ -16,12 +16,6 @@
 		TRANSITION_DURATIONS
 	} from './skybox.svelte';
 	import { BUNDLED_SKYBOX_PRESETS } from './bundledPresets';
-	import {
-		resolveScenePreset,
-		resolveGlobalPreset,
-		sceneState,
-		SCENES
-	} from '$extensions/scene';
 
 	interface Props {
 		children?: Snippet;
@@ -63,38 +57,11 @@
 
 	const isDurationSelected = (value: number) => transitionState.transitionDuration === value;
 
-	// Active scene/global preset warning
-	const activeSkyboxPresetId = $derived(
-		resolveScenePreset(sceneState.currentScene, 'skybox') ?? resolveGlobalPreset('skybox')
-	);
-	const activeSkyboxPreset = $derived(
-		activeSkyboxPresetId
-			? (skyboxPresetsState.presets.find((p) => p.id === activeSkyboxPresetId) ?? null)
-			: null
-	);
-	const activeSkyboxSource = $derived(
-		activeSkyboxPresetId
-			? resolveScenePreset(sceneState.currentScene, 'skybox') === activeSkyboxPresetId
-				? (SCENES.find((s) => s.id === sceneState.currentScene)?.label ?? sceneState.currentScene)
-				: 'Global'
-			: null
-	);
-
-	// Delete guard — block if preset is assigned in Scene Manager
-	const deleteSkyboxPreset = (presetId: string) => {
-		const usages: string[] = [];
-		if (resolveGlobalPreset('skybox') === presetId) usages.push('Global');
-		for (const scene of SCENES) {
-			if (resolveScenePreset(scene.id, 'skybox') === presetId) usages.push(scene.label);
-		}
-		if (usages.length > 0) {
-			alert(
-				`Cannot delete: this preset is assigned in the Scene Manager:\n${usages.map((u) => `  • ${u}`).join('\n')}\n\nRemove it from Scene Manager first.`
-			);
-			return;
-		}
-		skyboxActions.deletePreset(presetId);
-	};
+	// The "a scene/global preset is overriding you" banner and the delete guard that
+	// blocked removing an assigned preset both lived here. The scene preset-assignment
+	// layer they queried is gone (DOCS/scene-environment.md §1), so nothing can assign
+	// a preset to a scene and neither check had an input left.
+	const deleteSkyboxPreset = (presetId: string) => skyboxActions.deletePreset(presetId);
 
 	const envTextureOptions = $derived([
 		{ value: null as string | null, text: '— None —' },
@@ -109,14 +76,6 @@
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiWeatherSunny" title="Sky">
-		{#if activeSkyboxPreset}
-			<span
-				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-bottom:4px; line-height:1.6; word-break:break-word; white-space:normal;"
-			>
-				⚠️ <strong>{activeSkyboxPreset.name}</strong> ({activeSkyboxSource}) is active.<br />
-				Manual changes are overridden. Clear in <em>Scenes</em> first.
-			</span>
-		{/if}
 		<Folder title="Mode" expanded={true}>
 			<Button
 				title={environmentState.mode === 'sky' ? '✓ Procedural Sky' : 'Procedural Sky'}

@@ -1,16 +1,18 @@
-# Sky & Weather System — Concept
+# Sky & Weather System
 
-Theory document for replacing the preset-based skybox with a time-driven sky and
-weather system. **No implementation here** — this defines the model, the API
-surface, and the decisions. Three.js/WebGPU specifics are deliberately absent;
-they belong to a follow-up plan once this concept is agreed.
+Replacing the preset-based skybox with a time-driven sky and weather system.
 
-Companion to `graphics-rework.md` (which covers the skybox as it stands after the
-WebGPU migration) and `webgpu-migration-roadmap.md`.
+**§1–§13 are the agreed concept** — the model, the API surface, the decisions.
+**§14–§18 are the implementation plan** — module layout, three.js/WebGPU specifics,
+and what actually gets written.
 
-**Status:** concept agreed. Open questions from the first draft are resolved in
-§11 (fixed sun arc, moon in v1, sky as the scene's only key light, single
-weather mixer, `weather.json`, one server `environment` table).
+Companions: `post-processing.md` (the render pipeline this eventually feeds),
+`scene-environment.md` (how a scene pins its own time and weather),
+`webgpu-notes.md` (WebGPU and reactivity rules the implementation must obey).
+
+**Status:** concept agreed, nothing implemented. Open questions from the first draft
+are resolved in §11 (fixed sun arc, moon in v1, sky as the scene's only key light,
+single weather mixer, `weather.json`, one server `environment` table).
 
 ---
 
@@ -38,12 +40,12 @@ There is also a structural problem: the existing presets are secretly one thing.
 `sunrise`, `day`, `sunset`, `night` are not four different skies — they are four
 *points on the same day*. The rework makes that structural.
 
-### Lessons carried forward from `graphics-rework.md`
+### Lessons carried forward from the WebGPU migration
 
 - Every reactive loop we have hit came from effects reading and writing the same
   state (directly or through actions several calls deep). The new system must be
   **pure where possible**: given (time, weather) → parameters, with rendering
-  consuming the result.
+  consuming the result. See `webgpu-notes.md` §3.
 - One live global config beats a preset library nobody uses. Whatever is
   authored (day-curve keyframes, weather definitions) is **data in a committed
   file**, editable via Studio, saved explicitly.
@@ -396,7 +398,7 @@ for where things land.
 | `SKY_PRESETS` (`dawn`/`day`/`sunset`/`night`...) | Keyframes on the day curve (they already are, semantically) |
 | `cloudy`/`overcast`/"storm-ish" presets | Weather target vectors in the mixer |
 | `transitionState` + preset-pair lerp machinery | Deleted — curve sampling and the weather mixer replace it |
-| `starsState` (17 fields) | One number: star visibility in the descriptor. The star *renderer* is separate future work (WebGPU TSL point sprites, per `graphics-rework.md` §7) |
+| `starsState` (17 fields) | One number: star visibility in the descriptor. The star *renderer* is separate future work — `@threlte/extras`' `<Stars>` is a raw `ShaderMaterial` and cannot run on WebGPU (`webgpu-notes.md` §1); it needs a TSL point-sprite reimplementation |
 | `environmentState` (env/cube texture modes) | Stays, orthogonal — a sky-driven env map is one mode among several |
 | User presets in `localStorage` | Gone — authored keyframes/weather live in a committed file (the `graphics.json` story), Studio edits the live state and saves |
 | `Sky.svelte` | A consumer of the descriptor's `sky` + `sun` slices; gains the env budget logic |
@@ -432,7 +434,7 @@ Still open, none blocking:
 
 ## 12. Phasing (concept level)
 
-Each phase leaves the app working, same rule as `graphics-rework.md`.
+Each phase leaves the app working. Concrete module-level detail is in §16.
 
 1. **Time core.** Clock interface + `realtime`/`manual` clocks + day-curve
    sampling — sun and moon paths both derived from `t` — producing the sky
@@ -448,7 +450,7 @@ Each phase leaves the app working, same rule as `graphics-rework.md`.
    + weather subscriptions. Multiplayer parity.
 4. **New render layers.** Clouds, precipitation, lightning — the visually
    expensive half, each consuming descriptor slices. Needs its own WebGPU-native
-   plan (out of scope here, per `graphics-rework.md` §7).
+   plan; sketched in §17, not designed here.
 5. **Studio panel.** Time scrubber, weather buttons, keyframe editor, save to
    the committed file. The payoff for everything above.
 
@@ -458,10 +460,248 @@ own roadmap document.
 
 ---
 
-## 13. What this document is not
+## 13. Concept boundary
 
-- Not an implementation plan — no three.js/WebGPU choices are made here.
-- Not a render-layer design — clouds/rain/lightning get their own doc when the
-  time comes (phase 4 above).
-- Not a server schema — the SpacetimeDB table shapes are proposed in §11 and
-  finalized when phase 3 is planned.
+Everything above is the agreed model. It deliberately says nothing about three.js.
+Two things remain genuinely undesigned and are **not** settled below either:
+
+- **Render layers** — clouds, rain, lightning. Sketched in §17, not designed.
+- **The server schema** — table shapes are proposed in §11 and finalized when
+  phase 3 is actually planned.
+
+---
+
+# Implementation Plan
+
+Everything from here down is the how. Concept above, code below.
+
+---
+
+## 14. Module layout
+
+The 888-line `extensions/skybox/skybox.svelte.ts` dissolves into small, pure modules.
+The model has **no Threlte and no three.js imports** — that is what makes it
+unit-testable and what keeps it out of the reactive-loop traps.
+
+```
+src/core/sky/
+  clock.ts          — Clock interface + realtime / external / manual clocks.
+                      Pure: advance(dtMs) → { t, day }. No Svelte, no three.
+  sunPath.ts        — t → sun direction (fixed arc, §3.3). Also moon, via the lag knob.
+  dayCurve.ts       — Keyframe list + sampler. t → baseline sky params (§4).
+                      Owns the interpolation rules: ease, lerpAngle, colour space.
+  weatherMixer.ts   — Channel values + targets + per-channel easing (§5.3).
+                      tick(dtMs) → current channel vector.
+  phases.ts         — Sun elevation → phase name; threshold-crossing detection.
+  descriptor.ts     — The frame descriptor type + the compose step:
+                      (baseline, weather, sun, moon) → descriptor (§7).
+  events.ts         — Plain callback registry (on / off / emit). Not stores.
+  index.ts          — Wires the above into the `sky` façade of §8. The only
+                      stateful module; everything it imports is pure.
+```
+
+Consumers (Threlte components, three.js) live separately:
+
+```
+src/core/
+  Sky.svelte        — Exists. Becomes a descriptor consumer; gains the env budget (§15.2)
+  SkyLight.svelte   — New. The descriptor-driven key light (§15.3)
+  Skybox.svelte     — Exists. Keeps the env/cube texture mode switch, drops preset plumbing
+```
+
+### 14.1 The reactivity rule
+
+**The descriptor is a plain mutable object, not `$state`.**
+
+One task ticks the clock, samples the curve, mixes weather, and writes the descriptor
+in place. Consumers read it inside their own tasks. Nothing is tracked, nothing
+invalidates, no effect can loop. This is the direct application of `webgpu-notes.md`
+§3 — and it is why the model is deliberately Svelte-free.
+
+Only two things need to be reactive, because HTML overlays and the Studio panel read
+them:
+
+- `meta` — phase name, `isDaytime`, `t`, day counter. A tiny `$state` object written
+  once per tick, and **only ever written**, never read by the writer.
+- Authoring state — keyframes and weather definitions being edited in Studio. Read by
+  the sampler, written by the panel. One direction.
+
+Per-frame numeric values (sun elevation, cloud cover, fog density) must **not** be
+`$state`. They change every frame; making them reactive would invalidate the whole
+component tree 60 times a second.
+
+---
+
+## 15. Three.js specifics
+
+### 15.1 The sky dome is already uniform-driven
+
+`src/core/Sky.svelte` wraps three's `SkyMesh` and already writes uniforms:
+
+```ts
+sky.turbidity.value = turbidity;
+sky.rayleigh.value = rayleigh;
+sky.mieCoefficient.value = mieCoefficient;
+sky.mieDirectionalG.value = mieDirectionalG;
+sky.sunPosition.value.copy(sunPosition);
+sky.showSunDisc.value = 0 | 1;
+```
+
+That is exactly the shape a per-frame sky needs — writing `.value` costs nothing and
+triggers no recompile. **The dome needs no architectural change**, only a different
+source for its numbers: descriptor slices instead of props off `skyboxState`.
+
+The current component's `dirty`-flag `$effect` (which exists to avoid re-baking the
+env map on every prop change) becomes unnecessary for the dome itself and is replaced
+by the budget below.
+
+`SkyMesh` has no moon. A moon disc is a separate small mesh or a TSL contribution to
+the dome — deferred, per §11.
+
+### 15.2 The environment map budget — the one real trap
+
+`Sky.svelte` today re-bakes the env cube (`CubeCamera` → `CubeRenderTarget`) whenever
+any sky parameter changes. That is correct for a static sky and **ruinous for a moving
+one**: at 60× time scale it is a full cube re-bake every frame.
+
+The budget, owned by the renderer and invisible to the model:
+
+- Re-bake at most every `N` ms of wall time (start at ~250 ms), **or**
+- when the sun direction has moved more than `X` degrees since the last bake
+  (start at ~1°), whichever comes first.
+- Always re-bake immediately on a discontinuity: manual time scrub, clock swap, or a
+  weather target being set instantly.
+- Keep the existing `showSunDisc.value = 0` trick around the bake — it avoids a
+  blown-out hotspot baked into the ambient term.
+
+Interpolating between the previous and current cube map would hide the stepping
+entirely, but costs a second target and a blend. Not in v1; note it if banding shows.
+
+### 15.3 The key light
+
+`src/core/Camera.svelte:44` currently hardcodes a `<T.DirectionalLight>` at
+`position={[0, 10, 0]}`, `intensity={Math.PI / 4}`, with a fixed ±20 shadow camera. It
+is parented to nothing in particular and lives in the camera component, where it never
+belonged.
+
+It moves to `src/core/SkyLight.svelte`, which:
+
+- reads the descriptor's `light hints` slice in a task and writes
+  `light.position`, `light.color`, `light.intensity` directly on the three object;
+- owns the shadow configuration, which stays **game-specific and out of the
+  descriptor** — the model publishes direction and colour, not shadow-camera bounds;
+- handles the sun→moon crossover as a single light whose colour and intensity
+  crossfade, rather than two lights fighting.
+
+The shadow camera bounds are currently a fixed ±20 box. With a light that tracks a
+moving sun, that box needs to follow the camera or grow — otherwise shadows vanish at
+low sun angles. Flagged, not solved here.
+
+### 15.4 Star field
+
+`@threlte/extras`' `<Stars>` is a raw `ShaderMaterial` and cannot render on WebGPU
+(`webgpu-notes.md` §1). Stars are currently absent entirely. The descriptor already
+carries a single `stars: visibility` number; the renderer behind it is a TSL
+point-sprite field and is **separate work**, not part of phases 1–3.
+
+---
+
+## 16. Authored data and persistence
+
+Day-curve keyframes and weather definitions are **authored data in a committed file**,
+not code and not `localStorage`.
+
+```jsonc
+// src/config/weather.json
+{
+  "version": 1,
+  "dayCurve": [ { "t": 0.0, "name": "night", "turbidity": 2, "rayleigh": 0.5, … }, … ],
+  "weathers": { "storm": { "cloudCover": 1.0, "precipitation": 1.0, "wind": 0.8, … }, … }
+}
+```
+
+- Imported directly (`import weatherConfig from '$config/weather.json'`) so it is
+  bundled, type-checked, works in production, and needs no runtime fetch.
+- `version` exists so a format change can migrate rather than crash.
+- Committed to git — changing the look of dusk becomes a reviewable diff.
+
+### 16.1 The Vite dev plugin
+
+Studio edits live state; **Save as default** writes it to disk. This design was
+specified for `graphics.json` and never built; it applies unchanged here, and
+`post-processing.md` should reuse it rather than invent a second mechanism.
+
+```ts
+// vite/weatherConfig.ts
+export const weatherConfig = (): Plugin => ({
+  name: 'spaceplate:weather-config',
+  apply: 'serve',                       // dev only; cannot exist in a prod build
+  configureServer(server) {
+    server.middlewares.use('/__weather-config', async (req, res) => {
+      if (req.method !== 'POST') return res.end();
+      const body = await readBody(req);
+      // validate shape + version BEFORE touching disk
+      writeFileSync(CONFIG_PATH, JSON.stringify(body, null, 2) + '\n');
+      res.end('{"ok":true}');
+    });
+  }
+});
+```
+
+Rules, because this writes to source:
+
+- `apply: 'serve'` — the endpoint cannot exist in a production build.
+- Validate before writing. A malformed POST must not corrupt a committed file.
+- Write via temp file + rename, so an interrupted write cannot truncate the config.
+- Emit 2-space indent and a trailing newline to match Prettier, so saving doesn't
+  churn the diff.
+
+Boot order: **file → localStorage override (dev only) → live edits.** `localStorage`
+keeps its role as a dev scratchpad; the file is written only on an explicit Save.
+
+Requires a `$config` alias in **both** `vite.config.ts` and `tsconfig.json`.
+
+---
+
+## 17. Render layers (phase 4 — sketch only)
+
+Not designed. Recorded so the descriptor contract is understood to be the seam these
+plug into, and so nobody assumes they are close.
+
+| Layer | Consumes | Rough approach |
+|---|---|---|
+| Clouds | `clouds.cover/type`, `wind`, `sun` | Raymarched TSL volumetric, or a cheaper layered dome shader. The expensive one |
+| Precipitation | `precipitation.type/intensity`, `wind` | GPU particles / instanced sprites, camera-anchored |
+| Lightning | `lightning` events | Emissive flash + a transient light contribution |
+| Moon disc | `moon.direction`, phase | Small billboard; phase from the sun–moon angle |
+| Stars | `stars.visibility` | TSL point sprites (§15.4) |
+| Audio | `wind`, `precipitation` | Crossfading layers; its own extension |
+
+Each of these deserves its own plan when it is actually reached. Phase 4 should get a
+separate document rather than growing this one.
+
+---
+
+## 18. Open implementation questions
+
+Non-blocking, but they need answers before the phase they belong to:
+
+1. **Where does the sky tick run?** `core/tasks.ts` defines four ordered stages
+   (`physicsStage` → `renderStage` → `uiStage` → `audioStage`). The sky tick must run
+   before anything that reads the descriptor — probably a new stage before
+   `renderStage`, or the head of `renderStage`. Decide in phase 1.
+2. **What happens to `skyboxState`'s scalars during the transition?** Phase 1 makes
+   them derived outputs, but `SkyboxExtension.svelte` still edits them as inputs. Either
+   the panel is rewritten in phase 1 (bigger phase 1) or the scalars stay writable as
+   an override layer until phase 5 (more code, smoother migration). Leaning override
+   layer — it keeps each phase shippable.
+3. **Env map and post-processing.** Once `post-processing.md`'s pipeline exists, the
+   cube-camera bake runs inside a frame that also has a `RenderPipeline`. `CubeCamera.update()`
+   saves and restores the active render target, so it *should* compose — unverified.
+4. **Clock drift smoothing shape.** §6 mandates easing toward server time, never
+   snapping, and never running backwards. The actual filter (fixed rate limit? PI
+   controller?) is a phase-3 decision.
+5. **Does `t` advance while the tab is hidden?** `requestAnimationFrame` stops when
+   backgrounded. On return, a `realtime` clock should jump to true wall-clock time;
+   an `external` clock should wait for the server. Both need an explicit
+   discontinuity path — which is also an env-map re-bake trigger (§15.2).

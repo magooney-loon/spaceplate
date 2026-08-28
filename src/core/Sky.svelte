@@ -3,7 +3,7 @@
 	// three/examples/jsm/objects/Sky.js -- a raw ShaderMaterial. NodeLibrary has no
 	// ShaderMaterial mapping, so on WebGPURenderer that sky is silently swapped for a
 	// blank NodeMaterial and renders wrong. SkyMesh is three's NodeMaterial/TSL port of
-	// the same Preetham model. See DOCS/graphics-rework.md §1.3.
+	// the same Preetham model. See DOCS/webgpu-notes.md §1.
 	import { T, useThrelte, useTask } from '@threlte/core/webgpu';
 	import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 	import * as THREE from 'three/webgpu';
