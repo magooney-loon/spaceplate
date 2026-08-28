@@ -48,12 +48,13 @@
 		return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 	};
 
-	// Quantized to whole game-minutes, so this string (and everything derived from it)
-	// updates a few times per second at dev speeds rather than every frame.
-	const readout = $derived.by(() => {
-		const t = skyMeta.t;
-		const sunElevation = sunAt(t).elevation;
-		return `${fmtClock(t)} · day ${skyMeta.day} · ${skyMeta.phase} · sun ${sunElevation.toFixed(0)}°`;
+	// Quantized to whole game-minutes, so these strings (and everything derived from
+	// them) update a few times per second at dev speeds rather than every frame.
+	// Split into two monitors: one line does not fit the pane width.
+	const clockReadout = $derived(`${fmtClock(skyMeta.t)} · day ${skyMeta.day}`);
+	const skyReadout = $derived.by(() => {
+		const sunElevation = sunAt(skyMeta.t).elevation;
+		return `${skyMeta.phase} · sun ${sunElevation.toFixed(0)}°`;
 	});
 
 	// Scrubbing always lands on the manual clock: the realtime one re-syncs to the
@@ -119,7 +120,8 @@
 			<!-- Time drives the procedural sky; an HDR/cubemap environment ignores it, so
 		         the folder only makes sense in this mode. -->
 			<Folder title="Time" expanded={true}>
-				<Monitor value={readout} />
+				<Monitor label="Clock" value={clockReadout} />
+				<Monitor label="Sky" value={skyReadout} />
 				<Slider
 					label="Scrub"
 					value={skyMeta.t}
