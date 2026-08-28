@@ -4,32 +4,31 @@
 	// ShaderMaterial mapping, so on WebGPURenderer that sky is silently swapped for a
 	// blank NodeMaterial and renders wrong. SkyMesh is three's NodeMaterial/TSL port of
 	// the same Preetham model. See DOCS/webgpu-notes.md §1.
+	//
+	// This component is now a pure CONSUMER of the sky descriptor's `sky` + `sun`
+	// slices (DOCS/weather-system.md §15.1). It reads a plain object in a task -- there
+	// is no reactive prop plumbing and no $effect, so no cycle can form.
 	import { T, useThrelte, useTask } from '@threlte/core/webgpu';
 	import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 	import * as THREE from 'three/webgpu';
+	import { descriptor, skyActions } from './sky';
 
 	interface Props {
-		turbidity?: number;
-		rayleigh?: number;
-		azimuth?: number;
-		elevation?: number;
-		mieCoefficient?: number;
-		mieDirectionalG?: number;
 		setEnvironment?: boolean;
 		cubeMapSize?: number;
 		scale?: number;
+		/** Minimum wall-clock ms between environment re-bakes. */
+		envIntervalMs?: number;
+		/** Re-bake early once the sun has moved this many degrees since the last one. */
+		envSunDeltaDeg?: number;
 	}
 
 	let {
-		turbidity = 10,
-		rayleigh = 3,
-		azimuth = 180,
-		elevation = 2,
-		mieCoefficient = 0.005,
-		mieDirectionalG = 0.7,
 		setEnvironment = true,
 		cubeMapSize = 128,
-		scale = 1000
+		scale = 1000,
+		envIntervalMs = 250,
+		envSunDeltaDeg = 1
 	}: Props = $props();
 
 	const { scene, renderer, invalidate, autoRenderTask } = useThrelte();
@@ -56,50 +55,57 @@
 		cubeCamera = new THREE.CubeCamera(1, 1.1, renderTarget as never);
 	};
 
-	// Deliberately a plain variable, not $state: the task reads it and the effect
-	// writes it. Making it reactive would recreate the self-invalidating cycle that
-	// phase 1 removed from Renderer.svelte.
-	let dirty = true;
+	// Plain variables, not $state: they are written and read by the task only. Making
+	// them reactive would recreate the self-invalidating cycle phase 1 removed.
 	let activeCubeMapSize = 0;
+	let msSinceBake = Infinity;
+	let lastBakeElevation = Infinity;
+	let lastBakeAzimuth = Infinity;
 
-	$effect(() => {
-		// Touch every parameter so any change re-flags the sky for an update.
-		void turbidity;
-		void rayleigh;
-		void azimuth;
-		void elevation;
-		void mieCoefficient;
-		void mieDirectionalG;
-		void setEnvironment;
-		void cubeMapSize;
-		void scale;
-		dirty = true;
-		invalidate();
-	});
+	// THE TRAP (DOCS/weather-system.md §15.2): the old code re-baked the env cube
+	// whenever a sky parameter changed. That was correct for a static sky and ruinous
+	// for a moving one -- at 60x time scale it is a full cube bake every frame. The
+	// bake is now on a budget: at most one per envIntervalMs, or earlier if the sun has
+	// swung more than envSunDeltaDeg. The descriptor stays fresh every frame; only this
+	// expensive derivative of it steps.
+	const shouldBake = (deltaMs: number): boolean => {
+		msSinceBake += deltaMs;
 
-	// The update runs as a task rather than directly in the effect: WebGPURenderer is
-	// initialised asynchronously, and tasks only run once the animation loop is going.
-	// Driving CubeCamera from an effect can fire before the device exists.
+		// A time scrub or clock swap must land immediately, not on the next interval.
+		if (skyActions.consumeDiscontinuity()) return true;
+		if (activeCubeMapSize !== cubeMapSize) return true;
+
+		const dElevation = Math.abs(descriptor.sun.elevation - lastBakeElevation);
+		const dAzimuth = Math.abs(descriptor.sun.azimuth - lastBakeAzimuth);
+		if (dElevation > envSunDeltaDeg || dAzimuth > envSunDeltaDeg) return true;
+
+		return msSinceBake >= envIntervalMs;
+	};
+
+	// Ordered before the render so a changed sky reaches the environment map in the
+	// same frame. CubeCamera.update() saves and restores the active render target, so
+	// it can safely run inside the render stage.
 	useTask(
-		() => {
-			if (!dirty) return;
-			dirty = false;
+		(delta) => {
+			const { sky: baseline, sun } = descriptor;
 
+			// Uniform writes are free and trigger no recompile, so the dome tracks the
+			// descriptor every frame regardless of the environment budget.
 			sky.scale.setScalar(scale);
-			sky.turbidity.value = turbidity;
-			sky.rayleigh.value = rayleigh;
-			sky.mieCoefficient.value = mieCoefficient;
-			sky.mieDirectionalG.value = mieDirectionalG;
-
-			const phi = THREE.MathUtils.degToRad(90 - elevation);
-			const theta = THREE.MathUtils.degToRad(azimuth);
-			sunPosition.setFromSphericalCoords(1, phi, theta);
+			sky.turbidity.value = baseline.turbidity;
+			sky.rayleigh.value = baseline.rayleigh;
+			sky.mieCoefficient.value = baseline.mieCoefficient;
+			sky.mieDirectionalG.value = baseline.mieDirectionalG;
+			sunPosition.set(sun.direction.x, sun.direction.y, sun.direction.z);
 			sky.sunPosition.value.copy(sunPosition);
+			invalidate();
 
 			if (!setEnvironment) {
 				scene.environment = originalEnvironment;
 				return;
 			}
+
+			if (!shouldBake(delta * 1000)) return;
 
 			if (!renderTarget || !cubeCamera || activeCubeMapSize !== cubeMapSize) {
 				initEnvironmentTarget(cubeMapSize);
@@ -112,10 +118,10 @@
 			sky.showSunDisc.value = 1;
 
 			scene.environment = renderTarget!.texture;
+			msSinceBake = 0;
+			lastBakeElevation = sun.elevation;
+			lastBakeAzimuth = sun.azimuth;
 		},
-		// Ordered before the render so a changed sky reaches the environment map in the
-		// same frame. CubeCamera.update() saves and restores the active render target,
-		// so it can safely run inside the render stage.
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
 

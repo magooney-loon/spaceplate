@@ -1,19 +1,32 @@
 <script lang="ts">
-	import { T } from '@threlte/core/webgpu';
+	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { Environment, CubeEnvironment } from '@threlte/extras';
 	import Sky from './Sky.svelte';
+	import SkyLight from './SkyLight.svelte';
+	import { skyActions } from './sky';
 
-	import { skyboxState, environmentState, ENV_TEXTURES, CUBE_TEXTURES } from '$extensions/skybox';
+	import { environmentState, ENV_TEXTURES, CUBE_TEXTURES } from '$extensions/skybox';
 
-	// REMOVED: the scene/global skybox preset-resolution $effect that used to live here.
-	// It called skyboxActions.loadUserPreset() from inside an effect, which reaches
-	// applyPresetObject() -- and that function READS transitionState.transitionDuration
-	// and then WRITES transitionState.isTransitioning. Reading and writing the same
-	// state inside one effect is an unconditional infinite loop, and it was a direct
-	// cause of the effect_update_depth_exceeded crash.
-	//
-	// Nothing is lost: every bundled preset list is currently empty, and the whole
-	// preset layer is replaced by the time-driven sky. See DOCS/weather-system.md §10.
+	const { autoRenderTask } = useThrelte();
+
+	// THE MODEL DRIVER. Exactly one task ticks the sky model, and it must run before
+	// anything that reads the descriptor. Both consumers (Sky's env task, SkyLight's
+	// light task) are also `before: autoRenderTask`, and among tasks sharing a
+	// constraint Threlte's DAG falls back to registration order -- this component
+	// registers before its own children, so the ordering holds by construction.
+	// Worst case if that ever changed: a consumer reads a one-frame-stale descriptor,
+	// which is invisible. See DOCS/weather-system.md §18 q1.
+	useTask((delta) => skyActions.tick(delta * 1000), {
+		before: autoRenderTask,
+		autoInvalidate: false
+	});
+
+	// skyboxState is no longer read here. Its scalars (turbidity, elevation, azimuth...)
+	// are now derived OUTPUTS of the atmosphere sampler rather than hand-set inputs --
+	// nobody sets them by hand any more. The module is left in place, unused, the same
+	// way the post-processing state module is: SkyboxExtension.svelte is unregistered,
+	// so nothing regresses, and it is the starting point for the Studio time/weather
+	// panel in phase 5. See DOCS/weather-system.md §10 and §18 q2.
 
 	const activeEnvTexture = $derived(
 		environmentState.envTextureId
@@ -28,6 +41,10 @@
 	);
 </script>
 
+<!-- The key light is descriptor-driven and mounts in every mode: an HDR or cubemap
+     environment still needs a sun. -->
+<SkyLight />
+
 <!-- Environment texture mode -->
 {#if environmentState.mode === 'environment' && activeEnvTexture}
 	<Environment
@@ -41,22 +58,14 @@
 	<!-- Procedural sky (default) -->
 	<T.Group userData={{ hideInTree: true, selectable: false }}>
 		<Sky
-			turbidity={skyboxState.turbidity}
-			rayleigh={skyboxState.rayleigh}
-			azimuth={skyboxState.azimuth}
-			elevation={skyboxState.elevation}
-			mieCoefficient={skyboxState.mieCoefficient}
-			mieDirectionalG={skyboxState.mieDirectionalG}
-			setEnvironment={skyboxState.setEnvironment}
-			cubeMapSize={skyboxState.cubeMapSize}
-			scale={skyboxState.scale}
+			setEnvironment={true}
+			cubeMapSize={128}
+			scale={1000}
 		/>
 	</T.Group>
 
 	<!-- Stars are intentionally absent: @threlte/extras' <Stars> builds a raw
 	     ShaderMaterial and cannot render on WebGPU (DOCS/webgpu-notes.md §1).
-	     starsState is left in place for now because sky presets embed star presets,
-	     and that whole preset layer is replaced by the time-driven sky -- rewiring it
-	     here would be thrown away. Star rendering returns as TSL point sprites:
-	     DOCS/weather-system.md §15.4. -->
+	     The descriptor already carries sky.starVisibility; the renderer behind it is a
+	     TSL point-sprite field and is separate work. See weather-system.md §15.4. -->
 {/if}

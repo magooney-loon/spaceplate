@@ -59,9 +59,9 @@
 		<PhysicsWorldLogger />
 		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 			<!-- PostProcessingExtension / SkyboxExtension are temporarily unregistered:
-			     their Studio panels are broken post-WebGPU migration. The underlying
-			     state modules still drive core/Renderer.svelte and core/Skybox.svelte,
-			     so presets and effects keep working — only the toolbar UI is absent. -->
+			     their Studio panels are broken post-WebGPU migration. Skybox is now driven
+			     by the sky descriptor (DOCS/weather-system.md) and no longer reads the
+			     skybox state module; only the toolbar UI is absent. -->
 			{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }]}
 				<Studio
 					extensions={[

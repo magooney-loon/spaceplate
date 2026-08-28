@@ -133,10 +133,15 @@ not two competing lights.
 
 ### 3.5 Phases
 
-The day is divided into **named phases** — night, astronomical dawn, sunrise,
-morning, noon, golden hour, sunset, dusk, night. Phases are derived thresholds
-on **sun** elevation (e.g. sun below −18° = night, −6°…0° = twilight), not
-separate presets — moonlight illuminates the night, it does not redefine it.
+The day is divided into **named phases** — night, astronomical dawn, dawn,
+sunrise, morning, noon, afternoon, golden hour, sunset, dusk, night. Phases are
+derived thresholds on **sun** elevation (e.g. sun below −18° = night, −6°…0° =
+twilight), not separate presets — moonlight illuminates the night, it does not
+redefine it. `noon` is keyed to the arc's peak (a narrow band around the sun's
+highest point), not to an absolute elevation — "above 20°" would swallow most
+of daylight and the word would stop meaning anything. Symmetric pairs (dawn /
+dusk, morning / afternoon) are separated by the rising/falling flag, not by
+separate thresholds.
 They exist for gameplay queries and events, and as keyframe anchors for the
 day curve (§4).
 
@@ -686,15 +691,17 @@ separate document rather than growing this one.
 
 Non-blocking, but they need answers before the phase they belong to:
 
-1. **Where does the sky tick run?** `core/tasks.ts` defines four ordered stages
-   (`physicsStage` → `renderStage` → `uiStage` → `audioStage`). The sky tick must run
-   before anything that reads the descriptor — probably a new stage before
-   `renderStage`, or the head of `renderStage`. Decide in phase 1.
-2. **What happens to `skyboxState`'s scalars during the transition?** Phase 1 makes
-   them derived outputs, but `SkyboxExtension.svelte` still edits them as inputs. Either
-   the panel is rewritten in phase 1 (bigger phase 1) or the scalars stay writable as
-   an override layer until phase 5 (more code, smoother migration). Leaning override
-   layer — it keeps each phase shippable.
+1. **Where does the sky tick run?** ~~`core/tasks.ts` defines four ordered stages~~
+   (that module no longer exists post-WebGPU migration). **Decided in phase 1:** a
+   single driver task in `core/Skybox.svelte`, constrained `before: autoRenderTask`
+   together with the consumer tasks (Sky's env-bake task, SkyLight's light task).
+   Among tasks sharing a constraint the DAG falls back to registration order, and
+   Skybox registers before its children, so the model ticks first.
+2. **What happens to `skyboxState`'s scalars during the transition?** **Decided in
+   phase 1:** nothing — `SkyboxExtension.svelte` is unregistered (its panel was
+   already broken post-migration), so the scalars lost their last writer and simply
+   went dark. The module stays on disk unused and is the starting point for the
+   phase-5 Studio panel. No override layer needed.
 3. **Env map and post-processing.** Once `post-processing.md`'s pipeline exists, the
    cube-camera bake runs inside a frame that also has a `RenderPipeline`. `CubeCamera.update()`
    saves and restores the active render target, so it *should* compose — unverified.

@@ -31,6 +31,10 @@
 	});
 </script>
 
+<!-- The key light used to live here, hardcoded at [0, 10, 0]. It is now
+     core/SkyLight.svelte, driven by the sky descriptor and mounted by Skybox.svelte,
+     so it tracks the sun by day and the moon by night. A light never belonged in the
+     camera component. See DOCS/weather-system.md §15.3. -->
 <T.PerspectiveCamera
 	fov={60}
 	near={0.001}
@@ -41,17 +45,3 @@
 >
 	<AudioListener />
 </T.PerspectiveCamera>
-<T.DirectionalLight
-	position={[0, 10, 0]}
-	intensity={Math.PI / 4}
-	castShadow
-	shadow.camera.left={-20}
-	shadow.camera.right={20}
-	shadow.camera.top={20}
-	shadow.camera.bottom={-20}
-	shadow.camera.near={0.1}
-	shadow.camera.far={50}
-	shadow.mapSize.width={2048}
-	shadow.mapSize.height={2048}
-	oncreate={(ref) => ref.shadow.camera.updateProjectionMatrix()}
-/>

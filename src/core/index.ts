@@ -9,6 +9,10 @@ export { default as Loader } from './Loader.svelte';
 export { default as MouseLook } from './MouseLook.svelte';
 export { default as Renderer } from './Renderer.svelte';
 export { default as Skybox } from './Skybox.svelte';
+export { default as SkyLight } from './SkyLight.svelte';
+
+export { descriptor, skyMeta, skyActions, skyQueries, on as onSky, off as offSky } from './sky';
+export type { SkyDescriptor, PhaseName, DayKeyframe, ClockKind } from './sky';
 
 export { soundTriggers, soundActions } from './globalAudio.svelte';
 export { BASE_SENS, mouseLookState, mouseLookActions } from './mouseLook.svelte';
