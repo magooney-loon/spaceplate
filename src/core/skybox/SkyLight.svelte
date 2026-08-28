@@ -9,7 +9,7 @@
 	// and deliberately stays out of the descriptor.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import type { DirectionalLight } from 'three/webgpu';
-	import { descriptor } from './sky';
+	import { descriptor } from './model';
 
 	interface Props {
 		/** Distance the light is placed along the key direction. */
@@ -42,11 +42,7 @@
 			if (!light) return;
 
 			const { direction, color, intensity } = descriptor.light;
-			light.position.set(
-				direction.x * distance,
-				direction.y * distance,
-				direction.z * distance
-			);
+			light.position.set(direction.x * distance, direction.y * distance, direction.z * distance);
 			light.color.setRGB(color[0], color[1], color[2]);
 			light.intensity = intensity;
 			invalidate();

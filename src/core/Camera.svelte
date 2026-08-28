@@ -32,9 +32,9 @@
 </script>
 
 <!-- The key light used to live here, hardcoded at [0, 10, 0]. It is now
-     core/SkyLight.svelte, driven by the sky descriptor and mounted by Skybox.svelte,
-     so it tracks the sun by day and the moon by night. A light never belonged in the
-     camera component. See DOCS/weather-system.md §15.3. -->
+     core/skybox/SkyLight.svelte, driven by the sky descriptor and mounted by
+     Skybox.svelte, so it tracks the sun by day and the moon by night. A light never
+     belonged in the camera component. See DOCS/weather-system.md §15.3. -->
 <T.PerspectiveCamera
 	fov={60}
 	near={0.001}

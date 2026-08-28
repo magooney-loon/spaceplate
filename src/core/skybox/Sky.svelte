@@ -11,7 +11,7 @@
 	import { T, useThrelte, useTask } from '@threlte/core/webgpu';
 	import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 	import * as THREE from 'three/webgpu';
-	import { descriptor, skyActions } from './sky';
+	import { descriptor, skyActions } from './model';
 
 	interface Props {
 		setEnvironment?: boolean;

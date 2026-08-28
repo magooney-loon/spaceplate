@@ -2,7 +2,7 @@
 //
 // This module used to be the 888-line preset machine (sky scalars, star presets,
 // transition lerps, localStorage user presets). That layer dissolved into the
-// time-driven sky model in $core/sky (DOCS/weather-system.md §10): the scalars are
+// time-driven sky model in $core/skybox/model (DOCS/weather-system.md §10): the scalars are
 // derived outputs of the day curve, presets became keyframes, and the Studio panel
 // drives time through skyActions instead of writing sky parameters by hand.
 //

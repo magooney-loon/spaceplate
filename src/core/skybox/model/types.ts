@@ -1,6 +1,6 @@
 // Types for the sky/weather model. See DOCS/weather-system.md.
 //
-// Nothing in src/core/sky/ imports three.js or Threlte. The model is pure so it can
+// Nothing in src/core/skybox/model/ imports three.js or Threlte. The model is pure so it can
 // be unit-tested, logged and scrubbed with no renderer in the room -- and, more
 // importantly, so it can never participate in a Svelte reactive cycle.
 

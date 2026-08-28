@@ -3,7 +3,7 @@
 	import { Environment, CubeEnvironment } from '@threlte/extras';
 	import Sky from './Sky.svelte';
 	import SkyLight from './SkyLight.svelte';
-	import { skyActions } from './sky';
+	import { skyActions } from './model';
 
 	import { environmentState, ENV_TEXTURES, CUBE_TEXTURES } from '$extensions/skybox';
 

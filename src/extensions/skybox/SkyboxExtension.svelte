@@ -3,12 +3,12 @@
 	import { Folder, Slider, Checkbox, Button, Separator, List, Monitor } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { environmentState, skyboxActions, ENV_TEXTURES, CUBE_TEXTURES } from './skybox.svelte';
-	import { skyActions, skyMeta, sunAt } from '$core/sky';
-	import type { ClockKind } from '$core/sky';
+	import { skyActions, skyMeta, sunAt } from '$core/skybox/model';
+	import type { ClockKind } from '$core/skybox/model';
 
 	// The preset machine this panel used to drive (sky scalars, stars, transition
 	// lerps, localStorage presets) is gone -- the sky is time-driven and lives in
-	// $core/sky. Per weather-system.md §8, Studio is just another caller: this panel
+	// $core/skybox/model. Per weather-system.md §8, Studio is just another caller: this panel
 	// reads skyMeta and calls skyActions. It never writes sky parameters directly.
 	// Weather buttons arrive with the phase-2 mixer; keyframe editing + save-to-file
 	// remain phase 5.

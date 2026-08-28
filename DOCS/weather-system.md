@@ -485,35 +485,33 @@ Everything from here down is the how. Concept above, code below.
 
 ## 14. Module layout
 
-The 888-line `extensions/skybox/skybox.svelte.ts` dissolves into small, pure modules.
-The model has **no Threlte and no three.js imports** — that is what makes it
-unit-testable and what keeps it out of the reactive-loop traps.
+Everything sky/skybox/weather lives in one home: `src/core/skybox/`. Consumers at
+the top, the pure model in `model/`. The model has **no Threlte and no three.js
+imports** — that is what makes it unit-testable and what keeps it out of the
+reactive-loop traps.
 
 ```
-src/core/sky/
-  clock.ts          — Clock interface + realtime / external / manual clocks.
+src/core/skybox/
+  Sky.svelte        — The dome: descriptor consumer, owns the env bake budget (§15.2)
+  SkyLight.svelte   — The descriptor-driven key light, sun→moon crossover (§15.3)
+  Skybox.svelte     — Mount + THE driver task + env/cube texture mode switch
+  model/
+    clock.ts        — Clock interface + realtime / external / manual clocks.
                       Pure: advance(dtMs) → { t, day }. No Svelte, no three.
-  sunPath.ts        — t → sun direction (fixed arc, §3.3). Also moon, via the lag knob.
-  dayCurve.ts       — Keyframe list + sampler. t → baseline sky params (§4).
+    sunPath.ts      — t → sun direction (fixed arc, §3.3). Also moon, via the lag knob.
+    dayCurve.ts     — Keyframe list + sampler. t → baseline sky params (§4).
                       Owns the interpolation rules: ease, lerpAngle, colour space.
-  weatherMixer.ts   — Channel values + targets + per-channel easing (§5.3).
+    weatherMixer.ts — Channel values + targets + per-channel easing (§5.3). Phase 2.
                       tick(dtMs) → current channel vector.
-  phases.ts         — Sun elevation → phase name; threshold-crossing detection.
-  descriptor.ts     — The frame descriptor type + the compose step:
-                      (baseline, weather, sun, moon) → descriptor (§7).
-  events.ts         — Plain callback registry (on / off / emit). Not stores.
-  index.ts          — Wires the above into the `sky` façade of §8. The only
+    phases.ts       — Sun elevation → phase name; threshold-crossing detection.
+    types.ts        — The frame descriptor type (§7) + all model types.
+    events.ts       — Plain callback registry (on / off / emit). Not stores.
+    sky.svelte.ts   — Wires the above into the `sky` façade of §8. The only
                       stateful module; everything it imports is pure.
+    index.ts        — Barrel: import from '$core/skybox/model'.
 ```
 
-Consumers (Threlte components, three.js) live separately:
-
-```
-src/core/
-  Sky.svelte        — Exists. Becomes a descriptor consumer; gains the env budget (§15.2)
-  SkyLight.svelte   — New. The descriptor-driven key light (§15.3)
-  Skybox.svelte     — Exists. Keeps the env/cube texture mode switch, drops preset plumbing
-```
+Weather render layers (phase 4) will land here too, e.g. `skybox/layers/`.
 
 ### 14.1 The reactivity rule
 
@@ -542,7 +540,7 @@ component tree 60 times a second.
 
 ### 15.1 The sky dome is already uniform-driven
 
-`src/core/Sky.svelte` wraps three's `SkyMesh` and already writes uniforms:
+`skybox/Sky.svelte` wraps three's `SkyMesh` and already writes uniforms:
 
 ```ts
 sky.turbidity.value = turbidity;
@@ -590,7 +588,7 @@ entirely, but costs a second target and a blend. Not in v1; note it if banding s
 is parented to nothing in particular and lives in the camera component, where it never
 belonged.
 
-It moves to `src/core/SkyLight.svelte`, which:
+It moves to `skybox/SkyLight.svelte`, which:
 
 - reads the descriptor's `light hints` slice in a task and writes
   `light.position`, `light.color`, `light.intensity` directly on the three object;
@@ -692,9 +690,10 @@ separate document rather than growing this one.
 
 Non-blocking, but they need answers before the phase they belong to:
 
-1. **Where does the sky tick run?** ~~`core/tasks.ts` defines four ordered stages~~
-   (that module no longer exists post-WebGPU migration). **Decided in phase 1:** a
-   single driver task in `core/Skybox.svelte`, constrained `before: autoRenderTask`
+1. **Where does the sky tick run?** `core/tasks.ts` still defines its four ordered
+   stages, but the sky deliberately does not use them — a stage would tie the tick to
+   `useGameTasks()` callers. **Decided in phase 1:** a single driver task in
+   `core/skybox/Skybox.svelte`, constrained `before: autoRenderTask`
    together with the consumer tasks (Sky's env-bake task, SkyLight's light task).
    Among tasks sharing a constraint the DAG falls back to registration order, and
    Skybox registers before its children, so the model ticks first.

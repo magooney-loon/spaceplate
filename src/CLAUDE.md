@@ -28,8 +28,12 @@ core/
   Keymapper.svelte      — Global keyboard/mouse listeners; routes into the input extension
   Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock)
   Renderer.svelte       — STUB: post-processing removed in the WebGPU migration (see below)
-  Skybox.svelte         — Procedural sky / env texture / cubemap switch (state-driven)
-  Sky.svelte            — WebGPU-native sky (three's SkyMesh); replaces @threlte/extras <Sky>
+  skybox/               — Everything sky/skybox/weather (see "Sky & weather" below)
+    Skybox.svelte         — Mount + THE sky driver task + env/cube texture mode switch
+    Sky.svelte            — WebGPU-native sky dome (three's SkyMesh), descriptor consumer
+    SkyLight.svelte       — Descriptor-driven key light (sun→moon crossover)
+    model/                — Pure sky model: clock, sunPath, dayCurve, phases, events,
+                           types + sky.svelte.ts façade (descriptor, skyActions, skyMeta)
   tasks.ts              — Task pipeline: physicsStage, renderStage, uiStage, audioStage
 
 scenes/
@@ -74,9 +78,9 @@ Two things are currently torn out — don't assume they work:
   removed because it rebuilt itself continuously. Rendering is plain: Threlte's `autoRenderTask`
   draws the scene, no composer in between. `autoRender` is therefore left at its default (`true`);
   if a pipeline returns, set `autoRender={false}` as a Canvas *option*, never from an `$effect`.
-- **`PostProcessingExtension` and `SkyboxExtension` are unregistered** in `App.svelte` — their Studio
-  panels broke post-migration. The underlying state modules still drive `Renderer.svelte` /
-  `Skybox.svelte`, so nothing else changed; only the toolbar UI is absent.
+- **`PostProcessingExtension` is unregistered** in `App.svelte` — its Studio panel broke post-migration;
+  the rebuild is planned in `DOCS/post-processing.md`. `SkyboxExtension` is registered again as the
+  time + environment panel for the descriptor-driven sky (`DOCS/weather-system.md`).
 - **Tone mapping is owned by Threlte's renderer context** (default AgX), driven by the `<Canvas>`
   `toneMapping` option. Never also write `renderer.toneMapping` from a component — two owners for
   one property caused several of the earlier bugs.
@@ -145,14 +149,12 @@ import { mouseLookState, mouseLookActions, BASE_SENS } from '$core';
 ```
 
 ### Skybox (`extensions/skybox/`)
-- `skyboxState` / `starsState` / `transitionState` / `environmentState` drive `core/Skybox.svelte`.
-- `environmentState.mode` picks procedural sky (default) | `environment` (HDR) | `cube` (cubemap);
-  `ENV_TEXTURES` / `CUBE_TEXTURES` come from `envTextures.ts`.
-- 11 sky presets (dawn…vacuum) and 5 star presets; each sky preset embeds a star preset.
-- `skyboxActions.applyPreset(id)` — instant or animated via `requestAnimationFrame`;
-  individual setters `setTurbidity` / `setAzimuth` / `setElevation` / …
-- User presets persist to localStorage (`savePreset` / `loadUserPreset` / `deletePreset`);
-  bundled presets go in `bundledPresets.ts` and are never stored in localStorage.
+- Environment-mode state only: `environmentState.mode` picks procedural sky (default) | `environment` (HDR) | `cube` (cubemap);
+  `ENV_TEXTURES` / `CUBE_TEXTURES` come from `envTextures.ts`. Persists to localStorage (dev convenience).
+- The old preset layer (sky scalars, star presets, transitions, user presets) is **deleted** — the sky is
+  time-driven now and lives in `core/skybox/model` (see `DOCS/weather-system.md`).
+- `SkyboxExtension.svelte` is the Studio panel: time scrubber / speed / jump buttons (procedural mode only)
+  + environment mode & texture pickers. It drives the sky through the engine API (`skyActions`), same as a game would.
 
 ### Post-processing (`extensions/postprocessing/`)
 State module is intact and untouched but **currently unused** — kept as the starting point for the
@@ -375,7 +377,7 @@ production. Add the import to the `Promise.all([...])` and the component to `ext
 | `physics` | `physicsState` | `physicsActions` | `PhysicsExtension.svelte` ✅ |
 | `gltf-viewer` | `gltfViewerState` | `gltfViewerActions` | `GltfViewerExtension.svelte` ✅ (dev only) |
 | `stats` | — | — | `StatsExtension.svelte` ✅ (stats-gl draw calls / triangles / timestamps) |
-| `skybox` | `skyboxState`, `starsState`, `transitionState`, `environmentState` | `skyboxActions` | `SkyboxExtension.svelte` ⛔ unregistered |
+| `skybox` | `environmentState` (env mode + textures) | `skyboxActions` (mode/texture setters) | `SkyboxExtension.svelte` ✅ time + env panel |
 | `postprocessing` | `postprocessingState`, `postprocessingPresetsState` | `postprocessingActions` | `PostProcessingExtension.svelte` ⛔ unregistered |
 
 ### Common patterns

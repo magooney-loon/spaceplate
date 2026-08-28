@@ -1,8 +1,9 @@
-// Barrel for the sky model — import from '$core/sky'.
-// Modules inside sky/ import each other relatively, never via this barrel.
+// Barrel for the sky model — import from '$core/skybox/model'.
+// Modules inside model/ import each other relatively, never via this barrel.
 //
 // clock / sunPath / dayCurve / phases / events are pure: no Svelte, no three.js.
-// sky.svelte.ts is the only stateful module. See DOCS/weather-system.md §14.
+// sky.svelte.ts is the only stateful module. The consumer components
+// (Sky / SkyLight / Skybox) live one directory up. See DOCS/weather-system.md §14.
 
 export * from './sky.svelte';
 export { createClock, createRealtimeClock, createExternalClock, createManualClock } from './clock';

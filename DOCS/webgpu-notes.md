@@ -26,7 +26,7 @@ Known instances found and fixed:
 
 | Source | Fix |
 |---|---|
-| `@threlte/extras` `<Sky>` (wraps `examples/jsm/objects/Sky.js`) | Replaced with three's `SkyMesh` (TSL/NodeMaterial port of the same Preetham model) — now `src/core/Sky.svelte` |
+| `@threlte/extras` `<Sky>` (wraps `examples/jsm/objects/Sky.js`) | Replaced with three's `SkyMesh` (TSL/NodeMaterial port of the same Preetham model) — now `core/skybox/Sky.svelte` |
 | `@threlte/extras` `<Stars>` | Dropped. Needs reimplementing as TSL point sprites |
 | Studio's `AxesHelper` → `Line2`/`LineMaterial` | `three/examples/jsm/lines/webgpu/Line2.js` + `Line2NodeMaterial`. `LineGeometry` is backend-agnostic. **Do not set `blending`** on it — it forces `NoBlending` deliberately, compositing transparency inside the node graph against `viewportOpaqueMipTexture()` |
 | `three-viewport-gizmo` (vendors its own `LineMaterial`) | No WebGPU build exists; axis stems disabled via the library's per-axis `line: false` option |
@@ -301,7 +301,7 @@ compiler rewrite that `svelte-check` cannot consume as a drop-in.
 | `WebGPURenderer` + `@threlte/core/webgpu` | Done |
 | Studio compat | Done, in `patches/` |
 | Viewport Y-origin (gizmo, PiP) | Done, verified by canvas readback |
-| Sky → `SkyMesh` | Done (`src/core/Sky.svelte`) |
+| Sky → `SkyMesh` | Done (`core/skybox/Sky.svelte`) |
 | Post-processing | **Removed.** Rebuild planned — `post-processing.md` |
 | Stars | **Removed.** Needs a TSL point-sprite reimplementation |
 | Sky/weather system | **Planned** — `weather-system.md` |
