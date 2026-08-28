@@ -7,6 +7,10 @@
 // These defaults are seeded from the values the old presets shipped with, so the look
 // is recognisable. They are the fallback; authored keyframes will come from
 // weather.json (§16) once the config plumbing exists.
+//
+// exposure is applied by Sky.svelte as renderer.toneMappingExposure (SkyMesh has no
+// exposure uniform). Night is deliberately lifted to 0.35: a physically dark night
+// plus moonlight reads as pitch black, and the values below are a look, not physics.
 
 import type { DayKeyframe, RGB, SkyBaseline } from './types';
 
@@ -18,7 +22,7 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		rayleigh: 0.1,
 		mieCoefficient: 0.0001,
 		mieDirectionalG: 0.5,
-		exposure: 0.15,
+		exposure: 0.35,
 		starVisibility: 1,
 		fogColor: [0.02, 0.03, 0.06],
 		fogDensity: 0.02
@@ -30,7 +34,7 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		rayleigh: 1,
 		mieCoefficient: 0.002,
 		mieDirectionalG: 0.7,
-		exposure: 0.25,
+		exposure: 0.45,
 		starVisibility: 0.6,
 		fogColor: [0.08, 0.09, 0.16],
 		fogDensity: 0.03
@@ -42,7 +46,7 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		rayleigh: 2.5,
 		mieCoefficient: 0.004,
 		mieDirectionalG: 0.75,
-		exposure: 0.5,
+		exposure: 0.6,
 		starVisibility: 0.1,
 		fogColor: [0.5, 0.35, 0.28],
 		fogDensity: 0.035
@@ -54,7 +58,7 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		rayleigh: 1.5,
 		mieCoefficient: 0.0035,
 		mieDirectionalG: 0.8,
-		exposure: 0.8,
+		exposure: 0.9,
 		starVisibility: 0,
 		fogColor: [0.6, 0.68, 0.8],
 		fogDensity: 0.02
@@ -78,7 +82,7 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		rayleigh: 2,
 		mieCoefficient: 0.0045,
 		mieDirectionalG: 0.85,
-		exposure: 0.8,
+		exposure: 0.9,
 		starVisibility: 0,
 		fogColor: [0.72, 0.55, 0.38],
 		fogDensity: 0.025
@@ -90,7 +94,7 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		rayleigh: 3,
 		mieCoefficient: 0.005,
 		mieDirectionalG: 0.7,
-		exposure: 0.6,
+		exposure: 0.7,
 		starVisibility: 0.05,
 		fogColor: [0.6, 0.36, 0.26],
 		fogDensity: 0.035
@@ -102,7 +106,7 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		rayleigh: 2,
 		mieCoefficient: 0.005,
 		mieDirectionalG: 0.9,
-		exposure: 0.5,
+		exposure: 0.55,
 		starVisibility: 0.4,
 		fogColor: [0.2, 0.18, 0.3],
 		fogDensity: 0.03

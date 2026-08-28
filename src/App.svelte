@@ -58,11 +58,11 @@
 	>
 		<PhysicsWorldLogger />
 		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-			<!-- PostProcessingExtension / SkyboxExtension are temporarily unregistered:
-			     their Studio panels are broken post-WebGPU migration. Skybox is now driven
-			     by the sky descriptor (DOCS/weather-system.md) and no longer reads the
-			     skybox state module; only the toolbar UI is absent. -->
-			{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }]}
+			<!-- PostProcessingExtension stays unregistered: its panel was broken by the
+			     WebGPU migration and awaits the DOCS/post-processing.md rebuild.
+			     SkyboxExtension is registered again -- rewritten as the time + environment
+			     panel for the descriptor-driven sky (DOCS/weather-system.md §10). -->
+			{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }, { default: SkyboxExtension }]}
 				<Studio
 					extensions={[
 						SceneExtension,
@@ -70,7 +70,8 @@
 						LoggerExtension,
 						GltfViewerExtension,
 						PhysicsExtension,
-						StatsExtension
+						StatsExtension,
+						SkyboxExtension
 					]}
 				>
 					<Scene />

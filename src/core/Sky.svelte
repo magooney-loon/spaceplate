@@ -98,6 +98,12 @@
 			sky.mieDirectionalG.value = baseline.mieDirectionalG;
 			sunPosition.set(sun.direction.x, sun.direction.y, sun.direction.z);
 			sky.sunPosition.value.copy(sunPosition);
+
+			// The curve's exposure drives the renderer's tone-mapping exposure -- the
+			// classic three.js sky pattern (SkyMesh has no exposure uniform of its own).
+			// This task is its single owner: nothing else writes toneMappingExposure, and
+			// the tone-mapping MODE stays Threlte's (set from the <Canvas> option).
+			renderer.toneMappingExposure = baseline.exposure;
 			invalidate();
 
 			if (!setEnvironment) {

@@ -1,26 +1,21 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
+	import { Folder, Slider, Checkbox, Button, Separator, List, Monitor } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
-	import {
-		skyboxState,
-		starsState,
-		transitionState,
-		skyboxActions,
-		skyboxPresetsState,
-		environmentState,
-		ENV_TEXTURES,
-		CUBE_TEXTURES,
-		SKY_PRESETS,
-		STAR_PRESETS,
-		TRANSITION_DURATIONS
-	} from './skybox.svelte';
-	import { BUNDLED_SKYBOX_PRESETS } from './bundledPresets';
+	import { environmentState, skyboxActions, ENV_TEXTURES, CUBE_TEXTURES } from './skybox.svelte';
+	import { skyActions, skyMeta, sunAt } from '$core/sky';
+	import type { ClockKind } from '$core/sky';
+
+	// The preset machine this panel used to drive (sky scalars, stars, transition
+	// lerps, localStorage presets) is gone -- the sky is time-driven and lives in
+	// $core/sky. Per weather-system.md §8, Studio is just another caller: this panel
+	// reads skyMeta and calls skyActions. It never writes sky parameters directly.
+	// Weather buttons arrive with the phase-2 mixer; keyframe editing + save-to-file
+	// remain phase 5.
 
 	interface Props {
 		children?: Snippet;
 	}
-
 	let { children }: Props = $props();
 
 	const { createExtension } = useStudio();
@@ -31,37 +26,62 @@
 		actions: {}
 	});
 
-	const presetCategories = {
-		daytime: ['dawn', 'day', 'dusk'],
-		nighttime: ['night', 'aurora'],
-		atmosphere: ['sunset', 'sunrise', 'cloudy', 'overcast'],
-		special: ['vacuum']
+	// Panel-local mirror of the clock kind. The engine deliberately does not expose
+	// clock getters (§8) -- the panel is the only clock writer in dev, so it can trust
+	// its own bookkeeping. A game taking over the clock (external, phase 3) owns it
+	// then, not this pane.
+	// Initial values mirror the engine default (manual at sunset, frozen).
+	let clockKind: ClockKind = 'manual';
+	let speed = $state('frozen');
+
+	const SPEED_OPTIONS = [
+		{ value: 'frozen', text: 'Frozen' },
+		{ value: 'realtime', text: 'Realtime (wall clock)' },
+		{ value: '60', text: '60x — 24 min/day' },
+		{ value: '240', text: '240x — 6 min/day' },
+		{ value: '720', text: '720x — 2 min/day' }
+	];
+
+	const fmtClock = (t: number) => {
+		const hours = Math.floor(t * 24);
+		const minutes = Math.floor((t * 24 - hours) * 60);
+		return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 	};
 
-	const presetCategoryNames: Record<string, string> = {
-		daytime: 'Daytime',
-		nighttime: 'Nighttime',
-		atmosphere: 'Atmosphere',
-		special: 'Special'
+	// Quantized to whole game-minutes, so this string (and everything derived from it)
+	// updates a few times per second at dev speeds rather than every frame.
+	const readout = $derived.by(() => {
+		const t = skyMeta.t;
+		const sunElevation = sunAt(t).elevation;
+		return `${fmtClock(t)} · day ${skyMeta.day} · ${skyMeta.phase} · sun ${sunElevation.toFixed(0)}°`;
+	});
+
+	// Scrubbing always lands on the manual clock: the realtime one re-syncs to the
+	// wall clock every tick at scale 1 and would fight the drag. A fresh manual clock
+	// is created frozen; an already-running one is frozen first for the same reason.
+	const scrubTime = (t: number) => {
+		if (clockKind !== 'manual') {
+			skyActions.setClock('manual', { t });
+			clockKind = 'manual';
+		} else {
+			skyActions.setTimeScale(0);
+			skyActions.setTime(t);
+		}
+		speed = 'frozen';
 	};
 
-	const starPresetCategories = {
-		density: ['dense', 'sparse', 'milkyway'],
-		effects: ['twinkle', 'nebula']
+	const setSpeed = (value: string) => {
+		speed = value;
+		if (value === 'realtime') {
+			// Explicit scale 1: setClock preserves the current scale unless told otherwise.
+			skyActions.setClock('realtime', { timeScale: 1 });
+			clockKind = 'realtime';
+		} else if (value === 'frozen') {
+			skyActions.setTimeScale(0);
+		} else {
+			skyActions.setTimeScale(Number(value));
+		}
 	};
-
-	const starPresetCategoryNames: Record<string, string> = {
-		density: 'Density',
-		effects: 'Effects'
-	};
-
-	const isDurationSelected = (value: number) => transitionState.transitionDuration === value;
-
-	// The "a scene/global preset is overriding you" banner and the delete guard that
-	// blocked removing an assigned preset both lived here. The scene preset-assignment
-	// layer they queried is gone (DOCS/scene-environment.md §1), so nothing can assign
-	// a preset to a scene and neither check had an input left.
-	const deleteSkyboxPreset = (presetId: string) => skyboxActions.deletePreset(presetId);
 
 	const envTextureOptions = $derived([
 		{ value: null as string | null, text: '— None —' },
@@ -93,6 +113,43 @@
 			/>
 		</Folder>
 
+		<Separator />
+
+		{#if environmentState.mode === 'sky'}
+			<!-- Time drives the procedural sky; an HDR/cubemap environment ignores it, so
+		         the folder only makes sense in this mode. -->
+			<Folder title="Time" expanded={true}>
+				<Monitor value={readout} />
+				<Slider
+					label="Scrub"
+					value={skyMeta.t}
+					min={0}
+					max={1}
+					step={1 / 1440}
+					on:change={(e) => {
+						// svelte-tweakpane-ui dispatches 'change' for programmatic value updates
+						// too (origin: 'external'). Without this guard, every running frame
+						// re-enters here and instantly re-freezes whatever speed was just picked.
+						if (e.detail.origin === 'internal') scrubTime(e.detail.value as number);
+					}}
+				/>
+				<List
+					label="Speed"
+					options={SPEED_OPTIONS}
+					value={speed}
+					on:change={(e) => {
+						// Same origin guard: scrubbing writes speed = 'frozen' programmatically,
+						// which would otherwise re-run setSpeed through the external event.
+						if (e.detail.origin === 'internal') setSpeed(e.detail.value as string);
+					}}
+				/>
+				<Button title="Midnight" on:click={() => scrubTime(0)} />
+				<Button title="Sunrise" on:click={() => scrubTime(0.25)} />
+				<Button title="Noon" on:click={() => scrubTime(0.5)} />
+				<Button title="Sunset" on:click={() => scrubTime(0.75)} />
+			</Folder>
+		{/if}
+
 		{#if environmentState.mode === 'environment'}
 			<Folder title="Environment Texture" expanded={true}>
 				{#if ENV_TEXTURES.length === 0}
@@ -111,7 +168,6 @@
 				<Checkbox label="Use as Background" bind:value={environmentState.envIsBackground} />
 				<Checkbox label="Ground Projection" bind:value={environmentState.envGround} />
 			</Folder>
-			<Separator />
 		{/if}
 
 		{#if environmentState.mode === 'cube'}
@@ -131,134 +187,7 @@
 				{/if}
 				<Checkbox label="Use as Background" bind:value={environmentState.cubeIsBackground} />
 			</Folder>
-			<Separator />
 		{/if}
-
-		<Folder title="Saved Presets" expanded={false}>
-			{#each skyboxPresetsState.presets as preset (preset.id)}
-				{@const isBundled = BUNDLED_SKYBOX_PRESETS.find((b) => b.id === preset.id)}
-				<Button
-					title="{isBundled ? '📦 ' : ''}▶ {preset.name}"
-					on:click={() => skyboxActions.loadUserPreset(preset.id)}
-				/>
-				{#if !isBundled}
-					<Button title="✕ Delete" on:click={() => deleteSkyboxPreset(preset.id)} />
-				{/if}
-			{/each}
-			{#if skyboxPresetsState.presets.length > 0}
-				<Separator />
-			{/if}
-			<Button
-				title="Save Current as Preset"
-				on:click={() => {
-					const name = prompt('Preset name:');
-					if (name) {
-						const result = skyboxActions.savePreset(name);
-						if (!result.success) alert(result.error);
-					}
-				}}
-			/>
-		</Folder>
-		<Separator />
-
-		<Folder title="Sky Presets" expanded={true}>
-			{#each Object.entries(presetCategories) as [category, presetIds]}
-				<Folder title={presetCategoryNames[category]} expanded={false}>
-					{#each presetIds as presetId}
-						{@const preset = SKY_PRESETS[presetId]}
-						{#if preset}
-							<Button title={preset.name} on:click={() => skyboxActions.applyPreset(presetId)} />
-						{/if}
-					{/each}
-				</Folder>
-			{/each}
-		</Folder>
-
-		<Separator />
-
-		<Folder title="Star Presets" expanded={false}>
-			{#each Object.entries(starPresetCategories) as [category, presetIds]}
-				<Folder title={starPresetCategoryNames[category]} expanded={false}>
-					{#each presetIds as presetId}
-						{@const preset = STAR_PRESETS[presetId]}
-						{#if preset}
-							<Button
-								title={preset.name}
-								on:click={() => skyboxActions.applyStarPreset(presetId)}
-							/>
-						{/if}
-					{/each}
-				</Folder>
-			{/each}
-		</Folder>
-
-		<Folder title="Stars" expanded={false}>
-			<Checkbox bind:value={starsState.enabled} label="Enabled" />
-			{#if starsState.enabled}
-				<Slider bind:value={starsState.count} label="Count" min={0} max={15000} step={100} />
-				<Slider bind:value={starsState.speed} label="Twinkle Speed" min={0} max={3} step={0.1} />
-				<Slider bind:value={starsState.lightness} label="Lightness" min={0} max={1} step={0.05} />
-				<Slider bind:value={starsState.opacity} label="Opacity" min={0} max={1} step={0.05} />
-				<Slider bind:value={starsState.saturation} label="Saturation" min={0} max={1} step={0.05} />
-				<Checkbox bind:value={starsState.fade} label="Fade" />
-				<Slider bind:value={starsState.factor} label="Factor" min={1} max={10} step={0.5} />
-				<Slider bind:value={starsState.depth} label="Depth" min={10} max={100} step={5} />
-			{/if}
-		</Folder>
-
-		<Separator />
-
-		<Folder title="Sun Position" expanded={false}>
-			<Slider bind:value={skyboxState.azimuth} label="Azimuth" min={-180} max={180} step={1} />
-			<Slider bind:value={skyboxState.elevation} label="Elevation" min={-5} max={90} step={1} />
-		</Folder>
-
-		<Folder title="Atmosphere" expanded={false}>
-			<Slider bind:value={skyboxState.turbidity} label="Turbidity" min={0} max={20} step={0.1} />
-			<Slider bind:value={skyboxState.rayleigh} label="Rayleigh" min={0} max={4} step={0.1} />
-		</Folder>
-
-		<Folder title="Scattering" expanded={false}>
-			<Slider
-				bind:value={skyboxState.mieCoefficient}
-				label="Mie Coefficient"
-				min={0}
-				max={0.1}
-				step={0.001}
-			/>
-			<Slider
-				bind:value={skyboxState.mieDirectionalG}
-				label="Mie Directional G"
-				min={0}
-				max={1}
-				step={0.01}
-			/>
-		</Folder>
-
-		<Folder title="Rendering" expanded={false}>
-			<Slider bind:value={skyboxState.exposure} label="Exposure" min={0} max={2} step={0.05} />
-			<Checkbox bind:value={skyboxState.setEnvironment} label="Set Environment" />
-		</Folder>
-
-		<Separator />
-
-		<Folder title="Transition" expanded={false}>
-			{#each TRANSITION_DURATIONS as opt}
-				<Button
-					title={isDurationSelected(opt.value) ? `✓ ${opt.text}` : opt.text}
-					on:click={() => skyboxActions.setTransitionDuration(opt.value)}
-				/>
-			{/each}
-			{#if transitionState.isTransitioning}
-				<span style="font-size: 10px; color: #56b6c2; margin-top: 4px;">
-					Transitioning... {Math.round(transitionState.progress * 100)}%
-				</span>
-			{/if}
-		</Folder>
-
-		<Separator />
-
-		<Button title="Reset to Default" on:click={skyboxActions.reset} />
 	</DropDownPane>
 </ToolbarItem>
 

@@ -21,12 +21,11 @@
 		autoInvalidate: false
 	});
 
-	// skyboxState is no longer read here. Its scalars (turbidity, elevation, azimuth...)
-	// are now derived OUTPUTS of the atmosphere sampler rather than hand-set inputs --
-	// nobody sets them by hand any more. The module is left in place, unused, the same
-	// way the post-processing state module is: SkyboxExtension.svelte is unregistered,
-	// so nothing regresses, and it is the starting point for the Studio time/weather
-	// panel in phase 5. See DOCS/weather-system.md §10 and §18 q2.
+	// The old skybox preset layer (skyboxState scalars, stars, transitions) is deleted;
+	// those values are derived outputs of the day curve now. The extension keeps only
+	// the environment-mode state still read below, and its Studio panel drives time
+	// through skyActions -- the same engine API a game would use (§8). See
+	// DOCS/weather-system.md §10.
 
 	const activeEnvTexture = $derived(
 		environmentState.envTextureId
@@ -57,11 +56,7 @@
 {:else}
 	<!-- Procedural sky (default) -->
 	<T.Group userData={{ hideInTree: true, selectable: false }}>
-		<Sky
-			setEnvironment={true}
-			cubeMapSize={128}
-			scale={1000}
-		/>
+		<Sky setEnvironment={true} cubeMapSize={128} scale={1000} />
 	</T.Group>
 
 	<!-- Stars are intentionally absent: @threlte/extras' <Stars> builds a raw

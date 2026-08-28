@@ -34,11 +34,14 @@ const lerpRGB = (a: RGB, b: RGB, k: number): RGB => [
 ];
 
 // Key-light palette. Warm at the horizon, neutral overhead, cool by moonlight.
+// SUN_INTENSITY is the PEAK output at high sun -- the value the scene was originally
+// tuned around (the old hardcoded light was Math.PI / 4 flat). MOON_INTENSITY is a
+// playable night, not a physical moon (~25% of the sun would erase the night).
 const SUN_HORIZON: RGB = [1, 0.6, 0.35];
 const SUN_ZENITH: RGB = [1, 0.98, 0.95];
 const MOON_COLOR: RGB = [0.55, 0.68, 1];
-const SUN_INTENSITY = Math.PI / 2;
-const MOON_INTENSITY = Math.PI / 16;
+const SUN_INTENSITY = Math.PI / 4;
+const MOON_INTENSITY = Math.PI / 32;
 
 const clearWeather = (): WeatherChannels => ({
 	cloudCover: 0,
@@ -84,7 +87,10 @@ export const skyMeta = $state({
 	isDaytime: false
 });
 
-let clock: Clock = createClock('realtime');
+// Manual clock as the template default: the app boots on a curated sunset rather
+// than the player's wall clock, so the first frame is a known good look and a demo
+// never opens on 3am black. Games pick their own clock on boot (§3.2).
+let clock: Clock = createClock('manual', { t: 0.75 });
 let pathOptions: PathOptions = {};
 let curve: DayKeyframe[] = DEFAULT_DAY_CURVE;
 let frozen = false;
@@ -104,18 +110,23 @@ const compose = (t: number, day: number) => {
 	const daytime = isDaytime(elevation);
 	const phase = phaseFor(elevation, rising);
 
-	// Crossfade sun -> moon across the horizon band. At sunFactor 0 the sun sits 6
+	// Crossfade sun -> moon across the horizon band. At horizon 0 the sun sits 6
 	// degrees down and contributes nothing, so switching the *direction* there is
 	// invisible -- which avoids interpolating between two opposed vectors.
-	const sunFactor = clamp01((elevation + 6) / 12);
-	const sunColor = lerpRGB(SUN_HORIZON, SUN_ZENITH, clamp01(elevation / 15));
+	const horizon = clamp01((elevation + 6) / 12);
+	// Altitude ramp: the sun's STRENGTH keeps growing above the crossfade band. A flat
+	// lerp to SUN_INTENSITY saturated at +6 degrees, which put noon-level light on a
+	// 9-degree late-afternoon sun -- "too bright already at 17:30". Golden hour keeps a
+	// warm quarter-strength floor; full output only above 45 degrees.
+	const sunStrength = 0.25 + 0.75 * clamp01(elevation / 45);
+	const sunColor = lerpRGB(SUN_HORIZON, SUN_ZENITH, clamp01(elevation / 30));
 
-	descriptor.light.direction = sunFactor > 0 ? descriptor.sun.direction : descriptor.moon.direction;
-	descriptor.light.color = lerpRGB(MOON_COLOR, sunColor, sunFactor);
+	descriptor.light.direction = horizon > 0 ? descriptor.sun.direction : descriptor.moon.direction;
+	descriptor.light.color = lerpRGB(MOON_COLOR, sunColor, horizon);
 	descriptor.light.intensity = lerp(
 		MOON_INTENSITY * clamp01(descriptor.moon.elevation / 20),
-		SUN_INTENSITY,
-		sunFactor
+		SUN_INTENSITY * sunStrength,
+		horizon
 	);
 	descriptor.light.ambient = descriptor.sky.exposure;
 

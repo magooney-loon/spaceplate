@@ -98,9 +98,9 @@ clock, and games bring their own:
 
 | Clock | What it does | Who uses it |
 |---|---|---|
-| `realtime` | Follows the player's wall clock, optionally pinned to a timezone/UTC offset | Default. "The sky outside my window" |
+| `realtime` | Follows the player's wall clock, optionally pinned to a timezone/UTC offset | "The sky outside my window" — the obvious pick for games that want it |
 | `external` | Reads a value the game supplies each tick | **Server time** (SpacetimeDB), scripted timelines, replays |
-| `manual` | Fixed value, changed only when someone calls `setTime` | Studio scrubber, cutscenes, screenshots, tests |
+| `manual` | Fixed value, changed only when someone calls `setTime` | **Template default** (boots on a curated sunset) — Studio scrubber, cutscenes, screenshots, tests |
 
 Every clock carries a **scale** (`1` = real time, `60` = one game day per 24
 minutes, `0` = frozen). Scale multiplies elapsed time; it does not change the
@@ -408,7 +408,7 @@ for where things land.
 | User presets in `localStorage` | Gone — authored keyframes/weather live in a committed file (the `graphics.json` story), Studio edits the live state and saves |
 | `Sky.svelte` | A consumer of the descriptor's `sky` + `sun` slices; gains the env budget logic |
 | Hardcoded `<T.DirectionalLight>` in `core/Camera.svelte` | Replaced by the descriptor-driven key light (sun/moon crossover) — and the light moves out of the camera component, where it never belonged |
-| `SkyboxExtension.svelte` panel | Time scrubber + weather knobs + save-to-file — the best dev tool in the repo once it exists |
+| `SkyboxExtension.svelte` panel | **Rewritten in phase 1** as the time + environment panel: clock scrubber, speed presets, jump buttons, env-mode switch. Weather buttons arrive with phase 2, keyframe editor + save-to-file in phase 5 |
 
 The 888-line `skybox.svelte.ts` dissolves into: a clock module, a day-curve
 module, a weather mixer, a descriptor, and an index that wires them. Each is
@@ -456,8 +456,9 @@ Each phase leaves the app working. Concrete module-level detail is in §16.
 4. **New render layers.** Clouds, precipitation, lightning — the visually
    expensive half, each consuming descriptor slices. Needs its own WebGPU-native
    plan; sketched in §17, not designed here.
-5. **Studio panel.** Time scrubber, weather buttons, keyframe editor, save to
-   the committed file. The payoff for everything above.
+5. **Studio panel.** Weather buttons, keyframe editor, save to the committed
+   file. The time scrubber was pulled into phase 1 — the panel already drives
+   the clock through the same engine API a game uses.
 
 Phases 1–2 are pure refactor plus concept — no new rendering, fully verifiable
 in a browser. Phase 4 is where the real graphics work lives and should get its
@@ -697,11 +698,11 @@ Non-blocking, but they need answers before the phase they belong to:
    together with the consumer tasks (Sky's env-bake task, SkyLight's light task).
    Among tasks sharing a constraint the DAG falls back to registration order, and
    Skybox registers before its children, so the model ticks first.
-2. **What happens to `skyboxState`'s scalars during the transition?** **Decided in
-   phase 1:** nothing — `SkyboxExtension.svelte` is unregistered (its panel was
-   already broken post-migration), so the scalars lost their last writer and simply
-   went dark. The module stays on disk unused and is the starting point for the
-   phase-5 Studio panel. No override layer needed.
+2. **What happens to `skyboxState`'s scalars during the transition?** Superseded:
+   the extension was rewritten rather than left dormant. The preset layer was
+   deleted outright (the panel was unregistered anyway, so nothing regressed),
+   `skybox.svelte.ts` shrank to the environment-mode state, and the panel became
+   the time + environment control surface. No override layer ever existed.
 3. **Env map and post-processing.** Once `post-processing.md`'s pipeline exists, the
    cube-camera bake runs inside a frame that also has a `RenderPipeline`. `CubeCamera.update()`
    saves and restores the active render target, so it *should* compose — unverified.
