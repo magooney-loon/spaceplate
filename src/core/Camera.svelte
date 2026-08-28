@@ -25,7 +25,7 @@
 			);
 			camera.lookAt(0, 0, 0);
 		} else {
-			camera.position.set(0, 5, 12);
+			camera.position.set(0, 1, 12);
 			camera.lookAt(0, 0, 0);
 		}
 	});
@@ -40,7 +40,7 @@
 	near={0.001}
 	far={144}
 	makeDefault
-	position={[0, 5, 12]}
+	position={[0, 1, 12]}
 	bind:ref={camera}
 >
 	<AudioListener />
