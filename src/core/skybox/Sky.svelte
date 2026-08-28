@@ -21,6 +21,14 @@
 		envIntervalMs?: number;
 		/** Re-bake early once the sun has moved this many degrees since the last one. */
 		envSunDeltaDeg?: number;
+		/**
+		 * Cloud look. Coverage is NOT here -- it is a weather channel and comes from the
+		 * descriptor, so the phase-2 mixer can drive it. These two are style rather than
+		 * state: how solid the clouds read, and how high the layer sits. If `cloudType`
+		 * ever becomes a real channel it should probably take these over.
+		 */
+		cloudDensity?: number;
+		cloudElevation?: number;
 	}
 
 	let {
@@ -28,7 +36,9 @@
 		cubeMapSize = 128,
 		scale = 1000,
 		envIntervalMs = 250,
-		envSunDeltaDeg = 1
+		envSunDeltaDeg = 1,
+		cloudDensity = 0.64,
+		cloudElevation = 0.71
 	}: Props = $props();
 
 	const { scene, renderer, invalidate, autoRenderTask } = useThrelte();
@@ -36,6 +46,11 @@
 	const sky = new SkyMesh();
 	const sunPosition = new THREE.Vector3();
 	const originalEnvironment = scene.environment;
+	// toneMappingExposure is renderer-global. This component drives it from the day
+	// curve while it is mounted, so it has to hand it back on unmount -- otherwise
+	// switching to the HDR or cubemap mode leaves the renderer stuck on whatever
+	// exposure the sky happened to want at that instant (e.g. 0.62 at midnight).
+	const originalExposure = renderer.toneMappingExposure;
 
 	// CubeRenderTarget is the WebGPU-native cube target (three/webgpu). It carries the
 	// same texture.generateMipmaps / needsPMREMUpdate surface CubeCamera touches, so it
@@ -59,8 +74,9 @@
 	// them reactive would recreate the self-invalidating cycle phase 1 removed.
 	let activeCubeMapSize = 0;
 	let msSinceBake = Infinity;
-	let lastBakeElevation = Infinity;
-	let lastBakeAzimuth = Infinity;
+	let hasBaked = false;
+	let lastBakeElevation = 0;
+	let lastBakeAzimuth = 0;
 
 	// THE TRAP (DOCS/weather-system.md §15.2): the old code re-baked the env cube
 	// whenever a sky parameter changed. That was correct for a static sky and ruinous
@@ -73,10 +89,12 @@
 
 		// A time scrub or clock swap must land immediately, not on the next interval.
 		if (skyActions.consumeDiscontinuity()) return true;
-		if (activeCubeMapSize !== cubeMapSize) return true;
+		if (!hasBaked || activeCubeMapSize !== cubeMapSize) return true;
 
 		const dElevation = Math.abs(descriptor.sun.elevation - lastBakeElevation);
-		const dAzimuth = Math.abs(descriptor.sun.azimuth - lastBakeAzimuth);
+		// Azimuth is cyclic: a raw difference reads 359 degrees as the sun crosses due
+		// north, which would force a bake on a movement of one.
+		const dAzimuth = Math.abs(((descriptor.sun.azimuth - lastBakeAzimuth + 540) % 360) - 180);
 		if (dElevation > envSunDeltaDeg || dAzimuth > envSunDeltaDeg) return true;
 
 		return msSinceBake >= envIntervalMs;
@@ -98,6 +116,16 @@
 			sky.mieDirectionalG.value = baseline.mieDirectionalG;
 			sunPosition.set(sun.direction.x, sun.direction.y, sun.direction.z);
 			sky.sunPosition.value.copy(sunPosition);
+
+			// SkyMesh (0.185.1) ships a procedural cloud layer that is ON BY DEFAULT --
+			// cloudCoverage defaults to 0.4. Nothing here ever set it, so the sky spent a
+			// while rendering unmanaged clouds that ignored time and weather entirely.
+			// Coverage is now bound to the descriptor's cloudCover channel, which hands the
+			// phase-2 weather mixer a working cloud layer for free. Density and elevation
+			// are authored look, so they come from props.
+			sky.cloudCoverage.value = descriptor.weather.cloudCover;
+			sky.cloudDensity.value = cloudDensity;
+			sky.cloudElevation.value = cloudElevation;
 
 			// The curve's exposure drives the renderer's tone-mapping exposure -- the
 			// classic three.js sky pattern (SkyMesh has no exposure uniform of its own).
@@ -124,6 +152,7 @@
 			sky.showSunDisc.value = 1;
 
 			scene.environment = renderTarget!.texture;
+			hasBaked = true;
 			msSinceBake = 0;
 			lastBakeElevation = sun.elevation;
 			lastBakeAzimuth = sun.azimuth;
@@ -134,6 +163,7 @@
 	$effect(() => {
 		return () => {
 			scene.environment = originalEnvironment;
+			renderer.toneMappingExposure = originalExposure;
 			renderTarget?.dispose();
 			sky.geometry.dispose();
 			(sky.material as THREE.Material).dispose();

@@ -34,7 +34,9 @@ core/
   skybox/               — Everything sky/skybox/weather (see "Sky & weather" below)
     Skybox.svelte         — Mount + THE sky driver task + env/cube texture mode switch
     Sky.svelte            — WebGPU-native sky dome (three's SkyMesh), descriptor consumer
-    SkyLight.svelte       — Descriptor-driven key light (sun→moon crossover)
+    SkyLight.svelte       — Descriptor-driven key light (sun→moon crossover) + hemisphere fill
+    Stars.svelte          — TSL billboard star field (NOT points — see below)
+    Moon.svelte           — Phase-shaded moon sphere, tidally locked
     model/                — Pure sky model: clock, sunPath, dayCurve, phases, events,
                            types + sky.svelte.ts façade (descriptor, skyActions, skyMeta)
 
@@ -162,6 +164,22 @@ import { mouseLookState, mouseLookActions, BASE_SENS } from '$core';
   time-driven now and lives in `core/skybox/model` (see `DOCS/weather-system.md`).
 - `SkyboxExtension.svelte` is the Studio panel: time scrubber / speed / jump buttons (procedural mode only)
   + environment mode & texture pickers. It drives the sky through the engine API (`skyActions`), same as a game would.
+
+**Three traps if you touch the celestial layers (`core/skybox/Stars.svelte`, `Moon.svelte`):**
+
+- **The camera's far plane is 144, the sky dome is at radius 1000.** Anything on the dome must pin
+  depth to the far plane in its TSL vertex node (`vec4(clip.xy, clip.w, clip.w)`) or it is clipped
+  away entirely. `SkyMesh` does this internally, which is why the dome works at all.
+- **`frustumCulled={false}` is mandatory** on the moon: its bounding sphere sits 1000 units out,
+  wholly beyond the far plane, so three culls it before drawing.
+- **Never use `THREE.Points` for sized points on WebGPU** — every point is clamped to 1 px and
+  `sizeNode` is silently ignored. Use quads. See `DOCS/webgpu-notes.md` §1.1.
+
+**`scene.environment` is black whenever the sun is down.** `SkyMesh` zeroes its sun term below
+−2.31° of elevation, capping the whole dome near 0.005 luminance — no turbidity/rayleigh value
+lifts it. So night and twilight lighting comes from `SkyLight`'s hemisphere fill
+(`descriptor.light.ambient`), not from the env map. Don't "fix" a dark night by tuning the day
+curve's scattering; below the cutoff those numbers render nothing. See `DOCS/weather-system.md` §15.2.
 
 ### Post-processing (`extensions/postprocessing/`)
 State module is intact and untouched but **currently unused** — kept as the starting point for the

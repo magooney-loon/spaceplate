@@ -2,10 +2,19 @@
 // authorable. A real solar model (latitude + day-of-year) can arrive later as an
 // alternative module, because everything downstream reads only the derived direction.
 
-import type { CelestialBody } from './types';
+import type { CelestialBody, Vec3 } from './types';
 
 const DEG = Math.PI / 180;
 const TAU = Math.PI * 2;
+
+/**
+ * Peak elevation of the arc at local noon.
+ *
+ * This is not just a look knob: the day curve's keyframe times are the inverse of the
+ * arc (dayCurve.ts), so changing the peak moves every twilight boundary. One constant,
+ * imported everywhere, rather than a `?? 75` repeated in four places.
+ */
+export const DEFAULT_MAX_ELEVATION = 75;
 
 export type PathOptions = {
 	/** Peak elevation in degrees at local noon. */
@@ -29,40 +38,61 @@ export const elevationAt = (t: number, maxElevation: number): number =>
 
 export const azimuthAt = (t: number): number => (360 * t) % 360;
 
-/** Spherical -> cartesian, Y up. Mirrors what SkyMesh expects for `sunPosition`. */
-const directionFrom = (elevationDeg: number, azimuthDeg: number) => {
+/**
+ * Spherical -> cartesian, Y up. Mirrors what SkyMesh expects for `sunPosition`.
+ *
+ * Exported because the key light needs to rebuild a direction from a *modified*
+ * elevation (sky.svelte.ts clamps it above the horizon), not just read a body's own.
+ * Writes into `out`; this runs every frame.
+ */
+export const directionAt = (elevationDeg: number, azimuthDeg: number, out: Vec3): Vec3 => {
 	const phi = (90 - elevationDeg) * DEG;
 	const theta = azimuthDeg * DEG;
 	const sinPhi = Math.sin(phi);
-	return {
-		x: sinPhi * Math.sin(theta),
-		y: Math.cos(phi),
-		z: sinPhi * Math.cos(theta)
-	};
+	out.x = sinPhi * Math.sin(theta);
+	out.y = Math.cos(phi);
+	out.z = sinPhi * Math.cos(theta);
+	return out;
 };
 
-const bodyAt = (t: number, maxElevation: number): CelestialBody => {
+export const createBody = (): CelestialBody => ({
+	direction: { x: 0, y: 1, z: 0 },
+	elevation: 0,
+	azimuth: 0,
+	visibility: 0
+});
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+const bodyAt = (t: number, maxElevation: number, out: CelestialBody): CelestialBody => {
 	const elevation = elevationAt(t, maxElevation);
-	const azimuth = azimuthAt(t);
-	return {
-		direction: directionFrom(elevation, azimuth),
-		elevation,
-		azimuth,
-		// Cloud occlusion arrives with the weather mixer; a clear sky is fully visible
-		// once the body is above the horizon.
-		visibility: elevation > 0 ? 1 : 0
-	};
+	out.elevation = elevation;
+	out.azimuth = azimuthAt(t);
+	directionAt(elevation, out.azimuth, out.direction);
+	// Ramped across the horizon rather than stepped: a hard 0/1 at elevation 0 is a
+	// per-frame discontinuity that every consumer inherits -- a moon disc would pop on,
+	// a gameplay check would chatter on the boundary. Cloud occlusion multiplies into
+	// this once the weather mixer exists.
+	const k = clamp01((elevation + 2) / 4);
+	out.visibility = k * k * (3 - 2 * k);
+	return out;
 };
 
-export const sunAt = (t: number, options: PathOptions = {}): CelestialBody =>
-	bodyAt(t, options.maxElevation ?? 75);
+/** `out` is optional so one-off callers (Studio readouts) stay ergonomic. */
+export const sunAt = (
+	t: number,
+	options: PathOptions = {},
+	out: CelestialBody = createBody()
+): CelestialBody => bodyAt(t, options.maxElevation ?? DEFAULT_MAX_ELEVATION, out);
 
 /**
  * The moon mirrors the sun's arc with a configurable lag, defaulting to opposition --
  * a full moon every night to start. Phase is just the sun-moon angle, so this lag knob
  * becomes the phase control when a phase-shaded disc is eventually rendered.
  */
-export const moonAt = (t: number, options: PathOptions = {}): CelestialBody => {
-	const lag = options.moonLag ?? 0.5;
-	return bodyAt((t + lag) % 1, options.maxElevation ?? 75);
-};
+export const moonAt = (
+	t: number,
+	options: PathOptions = {},
+	out: CelestialBody = createBody()
+): CelestialBody =>
+	bodyAt((t + (options.moonLag ?? 0.5)) % 1, options.maxElevation ?? DEFAULT_MAX_ELEVATION, out);

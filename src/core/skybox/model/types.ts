@@ -26,6 +26,9 @@ export type PhaseName =
 
 export type RGB = [number, number, number];
 
+/** World-space vector, Y up. Kept structural so the model never imports three.js. */
+export type Vec3 = { x: number; y: number; z: number };
+
 /** One keyframe on the day curve (§4). Holds the *baseline* sky, never weather. */
 export type DayKeyframe = {
 	t: number;
@@ -46,7 +49,7 @@ export type SkyBaseline = Omit<DayKeyframe, 't' | 'name'>;
 
 export type CelestialBody = {
 	/** Unit direction, world space, Y up. */
-	direction: { x: number; y: number; z: number };
+	direction: Vec3;
 	elevation: number;
 	azimuth: number;
 	/** 0..1 -- how much of this body reaches the ground (cloud occlusion, later). */
@@ -65,9 +68,18 @@ export type WeatherChannels = {
 
 /** What a light consumer needs. Shadow config is game-specific and stays out. */
 export type LightHints = {
-	direction: { x: number; y: number; z: number };
+	/**
+	 * Where the key light sits. Never points below the horizon, even while the sun is:
+	 * a directional light underground lights every underside and throws its shadow
+	 * upward. sky.svelte.ts clamps the elevation used to build this.
+	 */
+	direction: Vec3;
 	color: RGB;
 	intensity: number;
+	/**
+	 * Ambient fill, in the same units as `intensity`. Delivered by a real light, because
+	 * the baked env map is black at night -- see MOON_AMBIENT in sky.svelte.ts.
+	 */
 	ambient: number;
 };
 

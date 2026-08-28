@@ -176,6 +176,29 @@ neighbouring keyframes.
 What the curve holds: the *baseline* sky — scattering parameters, exposure, star
 visibility, base fog colour. What it does **not** hold: weather (§5).
 
+**Keyframe times are not free — they are the inverse of the sun arc.** This was learned
+the hard way: the first curve was authored by eye and drifted badly from §3.3's arc. The
+`sunrise` keyframe fired at **+9.4°** of sun elevation, `goldenHour` at **+23°**,
+`sunset` at **−4.7°**, `dusk` at **−23°**. The sky's *look* and the sun's *position*
+disagreed by 20–30° of elevation, worst on the evening side — which reads as "the
+day/night cycle feels off" without any single value being wrong.
+
+Every keyframe is now pinned to the elevation milestone its name claims, via
+
+```
+t = 0.25 ± asin(elevation / maxElevation) / 2π      (− morning, + … see dayCurve.ts)
+```
+
+giving twelve keyframes: night (−75°), astronomicalDawn (−18°), dawn (−6°), sunrise (0°),
+goldenMorning (+6°), morning (+44°), noon (+75°), afternoon (+44°), goldenHour (+6°),
+sunset (0°), dusk (−6°), astronomicalDusk (−18°). The twilight keyframes cluster tightly
+because twilight *is* short on this arc.
+
+The consequence: **the arc's peak elevation is part of the curve's contract.** Changing
+`maxElevation` moves every twilight boundary and silently un-pins the curve. Keyframe
+`t` and the arc peak must be retimed together — a Studio keyframe editor (phase 5) has
+to either recompute `t` from a target elevation or refuse to edit the two independently.
+
 ---
 
 ## 5. Weather
@@ -403,7 +426,7 @@ for where things land.
 | `SKY_PRESETS` (`dawn`/`day`/`sunset`/`night`...) | Keyframes on the day curve (they already are, semantically) |
 | `cloudy`/`overcast`/"storm-ish" presets | Weather target vectors in the mixer |
 | `transitionState` + preset-pair lerp machinery | Deleted — curve sampling and the weather mixer replace it |
-| `starsState` (17 fields) | One number: star visibility in the descriptor. The star *renderer* is separate future work — `@threlte/extras`' `<Stars>` is a raw `ShaderMaterial` and cannot run on WebGPU (`webgpu-notes.md` §1); it needs a TSL point-sprite reimplementation |
+| `starsState` (17 fields) | One number: star visibility in the descriptor, consumed by `core/skybox/Stars.svelte` (§15.4) |
 | `environmentState` (env/cube texture modes) | Stays, orthogonal — a sky-driven env map is one mode among several |
 | User presets in `localStorage` | Gone — authored keyframes/weather live in a committed file (the `graphics.json` story), Studio edits the live state and saves |
 | `Sky.svelte` | A consumer of the descriptor's `sky` + `sun` slices; gains the env budget logic |
@@ -494,6 +517,8 @@ reactive-loop traps.
 src/core/skybox/
   Sky.svelte        — The dome: descriptor consumer, owns the env bake budget (§15.2)
   SkyLight.svelte   — The descriptor-driven key light, sun→moon crossover (§15.3)
+  Stars.svelte      — TSL billboard star field, driven by starVisibility (§15.4)
+  Moon.svelte       — Phase-shaded moon sphere, driven by moonLag (§15.5)
   Skybox.svelte     — Mount + THE driver task + env/cube texture mode switch
   model/
     clock.ts        — Clock interface + realtime / external / manual clocks.
@@ -581,6 +606,32 @@ The budget, owned by the renderer and invisible to the model:
 Interpolating between the previous and current cube map would hide the stepping
 entirely, but costs a second target and a blend. Not in v1; note it if banding shows.
 
+**The env map is black whenever the sun is down, and no setting changes that.** SkyMesh
+zeroes its sun term outright once the sun passes **2.31°** below the horizon:
+
+```js
+const cutoffAngle = float( 1.6110731556870734 );   // pi / 1.95 = 92.31 degrees
+const sunIntensity = EE.mul( max( 0.0, ... ) );    // -> exactly 0 below the cutoff
+```
+
+With `vSunE = 0` the whole dome collapses to `0.1 * Fex * 0.04 + vec3(0, 0.0003,
+0.00075)` — a hard ceiling around **0.005 linear luminance**. Turbidity and rayleigh
+cannot lift it; raising rayleigh actually makes it *darker*, since it only increases
+extinction against that fixed night term.
+
+Two consequences, both load-bearing:
+
+1. §7's "the baked `scene.environment` remains the ambient half" is **true by day only**.
+   At night the cube bakes black and the scene has exactly one light. That is why the
+   descriptor's `light.ambient` is now delivered by a real light (§15.3) rather than
+   left as a hint nobody consumed.
+2. **The twilight keyframes never render their authored look.** `dawn` and `dusk` at −6°,
+   and both astronomical keyframes at −18°, are all below the cutoff — their turbidity
+   and rayleigh values shape nothing, because the sun term feeding them is zero. Their
+   `exposure` and the fill light are the only levers that do anything down there. Worth
+   knowing before anyone spends an afternoon tuning blue-hour scattering that cannot
+   render.
+
 ### 15.3 The key light
 
 `src/core/Camera.svelte:44` currently hardcodes a `<T.DirectionalLight>` at
@@ -597,16 +648,99 @@ It moves to `skybox/SkyLight.svelte`, which:
 - handles the sun→moon crossover as a single light whose colour and intensity
   crossfade, rather than two lights fighting.
 
+**The key light must never aim below the horizon.** The intensity crossfade band runs
+from −6° to +6°, so between −6° and 0° the *sun* still drives the light while sitting
+underground — which lights every underside in the scene and throws its shadow upward.
+The model clamps the elevation used to aim the light to a 3° floor (`KEY_MIN_ELEVATION`),
+so civil twilight becomes raking horizontal light. That is also physically the right
+answer: at that point you are lit by the sky, not by the sun.
+
+The direction still flips 180° at the handover (sun −6° / moon +6°), because
+interpolating between two opposed vectors is undefined and the moon is at opposition by
+default. Measured, that flip happens at **3.8% of daytime peak intensity**, with
+intensity continuous across it (0.0296 → 0.0301) — invisible in practice. If a moon lag
+other than opposition ever makes it visible, the fix is to fade the light out and back
+in across the handover, not to slerp.
+
 The shadow camera bounds are currently a fixed ±20 box. With a light that tracks a
 moving sun, that box needs to follow the camera or grow — otherwise shadows vanish at
 low sun angles. Flagged, not solved here.
 
-### 15.4 Star field
+**`SkyLight` mounts two lights, not one.** The directional key, plus a
+`HemisphereLight` driving the descriptor's `light.ambient`. The ambient half is not
+optional: because the env map bakes black below −2.31° of sun elevation (§15.2), a
+night scene with only the key light leaves every surface facing away from the moon at
+*exactly zero*. Measured against a noon-lit surface:
+
+| | lit side | shadow side |
+|---|---|---|
+| midnight, before | 7.2% | **0.0%** |
+| midnight, after | 36.4% | 9.9% |
+| civil dawn, after | 22.4% | 14.7% |
+| noon | 100% | 0% |
+
+(Percentages are relative to noon, so they moved once daytime exposure came down — the
+absolute night values did not change.)
+
+`light.ambient` combines a moonlight term and a twilight term with `max()`, not a sum —
+they are alternatives, so whichever is doing the lighting wins and the other fading out
+never claws brightness off it. The daytime term is deliberately **zero**: the env map
+genuinely does carry daylight, and an earlier version that faded to a small daytime
+value brightened noon by 10%, changing a look nobody asked to change.
+
+### 15.4 Star field — built, and *not* point sprites
 
 `@threlte/extras`' `<Stars>` is a raw `ShaderMaterial` and cannot render on WebGPU
-(`webgpu-notes.md` §1). Stars are currently absent entirely. The descriptor already
-carries a single `stars: visibility` number; the renderer behind it is a TSL
-point-sprite field and is **separate work**, not part of phases 1–3.
+(`webgpu-notes.md` §1). The replacement is `core/skybox/Stars.svelte`, driven by the
+day curve's `starVisibility`.
+
+Earlier drafts of this doc called for "TSL point sprites". **That is not possible.**
+`THREE.Points` + `PointsNodeMaterial.sizeNode` compiles and renders on WebGPU with every
+point clamped to one pixel and `sizeNode` silently ignored — WGSL has no `gl_PointSize`.
+Three's own source says so outright (quoted in `webgpu-notes.md` §1.1).
+
+So the field is **billboarded quads**: four vertices per star, offset in view space
+inside the TSL vertex node, one draw call. Since every star sits at the same radius, a
+fixed view-space offset is a fixed *angular* size, so no per-vertex distance maths is
+needed. 2200 stars ≈ 395 KB and one draw call; on-screen sizes run 1.8–7.6 px at fov 60.
+
+Two details that are load-bearing rather than cosmetic:
+
+- **Depth is pinned to the far plane** (`clip.z = clip.w`), exactly as `SkyMesh` does
+  internally. The camera's far plane is **144** while the dome sits at radius 1000 — an
+  honestly-projected star field would be clipped away in its entirety. Pinning also puts
+  the field behind all scene geometry for free. The same applies to the moon.
+- **`frustumCulled={false}`** on both. The moon's bounding sphere sits 1000 units out,
+  entirely beyond the far plane, so three would cull it before it ever drew.
+
+### 15.5 The moon disc
+
+`core/skybox/Moon.svelte`. §17 sketched a billboard with "phase from the sun–moon
+angle"; it is a **sphere** instead, because that is barely more work and strictly
+better — the phase falls out of the surface normal, and an equirectangular moon map
+wraps it properly rather than being cropped to a disc.
+
+The lit term is `smoothstep(-0.08, 0.28, dot(surfaceNormal, sunDirection))`, so the
+phase is driven entirely by the `moonLag` knob that §3.4 already specified. Measured
+illuminated fraction of the disc:
+
+| `moonLag` | lit | phase |
+|---|---|---|
+| 0.5 (default) | 97% | full |
+| 0.375 | 86% | waning gibbous |
+| 0.25 | 45% | quarter |
+| 0.125 | 7% | crescent |
+| 0.0 | 0% | new |
+
+The normal is rebuilt from `positionWorld` minus a moon-centre uniform rather than read
+from `normalWorld`, so it cannot be disturbed by the custom vertex node. The sphere is
+tidally locked with `lookAt(0,0,0)` plus a `geometry.rotateY(-π/2)` — `SphereGeometry`
+puts uv (0.5, 0.5) on +X, and `Object3D.lookAt` aims **+Z** for a non-camera object.
+Without the lock the moon appears to spin as it crosses the sky.
+
+Neither layer reaches the environment map: `Sky.svelte` bakes by passing the dome mesh
+alone to `CubeCamera.update()`, so the moon never burns a hotspot into the ambient term
+the way the sun disc would.
 
 ---
 
@@ -672,17 +806,36 @@ Requires a `$config` alias in **both** `vite.config.ts` and `tsconfig.json`.
 Not designed. Recorded so the descriptor contract is understood to be the seam these
 plug into, and so nobody assumes they are close.
 
-| Layer | Consumes | Rough approach |
-|---|---|---|
-| Clouds | `clouds.cover/type`, `wind`, `sun` | Raymarched TSL volumetric, or a cheaper layered dome shader. The expensive one |
-| Precipitation | `precipitation.type/intensity`, `wind` | GPU particles / instanced sprites, camera-anchored |
-| Lightning | `lightning` events | Emissive flash + a transient light contribution |
-| Moon disc | `moon.direction`, phase | Small billboard; phase from the sun–moon angle |
-| Stars | `stars.visibility` | TSL point sprites (§15.4) |
-| Audio | `wind`, `precipitation` | Crossfading layers; its own extension |
+| Layer | Consumes | Rough approach | Status |
+|---|---|---|---|
+| Clouds | `clouds.cover/type`, `wind`, `sun` | **See below — SkyMesh already ships one** | partly free |
+| Precipitation | `precipitation.type/intensity`, `wind` | GPU particles / instanced sprites, camera-anchored | not started |
+| Lightning | `lightning` events | Emissive flash + a transient light contribution | not started |
+| Moon disc | `moon.direction`, phase | Textured sphere, phase from the surface normal (§15.5) | **done** |
+| Stars | `stars.visibility` | Billboarded TSL quads, *not* point sprites (§15.4) | **done** |
+| Audio | `wind`, `precipitation` | Crossfading layers; its own extension | not started |
 
-Each of these deserves its own plan when it is actually reached. Phase 4 should get a
-separate document rather than growing this one.
+**SkyMesh already has a procedural cloud layer, and it was on by default.** three
+0.185.1's `SkyMesh` exposes `cloudCoverage` / `cloudDensity` / `cloudScale` /
+`cloudSpeed` / `cloudElevation` uniforms, with `cloudCoverage` defaulting to **0.4**.
+Nothing in this repo ever set it, so the sky was rendering unmanaged fbm clouds that
+responded to neither time nor weather — and they were being baked into the environment
+map along with everything else.
+
+`Sky.svelte` now binds `cloudCoverage` to `descriptor.weather.cloudCover`, which hands
+phase 2 a working cloud channel for free. Coverage is the only one that is weather —
+`cloudDensity` (0.64) and `cloudElevation` (0.71) are authored look and live as props on
+`Sky.svelte`. The boot value is `cloudCover: 0.37`; note that this is the *default*
+channel vector, not the named `clear` weather phase 2 will ship, which targets 0.
+
+This substantially shrinks phase 4's cloud task: the question is no longer "write a
+volumetric cloud system" but "is the built-in fbm layer good enough, and what do
+`cloudType` / `wind` map onto?" — worth answering before anyone starts raymarching.
+`cloudScale` and `cloudSpeed` are still at SkyMesh defaults and are the obvious targets
+for the `wind` channel.
+
+Each remaining layer deserves its own plan when it is actually reached. Phase 4 should
+get a separate document rather than growing this one.
 
 ---
 

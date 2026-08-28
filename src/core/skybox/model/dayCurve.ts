@@ -9,117 +9,203 @@
 // weather.json (§16) once the config plumbing exists.
 //
 // exposure is applied by Sky.svelte as renderer.toneMappingExposure (SkyMesh has no
-// exposure uniform). Night is deliberately lifted to 0.35: a physically dark night
-// plus moonlight reads as pitch black, and the values below are a look, not physics.
+// exposure uniform). These values are a look, not physics.
+//
+// The whole ramp sits below 1 -- peaking at 0.78 at noon -- on purpose. Under AgX,
+// pulling exposure down moves the daylight highlights into the filmic shoulder instead
+// of clipping them flat, which is most of what reads as "cinematic". It also keeps the
+// curve deliberately FLAT (0.60 to 0.78 across the whole day), so scene brightness
+// varies because the light varies, not because a virtual camera is riding its own
+// exposure knob. Exposure below the twilight cutoff is doing a different job: the dome
+// is black down there (see the SkyLight fill), so it is the only lever that decides
+// whether moonlit geometry reads at all.
+//
+// KEYFRAME TIMES ARE NOT FREE. They are the inverse of the sun arc (sunPath.ts):
+//
+//     t = 0.25 + asin(elevation / maxElevation) / 2pi      (morning)
+//     t = 0.75 - asin(elevation / maxElevation) / 2pi      (evening)
+//
+// The first pass of this curve was authored by eye and drifted badly from the arc --
+// the `sunrise` keyframe landed at +9.4 degrees of elevation, `sunset` at -4.7, `dusk`
+// at -23. The sky's look and the sun's position disagreed by 20-30 degrees, which is
+// exactly the "something is off" that no individual value explains. Each keyframe below
+// is now pinned to the elevation milestone its name claims, and the comment on each one
+// records that elevation. Retime them together or they drift apart again.
+//
+// The pinning assumes `maxElevation` = DEFAULT_MAX_ELEVATION. A game that changes the
+// arc's peak shifts every twilight boundary, so the arc peak is effectively part of
+// this curve's contract.
 
 import type { DayKeyframe, RGB, SkyBaseline } from './types';
 
 export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 	{
+		// -75 deg. Solar midnight: the darkest the dome ever gets.
 		t: 0,
 		name: 'night',
-		turbidity: 0.1,
-		rayleigh: 0.1,
-		mieCoefficient: 0.0001,
-		mieDirectionalG: 0.5,
-		exposure: 0.35,
+		turbidity: 1.2,
+		rayleigh: 0.35,
+		mieCoefficient: 0.0008,
+		mieDirectionalG: 0.6,
+		exposure: 0.62,
 		starVisibility: 1,
 		fogColor: [0.02, 0.03, 0.06],
 		fogDensity: 0.02
 	},
 	{
-		t: 0.22,
+		// -18 deg. Astronomical dawn: the first light that is not starlight.
+		t: 0.21143,
 		name: 'astronomicalDawn',
 		turbidity: 2,
-		rayleigh: 1,
-		mieCoefficient: 0.002,
+		rayleigh: 0.8,
+		mieCoefficient: 0.0015,
 		mieDirectionalG: 0.7,
-		exposure: 0.45,
-		starVisibility: 0.6,
-		fogColor: [0.08, 0.09, 0.16],
+		exposure: 0.6,
+		starVisibility: 0.8,
+		fogColor: [0.05, 0.07, 0.14],
+		fogDensity: 0.028
+	},
+	{
+		// -6 deg. Civil dawn: blue hour, the sky is bright but the sun is still down.
+		t: 0.2373,
+		name: 'dawn',
+		turbidity: 4,
+		rayleigh: 1.8,
+		mieCoefficient: 0.003,
+		mieDirectionalG: 0.75,
+		exposure: 0.6,
+		starVisibility: 0.3,
+		fogColor: [0.16, 0.18, 0.3],
+		fogDensity: 0.034
+	},
+	{
+		// 0 deg. The sun is exactly on the horizon -- peak scattering, peak colour.
+		t: 0.25,
+		name: 'sunrise',
+		turbidity: 9,
+		rayleigh: 2.8,
+		mieCoefficient: 0.005,
+		mieDirectionalG: 0.78,
+		exposure: 0.68,
+		starVisibility: 0.05,
+		fogColor: [0.52, 0.36, 0.28],
+		fogDensity: 0.038
+	},
+	{
+		// +6 deg. Morning golden hour -- the mirror of goldenHour below.
+		t: 0.2627,
+		name: 'goldenMorning',
+		turbidity: 6,
+		rayleigh: 2,
+		mieCoefficient: 0.0045,
+		mieDirectionalG: 0.82,
+		exposure: 0.72,
+		starVisibility: 0,
+		fogColor: [0.62, 0.5, 0.4],
 		fogDensity: 0.03
 	},
 	{
-		t: 0.27,
-		name: 'sunrise',
-		turbidity: 8,
-		rayleigh: 2.5,
-		mieCoefficient: 0.004,
-		mieDirectionalG: 0.75,
-		exposure: 0.6,
-		starVisibility: 0.1,
-		fogColor: [0.5, 0.35, 0.28],
-		fogDensity: 0.035
-	},
-	{
+		// +44 deg. Full daylight, colour has settled to blue.
 		t: 0.35,
 		name: 'morning',
-		turbidity: 4,
-		rayleigh: 1.5,
+		turbidity: 3.5,
+		rayleigh: 1.3,
 		mieCoefficient: 0.0035,
 		mieDirectionalG: 0.8,
-		exposure: 0.9,
+		exposure: 0.76,
 		starVisibility: 0,
-		fogColor: [0.6, 0.68, 0.8],
+		fogColor: [0.62, 0.7, 0.82],
 		fogDensity: 0.02
 	},
 	{
+		// +75 deg. Arc peak.
 		t: 0.5,
 		name: 'noon',
 		turbidity: 2,
 		rayleigh: 1,
 		mieCoefficient: 0.003,
 		mieDirectionalG: 0.8,
-		exposure: 1,
+		exposure: 0.78,
 		starVisibility: 0,
 		fogColor: [0.7, 0.78, 0.9],
 		fogDensity: 0.015
 	},
 	{
-		t: 0.7,
+		// +44 deg. Mirror of `morning`; slightly hazier, as afternoons read.
+		t: 0.65,
+		name: 'afternoon',
+		turbidity: 3,
+		rayleigh: 1.2,
+		mieCoefficient: 0.0035,
+		mieDirectionalG: 0.8,
+		exposure: 0.76,
+		starVisibility: 0,
+		fogColor: [0.68, 0.72, 0.84],
+		fogDensity: 0.018
+	},
+	{
+		// +6 deg. Golden hour proper.
+		t: 0.7373,
 		name: 'goldenHour',
 		turbidity: 6,
 		rayleigh: 2,
 		mieCoefficient: 0.0045,
 		mieDirectionalG: 0.85,
-		exposure: 0.9,
+		exposure: 0.72,
 		starVisibility: 0,
 		fogColor: [0.72, 0.55, 0.38],
-		fogDensity: 0.025
+		fogDensity: 0.028
 	},
 	{
-		t: 0.76,
+		// 0 deg. The sun touches the horizon.
+		t: 0.75,
 		name: 'sunset',
 		turbidity: 10,
 		rayleigh: 3,
 		mieCoefficient: 0.005,
-		mieDirectionalG: 0.7,
-		exposure: 0.7,
+		mieDirectionalG: 0.78,
+		exposure: 0.68,
 		starVisibility: 0.05,
 		fogColor: [0.6, 0.36, 0.26],
-		fogDensity: 0.035
+		fogDensity: 0.038
 	},
 	{
-		t: 0.8,
+		// -6 deg. Civil dusk: the evening blue hour.
+		t: 0.7627,
 		name: 'dusk',
 		turbidity: 5,
 		rayleigh: 2,
-		mieCoefficient: 0.005,
-		mieDirectionalG: 0.9,
-		exposure: 0.55,
-		starVisibility: 0.4,
-		fogColor: [0.2, 0.18, 0.3],
-		fogDensity: 0.03
+		mieCoefficient: 0.004,
+		mieDirectionalG: 0.85,
+		exposure: 0.62,
+		starVisibility: 0.35,
+		fogColor: [0.24, 0.2, 0.32],
+		fogDensity: 0.034
+	},
+	{
+		// -18 deg. Astronomical dusk: last colour drains, stars take over.
+		t: 0.7886,
+		name: 'astronomicalDusk',
+		turbidity: 2.5,
+		rayleigh: 1,
+		mieCoefficient: 0.002,
+		mieDirectionalG: 0.75,
+		exposure: 0.6,
+		starVisibility: 0.8,
+		fogColor: [0.07, 0.08, 0.16],
+		fogDensity: 0.028
 	}
 ];
 
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
-const lerpRGB = (a: RGB, b: RGB, k: number): RGB => [
-	lerp(a[0], b[0], k),
-	lerp(a[1], b[1], k),
-	lerp(a[2], b[2], k)
-];
+/** Writes into `out` -- the sampler runs every frame and must not allocate. */
+const lerpRGB = (a: RGB, b: RGB, k: number, out: RGB): RGB => {
+	out[0] = lerp(a[0], b[0], k);
+	out[1] = lerp(a[1], b[1], k);
+	out[2] = lerp(a[2], b[2], k);
+	return out;
+};
 
 /** Smoothstep easing -- flat lerp between keyframes reads mechanical at low counts. */
 const ease = (k: number) => k * k * (3 - 2 * k);
@@ -138,7 +224,18 @@ export const sampleDayCurve = (
 ): SkyBaseline => {
 	const n = curve.length;
 	if (n === 0) return out;
-	if (n === 1) return Object.assign(out, curve[0]);
+	if (n === 1) {
+		const only = curve[0];
+		out.turbidity = only.turbidity;
+		out.rayleigh = only.rayleigh;
+		out.mieCoefficient = only.mieCoefficient;
+		out.mieDirectionalG = only.mieDirectionalG;
+		out.exposure = only.exposure;
+		out.starVisibility = only.starVisibility;
+		lerpRGB(only.fogColor, only.fogColor, 0, out.fogColor);
+		out.fogDensity = only.fogDensity;
+		return out;
+	}
 
 	// Find the last keyframe at or before t; -1 means t precedes the first.
 	let i = -1;
@@ -160,17 +257,22 @@ export const sampleDayCurve = (
 	out.mieDirectionalG = lerp(a.mieDirectionalG, b.mieDirectionalG, k);
 	out.exposure = lerp(a.exposure, b.exposure, k);
 	out.starVisibility = lerp(a.starVisibility, b.starVisibility, k);
-	out.fogColor = lerpRGB(a.fogColor, b.fogColor, k);
+	lerpRGB(a.fogColor, b.fogColor, k, out.fogColor);
 	out.fogDensity = lerp(a.fogDensity, b.fogDensity, k);
 	return out;
 };
 
+/**
+ * Scratch baseline for the sampler to write into. The values mirror the `noon` keyframe
+ * so that the degenerate path -- an empty curve, where the sampler returns `out`
+ * untouched -- still lands on a sane sky rather than a blown-out one.
+ */
 export const createBaseline = (): SkyBaseline => ({
 	turbidity: 2,
 	rayleigh: 1,
 	mieCoefficient: 0.003,
 	mieDirectionalG: 0.8,
-	exposure: 1,
+	exposure: 0.78,
 	starVisibility: 0,
 	fogColor: [0.7, 0.78, 0.9],
 	fogDensity: 0.015

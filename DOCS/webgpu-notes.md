@@ -27,9 +27,33 @@ Known instances found and fixed:
 | Source | Fix |
 |---|---|
 | `@threlte/extras` `<Sky>` (wraps `examples/jsm/objects/Sky.js`) | Replaced with three's `SkyMesh` (TSL/NodeMaterial port of the same Preetham model) — now `core/skybox/Sky.svelte` |
-| `@threlte/extras` `<Stars>` | Dropped. Needs reimplementing as TSL point sprites |
+| `@threlte/extras` `<Stars>` | Dropped. Reimplemented as billboarded quads in `core/skybox/Stars.svelte` — **not** point sprites, see §1.1 |
 | Studio's `AxesHelper` → `Line2`/`LineMaterial` | `three/examples/jsm/lines/webgpu/Line2.js` + `Line2NodeMaterial`. `LineGeometry` is backend-agnostic. **Do not set `blending`** on it — it forces `NoBlending` deliberately, compositing transparency inside the node graph against `viewportOpaqueMipTexture()` |
 | `three-viewport-gizmo` (vendors its own `LineMaterial`) | No WebGPU build exists; axis stems disabled via the library's per-axis `line: false` option |
+
+### 1.1 Point primitives are always 1 pixel on WebGPU
+
+A second silent failure, and the reason the star field is quads. `THREE.Points` with
+`PointsNodeMaterial.sizeNode` is the obvious way to draw a star field. It compiles, it
+renders, and every point is exactly one pixel — `sizeNode` is ignored. From three's own
+source (`PointsNodeMaterial`, 0.185.1):
+
+> WebGPU only supports point primitives with 1 pixel size. Consequently, this node has
+> no effect when the material is used with `Points` and a WebGPU backend. If an
+> application wants to render points with a size larger than 1 pixel, the material
+> should be used with `Sprite` and instancing.
+
+WGSL has no `gl_PointSize` equivalent, so this is a hardware/API limit, not a three bug.
+Anything that needs sized points must draw **quads** — either `Sprite` + instancing, or
+hand-built billboards. `core/skybox/Stars.svelte` does the latter: four vertices per
+star, offset in view space inside the TSL vertex node, one draw call.
+
+### 1.2 `smoothstep(high, low, x)` is undefined, not reversed
+
+Both GLSL and WGSL specify `smoothstep(edge0, edge1, x)` as **undefined when
+`edge0 >= edge1`**. The descending form works on some drivers and produces garbage on
+others, which makes it a genuinely nasty portability bug. Write the ascending form and
+invert: `smoothstep(0, 1, x).oneMinus()`.
 
 Mixing `import 'three'` and `import 'three/webgpu'` is safe for **math and value
 types** (`Color`, `Vector3`, `Quaternion`, `Euler`, geometry/material *types*) —

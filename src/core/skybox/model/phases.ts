@@ -4,6 +4,7 @@
 // Phases exist for gameplay queries and events (torches, enemy spawns, vampires), and
 // as anchors for the day-curve keyframes.
 
+import { DEFAULT_MAX_ELEVATION } from './sunPath';
 import type { PhaseName } from './types';
 
 /**
@@ -16,8 +17,16 @@ import type { PhaseName } from './types';
  * With a fixed threshold, "above 20 degrees" swallows most of the daylight hours and
  * `noon` stops meaning anything -- a scene at 3pm would report `noon`. Keyed to the
  * peak it stays a narrow band around the sun's highest point.
+ *
+ * `maxElevation` must be the arc's actual peak. Callers used to let it default while
+ * the arc itself was configurable, so lowering the arc to, say, 40 degrees meant the
+ * peak never reached 0.95 * 75 and `noon` could never fire.
  */
-export const phaseFor = (sunElevation: number, rising: boolean, maxElevation = 75): PhaseName => {
+export const phaseFor = (
+	sunElevation: number,
+	rising: boolean,
+	maxElevation = DEFAULT_MAX_ELEVATION
+): PhaseName => {
 	if (sunElevation >= maxElevation * 0.95) return 'noon';
 	if (sunElevation < -18) return 'night';
 	if (sunElevation < -6) return rising ? 'astronomicalDawn' : 'dusk';
