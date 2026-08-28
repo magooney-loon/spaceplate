@@ -46,7 +46,7 @@ const wallClockT = (utcOffsetMinutes?: number): number => {
 	}
 	// getTime() is UTC epoch ms; shifting by the offset gives local time at that zone.
 	const shifted = now.getTime() + utcOffsetMinutes * 60_000;
-	return ((((shifted % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY) / MS_PER_DAY);
+	return (((shifted % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY) / MS_PER_DAY;
 };
 
 const createBase = (kind: ClockKind, options: ClockOptions = {}): Clock => {

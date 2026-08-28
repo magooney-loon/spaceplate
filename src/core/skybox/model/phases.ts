@@ -17,11 +17,7 @@ import type { PhaseName } from './types';
  * `noon` stops meaning anything -- a scene at 3pm would report `noon`. Keyed to the
  * peak it stays a narrow band around the sun's highest point.
  */
-export const phaseFor = (
-	sunElevation: number,
-	rising: boolean,
-	maxElevation = 75
-): PhaseName => {
+export const phaseFor = (sunElevation: number, rising: boolean, maxElevation = 75): PhaseName => {
 	if (sunElevation >= maxElevation * 0.95) return 'noon';
 	if (sunElevation < -18) return 'night';
 	if (sunElevation < -6) return rising ? 'astronomicalDawn' : 'dusk';

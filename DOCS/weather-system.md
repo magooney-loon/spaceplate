@@ -690,7 +690,7 @@ separate document rather than growing this one.
 
 Non-blocking, but they need answers before the phase they belong to:
 
-1. **Where does the sky tick run?** `core/tasks.ts` still defines its four ordered
+1. **Where does the sky tick run?** `core/utils/tasks.ts` still defines its four ordered
    stages, but the sky deliberately does not use them — a stage would tie the tick to
    `useGameTasks()` callers. **Decided in phase 1:** a single driver task in
    `core/skybox/Skybox.svelte`, constrained `before: autoRenderTask`

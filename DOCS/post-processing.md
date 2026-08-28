@@ -3,7 +3,7 @@
 Plan for rebuilding post-processing from scratch on `THREE.RenderPipeline` + TSL,
 after the previous 25-effect pipeline was removed wholesale.
 
-**Status:** planned, nothing implemented. `src/core/Renderer.svelte` is a stub;
+**Status:** planned, nothing implemented. `src/core/utils/Renderer.svelte` is a stub;
 `src/extensions/postprocessing/` still holds the old state/types/Studio panel from the
 pmndrs era and is the thing being replaced, not extended.
 
@@ -403,7 +403,7 @@ Nothing in this document has been run. In particular:
 
 | Path | Change |
 |---|---|
-| `src/core/Renderer.svelte` | Stub → owns the `RenderPipeline`, the structural effect and the uniform effect (§4). Task ordering per `webgpu-notes.md` §2 |
+| `src/core/utils/Renderer.svelte` | Stub → owns the `RenderPipeline`, the structural effect and the uniform effect (§4). Task ordering per `webgpu-notes.md` §2 |
 | `src/extensions/postprocessing/types.ts` | Per-effect param sets for the new list; the pmndrs-era types (glitch, shockWave, ascii, tiltShift, scanline, sepia, dotScreen…) go |
 | `src/extensions/postprocessing/postprocessing.svelte.ts` | State for the new effect set; preset/localStorage layer dropped |
 | `src/extensions/postprocessing/PostProcessingExtension.svelte` | Rebuilt against the registry — roles, conflicts and the live MRT set are rendered *from* the registry, not hand-written |

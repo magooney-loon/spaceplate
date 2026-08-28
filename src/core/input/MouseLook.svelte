@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { mouseLookState, mouseLookActions } from '$core/mouseLook.svelte';
+	import { mouseLookState, mouseLookActions } from './mouseLook.svelte';
 	import { overlayState } from '$extensions/settings';
 	import { inputQueries } from '$extensions/input';
 

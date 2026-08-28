@@ -21,20 +21,27 @@ lib/                — Empty by convention; app-specific shared code goes here
 core/
   index.ts              — Barrel — import engine parts from '$core'
   Camera.svelte         — PerspectiveCamera + AudioListener; orbits origin in demoScene via mouse look
-  GlobalAudio.svelte    — All <Audio> components; never unmounts
-  globalAudio.svelte.ts — soundTriggers + soundActions singleton (import from here in .ts files)
-  MouseLook.svelte      — Mouse-look rig (mount in a scene to enable pointer-locked look)
-  mouseLook.svelte.ts   — Mouse look state + pointer lock lifecycle (cross-browser hardened)
-  Keymapper.svelte      — Global keyboard/mouse listeners; routes into the input extension
-  Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock)
-  Renderer.svelte       — STUB: post-processing removed in the WebGPU migration (see below)
+
+  audio/
+    GlobalAudio.svelte    — All <Audio> components; never unmounts
+    globalAudio.svelte.ts — soundTriggers + soundActions singleton (import from here in .ts files)
+
+  input/
+    Keymapper.svelte      — Global keyboard/mouse listeners; routes into the input extension
+    MouseLook.svelte      — Mouse-look rig (mount in a scene to enable pointer-locked look)
+    mouseLook.svelte.ts   — Mouse look state + pointer lock lifecycle (cross-browser hardened)
+
   skybox/               — Everything sky/skybox/weather (see "Sky & weather" below)
     Skybox.svelte         — Mount + THE sky driver task + env/cube texture mode switch
     Sky.svelte            — WebGPU-native sky dome (three's SkyMesh), descriptor consumer
     SkyLight.svelte       — Descriptor-driven key light (sun→moon crossover)
     model/                — Pure sky model: clock, sunPath, dayCurve, phases, events,
                            types + sky.svelte.ts façade (descriptor, skyActions, skyMeta)
-  tasks.ts              — Task pipeline: physicsStage, renderStage, uiStage, audioStage
+
+  utils/
+    Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock)
+    Renderer.svelte       — STUB: post-processing removed in the WebGPU migration (see below)
+    tasks.ts              — Task pipeline: physicsStage, renderStage, uiStage, audioStage
 
 scenes/
   MainMenu/   MainMenu.svelte, MainMenuHud.svelte, SettingsHud.svelte
@@ -74,7 +81,7 @@ The renderer is `WebGPURenderer`, which auto-falls back to WebGL when WebGPU is 
 
 Two things are currently torn out — don't assume they work:
 
-- **`core/Renderer.svelte` is a stub.** The ~300-line TSL RenderPipeline covering 25 effects was
+- **`core/utils/Renderer.svelte` is a stub.** The ~300-line TSL RenderPipeline covering 25 effects was
   removed because it rebuilt itself continuously. Rendering is plain: Threlte's `autoRenderTask`
   draws the scene, no composer in between. `autoRender` is therefore left at its default (`true`);
   if a pipeline returns, set `autoRender={false}` as a Canvas *option*, never from an `$effect`.
@@ -91,8 +98,8 @@ The post-processing rebuild is planned in `DOCS/post-processing.md`; the sky/wea
 `DOCS/weather-system.md`.
 
 ### Sound system
-- `core/GlobalAudio.svelte` owns all `<Audio>` Threlte components — never unmounts (no race conditions).
-- `soundTriggers` / `soundActions` live in `core/globalAudio.svelte.ts`.
+- `core/audio/GlobalAudio.svelte` owns all `<Audio>` Threlte components — never unmounts (no race conditions).
+- `soundTriggers` / `soundActions` live in `core/audio/globalAudio.svelte.ts`.
   **Always import from the `.ts` file, not the `.svelte` file** — named exports from `<script module>`
   in a `.svelte` file aren't visible to TypeScript in `.ts` imports. `import { soundActions } from '$core'`.
 - `soundActions.playSwoosh()` — polyphonic (clone per call → overlapping instances).
@@ -119,7 +126,7 @@ overrides + clock/time/weather), applied imperatively from `setScene()` and **ne
 `$effect`. Not implemented yet — see `DOCS/scene-environment.md`. Until it lands, `SCENES` entries
 carry only `id` / `label` / `icon`, and `SceneExtension.svelte` is a plain scene switcher.
 
-### Task pipeline (`core/tasks.ts`)
+### Task pipeline (`core/utils/tasks.ts`)
 - Four ordered stages per frame: `physicsStage` (before render) → `renderStage` (default) →
   `uiStage` (after) → `audioStage` (after ui).
 - `useGameTasks()` returns `{ stages, createPhysicsTask, createUiTask, createAudioTask }`.
@@ -127,7 +134,7 @@ carry only `id` / `label` / `icon`, and `SceneExtension.svelte` is a plain scene
   `audioStage` always runs.
 - Use these instead of raw `useTask` so execution order is guaranteed.
 
-### Mouse look & pointer lock (`core/mouseLook.svelte.ts` + `MouseLook.svelte`)
+### Mouse look & pointer lock (`core/input/mouseLook.svelte.ts` + `MouseLook.svelte`)
 
 Driven by `settingsState.general.mouseSensitivity` / `aimSensitivity`:
 
@@ -176,13 +183,13 @@ Rapier via `@threlte/rapier`. The `<World>` lives in `App.svelte`, fed from `phy
   logs world lifecycle. `PhysicsExtension.svelte` is editor UI only.
 - Rapier specifics: `RAPIER.md`.
 
-### Input (`extensions/input/` + `core/Keymapper.svelte`)
+### Input (`extensions/input/` + `core/input/Keymapper.svelte`)
 
 Action-based mapping for keyboard, mouse, and gamepad. Persists to localStorage
 (`spaceplate-input-settings` — bindings and gamepad config only, never transient pressed state).
 Works in production without Studio.
 
-**`core/Keymapper.svelte`** — mounted once in `App.svelte`, owns all `<svelte:window>` listeners:
+**`core/input/Keymapper.svelte`** — mounted once in `App.svelte`, owns all `<svelte:window>` listeners:
 - `keydown`/`keyup` → `inputState.runtime.keyboardPressed`; `mousedown`/`mouseup` →
   `inputState.runtime.mousePressed` (skips UI elements); `blur` → clears pressed state (no stuck keys).
 - `Ctrl+H` intercepted as a global engine shortcut before input routing.

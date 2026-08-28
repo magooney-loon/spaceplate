@@ -3,7 +3,7 @@
 	import { AudioListener } from '@threlte/extras';
 	import type { PerspectiveCamera } from 'three/webgpu';
 	import { sceneState } from '$extensions/scene';
-	import { mouseLookState } from '$core/mouseLook.svelte';
+	import { mouseLookState } from '$core/input/mouseLook.svelte';
 
 	let camera = $state.raw<PerspectiveCamera>();
 

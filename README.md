@@ -56,7 +56,7 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 
 ### Task Scheduling
 ```typescript
-import { useGameTasks } from '$core/tasks';
+import { useGameTasks } from '$core';
 
 const { createPhysicsTask, createUiTask } = useGameTasks();
 
