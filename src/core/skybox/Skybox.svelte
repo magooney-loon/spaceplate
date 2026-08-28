@@ -4,6 +4,7 @@
 	import Sky from './Sky.svelte';
 	import SkyLight from './SkyLight.svelte';
 	import Moon from './Moon.svelte';
+	import Nebula from './Nebula.svelte';
 	import Stars from './Stars.svelte';
 	import { skyActions } from './model';
 
@@ -59,14 +60,16 @@
 	<!-- Procedural sky (default).
 
 	     Order inside the group is cosmetic; what actually decides draw order is that the
-	     dome is opaque while Stars and Moon are transparent, so both land in the later
-	     queue, with renderOrder 1 and 2 settling them between themselves.
+	     dome is opaque while Nebula, Stars and Moon are transparent, so all three land in
+	     the later queue, with renderOrder 1 (Nebula, Stars) and 2 (Moon) settling them
+	     between themselves.
 
-	     None of these three reach the environment map: Sky bakes by passing the dome
-	     mesh alone to CubeCamera.update(), so the moon never burns a hotspot into the
-	     ambient term the way the sun disc would. -->
+	     None of these reach the environment map: Sky bakes by passing the dome
+	     mesh alone to CubeCamera.update(), so neither the smoke nor the moon burns a
+	     hotspot into the ambient term the way the sun disc would. -->
 	<T.Group userData={{ hideInTree: true, selectable: false }}>
 		<Sky setEnvironment={true} cubeMapSize={128} scale={1000} />
+		<Nebula radius={1000} />
 		<Stars radius={1000} />
 		<Moon radius={1000} />
 	</T.Group>

@@ -20,6 +20,8 @@
 		cameraProjectionMatrix,
 		dot,
 		float,
+		fract,
+		mix,
 		modelViewMatrix,
 		positionLocal,
 		positionWorld,
@@ -28,6 +30,7 @@
 		smoothstep,
 		time,
 		uniform,
+		vec3,
 		vec4
 	} from 'three/tsl';
 	import { descriptor } from './model';
@@ -46,7 +49,7 @@
 		 */
 		minSizeDeg?: number;
 		maxSizeDeg?: number;
-		/** 0 = steady, 1 = stars fully blink out at the trough. */
+		/** 0 = steady; higher = deeper irregular flicker. */
 		twinkle?: number;
 		twinkleSpeed?: number;
 		/** Changing this reshuffles the sky; the field is otherwise identical every boot. */
@@ -58,7 +61,7 @@
 		radius = 1000,
 		minSizeDeg = 0.16,
 		maxSizeDeg = 0.42,
-		twinkle = 0.35,
+		twinkle = 0.55,
 		twinkleSpeed = 1.6,
 		seed = 20260828
 	}: Props = $props();
@@ -74,10 +77,12 @@
 		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 	};
 
-	// Two ends of a rough stellar-colour ramp: hot blue-white to cool orange. Real star
-	// colours are far more desaturated than people expect, hence the narrow spread.
-	const COOL: [number, number, number] = [1, 0.82, 0.66];
-	const HOT: [number, number, number] = [0.75, 0.83, 1];
+	// Two ends of the stellar-colour ramp: hot blue-white to cool amber. The ends are
+	// more saturated than naked-eye reality, but only the population tails land on them
+	// (see the warmth roll below) -- the bulk stays near-white with colourful accents,
+	// which is how a real night sky actually reads.
+	const COOL: [number, number, number] = [1, 0.55, 0.28];
+	const HOT: [number, number, number] = [0.58, 0.72, 1];
 
 	const DEG = Math.PI / 180;
 
@@ -115,9 +120,24 @@
 			const halfSize = radius * Math.tan(halfAngle);
 
 			// Brightness is folded into the colour: the material is additive, so a dim
-			// star is simply a dim colour and no extra attribute is needed.
-			const brightness = 0.22 + 0.78 * mag;
-			const warmth = rng();
+			// star is simply a dim colour and no extra attribute is needed. The floor is
+			// slightly generous -- the twinkle beats average below 1, and the sky should
+			// feel alive rather than dim.
+			const brightness = 0.28 + 0.82 * mag;
+
+			// Three rough stellar populations rather than a flat ramp, which tints every
+			// star the same lukewarm white: a hot blue-white tail, an amber-to-ember tail,
+			// and a mostly-white middle. The tails are what make a sky read 'colourful'
+			// while the middle keeps it from turning into a circus.
+			const roll = rng();
+			let warmth: number;
+			if (roll < 0.2) {
+				warmth = rng() * 0.28; // Rigel: icy blue-white
+			} else if (roll < 0.48) {
+				warmth = 0.72 + rng() * 0.28; // Betelgeuse: amber to ember
+			} else {
+				warmth = 0.36 + rng() * 0.32; // Sirius: near-white
+			}
 			const r = (HOT[0] + (COOL[0] - HOT[0]) * warmth) * brightness;
 			const g = (HOT[1] + (COOL[1] - HOT[1]) * warmth) * brightness;
 			const b = (HOT[2] + (COOL[2] - HOT[2]) * warmth) * brightness;
@@ -206,18 +226,39 @@
 		const disc = smoothstep(float(0), float(1), dist2).oneMinus();
 		const shape = pow(disc, float(7)).add(pow(disc, float(2)).mul(0.22));
 
-		// Per-star phase offset, otherwise the whole sky pulses in unison.
-		const flicker = sin(time.mul(twinkleSpeed).add(aSeed.mul(Math.PI * 2)))
+		// Twinkle. A single sine at a single frequency reads as a disco ball no matter
+		// the phase offsets; real scintillation is irregular, and every star has its own
+		// rhythm and depth. The extra per-star randoms are derived from the seed
+		// attribute rather than shipping more vertex data.
+		const rndA = fract(aSeed.mul(7.31));
+		const rndB = fract(aSeed.mul(5.19));
+		const rndC = fract(aSeed.mul(3.73));
+		const slow = sin(
+			time
+				.mul(float(twinkleSpeed * 0.5).add(rndA.mul(twinkleSpeed * 1.8)))
+				.add(aSeed.mul(Math.PI * 2))
+		)
 			.mul(0.5)
-			.add(0.5)
-			.mul(twinkle)
-			.add(1 - twinkle);
+			.add(0.5);
+		const fast = sin(
+			time.mul(float(twinkleSpeed * 3).add(rndB.mul(twinkleSpeed * 6))).add(rndB.mul(Math.PI * 2))
+		)
+			.mul(0.5)
+			.add(0.5);
+		// Product of two sines at incommensurate rates: quasi-random beats with rare
+		// coincident peaks -- the glints.
+		const beat = slow.mul(fast);
+		// Skewed so most stars barely breathe and a few flash hard, like a real sky.
+		const depth = float(twinkle).mul(float(0.15).add(pow(rndC, float(1.6)).mul(0.85)));
+		const flicker = beat.oneMinus().mul(depth).oneMinus();
+		// Saturation rides the beat: dim moments go pale, glints go vivid.
+		const lum = dot(aColor, vec3(0.299, 0.587, 0.114));
 
 		// Fade out below the horizon. Scenes without a ground plane would otherwise show
 		// a full sphere of stars underfoot; scenes with one occlude them by depth anyway.
 		const horizon = smoothstep(float(-0.06), float(0.1), positionWorld.y.div(float(radius)));
 
-		material.colorNode = aColor;
+		material.colorNode = mix(vec3(lum), aColor, beat.mul(0.55).add(0.75));
 		material.opacityNode = shape.mul(flicker).mul(horizon).mul(visibility);
 		return material;
 	};
