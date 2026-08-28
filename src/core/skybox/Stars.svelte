@@ -36,7 +36,14 @@
 		count?: number;
 		/** Distance the field is placed at. Cosmetic -- depth is pinned to the far plane. */
 		radius?: number;
-		/** Apparent diameter of the faintest and brightest stars, in degrees. */
+		/**
+		 * Apparent diameter of the faintest and brightest stars, in degrees.
+		 *
+		 * `minSizeDeg` has a floor worth respecting. The bright core is roughly 44% of the
+		 * quad's half-width, so at 0.10 deg (1.8 px at 1080p / fov 60) the core lands at
+		 * ~0.35 px -- under one pixel, sampled erratically frame to frame, which reads as
+		 * harsh flicker rather than as stars. 0.16 deg puts it just over a pixel.
+		 */
 		minSizeDeg?: number;
 		maxSizeDeg?: number;
 		/** 0 = steady, 1 = stars fully blink out at the trough. */
@@ -49,7 +56,7 @@
 	let {
 		count = 2200,
 		radius = 1000,
-		minSizeDeg = 0.1,
+		minSizeDeg = 0.16,
 		maxSizeDeg = 0.42,
 		twinkle = 0.35,
 		twinkleSpeed = 1.6,
@@ -171,9 +178,18 @@
 
 		// Billboard in view space: offset the corner AFTER the model-view transform, so
 		// the quad always faces the camera without any per-star rotation.
-		const mv = modelViewMatrix.mul(vec4(positionLocal, 1)).toVar();
-		mv.xy.addAssign(aCorner.mul(aSize));
-		const clip = cameraProjectionMatrix.mul(mv).toVar();
+		//
+		// Built as ONE PURE EXPRESSION, with no .toVar() and no assignment. That is not a
+		// style preference. TSL's assignment operators need a Fn() stack to record into,
+		// and outside one they fail with "No stack defined for assign operation" -- a
+		// console warning, not a throw. The first version of this used
+		// `mv.xy.addAssign(...)`, the call was dropped, every quad's four vertices stayed
+		// on the same point, and 2200 zero-area triangles rendered precisely nothing.
+		// Either wrap the whole vertex node in Fn() (as SkyMesh does) or, as here, never
+		// mutate: reassembling the vec4 from parts needs no stack at all.
+		const mv = modelViewMatrix.mul(vec4(positionLocal, 1));
+		const offset = aCorner.mul(aSize);
+		const clip = cameraProjectionMatrix.mul(vec4(mv.xy.add(offset), mv.z, mv.w));
 		// Depth pinned to the far plane, as SkyMesh does. Load-bearing: the camera's far
 		// plane is 144 and the field sits at radius 1000, so honest projection would clip
 		// every star. Pinning also puts the field behind all scene geometry.

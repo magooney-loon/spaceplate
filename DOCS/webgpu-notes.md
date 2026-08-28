@@ -55,6 +55,40 @@ Both GLSL and WGSL specify `smoothstep(edge0, edge1, x)` as **undefined when
 others, which makes it a genuinely nasty portability bug. Write the ascending form and
 invert: `smoothstep(0, 1, x).oneMinus()`.
 
+### 1.3 TSL assignment outside `Fn()` is dropped, not thrown
+
+`assign` / `addAssign` / `mulAssign` need a **stack** to record into, and TSL only opens
+one inside `Fn()`. Outside one, `Node.prototype.assign` takes this branch
+(`src/nodes/tsl/TSLCore.js:72`):
+
+```js
+error( 'TSL: No stack defined for assign operation. Make sure the assign is inside a Fn().' );
+return this;
+```
+
+It logs and **returns `this`**. Nothing throws, the material still builds, and the
+mutation silently never happens. This cost us a whole star field: the billboard offset
+was written as
+
+```ts
+const mv = modelViewMatrix.mul(vec4(positionLocal, 1)).toVar();
+mv.xy.addAssign(aCorner.mul(aSize));   // dropped on the floor
+```
+
+so all four vertices of every quad stayed on the same point and 2200 zero-area triangles
+drew nothing at all. Two ways out:
+
+- **Wrap the node in `Fn(() => { … })()`**, which is what `SkyMesh` does — that is why
+  its `position.z.assign(position.w)` works.
+- **Don't mutate.** Rebuild the value as a pure expression:
+  `vec4(mv.xy.add(offset), mv.z, mv.w)`. No stack needed, and it cannot regress.
+
+Only `assign` and its derivatives require the stack. `.toVar()` takes the generic
+node-element path (`TSLCore.js:43`) and is safe outside `Fn()`.
+
+> **If a TSL-built object renders nothing at all, check the console for "No stack
+> defined" before suspecting geometry, culling or depth.**
+
 Mixing `import 'three'` and `import 'three/webgpu'` is safe for **math and value
 types** (`Color`, `Vector3`, `Quaternion`, `Euler`, geometry/material *types*) —
 three's renderer dispatches on `isMesh`/`isLight`-style boolean flags, not
