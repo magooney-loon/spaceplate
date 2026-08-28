@@ -6,6 +6,7 @@
 	import Moon from './Moon.svelte';
 	import Nebula from './Nebula.svelte';
 	import Stars from './Stars.svelte';
+	import Meteors from './Meteors.svelte';
 	import { skyActions } from './model';
 
 	import { environmentState, ENV_TEXTURES, CUBE_TEXTURES } from '$extensions/skybox';
@@ -60,9 +61,9 @@
 	<!-- Procedural sky (default).
 
 	     Order inside the group is cosmetic; what actually decides draw order is that the
-	     dome is opaque while Nebula, Stars and Moon are transparent, so all three land in
-	     the later queue, with renderOrder 1 (Nebula, Stars) and 2 (Moon) settling them
-	     between themselves.
+	     dome is opaque while Nebula, Stars, Meteors and Moon are transparent, so all of
+	     them land in the later queue, with renderOrder 1 (Nebula, Stars, Meteors) and 2
+	     (Moon) settling them between themselves.
 
 	     None of these reach the environment map: Sky bakes by passing the dome
 	     mesh alone to CubeCamera.update(), so neither the smoke nor the moon burns a
@@ -71,6 +72,7 @@
 		<Sky setEnvironment={true} cubeMapSize={128} scale={1000} />
 		<Nebula radius={1000} />
 		<Stars radius={1000} />
+		<Meteors radius={1000} />
 		<Moon radius={1000} />
 	</T.Group>
 {/if}

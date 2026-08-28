@@ -34,6 +34,7 @@
 		vec4
 	} from 'three/tsl';
 	import { descriptor } from './model';
+	import { MILKY_WAY_NORMAL as MW, MILKY_WAY_SIGMA } from './milkyWay';
 
 	interface Props {
 		count?: number;
@@ -57,7 +58,7 @@
 	}
 
 	let {
-		count = 2200,
+		count = 3000,
 		radius = 1000,
 		minSizeDeg = 0.16,
 		maxSizeDeg = 0.42,
@@ -101,18 +102,38 @@
 		const CORNERS = [-1, -1, 1, -1, 1, 1, -1, 1];
 
 		for (let i = 0; i < count; i++) {
-			// Uniform on the sphere: cos(theta) must be uniform, not theta itself, or the
-			// stars bunch at the poles.
-			const cosTheta = rng() * 2 - 1;
-			const phi = rng() * Math.PI * 2;
-			const sinTheta = Math.sqrt(1 - cosTheta * cosTheta);
-			const dx = sinTheta * Math.cos(phi) * radius;
-			const dy = cosTheta * radius;
-			const dz = sinTheta * Math.sin(phi) * radius;
+			// Direction, rejection-sampled against the Milky Way profile (see milkyWay.ts):
+			// acceptance runs from ~12% far off the band to ~100% inside it, so the star
+			// budget pools into a river instead of spreading as uniform static. The count
+			// is higher than the pre-band 2200 because the off-band sky pays for the river.
+			//
+			// The underlying sample is still uniform-on-sphere (uniform cos(theta)), so the
+			// band is the only anisotropy -- rejection sampling on top of a biased sample
+			// would compound the bias.
+			let dx = 0;
+			let dy = 0;
+			let dz = 0;
+			let band = 0;
+			for (let tries = 0; tries < 64; tries++) {
+				const cosTheta = rng() * 2 - 1;
+				const phi = rng() * Math.PI * 2;
+				const sinTheta = Math.sqrt(1 - cosTheta * cosTheta);
+				dx = sinTheta * Math.cos(phi);
+				dy = cosTheta;
+				dz = sinTheta * Math.sin(phi);
+				const offPlane = dx * MW[0] + dy * MW[1] + dz * MW[2];
+				band = Math.exp(-(offPlane * offPlane) / (2 * MILKY_WAY_SIGMA * MILKY_WAY_SIGMA));
+				if (rng() < 0.12 + 0.88 * band) break;
+			}
+			dx *= radius;
+			dy *= radius;
+			dz *= radius;
 
 			// Magnitude, cubed so the sky is mostly faint stars with a few bright ones --
-			// a flat distribution reads as television static.
-			const mag = Math.pow(rng(), 3);
+			// a flat distribution reads as television static. Band stars are pulled
+			// fainter still: the real Milky Way is overwhelmingly an unresolved wash with
+			// a handful of field giants on top.
+			const mag = Math.pow(rng(), 3) * (1 - 0.45 * band);
 			const halfAngle = (minSizeDeg + (maxSizeDeg - minSizeDeg) * mag) * 0.5 * DEG;
 			// View-space half-extent that subtends `halfAngle` at `radius`. Because every
 			// star sits at the same radius, a fixed view-space offset is a fixed angular
@@ -226,6 +247,11 @@
 		const disc = smoothstep(float(0), float(1), dist2).oneMinus();
 		const shape = pow(disc, float(7)).add(pow(disc, float(2)).mul(0.22));
 
+		// Fade out below the horizon. Scenes without a ground plane would otherwise show
+		// a full sphere of stars underfoot; scenes with one occlude them by depth anyway.
+		// Defined before the twinkle because scintillation keys off it too.
+		const horizon = smoothstep(float(-0.06), float(0.1), positionWorld.y.div(float(radius)));
+
 		// Twinkle. A single sine at a single frequency reads as a disco ball no matter
 		// the phase offsets; real scintillation is irregular, and every star has its own
 		// rhythm and depth. The extra per-star randoms are derived from the seed
@@ -248,17 +274,26 @@
 		// Product of two sines at incommensurate rates: quasi-random beats with rare
 		// coincident peaks -- the glints.
 		const beat = slow.mul(fast);
-		// Skewed so most stars barely breathe and a few flash hard, like a real sky.
-		const depth = float(twinkle).mul(float(0.15).add(pow(rndC, float(1.6)).mul(0.85)));
+		// Skewed so most stars barely breathe and a few flash hard, like a real sky --
+		// and deepened near the horizon, where the light crosses the most air. That is
+		// the strongest single cue that the sky has ATMOSPHERE: watch a star sitting
+		// low and it thrashes; look up and the zenith is steady.
+		const depth = float(twinkle)
+			.mul(float(0.15).add(pow(rndC, float(1.6)).mul(0.85)))
+			.mul(float(1).add(horizon.oneMinus().mul(1.4)))
+			.min(0.9);
 		const flicker = beat.oneMinus().mul(depth).oneMinus();
 		// Saturation rides the beat: dim moments go pale, glints go vivid.
 		const lum = dot(aColor, vec3(0.299, 0.587, 0.114));
 
-		// Fade out below the horizon. Scenes without a ground plane would otherwise show
-		// a full sphere of stars underfoot; scenes with one occlude them by depth anyway.
-		const horizon = smoothstep(float(-0.06), float(0.1), positionWorld.y.div(float(radius)));
+		// Atmospheric extinction: a star near the horizon shines through several times
+		// more air than at the zenith, which dims it and reddens it noticeably before
+		// the hard horizon fade below ever kicks in. The band spans tens of degrees,
+		// unlike the fade -- extinction is gradual, occlusion is not.
+		const elevation = smoothstep(float(0.02), float(0.45), positionWorld.y.div(float(radius)));
+		const extinction = mix(vec3(1, 0.66, 0.42), vec3(1), elevation);
 
-		material.colorNode = mix(vec3(lum), aColor, beat.mul(0.55).add(0.75));
+		material.colorNode = mix(vec3(lum), aColor, beat.mul(0.55).add(0.75)).mul(extinction);
 		material.opacityNode = shape.mul(flicker).mul(horizon).mul(visibility);
 		return material;
 	};

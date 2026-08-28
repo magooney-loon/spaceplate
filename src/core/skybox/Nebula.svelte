@@ -45,6 +45,7 @@
 		vec4
 	} from 'three/tsl';
 	import { descriptor } from './model';
+	import { MILKY_WAY_NORMAL, MILKY_WAY_SIGMA } from './milkyWay';
 
 	interface Props {
 		/** Distance of the backdrop dome. Cosmetic -- depth is pinned to the far plane. */
@@ -175,7 +176,21 @@
 			const d2sq = d2s.mul(d2s);
 			const c2 = vec4(d2sq.mul(d2s).mul(0.5), d2sq.mul(0.72), d2s.mul(f0.mul(2.1)), d2s);
 
-			return c1.add(c2);
+			// The Milky Way band: the unresolved light of all the stars too faint to
+			// resolve, as a glow laid over the smoke and mottled by it, so it reads as
+			// structure in the sky rather than a painted stripe. The profile matches the
+			// star-density band in Stars.svelte (shared constants in milkyWay.ts) -- the
+			// river of stars and the river of light must be the same river. Slightly cool
+			// white, like the real thing.
+			const offPlane = dot(dir, vec3(...MILKY_WAY_NORMAL));
+			const band = offPlane
+				.mul(offPlane)
+				.negate()
+				.div(2 * MILKY_WAY_SIGMA * MILKY_WAY_SIGMA)
+				.exp();
+			const mw = vec3(0.72, 0.78, 0.92).mul(band.mul(float(0.14).add(d2s.mul(0.18))));
+
+			return c1.add(c2).add(vec4(mw.x, mw.y, mw.z, float(1)));
 		});
 
 		const color = smoke();
