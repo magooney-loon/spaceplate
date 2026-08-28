@@ -113,6 +113,33 @@
 		programsPanel = stats.addPanel(new PanelCtor('PRG', '#fa0', '#320') as any);
 
 		document.body.appendChild(stats.dom);
+
+		// stats-gl hardcodes `position: fixed; top: 0; left: 0` in its own `initializeDOM`,
+		// which parks the panel under the Studio toolbar. Move it to the right edge,
+		// vertically centred — clear of both the toolbar and the bottom-right Default
+		// Camera preview.
+		//
+		// The container has to be given a size first. stats-gl lays every panel out as
+		// `position: absolute` inside it (`left: 0; top: id * 48px`, see `resizePanel`),
+		// so the div itself measures 0x0. That goes unnoticed at `top: 0; left: 0`, but it
+		// makes right/centre anchoring meaningless: the right edge of a zero-width box sits
+		// at the viewport edge and every child then starts *outside* it, and
+		// `translateY(-50%)` of zero height shifts nothing. Measuring the children keeps
+		// this correct as panels are added or removed above.
+		//
+		// Set as individual properties rather than `cssText` so stats-gl's own `opacity`
+		// and `z-index` survive. Nothing rewrites them later: `initializeDOM` runs once
+		// from the constructor, and the resize handler only resizes the panel canvases.
+		const panels = Array.from(stats.dom.children) as HTMLElement[];
+		const contentWidth = panels.reduce((max, p) => Math.max(max, p.offsetLeft + p.offsetWidth), 0);
+		const contentHeight = panels.reduce((max, p) => Math.max(max, p.offsetTop + p.offsetHeight), 0);
+
+		stats.dom.style.width = `${contentWidth}px`;
+		stats.dom.style.height = `${contentHeight}px`;
+		stats.dom.style.left = 'auto';
+		stats.dom.style.right = '0';
+		stats.dom.style.top = '50%';
+		stats.dom.style.transform = 'translateY(-50%)';
 	});
 
 	// stats-gl turns on `renderer.backend.trackTimestamp` for trackGPU/trackCPT, but on a
