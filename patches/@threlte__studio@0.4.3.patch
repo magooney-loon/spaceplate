@@ -154,7 +154,7 @@ index e9452c8c2029b8e9dbfc0fefea70d2bc179b9bfc..994d7e621731ff48ab2f919b6607b360
        vertexColors: true,
        transparent: opacity < 1,
 diff --git a/dist/extensions/object-selection/RenderSelectedObjects.svelte b/dist/extensions/object-selection/RenderSelectedObjects.svelte
-index 0cf31db85f00eaf03a99752717d276aa2e797fad..c43588af68fda1f7f290c809921c76a4d50c4377 100644
+index 0cf31db85f00eaf03a99752717d276aa2e797fad..ed9a11033356452055da070f5c3733781e8b8e51 100644
 --- a/dist/extensions/object-selection/RenderSelectedObjects.svelte
 +++ b/dist/extensions/object-selection/RenderSelectedObjects.svelte
 @@ -6,16 +6,35 @@
@@ -195,7 +195,7 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..c43588af68fda1f7f290c809921c76a4
    const { invalidate } = useThrelte()
    const objectSelection = useObjectSelection()
    const { addObject, removeObject } = useStudioObjectsRegistry()
-@@ -109,7 +128,61 @@
+@@ -109,7 +128,77 @@
      }
    )
  
@@ -247,21 +247,63 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..c43588af68fda1f7f290c809921c76a4
 +    outlineMaterial.fragmentNode = vec4(outlineColor, smoothstep(0.1, 3, edgeDetectValue))
 +  }
 +
-+  // PATCH (spaceplate): give the mesh its geometry up front.
-+  // `new Mesh()` defaults to an empty BufferGeometry, and with `frustumCulled = false`
-+  // this mesh is submitted on the very first frame -- before the `<T.PlaneGeometry />`
-+  // child below has attached. Under WebGPU the node builder logs
++  // PATCH (spaceplate): give the mesh its geometry AND material up front, rather than
++  // attaching them as `<T>` children of the `{#key}` block below.
++  //
++  // Geometry: `new Mesh()` defaults to an empty BufferGeometry, and with
++  // `frustumCulled = false` this mesh is submitted on the very first frame -- before a
++  // `<T.PlaneGeometry />` child would have attached. Under WebGPU the node builder logs
 +  // 'THREE.AttributeNode: Vertex attribute "position" not found on geometry.' for that
-+  // frame. Constructing with the geometry closes that window; the child still attaches
-+  // and replaces it, which is a no-op since it builds an identical PlaneGeometry.
-+  const selectionMesh = new Mesh(new PlaneGeometry())
++  // frame.
++  //
++  // Material: attaching it was actively broken. `useAttach` records the property's
++  // value at attach time and restores it on teardown, and inside `{#key}` Svelte runs
++  // the new branch's `$effect.pre` setup *before* the old branch's teardown:
++  //     setup(new)    -> selectionMesh.material = outlineMaterial
++  //     teardown(old) -> selectionMesh.material = <value captured by the old branch>
++  // The old branch had captured the constructor's default white `MeshBasicMaterial`, so
++  // leaving the editor camera left this full-screen, depth-test-defeating quad opaque
++  // white -- the whole viewport rendered as flat grey (white through AgX tone mapping),
++  // with only the studio sprites on top. It survived the round trip back *to* the editor
++  // camera purely by luck: that branch had captured the correct material.
++  //
++  // Owning both here sidesteps the ordering entirely. `{#key}` is then only responsible
++  // for re-parenting the mesh to the current camera, which is all it was ever for.
++  // Disposal is handled in the `onMount` cleanup below.
++  const selectionMesh = new Mesh(new PlaneGeometry(), outlineMaterial)
    selectionMesh.raycast = () => {}
    selectionMesh.position.z = -5
    selectionMesh.frustumCulled = false
-@@ -154,26 +227,6 @@
-   <T is={selectionMesh} attach={$camera}>
-     <T.PlaneGeometry />
+@@ -146,34 +235,32 @@
+     addObject(selectionMesh)
+     return () => {
+       removeObject(selectionMesh)
++      // PATCH (spaceplate): the geometry and material are script-owned (see above) and
++      // the `<T>` below is marked `dispose={false}`, so ownership sits here, on the
++      // component's own teardown, rather than on every camera switch.
++      selectionMesh.geometry.dispose()
++      outlineMaterial.dispose()
++      renderTarget.dispose()
+     }
+   })
+ </script>
  
++<!--
++  PATCH (spaceplate): the `<T.PlaneGeometry />` and `<T.ShaderMaterial>` children are
++  gone -- both are constructed in the script now (see the `selectionMesh` note) -- and
++  what remains is marked `dispose={false}`.
++
++  `{#key $camera.uuid}` tears this block down and rebuilds it on every camera change.
++  That was fine upstream, where every `<T>` in here owned a freshly created object, but
++  both objects are script-owned singletons now: Threlte's `useDispose` would call
++  `.dispose()` on them at each camera switch and then re-attach them dead, which under
++  WebGPU surfaces as `GPUValidationError: Buffer ... has been destroyed` on every
++  subsequent draw. They are released in the `onMount` cleanup instead.
++-->
+ {#key $camera.uuid}
+-  <T is={selectionMesh} attach={$camera}>
+-    <T.PlaneGeometry />
+-
 -    <T.ShaderMaterial
 -      {fragmentShader}
 -      {vertexShader}
@@ -283,8 +325,12 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..c43588af68fda1f7f290c809921c76a4
 -      depthTest={false}
 -      transparent
 -    />
-+    <T is={outlineMaterial} attach="material" />
-   </T>
+-  </T>
++  <T
++    is={selectionMesh}
++    attach={$camera}
++    dispose={false}
++  />
  {/key}
 diff --git a/dist/extensions/render-modes/RenderModes.svelte b/dist/extensions/render-modes/RenderModes.svelte
 index 8c6af1e9e54836eb68999f93b4a380afcc87da73..1b1a9e86992c180d90e3a9cbd860cc4644d106c6 100644

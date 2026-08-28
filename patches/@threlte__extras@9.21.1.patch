@@ -1,19 +1,67 @@
 diff --git a/dist/components/Gizmo/Gizmo.svelte b/dist/components/Gizmo/Gizmo.svelte
-index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..0a4c61505609f05c0e3d023a7b03aee7191d9c20 100644
+index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..8095f3039f2f215cc29ee3a53aab15e2bcceb9a7 100644
 --- a/dist/components/Gizmo/Gizmo.svelte
 +++ b/dist/components/Gizmo/Gizmo.svelte
-@@ -2,6 +2,7 @@
+@@ -1,7 +1,9 @@
+ <script lang="ts">
    import { useTask, useThrelte, useParent, observe } from '@threlte/core'
++  import { untrack } from 'svelte'
    import {
      NoToneMapping,
 +    Vector2,
      Vector4,
      type OrthographicCamera,
      type PerspectiveCamera,
-@@ -43,6 +44,41 @@
+@@ -25,14 +27,36 @@
+   const parent = useParent()
+   const { camera, renderer, dom, autoRenderTask, shouldRender, size, invalidate } = useThrelte()
+ 
++  // PATCH (spaceplate): WebGPU compat.
++  //
++  // `camera.current` was read tracked here, so every camera swap rebuilt the whole
++  // ViewportGizmo and ran `dispose()` on the old one. Studio swaps `camera.current`
++  // between its editor camera and the app camera, so this fires during normal use.
++  //
++  // `ViewportGizmo.dispose()` calls `geometry.dispose()` / `material.dispose()`, which
++  // under WebGPURenderer destroys the backing GPUBuffers immediately -- while the
++  // frames that reference them are still queued. The result is an endless
++  //   "[Buffer (unlabeled)] used in submit while destroyed"
++  // validation flood, and (once the render-object cache is poisoned) a gizmo that
++  // never draws again.
++  //
++  // The rebuild was redundant regardless: the `$effect.pre` further down already
++  // reassigns `gizmo.camera` whenever the camera changes, and `gizmo.camera` is a
++  // plain field the library reads per frame. Reading it untracked keeps the
++  // constructor argument correct on first build without making it a dependency, so
++  // the gizmo is now built once and only rebuilt if its *options* actually change.
+   const gizmo = $derived.by(() => {
+     invalidate()
+-    return new ViewportGizmo(camera.current as PerspectiveCamera | OrthographicCamera, renderer, {
+-      container: dom,
+-      placement: 'bottom-left',
+-      size: 86,
+-      ...rest
+-    })
++    return new ViewportGizmo(
++      untrack(() => camera.current) as PerspectiveCamera | OrthographicCamera,
++      renderer,
++      {
++        container: dom,
++        placement: 'bottom-left',
++        size: 86,
++        ...rest
++      }
++    )
+   })
+ 
+   $effect.pre(() => {
+@@ -43,6 +67,43 @@
  
    const viewport = new Vector4()
  
++  // PATCH (spaceplate): gates every WebGPU-specific workaround below.
++  const isWebGPU = (renderer as unknown as { isWebGPURenderer?: boolean }).isWebGPURenderer === true
++
 +  // PATCH (spaceplate): WebGPU compat.
 +  //
 +  // WebGL's `gl.viewport` has its origin at the BOTTOM-left of the drawing buffer;
@@ -33,7 +81,6 @@ index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..0a4c61505609f05c0e3d023a7b03aee7
 +  // recomputes `_viewport` from the DOM on every `update()`.
 +  const gizmoSize = new Vector2()
 +  const renderGizmo = () => {
-+    const isWebGPU = (renderer as unknown as { isWebGPURenderer?: boolean }).isWebGPURenderer
 +    if (!isWebGPU) {
 +      gizmo.render()
 +      return
@@ -52,15 +99,98 @@ index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..0a4c61505609f05c0e3d023a7b03aee7
    const cameraControls = $derived(controls ?? ($parent as Controls))
  
    useTask(
-@@ -54,7 +90,7 @@
+@@ -52,12 +113,34 @@
+         const toneMapping = renderer.toneMapping
+ 
          renderer.getViewport(viewport)
-         renderer.toneMapping = NoToneMapping
+-        renderer.toneMapping = NoToneMapping
++        // PATCH (spaceplate): WebGPU compat -- do not touch `toneMapping` here.
++        //
++        // Under WebGPURenderer tone mapping is not a per-material concern: it is applied
++        // once, by the "Output Color Transform" quad in `Renderer._renderOutput()`. That
++        // quad is cached against `NodeManager.getOutputCacheKey()`, which is literally
++        //   `renderer.toneMapping + ',' + currentColorSpace + ',' + xr.isPresenting`.
++        //
++        // So flipping toneMapping to NoToneMapping and back around the gizmo render
++        // changed the output cache key twice per frame. Each flip set
++        // `quad.material.needsUpdate`, and `RenderObjects.get()` responds to a changed
++        // cache key by calling `renderObject.dispose()` -> `_destroyBindings()` ->
++        // `GPUBuffer.destroy()` -- destroying the output pass's uniform buffers *while
++        // the command encoder for the frame in flight still references them*. WebGPU
++        // reports that every frame, forever:
++        //   "[Buffer (unlabeled)] used in submit while destroyed"
++        // (~240 buffer destroys/second in a 60fps session -- it also churns the whole
++        // render-object cache for nothing).
++        //
++        // Skipping the swap costs nothing visually, because the swap never did anything
++        // under WebGPU in the first place: the output transform runs after this task
++        // with whatever value is set *then*, i.e. the restored one. The gizmo has always
++        // been tone mapped here.
++        if (!isWebGPU) renderer.toneMapping = NoToneMapping
  
 -        gizmo.render()
 +        renderGizmo()
  
          renderer.setViewport(viewport)
-         renderer.toneMapping = toneMapping
+-        renderer.toneMapping = toneMapping
++        if (!isWebGPU) renderer.toneMapping = toneMapping
+       }
+     },
+     {
+@@ -137,7 +220,52 @@
+     }
+   )
+ 
++  // PATCH (spaceplate): WebGPU compat.
++  //
++  // Two problems with `ViewportGizmo.dispose()`:
++  //
++  // 1. It disposes the geometry of every child, and its axis labels are `THREE.Sprite`s.
++  //    All sprites in a page share one module-global `BufferGeometry` created lazily in
++  //    the `Sprite` constructor (three/src/objects/Sprite.js) and never rebuilt, so
++  //    disposing it destroys the 80-byte interleaved vertex buffer and 24-byte index
++  //    buffer that back *every* sprite in the app. WebGL quietly re-uploads; WebGPU
++  //    reports the next sprite draw as
++  //      "In a draw command ... Buffer with '' label has been destroyed"
++  //    Skipping sprite geometry here leaves nothing leaked -- that geometry was never
++  //    the gizmo's to free.
++  //
++  // 2. three's WebGPU backend answers `dispose` events with an immediate
++  //    `GPUBuffer.destroy()`, while the frame that last drew the gizmo is typically
++  //    still queued -- the "used in submit while destroyed" variant of the same error.
++  //    Draining the queue first removes that race. `onSubmittedWorkDone()` settles
++  //    within about a frame, and the only thing outliving the component meanwhile is
++  //    the gizmo's transparent pointer-capture <div> (removed by the same `dispose()`),
++  //    so there is nothing to see and nothing left rendering.
++  const disposeGizmo = (target: ViewportGizmo) => {
++    for (const child of target.children) {
++      if ((child as { isSprite?: boolean }).isSprite) {
++        // `dispose()` reads `child.geometry` with optional chaining, so clearing it
++        // makes the shared sprite geometry invisible to the walk. Materials and their
++        // canvas textures are per-instance and still get freed.
++        ;(child as unknown as { geometry?: unknown }).geometry = undefined
++      }
++    }
++    target.dispose()
++  }
++
+   $effect.pre(() => {
+-    return () => gizmo.dispose()
++    const current = gizmo
++    return () => {
++      const queue = (
++        renderer as unknown as {
++          backend?: { device?: { queue?: { onSubmittedWorkDone?: () => Promise<unknown> } } }
++        }
++      ).backend?.device?.queue
++      if (!isWebGPU || typeof queue?.onSubmittedWorkDone !== 'function') {
++        disposeGizmo(current)
++        return
++      }
++      queue.onSubmittedWorkDone().then(() => disposeGizmo(current))
++    }
+   })
+ </script>
 diff --git a/dist/components/Grid/Grid.svelte b/dist/components/Grid/Grid.svelte
 index a28a61519ac4e1c4ec318ef009126520abb7481a..b5aad10d55ce60bc1449433875bb7fed0fdffc94 100644
 --- a/dist/components/Grid/Grid.svelte

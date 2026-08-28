@@ -5,8 +5,8 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@threlte/extras@9.21.1': e3ae19beb29ddb69125ae59a1f413e81a3ca0dc89cfe7b7510cbb9fa8e024a76
-  '@threlte/studio@0.4.3': e59c735896f5f8be5cdc913a776a421fb397003413f21e6ab3e6e01a63bb457a
+  '@threlte/extras@9.21.1': 3477c97b910227b18af4cce78bdcbc3e87bed66dff62db3974a7e13102dfbf62
+  '@threlte/studio@0.4.3': fbc103e17f7af6403093b6564349017b582024def9af293d18da2808af568910
 
 importers:
 
@@ -20,13 +20,13 @@ importers:
         version: 8.6.0(svelte@5.56.10)(three@0.185.1)
       '@threlte/extras':
         specifier: ^9.21.1
-        version: 9.21.1(patch_hash=e3ae19beb29ddb69125ae59a1f413e81a3ca0dc89cfe7b7510cbb9fa8e024a76)(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1)
+        version: 9.21.1(patch_hash=3477c97b910227b18af4cce78bdcbc3e87bed66dff62db3974a7e13102dfbf62)(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1)
       '@threlte/rapier':
         specifier: ^3.5.0
         version: 3.5.0(@dimforge/rapier3d-compat@0.20.0)(svelte@5.56.10)(three@0.185.1)
       '@threlte/studio':
         specifier: ^0.4.3
-        version: 0.4.3(patch_hash=e59c735896f5f8be5cdc913a776a421fb397003413f21e6ab3e6e01a63bb457a)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
+        version: 0.4.3(patch_hash=fbc103e17f7af6403093b6564349017b582024def9af293d18da2808af568910)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
       '@types/three':
         specifier: ^0.185.4
         version: 0.185.4
@@ -1272,7 +1272,7 @@ snapshots:
       svelte: 5.56.10
       three: 0.185.1
 
-  '@threlte/extras@9.21.1(patch_hash=e3ae19beb29ddb69125ae59a1f413e81a3ca0dc89cfe7b7510cbb9fa8e024a76)(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1)':
+  '@threlte/extras@9.21.1(patch_hash=3477c97b910227b18af4cce78bdcbc3e87bed66dff62db3974a7e13102dfbf62)(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1)':
     dependencies:
       '@threejs-kit/instanced-sprite-mesh': 2.5.1(@types/three@0.185.4)(three@0.185.1)
       camera-controls: 3.1.2(three@0.185.1)
@@ -1291,7 +1291,7 @@ snapshots:
       svelte: 5.56.10
       three: 0.185.1
 
-  '@threlte/studio@0.4.3(patch_hash=e59c735896f5f8be5cdc913a776a421fb397003413f21e6ab3e6e01a63bb457a)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))':
+  '@threlte/studio@0.4.3(patch_hash=fbc103e17f7af6403093b6564349017b582024def9af293d18da2808af568910)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))':
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@mdi/js': 7.4.47
