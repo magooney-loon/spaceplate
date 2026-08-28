@@ -18,6 +18,9 @@
 	//   demo exciting made the sky obvious.
 	// - The screen-edge vignette is gone with it: dimming toward the FRAME border on a
 	//   world-anchored sky betrays the overlay every time the camera turns.
+	// - The field's rare peaks -- the bright blobs that read as "galaxies" -- are
+	//   soft-clamped (d*a/(d+a)) before colouring: the smoke passes through almost
+	//   untouched, the cores get pressed into gentle dense patches.
 	// - The smoke layer is blue instead of the original green.
 	// - The original's screen-noise stars are dropped: Stars.svelte covers that with
 	//   billboards that have real sizes and survive camera rotation.
@@ -131,9 +134,9 @@
 			// instead of sliding apart and revealing themselves as two decals.
 			const drift = vec3(sin(t.div(210)), sin(t.div(170)), sin(t.div(260)));
 
-			// Layer 1 -- dense and warm. The original's uvs/4 slice becomes dir/4. The explicit
-			// annotations keep the loosely-typed Fn result from widening the vec4 overloads
-			// below into nonsense.
+			// Layer 1 -- the warm structure. The original's uvs/4 slice becomes dir/4. The
+			// explicit annotation keeps the loosely-typed Fn result from widening the vec4
+			// overloads below into nonsense.
 			const d1: THREE.Node<'float'> = field(
 				dir
 					.mul(0.25)
@@ -141,14 +144,26 @@
 					.add(drift.mul(0.05)),
 				f2
 			);
-			const d1sq = d1.mul(d1);
-			const c1 = vec4(f2.mul(1.25).mul(d1sq.mul(d1)), f1.mul(1.05).mul(d1sq), f3.mul(d1), float(1));
+			// Soft-saturate BEFORE colouring. The raw field's rare peaks are the "galaxies"
+			// -- several times brighter than everything else, and they own the sky.
+			// d*a/(d+a) is ~linear through the smoke (d << a) and asymptotes at a, so cores
+			// become gentle dense patches instead of glowing blobs. This layer gets the
+			// low ceiling (0.6) and the quieter multipliers: it is counterpoint, not subject.
+			const d1s = d1.mul(0.6).div(d1.add(0.6));
+			const d1sq = d1s.mul(d1s);
+			const c1 = vec4(
+				f2.mul(0.9).mul(d1sq.mul(d1s)),
+				f1.mul(0.8).mul(d1sq),
+				f3.mul(0.55).mul(d1s),
+				float(1)
+			);
 
 			// Layer 2 -- the "smoke": blue instead of the original green, at a FIXED scale --
 			// the original's breathing zoom (sin terms on the divisor) pumps in and out,
-			// which is mesmerising in a demo and queasy on a sky. The blue term is the
-			// original's t2*freqs[0], scaled up now that it carries the hue -- but held
-			// under the warm layer's peak so it reads as depth, not a blue screen.
+			// which is mesmerising in a demo and queasy on a sky. Same soft-saturation but
+			// with a high ceiling (1.0): this layer IS the smoke, so only its densest
+			// patches get pressed down. The blue term is the original's t2*freqs[0],
+			// carrying the hue.
 			const d2: THREE.Node<'float'> = field2(
 				dir
 					.div(float(4.6))
@@ -156,8 +171,9 @@
 					.add(drift.mul(0.04)),
 				f3
 			);
-			const d2sq = d2.mul(d2);
-			const c2 = vec4(d2sq.mul(d2).mul(0.5), d2sq.mul(0.72), d2.mul(f0.mul(2.6)), d2);
+			const d2s = d2.mul(1.0).div(d2.add(1.0));
+			const d2sq = d2s.mul(d2s);
+			const c2 = vec4(d2sq.mul(d2s).mul(0.5), d2sq.mul(0.72), d2s.mul(f0.mul(2.1)), d2s);
 
 			return c1.add(c2);
 		});
