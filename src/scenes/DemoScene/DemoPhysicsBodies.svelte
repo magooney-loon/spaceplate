@@ -119,6 +119,7 @@
 	>
 		<Collider shape="ball" args={[1]} />
 		<T.Mesh
+		position={[0, 0, 0]}
 			scale={scale.current}
 			onpointerenter={() => (scale.target = 1.5)}
 			onpointerleave={() => (scale.target = 1)}
