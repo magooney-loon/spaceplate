@@ -1,19 +1,37 @@
 diff --git a/dist/extensions/editor-camera/CameraControls.svelte b/dist/extensions/editor-camera/CameraControls.svelte
-index 58651b111f72f3143b1a465e1f35ec36d3124115..768b8325b219079ecab3fc82ddbac558590d3bfd 100644
+index 58651b111f72f3143b1a465e1f35ec36d3124115..24ac8f731fc17ada786385eac50e8f42740f7c84 100644
 --- a/dist/extensions/editor-camera/CameraControls.svelte
 +++ b/dist/extensions/editor-camera/CameraControls.svelte
-@@ -111,4 +111,19 @@
+@@ -109,6 +109,37 @@
+   $effect(() => {
+     cameraControls.enabled = !anyInUse
    })
++
++  // PATCH (spaceplate): WebGPU compat -- see the <Gizmo> options below.
  </script>
  
 -<Gizmo controls={cameraControls} />
-+<!-- PATCH (spaceplate): WebGPU compat.
-+     three-viewport-gizmo draws the axis stems with a LineMaterial that extends raw
-+     ShaderMaterial. three's NodeLibrary has no ShaderMaterial mapping, so on
-+     WebGPURenderer those lines get swapped for a blank NodeMaterial and render as
-+     garbage. The axis handles themselves (MeshBasicMaterial spheres + SpriteMaterial
-+     labels) are already WebGPU-safe, so disabling just the lines leaves a fully
-+     functional gizmo -- picking, hover and fly-to all still work. -->
++<!--
++  PATCH (spaceplate): WebGPU compat.
++
++  three-viewport-gizmo vendors its own copy of three's fat-line LineMaterial, which
++  extends raw ShaderMaterial. NodeLibrary has no ShaderMaterial mapping, so on
++  WebGPURenderer three logs `Material "LineMaterial" is not compatible` and draws the
++  axis stems as a blank NodeMaterial. Unlike the studio AxesHelper there is no WebGPU
++  build of the vendored material to swap in, so the lines are switched off instead.
++
++  The per-axis `line` option is the library's own supported path. Its option merge
++  (`wt`) only substitutes a default when the user value is `undefined`, so `false`
++  survives; the line builder then destructures `{ enabled, line }` per axis and bails
++  early, leaving the positions array empty and returning null before any LineMaterial
++  is constructed.
++
++  Defaults only set `line: true` on x/y/z (and only for the sphere gizmo), but all six
++  axes are listed so this keeps holding if a future default enables the negatives.
++
++  Only the stems are lost. The handles are MeshBasicMaterial spheres with SpriteMaterial
++  labels -- already WebGPU-safe -- so picking, hover and fly-to all still work.
++-->
 +<Gizmo
 +  controls={cameraControls}
 +  x={{ line: false }}
@@ -23,6 +41,89 @@ index 58651b111f72f3143b1a465e1f35ec36d3124115..768b8325b219079ecab3fc82ddbac558
 +  ny={{ line: false }}
 +  nz={{ line: false }}
 +/>
+diff --git a/dist/extensions/editor-camera/EditorCamera.svelte b/dist/extensions/editor-camera/EditorCamera.svelte
+index 826504d4b1c6caeefd219d7818dd489531c63160..a84bf6ab5060c9f809c9681cf4440ae0e99d5cc8 100644
+--- a/dist/extensions/editor-camera/EditorCamera.svelte
++++ b/dist/extensions/editor-camera/EditorCamera.svelte
+@@ -130,12 +130,29 @@
+     }
+   })
+ 
++  // PATCH (spaceplate): break an infinite effect loop (`effect_update_depth_exceeded`).
++  //
++  // The `$effect.pre` above records whatever `$camera` currently is into
++  // `defaultCameraObject`; this `observe` writes `defaultCameraObject` back into
++  // `camera`. That is a read/write cycle over the same two pieces of state, and the two
++  // halves run in different flush phases, so each lags the other by one tick. With a
++  // single camera it happens to settle, but as soon as two cameras exist -- Threlte
++  // creates an internal default camera, and the app then mounts its own `makeDefault`
++  // one -- they alternate forever and Svelte aborts at 1000 iterations.
++  //
++  // The restore is only ever *meant* to run when leaving editor-camera mode, so gate it
++  // on actually being on an editor camera. When we are not, the app owns `camera` and
++  // Studio has no business reasserting a stale value over it. Toggling the editor camera
++  // on and off still restores the app camera exactly as before.
+   observe(
+     () => [defaultCameraObject, editorCameraEnabled, editorCamera],
+     ([defaultCameraObject, editorCameraEnabled, editorCamera]) => {
+       if (editorCameraEnabled) {
+         camera.set(editorCamera)
+-      } else if (defaultCameraObject) {
++      } else if (
++        defaultCameraObject &&
++        (camera.current === editorCameraPerspective || camera.current === editorCameraOrthographic)
++      ) {
+         camera.set(defaultCameraObject)
+       }
+     }
+diff --git a/dist/extensions/helpers/AxesHelper.svelte b/dist/extensions/helpers/AxesHelper.svelte
+index e9452c8c2029b8e9dbfc0fefea70d2bc179b9bfc..994d7e621731ff48ab2f919b6607b360102082f2 100644
+--- a/dist/extensions/helpers/AxesHelper.svelte
++++ b/dist/extensions/helpers/AxesHelper.svelte
+@@ -1,9 +1,19 @@
+ <script lang="ts">
+   import { T } from '@threlte/core'
+   import * as THREE from 'three'
+-  import { Line2 } from 'three/examples/jsm/lines/Line2.js'
++  // PATCH (spaceplate): WebGPU compat.
++  // The WebGL fat-line stack draws through LineMaterial, which extends raw
++  // ShaderMaterial. NodeLibrary has no ShaderMaterial mapping, so under
++  // WebGPURenderer three logs `Material "LineMaterial" is not compatible` and swaps
++  // in a blank NodeMaterial -- the axes never draw.
++  //
++  // three r185 ships a WebGPU port of the same stack: lines/webgpu/Line2.js is a
++  // drop-in for lines/Line2.js and draws with Line2NodeMaterial. LineGeometry is
++  // backend-agnostic and shared by both (webgpu/Line2.js imports this very module),
++  // so only the Line2 and material imports change.
++  import { Line2 } from 'three/examples/jsm/lines/webgpu/Line2.js'
+   import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
+-  import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
++  import { Line2NodeMaterial } from 'three/webgpu'
+   import { useStudioObjectsRegistry } from '../studio-objects-registry/useStudioObjectsRegistry.svelte.js'
+ 
+   const { studioObjectRef } = useStudioObjectsRegistry()
+@@ -26,8 +36,19 @@
+   }: Props = $props()
+ 
+   const lineGeometry = new LineGeometry()
+-  const lineMaterial = $state(
+-    new LineMaterial({
++  // PATCH (spaceplate): Line2NodeMaterial takes the same parameters as LineMaterial
++  // (its defaults come from LineDashedMaterial, so `linewidth` still applies).
++  // `transparent` is handled inside the node graph -- setupDiffuseColor composites
++  // against viewportOpaqueMipTexture -- which is why the constructor forces
++  // blending = NoBlending. Leave blending alone; setting it breaks the overlay axes.
++  //
++  // `$state.raw`, not `$state`: upstream deep-proxied the material, which was survivable
++  // for a ShaderMaterial (shallow, acyclic) but not for a NodeMaterial, whose TSL node
++  // graph is deep and self-referential. Nothing reads this material reactively -- it is
++  // handed to Line2 at construction and read by the renderer during the frame loop --
++  // so the proxy bought nothing and only risked breakage.
++  const lineMaterial = $state.raw(
++    new Line2NodeMaterial({
+       linewidth: width / 100,
+       vertexColors: true,
+       transparent: opacity < 1,
 diff --git a/dist/extensions/object-selection/RenderSelectedObjects.svelte b/dist/extensions/object-selection/RenderSelectedObjects.svelte
 index 0cf31db85f00eaf03a99752717d276aa2e797fad..8913c6f329e8afa6db4305ca762eea116fd4d12c 100644
 --- a/dist/extensions/object-selection/RenderSelectedObjects.svelte
@@ -140,3 +241,103 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..8913c6f329e8afa6db4305ca762eea11
 +    <T is={outlineMaterial} attach="material" />
    </T>
  {/key}
+diff --git a/dist/extensions/render-modes/RenderModes.svelte b/dist/extensions/render-modes/RenderModes.svelte
+index 8c6af1e9e54836eb68999f93b4a380afcc87da73..1b1a9e86992c180d90e3a9cbd860cc4644d106c6 100644
+--- a/dist/extensions/render-modes/RenderModes.svelte
++++ b/dist/extensions/render-modes/RenderModes.svelte
+@@ -1,14 +1,7 @@
+ <script lang="ts">
+-  import { useThrelte } from '@threlte/core'
+-  import { onDestroy, type Snippet } from 'svelte'
+-  import {
+-    BackSide,
+-    DoubleSide,
+-    FrontSide,
+-    Material,
+-    MeshBasicMaterial,
+-    MeshMatcapMaterial
+-  } from 'three'
++  import { useTask, useThrelte } from '@threlte/core'
++  import type { Snippet } from 'svelte'
++  import { Material, MeshBasicMaterial, MeshMatcapMaterial } from 'three'
+   import HorizontalButtonGroup from '../../components/HorizontalButtonGroup.svelte'
+   import ToolbarButton from '../../components/ToolbarButton.svelte'
+   import ToolbarItem from '../../components/ToolbarItem.svelte'
+@@ -22,7 +15,7 @@
+   }
+ 
+   const { createExtension } = useStudio()
+-  const { scene, invalidate, renderer } = useThrelte()
++  const { scene, invalidate, autoRenderTask } = useThrelte()
+ 
+   const extension = createExtension<RenderModesState, RenderModesActions>({
+     scope: renderModesScope,
+@@ -49,33 +42,44 @@
+     }
+   })
+ 
+-  // override to exclude objects with `ignoreOverrideMaterial` from being rendered with the override material
+-  // see https://github.com/mrdoob/three.js/blob/45498d0255abe5da8d3ff95c117ccab594c49b8f/src/renderers/WebGLRenderer.js#L1589-L1616
+-  const ogRenderBufferDirect = renderer.renderBufferDirect.bind(renderer)
+-  renderer.renderBufferDirect = (...args) => {
+-    // signature: 0:camera, 1:scene, 2:geometry, 3:material, 4:object, 5:group
+-    if (args[4].userData.ignoreOverrideMaterial && hasMaterial(args[4])) {
+-      // we have to mimic what `renderObject` does with the original material
+-      const material = args[4].material
+-      if (material.transparent && material.side === DoubleSide && !material.forceSinglePass) {
+-        material.side = BackSide
+-        material.needsUpdate = true
+-        ogRenderBufferDirect.call(renderer, args[0], args[1], args[2], material, args[4], args[5])
+-        material.side = FrontSide
+-        material.needsUpdate = true
+-        ogRenderBufferDirect.call(renderer, args[0], args[1], args[2], material, args[4], args[5])
+-        material.side = DoubleSide
+-      } else {
+-        ogRenderBufferDirect.call(renderer, args[0], args[1], args[2], material, args[4], args[5])
++  // PATCH (spaceplate): WebGPU compat.
++  //
++  // Upstream excluded `userData.ignoreOverrideMaterial` objects from the override
++  // material by monkey-patching `renderer.renderBufferDirect`. That method is
++  // WebGLRenderer-only: on WebGPURenderer it is `undefined`, so `.bind(renderer)`
++  // threw at setup and took down the entire Studio subtree with it (every extension
++  // after render-modes, and <Scene />, mount inside this component).
++  //
++  // Since r185 three has a first-class, backend-agnostic equivalent:
++  // `Material.allowOverride = false`, honoured by both WebGLRenderer (L2108) and the
++  // common Renderer used by WebGPU (L3562). It also handles the transparent/DoubleSide
++  // two-pass case the copied code above was reimplementing by hand, so this is a
++  // simplification on WebGL too, not just a port.
++  //
++  // The sync runs per frame rather than on mode change because helpers are created
++  // lazily -- selecting an object mounts new AxesHelper/light helpers that would
++  // otherwise miss the flag. It is gated on a non-'rendered' mode, so the traverse
++  // costs nothing in the normal case. `allowOverride` is set-once: these are Studio's
++  // own gizmos and are never meant to be overridden.
++  const syncAllowOverride = () => {
++    scene.traverse((object) => {
++      if (!object.userData.ignoreOverrideMaterial || !hasMaterial(object)) return
++      const material = object.material as Material | Material[]
++      for (const entry of Array.isArray(material) ? material : [material]) {
++        // Guarded so this is a write-once per material rather than a write per frame:
++        // some Studio helper materials are Svelte proxies, and repeatedly assigning
++        // through a proxy signals a state change on every frame for no reason.
++        if (entry && entry.allowOverride !== false) entry.allowOverride = false
+       }
+-    } else {
+-      ogRenderBufferDirect.call(renderer, ...args)
+-    }
++    })
+   }
+ 
+-  onDestroy(() => {
+-    renderer.renderBufferDirect = ogRenderBufferDirect
+-  })
++  useTask(
++    () => {
++      if (extension.state.renderMode !== 'rendered') syncAllowOverride()
++    },
++    { before: autoRenderTask, autoInvalidate: false }
++  )
+ 
+   $effect(() => {
+     switch (extension.state.renderMode) {

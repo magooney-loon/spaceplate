@@ -5,7 +5,8 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@threlte/studio@0.4.3': 5248e121c2708847f76742d23613e403d2b3338f4069893274319e80567df536
+  '@threlte/extras@9.21.1': 92aa75c718a93d0ca5522f3b531997901a07821b595dc94913da7419422734a9
+  '@threlte/studio@0.4.3': f4a847403f72779f67c840fb83742b5a0da4e39b28827660d3f07910a3dcc4f3
 
 importers:
 
@@ -19,13 +20,13 @@ importers:
         version: 8.6.0(svelte@5.56.10)(three@0.185.1)
       '@threlte/extras':
         specifier: ^9.21.1
-        version: 9.21.1(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1)
+        version: 9.21.1(patch_hash=92aa75c718a93d0ca5522f3b531997901a07821b595dc94913da7419422734a9)(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1)
       '@threlte/rapier':
         specifier: ^3.5.0
         version: 3.5.0(@dimforge/rapier3d-compat@0.20.0)(svelte@5.56.10)(three@0.185.1)
       '@threlte/studio':
         specifier: ^0.4.3
-        version: 0.4.3(patch_hash=5248e121c2708847f76742d23613e403d2b3338f4069893274319e80567df536)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
+        version: 0.4.3(patch_hash=f4a847403f72779f67c840fb83742b5a0da4e39b28827660d3f07910a3dcc4f3)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
       '@types/three':
         specifier: ^0.185.4
         version: 0.185.4
@@ -1271,7 +1272,7 @@ snapshots:
       svelte: 5.56.10
       three: 0.185.1
 
-  '@threlte/extras@9.21.1(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1)':
+  '@threlte/extras@9.21.1(patch_hash=92aa75c718a93d0ca5522f3b531997901a07821b595dc94913da7419422734a9)(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1)':
     dependencies:
       '@threejs-kit/instanced-sprite-mesh': 2.5.1(@types/three@0.185.4)(three@0.185.1)
       camera-controls: 3.1.2(three@0.185.1)
@@ -1290,7 +1291,7 @@ snapshots:
       svelte: 5.56.10
       three: 0.185.1
 
-  '@threlte/studio@0.4.3(patch_hash=5248e121c2708847f76742d23613e403d2b3338f4069893274319e80567df536)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))':
+  '@threlte/studio@0.4.3(patch_hash=f4a847403f72779f67c840fb83742b5a0da4e39b28827660d3f07910a3dcc4f3)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))':
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@mdi/js': 7.4.47

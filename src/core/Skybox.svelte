@@ -1,25 +1,19 @@
 <script lang="ts">
 	import { T } from '@threlte/core/webgpu';
-	import { Sky, Stars as StarsComponent, Environment, CubeEnvironment } from '@threlte/extras';
+	import { Environment, CubeEnvironment } from '@threlte/extras';
+	import Sky from './Sky.svelte';
 
-	import {
-		skyboxState,
-		starsState,
-		skyboxActions,
-		environmentState,
-		ENV_TEXTURES,
-		CUBE_TEXTURES
-	} from '$extensions/skybox';
-	import { resolveScenePreset, resolveGlobalPreset, sceneState } from '$extensions/scene';
+	import { skyboxState, environmentState, ENV_TEXTURES, CUBE_TEXTURES } from '$extensions/skybox';
 
-	$effect(() => {
-		const presetId =
-			resolveScenePreset(sceneState.currentScene, 'skybox') ?? resolveGlobalPreset('skybox');
-		if (presetId) skyboxActions.loadUserPreset(presetId);
-	});
-
-	const effectiveLayer1Count = $derived(Math.round(starsState.layer1Count));
-	const effectiveLayer2Count = $derived(Math.round(starsState.layer2Count));
+	// REMOVED: the scene/global skybox preset-resolution $effect that used to live here.
+	// It called skyboxActions.loadUserPreset() from inside an effect, which reaches
+	// applyPresetObject() -- and that function READS transitionState.transitionDuration
+	// and then WRITES transitionState.isTransitioning. Reading and writing the same
+	// state inside one effect is an unconditional infinite loop, and it was a direct
+	// cause of the effect_update_depth_exceeded crash.
+	//
+	// Nothing is lost: every bundled preset list is currently empty, and preset
+	// resolution is deleted outright in phase 4. See DOCS/graphics-rework.md §3.4.
 
 	const activeEnvTexture = $derived(
 		environmentState.envTextureId
@@ -56,41 +50,12 @@
 			setEnvironment={skyboxState.setEnvironment}
 			cubeMapSize={skyboxState.cubeMapSize}
 			scale={skyboxState.scale}
-			userData={{ hideInTree: true, selectable: false }}
 		/>
 	</T.Group>
 
-	{#if starsState.enabled && effectiveLayer1Count > 0}
-		<T.Group userData={{ hideInTree: true, selectable: false }}>
-			<StarsComponent
-				count={effectiveLayer1Count}
-				radius={starsState.radius}
-				depth={starsState.depth * 0.8}
-				factor={starsState.layer1Factor}
-				fade={starsState.fade}
-				lightness={starsState.lightness}
-				opacity={starsState.opacity}
-				saturation={starsState.saturation}
-				speed={starsState.layer1Speed}
-				userData={{ hideInTree: true, selectable: false }}
-			/>
-		</T.Group>
-	{/if}
-
-	{#if starsState.enabled && effectiveLayer2Count > 0}
-		<T.Group userData={{ hideInTree: true, selectable: false }}>
-			<StarsComponent
-				count={effectiveLayer2Count}
-				radius={starsState.radius}
-				depth={starsState.depth * 0.6}
-				factor={starsState.layer2Factor}
-				fade={starsState.fade}
-				lightness={starsState.lightness * 0.8}
-				opacity={starsState.opacity * 0.8}
-				saturation={starsState.saturation}
-				speed={starsState.layer2Speed}
-				userData={{ hideInTree: true, selectable: false }}
-			/>
-		</T.Group>
-	{/if}
+	<!-- Stars are intentionally absent: @threlte/extras' <Stars> builds a raw
+	     ShaderMaterial and cannot render on WebGPU. starsState is left in place for
+	     now because sky presets embed star presets, and that whole preset layer is
+	     removed in phase 4 -- rewiring it here would be thrown away.
+	     See DOCS/graphics-rework.md §3.4. -->
 {/if}

@@ -3,8 +3,6 @@
 	import Scene from './Scene.svelte';
 	import SceneHud from './SceneHud.svelte';
 	import { Renderer, Loader, Keymapper } from '$core';
-	import { patchRendererForStudio } from '$extensions/studio-webgpu';
-	import StudioWebgpuCompat from '$extensions/studio-webgpu/StudioWebgpuCompat.svelte';
 	import { World } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
@@ -19,16 +17,13 @@
 		const powerPreference =
 			settingsState.graphics.quality === 'low' ? 'low-power' : 'high-performance';
 
-		const renderer = new WebGPURenderer({
+		// @threlte/studio's WebGL assumptions are handled in patches/@threlte__studio,
+		// so nothing has to be done to the renderer here.
+		return new WebGPURenderer({
 			canvas,
 			antialias: false,
 			powerPreference
 		});
-
-		// @threlte/studio still assumes WebGLRenderer — see $extensions/studio-webgpu.
-		patchRendererForStudio(renderer);
-
-		return renderer;
 	};
 
 	const dpr = $derived.by(() => {
@@ -50,10 +45,12 @@
 
 <Loader />
 
+<!-- autoRender is back on (the default): with post-processing removed there is no
+     RenderPipeline to drive, so Threlte's autoRenderTask does the rendering.
+     If a pipeline returns, set autoRender={false} here as a Canvas option -- never
+     by toggling it from an $effect, which self-invalidates
+     (DOCS/graphics-rework.md §1.1). -->
 <Canvas {createRenderer} {dpr}>
-	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-		<StudioWebgpuCompat />
-	{/if}
 	<Renderer />
 	<World
 		gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]}

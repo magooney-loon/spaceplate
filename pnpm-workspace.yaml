@@ -8,4 +8,5 @@ minimumReleaseAgeExclude:
   - '@threlte/extras@9.21.1'
   - '@types/node@26.4.0'
 patchedDependencies:
+  '@threlte/extras@9.21.1': patches/@threlte__extras@9.21.1.patch
   '@threlte/studio@0.4.3': patches/@threlte__studio@0.4.3.patch

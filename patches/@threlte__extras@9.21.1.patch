@@ -1,0 +1,428 @@
+diff --git a/dist/components/Grid/Grid.svelte b/dist/components/Grid/Grid.svelte
+index a28a61519ac4e1c4ec318ef009126520abb7481a..b5aad10d55ce60bc1449433875bb7fed0fdffc94 100644
+--- a/dist/components/Grid/Grid.svelte
++++ b/dist/components/Grid/Grid.svelte
+@@ -1,9 +1,14 @@
+ <!-- Credits to Fyrestar for the https://github.com/Fyrestar/THREE.InfiniteGridHelper  -->
+ <script lang="ts">
+   import { isInstanceOf, T, useTask, useThrelte } from '@threlte/core'
+-  import { Color, DoubleSide, Plane, Uniform, Vector3, Mesh, type ShaderMaterial } from 'three'
++  import { Color, DoubleSide, Plane, Vector3, Mesh } from 'three'
+   import type { GridProps } from './types.js'
+-  import { fragmentShader, vertexShader } from './gridShaders.js'
++  // PATCH (spaceplate): WebGPU compat -- the GLSL ShaderMaterial is replaced with a
++  // TSL NodeMaterial. See gridNodes.js for the port and why. TSL uniform() nodes
++  // expose .value exactly like THREE.Uniform, so all the reactive plumbing below is
++  // unchanged; only the uniform constructor and the material itself differ.
++  import { uniform } from 'three/tsl'
++  import { createGridMaterial } from './gridNodes.js'
+ 
+   let {
+     cellSize = 1,
+@@ -59,41 +64,57 @@
+     polar: 3
+   } as const
+ 
++  // PATCH (spaceplate): TSL uniform() nodes in place of THREE.Uniform. Both expose
++  // .value, so every $effect.pre below keeps working verbatim.
++  //
++  // coord0/1/2, gridType and lineGridCoord are gone: those selected shader branches
++  // and vector components by index, which WGSL cannot do dynamically. They are baked
++  // into the node graph instead, which is rebuilt when the props behind them change.
+   const uniforms = {
+-    cellSize: new Uniform(1),
+-    sectionSize: new Uniform(10),
+-    cellColor: new Uniform(new Color('#000000')),
+-    sectionColor: new Uniform(new Color('#0000ee')),
+-    backgroundColor: new Uniform(new Color('#dadada')),
+-    backgroundOpacity: new Uniform(0),
+-    fadeDistance: new Uniform(100),
+-    fadeStrength: new Uniform(1),
+-    fadeOrigin: new Uniform(new Vector3()),
+-    cellThickness: new Uniform(1),
+-    sectionThickness: new Uniform(2),
+-    infiniteGrid: new Uniform(false),
+-    followCamera: new Uniform(false),
+-    coord0: new Uniform(0),
+-    coord1: new Uniform(2),
+-    coord2: new Uniform(1),
+-    gridType: new Uniform<number>(gridType.grid),
+-    lineGridCoord: new Uniform<number>(axisToInt.x),
+-    circleGridMaxRadius: new Uniform(0),
+-    polarCellDividers: new Uniform(6),
+-    polarSectionDividers: new Uniform(2),
+-    worldCamProjPosition: new Uniform(new Vector3()),
+-    worldPlanePosition: new Uniform(new Vector3())
++    cellSize: uniform(1),
++    sectionSize: uniform(10),
++    cellColor: uniform(new Color('#000000')),
++    sectionColor: uniform(new Color('#0000ee')),
++    backgroundColor: uniform(new Color('#dadada')),
++    backgroundOpacity: uniform(0),
++    fadeDistance: uniform(100),
++    fadeStrength: uniform(1),
++    fadeOrigin: uniform(new Vector3()),
++    cellThickness: uniform(1),
++    sectionThickness: uniform(2),
++    circleGridMaxRadius: uniform(0),
++    polarCellDividers: uniform(6),
++    polarSectionDividers: uniform(2),
++    worldCamProjPosition: uniform(new Vector3()),
++    worldPlanePosition: uniform(new Vector3())
+   }
+ 
++  // Rebuilt only when a structural option changes -- numeric and colour changes flow
++  // through the uniforms above without touching the graph.
++  const material = $derived(
++    createGridMaterial(uniforms, {
++      plane,
++      type,
++      axis,
++      infiniteGrid,
++      followCamera,
++      maxRadius,
++      cellDividers,
++      sectionDividers,
++      hasBackground: backgroundOpacity > 0,
++      side
++    })
++  )
++
++  $effect(() => {
++    const current = material
++    return () => current.dispose()
++  })
++
+   $effect.pre(() => {
+-    // convert axis string to int indexes xzy = [0,2,1]
+-    const { axes, normal } = planeConfig[plane]
+-    const c0 = axes.charAt(0) as 'x' | 'y' | 'z'
+-    const c1 = axes.charAt(1) as 'x' | 'y' | 'z'
+-    const c2 = axes.charAt(2) as 'x' | 'y' | 'z'
+-    uniforms.coord0.value = axisToInt[c0]
+-    uniforms.coord1.value = axisToInt[c1]
+-    uniforms.coord2.value = axisToInt[c2]
++    // PATCH (spaceplate): the coord0/1/2 uniforms are baked into the node graph now;
++    // only the plane normal still needs updating here.
++    const { normal } = planeConfig[plane]
+     gridPlaneNormal.set(normal[0], normal[1], normal[2])
+     invalidate()
+   })
+@@ -148,18 +169,11 @@
+     uniforms.sectionThickness.value = sectionThickness
+     invalidate()
+   })
+-  $effect.pre(() => {
+-    uniforms.followCamera.value = followCamera
+-    invalidate()
+-  })
+-  $effect.pre(() => {
+-    uniforms.infiniteGrid.value = infiniteGrid
+-    invalidate()
+-  })
++  // PATCH (spaceplate): followCamera, infiniteGrid, gridType and lineGridCoord are
++  // baked into the node graph (see the $derived material above), so they no longer
++  // have uniforms to update here.
+ 
+   $effect.pre(() => {
+-    uniforms.gridType.value = gridType[type]
+-    uniforms.lineGridCoord.value = axisToInt[axis as 'x' | 'y' | 'z']
+     uniforms.circleGridMaxRadius.value = maxRadius
+     uniforms.polarCellDividers.value = cellDividers
+     uniforms.polarSectionDividers.value = sectionDividers
+@@ -172,10 +186,9 @@
+         .setFromNormalAndCoplanarPoint(gridPlaneNormal, zeroVector)
+         .applyMatrix4(mesh.matrixWorld)
+ 
+-      const material = mesh.material as ShaderMaterial
+-      const worldCamProjPosition = material.uniforms.worldCamProjPosition as Uniform<Vector3>
+-      const worldPlanePosition = material.uniforms.worldPlanePosition as Uniform<Vector3>
+-      const uFadeOrigin = material.uniforms.fadeOrigin as Uniform<Vector3>
++      // PATCH (spaceplate): read the TSL uniform nodes directly rather than going
++      // through material.uniforms, which only exists on ShaderMaterial.
++      const { worldCamProjPosition, worldPlanePosition, fadeOrigin: uFadeOrigin } = uniforms
+ 
+       const projectedPoint = gridPlane.projectPoint(
+         camera.current.position,
+@@ -198,12 +211,9 @@
+   frustumCulled={false}
+   {...props}
+ >
+-  <T.ShaderMaterial
+-    {fragmentShader}
+-    {vertexShader}
+-    {uniforms}
+-    transparent
+-    {side}
++  <T
++    is={material}
++    attach="material"
+   />
+   {#if children}
+     {@render children({ ref: mesh })}
+diff --git a/dist/components/Grid/gridNodes.js b/dist/components/Grid/gridNodes.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..04cc68dec72b688edcfd7d05c44424f293d49540
+--- /dev/null
++++ b/dist/components/Grid/gridNodes.js
+@@ -0,0 +1,260 @@
++// PATCH (spaceplate): WebGPU compat.
++//
++// TSL port of gridShaders.js. The original is a raw ShaderMaterial; three's
++// NodeLibrary has no ShaderMaterial mapping, so on WebGPURenderer it is silently
++// replaced with a blank NodeMaterial ("Material \"ShaderMaterial\" is not
++// compatible") and the grid never draws.
++//
++// Credits to Evan Wallace https://madebyevan.com/shaders/grid/ for the original.
++//
++// Structural options (plane, type, axis, infiniteGrid, followCamera, maxRadius,
++// dividers, whether a background is drawn) are baked into the graph in JS rather
++// than branched on in the shader. They are plain props that change rarely, and it
++// avoids dynamic component indexing -- which GLSL allowed via position[coord0] but
++// WGSL will not do against a uniform index.
++import { NodeMaterial } from 'three/webgpu';
++import {
++	Discard,
++	Fn,
++	abs,
++	atan,
++	clamp,
++	float,
++	fract,
++	fwidth,
++	length,
++	max,
++	min,
++	mix,
++	modelWorldMatrixInverse,
++	pow,
++	positionLocal,
++	positionWorld,
++	select,
++	smoothstep,
++	varying,
++	vec2,
++	vec3,
++	vec4
++} from 'three/tsl';
++
++const PI = 3.141592653589793;
++const COMPONENTS = ['x', 'y', 'z'];
++
++const AXIS_TO_INT = { x: 0, y: 1, z: 2 };
++
++const PLANE_CONFIG = {
++	xz: { axes: 'xzy', normal: [0, 1, 0] },
++	xy: { axes: 'xyz', normal: [0, 0, 1] },
++	zy: { axes: 'zyx', normal: [1, 0, 0] }
++};
++
++export const planeConfig = PLANE_CONFIG;
++export const axisToInt = AXIS_TO_INT;
++
++/** Reorders a vec3's components, mirroring `vec3(v[c0], v[c1], v[c2])` in GLSL. */
++const swizzle = (node, [c0, c1, c2]) =>
++	vec3(node[COMPONENTS[c0]], node[COMPONENTS[c1]], node[COMPONENTS[c2]]);
++
++const coordsForPlane = (plane) => {
++	const { axes } = PLANE_CONFIG[plane] ?? PLANE_CONFIG.xz;
++	return [AXIS_TO_INT[axes.charAt(0)], AXIS_TO_INT[axes.charAt(1)], AXIS_TO_INT[axes.charAt(2)]];
++};
++
++/**
++ * Builds the grid NodeMaterial.
++ *
++ * @param u        TSL uniform nodes, shared with the component's reactive plumbing
++ * @param options  Structural options baked into the graph
++ */
++export const createGridMaterial = (u, options) => {
++	const {
++		plane = 'xz',
++		type = 'grid',
++		axis = 'x',
++		infiniteGrid = false,
++		followCamera = false,
++		maxRadius = 0,
++		cellDividers = 6,
++		sectionDividers = 2,
++		hasBackground = false,
++		side
++	} = options;
++
++	const coords = coordsForPlane(plane);
++	const lineComponent = COMPONENTS[AXIS_TO_INT[axis] ?? 0];
++
++	const material = new NodeMaterial();
++	material.transparent = true;
++	material.side = side;
++
++	// --- vertex ------------------------------------------------------------
++	// Mirrors the original vertex shader. Assigning positionNode lets the default
++	// model-view-projection path run, and keeps positionWorld consistent with the
++	// remapped position (the fragment stage needs it for distance fade).
++	const localPosition = Fn(() => {
++		const local = swizzle(positionLocal, coords).toVar();
++
++		if (infiniteGrid) {
++			local.mulAssign(float(1).add(u.fadeDistance));
++		}
++
++		if (followCamera) {
++			// The original offsets in world space then maps back through
++			// inverse(modelMatrix). Transforming the offset as a direction (w = 0)
++			// is the equivalent, done once instead of per-vertex round-tripping.
++			const worldOffset = u.worldCamProjPosition.sub(u.worldPlanePosition);
++			local.addAssign(modelWorldMatrixInverse.mul(vec4(worldOffset, 0)).xyz);
++		}
++
++		return local;
++	})();
++
++	material.positionNode = localPosition;
++
++	// The fragment stage re-applies the same swizzle to the (already swizzled)
++	// local position, exactly as the original shader does.
++	const vLocalPosition = varying(localPosition, 'vGridLocalPosition');
++
++	// --- grid patterns -----------------------------------------------------
++	const getSquareGrid = (size, thickness, localPos) => {
++		const coord = localPos.xy.div(size);
++		const grid = abs(fract(coord.sub(0.5)).sub(0.5)).div(fwidth(coord));
++		const line = min(grid.x, grid.y).add(1).sub(thickness);
++		return float(1).sub(min(line, 1));
++	};
++
++	const getLinesGrid = (size, thickness, localPos) => {
++		const coord = localPos[lineComponent].div(size);
++		const line = abs(fract(coord.sub(0.5)).sub(0.5))
++			.div(fwidth(coord))
++			.sub(thickness.mul(0.2));
++		return float(1).sub(min(line, 1));
++	};
++
++	// Both masks collapse to a constant when the grid is infinite or unbounded,
++	// which is the common case and keeps those branches out of the shader.
++	const bounded = !infiniteGrid && maxRadius > 0;
++
++	const getRadiusMask = (radius) => {
++		if (!bounded) return float(1);
++		const width = max(fwidth(radius), 0.0001);
++		return float(1).sub(smoothstep(u.circleGridMaxRadius, u.circleGridMaxRadius.add(width), radius));
++	};
++
++	const getPolarDividerMask = (radius) => {
++		if (!bounded) return float(1);
++		const width = max(fwidth(radius), 0.0001);
++		return float(1).sub(smoothstep(u.circleGridMaxRadius.sub(width), u.circleGridMaxRadius, radius));
++	};
++
++	const getCirclesGrid = (size, thickness, radius) => {
++		const coord = radius.div(size);
++		const line = abs(fract(coord.sub(0.5)).sub(0.5))
++			.div(fwidth(coord))
++			.sub(thickness.mul(0.2));
++		return float(1).sub(min(line, 1));
++	};
++
++	const getPolarGrid = (size, thickness, dividers, dividerCount, localPos, radius) => {
++		if (dividerCount <= 0) return getCirclesGrid(size, thickness, radius);
++
++		const rad = radius.div(size);
++		const angle = atan(localPos.x, localPos.y).mul(dividers).div(PI);
++		const coord = vec2(rad, angle);
++
++		const span = dividers.mul(2);
++		const wrapped = vec2(coord.x, fract(coord.y.div(span)).mul(span));
++
++		const coordWidth = fwidth(coord);
++		const wrappedWidth = fwidth(wrapped);
++		const half = dividers.mul(0.5);
++		const useWrapped = coord.y.lessThan(half.negate()).or(coord.y.greaterThan(half));
++		const width = select(useWrapped, wrappedWidth, coordWidth).mul(
++			float(1).add(thickness.mul(0.25))
++		);
++
++		const grid = abs(fract(coord.sub(0.5)).sub(0.5)).div(width);
++		const circle = float(1).sub(min(grid.x, 1));
++		const divider = float(1).sub(min(grid.y, 1));
++
++		return max(circle, divider.mul(getPolarDividerMask(radius)));
++	};
++
++	// --- fragment ----------------------------------------------------------
++	const result = Fn(() => {
++		const localPos = swizzle(vLocalPosition, coords);
++
++		let g1 = float(0);
++		let g2 = float(0);
++		let radiusMask = float(1);
++
++		if (type === 'lines') {
++			g1 = getLinesGrid(u.cellSize, u.cellThickness, localPos);
++			g2 = getLinesGrid(u.sectionSize, u.sectionThickness, localPos);
++		} else if (type === 'circular') {
++			const radius = length(localPos.xy);
++			g1 = getCirclesGrid(u.cellSize, u.cellThickness, radius);
++			g2 = getCirclesGrid(u.sectionSize, u.sectionThickness, radius);
++			radiusMask = getRadiusMask(radius);
++		} else if (type === 'polar') {
++			const radius = length(localPos.xy);
++			g1 = getPolarGrid(
++				u.cellSize,
++				u.cellThickness,
++				u.polarCellDividers,
++				cellDividers,
++				localPos,
++				radius
++			);
++			g2 = getPolarGrid(
++				u.sectionSize,
++				u.sectionThickness,
++				u.polarSectionDividers,
++				sectionDividers,
++				localPos,
++				radius
++			);
++			radiusMask = getRadiusMask(radius);
++		} else {
++			g1 = getSquareGrid(u.cellSize, u.cellThickness, localPos);
++			g2 = getSquareGrid(u.sectionSize, u.sectionThickness, localPos);
++		}
++
++		const dist = length(u.fadeOrigin.sub(positionWorld));
++		const d = float(1).sub(min(dist.div(u.fadeDistance), 1));
++		const fadeFactor = pow(d, u.fadeStrength).mul(0.95);
++
++		const color = mix(u.cellColor, u.sectionColor, min(u.sectionThickness.mul(g2), 1));
++
++		let rgb;
++		let alpha;
++
++		if (hasBackground) {
++			const linesAlpha = clamp(g1.add(g2).mul(fadeFactor), 0, 1);
++			rgb = mix(u.backgroundColor, color, linesAlpha);
++			alpha = max(linesAlpha, u.backgroundOpacity.mul(fadeFactor));
++		} else {
++			const baseAlpha = g1.add(g2).mul(pow(d, u.fadeStrength));
++			rgb = color;
++			// Sections stay at full strength while cells are damped to 75%.
++			alpha = mix(baseAlpha.mul(0.75), baseAlpha, g2);
++		}
++
++		const finalAlpha = alpha.mul(radiusMask).toVar();
++
++		// Matches the original's `discard`. Without it an infinite grid would write
++		// depth across the whole plane even where nothing is drawn.
++		Discard(finalAlpha.lessThanEqual(0));
++
++		return vec4(rgb, finalAlpha);
++	})();
++
++	// colorNode/opacityNode rather than fragmentNode: the original ended with
++	// <tonemapping_fragment> and <colorspace_fragment>, so output processing must
++	// still run.
++	material.colorNode = result.xyz;
++	material.opacityNode = result.w;
++
++	return material;
++};
