@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { useThrelte, useTask } from '@threlte/core/webgpu';
 	import Stats from 'stats-gl';
+	import { TimestampQuery } from 'three/webgpu';
 	import { onMount, onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
 
@@ -114,9 +115,30 @@
 		document.body.appendChild(stats.dom);
 	});
 
+	// stats-gl turns on `renderer.backend.trackTimestamp` for trackGPU/trackCPT, but on a
+	// three WebGPURenderer it only ever *reads* `renderer.info.render.timestamp` — it never
+	// resolves the queries. The pool then fills up and three warns
+	// "WebGPUTimestampQueryPool [render]: Maximum number of queries exceeded".
+	// Resolving here both silences that and is what actually populates the value stats-gl
+	// reads, so the GPU panel reports real numbers instead of staying at zero.
+	// Fire-and-forget: it must not block the frame, and it rejects harmlessly if the
+	// device is lost or the feature is unsupported.
+	let resolvingTimestamps = false;
+	const resolveGpuTimestamps = () => {
+		if (resolvingTimestamps || !renderer.backend?.trackTimestamp) return;
+		resolvingTimestamps = true;
+		renderer
+			.resolveTimestampsAsync(TimestampQuery.RENDER)
+			.catch(() => {})
+			.finally(() => {
+				resolvingTimestamps = false;
+			});
+	};
+
 	useTask(() => {
 		stats?.update();
 		updateCustomPanels();
+		resolveGpuTimestamps();
 	});
 
 	onDestroy(() => {

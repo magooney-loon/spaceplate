@@ -1,3 +1,66 @@
+diff --git a/dist/components/Gizmo/Gizmo.svelte b/dist/components/Gizmo/Gizmo.svelte
+index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..0a4c61505609f05c0e3d023a7b03aee7191d9c20 100644
+--- a/dist/components/Gizmo/Gizmo.svelte
++++ b/dist/components/Gizmo/Gizmo.svelte
+@@ -2,6 +2,7 @@
+   import { useTask, useThrelte, useParent, observe } from '@threlte/core'
+   import {
+     NoToneMapping,
++    Vector2,
+     Vector4,
+     type OrthographicCamera,
+     type PerspectiveCamera,
+@@ -43,6 +44,41 @@
+ 
+   const viewport = new Vector4()
+ 
++  // PATCH (spaceplate): WebGPU compat.
++  //
++  // WebGL's `gl.viewport` has its origin at the BOTTOM-left of the drawing buffer;
++  // WebGPU's `GPURenderPassEncoder.setViewport` has its origin at the TOP-left. three's
++  // WebGPU backend passes `viewportValue` straight through to `renderPass.setViewport`
++  // without flipping (see common/Renderer.js `_getRenderContext`), so viewport maths
++  // written for WebGL lands mirrored vertically under WebGPURenderer.
++  //
++  // three-viewport-gizmo computes its viewport in `domUpdate()` as
++  //   y = domElement.clientHeight - (rect.top + rect.height)
++  // i.e. the WebGL convention. With `placement: 'bottom-left'` that put the gizmo in the
++  // TOP-left under WebGPU, hidden behind the Studio toolbar -- it renders fine, just in
++  // the wrong corner. Flipping y back recovers the DOM-space top offset:
++  //   H - y - h === H - (H - top - h) - h === top
++  //
++  // Applied around `render()` only, and restored afterwards, because `domUpdate()`
++  // recomputes `_viewport` from the DOM on every `update()`.
++  const gizmoSize = new Vector2()
++  const renderGizmo = () => {
++    const isWebGPU = (renderer as unknown as { isWebGPURenderer?: boolean }).isWebGPURenderer
++    if (!isWebGPU) {
++      gizmo.render()
++      return
++    }
++    const gizmoViewport = (gizmo as unknown as { _viewport: number[] })._viewport
++    const originalY = gizmoViewport[1]
++    renderer.getSize(gizmoSize)
++    gizmoViewport[1] = gizmoSize.y - originalY - gizmoViewport[3]
++    try {
++      gizmo.render()
++    } finally {
++      gizmoViewport[1] = originalY
++    }
++  }
++
+   const cameraControls = $derived(controls ?? ($parent as Controls))
+ 
+   useTask(
+@@ -54,7 +90,7 @@
+         renderer.getViewport(viewport)
+         renderer.toneMapping = NoToneMapping
+ 
+-        gizmo.render()
++        renderGizmo()
+ 
+         renderer.setViewport(viewport)
+         renderer.toneMapping = toneMapping
 diff --git a/dist/components/Grid/Grid.svelte b/dist/components/Grid/Grid.svelte
 index a28a61519ac4e1c4ec318ef009126520abb7481a..b5aad10d55ce60bc1449433875bb7fed0fdffc94 100644
 --- a/dist/components/Grid/Grid.svelte

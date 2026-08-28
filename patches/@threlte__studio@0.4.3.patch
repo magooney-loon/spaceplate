@@ -41,6 +41,35 @@ index 58651b111f72f3143b1a465e1f35ec36d3124115..24ac8f731fc17ada786385eac50e8f42
 +  ny={{ line: false }}
 +  nz={{ line: false }}
 +/>
+diff --git a/dist/extensions/editor-camera/DefaultCamera.svelte b/dist/extensions/editor-camera/DefaultCamera.svelte
+index 52248d1d951c4296a996afb75f46f172c7da8448..b14242590c0ed2815781025d9728d397a5a543da 100644
+--- a/dist/extensions/editor-camera/DefaultCamera.svelte
++++ b/dist/extensions/editor-camera/DefaultCamera.svelte
+@@ -128,11 +128,23 @@
+       renderer.setViewport(viewport)
+ 
+       // draw to canvas
++      //
++      // PATCH (spaceplate): WebGPU compat.
++      // The render above targets `setViewport(0, 0, width, height)`. WebGL's viewport
++      // origin is the BOTTOM-left of the drawing buffer, so the result lands in the
++      // bottom-left of the canvas and is read back from `(size.y - height) * dpr`.
++      // WebGPU's `setViewport` origin is the TOP-left and three does not flip it, so
++      // under WebGPURenderer the same render lands in the TOP-left and that source
++      // rectangle reads a region the preceding `autoClear` had just wiped -- which is
++      // why the PiP was solid black rather than merely offset.
++      const sourceY = (renderer as unknown as { isWebGPURenderer?: boolean }).isWebGPURenderer
++        ? 0
++        : (size.y - height) * dpr
+       context.clearRect(0, 0, width * dpr, height * dpr)
+       context.drawImage(
+         canvas,
+         0,
+-        (size.y - height) * dpr,
++        sourceY,
+         width * dpr,
+         height * dpr,
+         0,
 diff --git a/dist/extensions/editor-camera/EditorCamera.svelte b/dist/extensions/editor-camera/EditorCamera.svelte
 index 826504d4b1c6caeefd219d7818dd489531c63160..a84bf6ab5060c9f809c9681cf4440ae0e99d5cc8 100644
 --- a/dist/extensions/editor-camera/EditorCamera.svelte
@@ -125,10 +154,17 @@ index e9452c8c2029b8e9dbfc0fefea70d2bc179b9bfc..994d7e621731ff48ab2f919b6607b360
        vertexColors: true,
        transparent: opacity < 1,
 diff --git a/dist/extensions/object-selection/RenderSelectedObjects.svelte b/dist/extensions/object-selection/RenderSelectedObjects.svelte
-index 0cf31db85f00eaf03a99752717d276aa2e797fad..8913c6f329e8afa6db4305ca762eea116fd4d12c 100644
+index 0cf31db85f00eaf03a99752717d276aa2e797fad..c43588af68fda1f7f290c809921c76a4d50c4377 100644
 --- a/dist/extensions/object-selection/RenderSelectedObjects.svelte
 +++ b/dist/extensions/object-selection/RenderSelectedObjects.svelte
-@@ -12,10 +12,28 @@
+@@ -6,16 +6,35 @@
+   import {
+     Color,
+     Mesh,
++    PlaneGeometry,
+     MeshBasicMaterial,
+     RGBAFormat,
+     WebGLRenderTarget,
      type Material
    } from 'three'
    import { useStudioObjectsRegistry } from '../studio-objects-registry/useStudioObjectsRegistry.svelte.js'
@@ -159,10 +195,11 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..8913c6f329e8afa6db4305ca762eea11
    const { invalidate } = useThrelte()
    const objectSelection = useObjectSelection()
    const { addObject, removeObject } = useStudioObjectsRegistry()
-@@ -109,6 +127,53 @@
+@@ -109,7 +128,61 @@
      }
    )
  
+-  const selectionMesh = new Mesh()
 +  // PATCH (spaceplate): TSL port of the original outline shader.
 +  // Samples the 8 neighbours of each texel in the selected-objects render target and
 +  // marks a pixel as "edge" whenever a neighbour's colour differs by more than
@@ -210,10 +247,18 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..8913c6f329e8afa6db4305ca762eea11
 +    outlineMaterial.fragmentNode = vec4(outlineColor, smoothstep(0.1, 3, edgeDetectValue))
 +  }
 +
-   const selectionMesh = new Mesh()
++  // PATCH (spaceplate): give the mesh its geometry up front.
++  // `new Mesh()` defaults to an empty BufferGeometry, and with `frustumCulled = false`
++  // this mesh is submitted on the very first frame -- before the `<T.PlaneGeometry />`
++  // child below has attached. Under WebGPU the node builder logs
++  // 'THREE.AttributeNode: Vertex attribute "position" not found on geometry.' for that
++  // frame. Constructing with the geometry closes that window; the child still attaches
++  // and replaces it, which is a no-op since it builds an identical PlaneGeometry.
++  const selectionMesh = new Mesh(new PlaneGeometry())
    selectionMesh.raycast = () => {}
    selectionMesh.position.z = -5
-@@ -154,26 +219,6 @@
+   selectionMesh.frustumCulled = false
+@@ -154,26 +227,6 @@
    <T is={selectionMesh} attach={$camera}>
      <T.PlaneGeometry />
  

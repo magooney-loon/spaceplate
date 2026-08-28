@@ -46,7 +46,55 @@ Sources consulted: `DOCS/threlte-main` (`apps/docs/src/content/learn/advanced/we
   - `firefox --headless --profile <dir> --new-instance http://localhost:5173/`
   - Svelte's `effect_update_depth_exceeded` carries an *empty* stack by design (`batch.js` explicitly overwrites it), and the "updated at" errors it logs alongside are empty too, so neither identifies the culprit. What does work: temporarily instrument `node_modules/svelte/src/internal/client/reactivity/batch.js` at the top of `infinite_loop_guard()` to log `current_batch.current.keys()` (each source's `label`) and `last_scheduled_effect.fn`. That named the looping sources (`defaultCameraObject`, `camera`) directly. Remember to `rm -rf node_modules/.vite` after editing, since Svelte is pre-bundled.
   - Prove attribution by experiment, not argument: reverting the gizmo props in the live package and re-running showed the loop persisting, which ruled that change out conclusively.
-- **Still not verified**: in-browser rendering. Whether the axes/outline/grid actually *look* right under WebGPU is unchecked; only the absence of the module-resolution and material-compatibility faults is established.
+- **Still not verified**: in-browser rendering. Whether the axes/outline/grid actually *look* right under WebGPU is unchecked; only the absence of the module-resolution and material-compatibility faults is established. *(Superseded — see Follow-up 3, which verified rendering by reading the canvas back.)*
+
+### Follow-up 3 — viewport Y-origin: the gizmo and the Default Camera PiP
+
+**One root cause behind both.** WebGL's `gl.viewport` has its origin at the BOTTOM-left of the
+drawing buffer; WebGPU's `GPURenderPassEncoder.setViewport` has its origin at the TOP-left. three's
+WebGPU backend passes `renderContext.viewportValue` straight through to `renderPass.setViewport`
+without flipping it (`common/Renderer.js`, `WebGPUBackend.js` ~L1210/L1373). **Any viewport maths
+written against WebGL lands mirrored vertically under `WebGPURenderer`.** This is the first thing to
+suspect for any "it renders in the wrong place / renders nothing" report under WebGPU.
+
+- **Gizmo** (`patches/@threlte__extras`): `three-viewport-gizmo`'s `domUpdate()` computes
+  `y = domElement.clientHeight - (rect.top + rect.height)` — the WebGL convention. With
+  `placement: 'bottom-left'` the gizmo was drawing in the TOP-left, *behind the Studio toolbar*, so
+  it looked absent. It was rendering correctly the whole time. Fixed in `Gizmo.svelte` by flipping
+  `_viewport[1]` around `gizmo.render()` and restoring after (`domUpdate()` recomputes it each
+  `update()`). `H - y - h === top`, so the flip recovers the DOM-space top offset. Gated on
+  `renderer.isWebGPURenderer` so WebGL is untouched.
+- **PiP** (`patches/@threlte__studio`): `DefaultCamera.svelte` renders at
+  `setViewport(0, 0, width, height)` then reads the result back with
+  `drawImage(canvas, 0, (size.y - height) * dpr, …)` — i.e. from the bottom-left. Under WebGPU the
+  render lands top-left, so that source rectangle read a region `autoClear` had just wiped, which is
+  why the PiP was *solid black* rather than merely offset. Fixed by using source `y = 0` on WebGPU.
+- Note both features live inside `{#if editorCameraEnabled}` in `EditorCamera.svelte`, so neither
+  exists until the editor camera is toggled on (`C`). Reproducing them headlessly needs
+  `localStorage['default/editor-camera:enabled'] = 'true'` set before the app module loads — the
+  Studio persistence key format is `` `${namespace}/${scope}:${path}` `` with namespace `default`.
+
+**Two warnings fixed alongside:**
+- `THREE.AttributeNode: Vertex attribute "position" not found on geometry.` —
+  `RenderSelectedObjects`' `selectionMesh = new Mesh()` defaults to an empty `BufferGeometry` and,
+  with `frustumCulled = false`, is submitted on the first frame before its `<T.PlaneGeometry />`
+  child attaches. Now constructed as `new Mesh(new PlaneGeometry())`.
+- `THREE.WebGPUTimestampQueryPool [render]: Maximum number of queries exceeded` — `stats-gl` sets
+  `renderer.backend.trackTimestamp = true` but on a three `WebGPURenderer` it only ever *reads*
+  `renderer.info.render.timestamp`; it never resolves the queries, so the pool fills. `StatsExtension.svelte`
+  now calls `renderer.resolveTimestampsAsync(TimestampQuery.RENDER)` once per frame (fire-and-forget,
+  re-entrancy guarded). This also makes the GPU panel report real numbers instead of zero.
+
+**Verification method — read the canvas back rather than trusting the console.** The WebGPU canvas is
+configured with `COPY_SRC` (`WebGPUBackend.js` ~L356), so it can be drawn into a 2D canvas and
+`toDataURL`'d. A temporary script in `index.html` dumped base64 PNGs of both the main canvas and the
+PiP canvas in ~900-char chunks to `console.log`, which headless Firefox pipes to stdout; reassembling
+those chunks gives an actual image to look at. That is what showed the gizmo sitting in the wrong
+corner — no console output would ever have revealed it. Quantitatively the PiP went 0.0% → 71.7%
+non-black. All instrumentation is reverted.
+
+**Known remaining (not addressed):** `THREE.Clock: This module has been deprecated. Please use
+THREE.Timer instead.` — a deprecation notice from a dependency, harmless.
 
 ## 1. Goal
 
