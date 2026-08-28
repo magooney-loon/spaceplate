@@ -130,7 +130,7 @@ index e9452c8c2029b8e9dbfc0fefea70d2bc179b9bfc..994d7e621731ff48ab2f919b6607b360
        vertexColors: true,
        transparent: opacity < 1,
 diff --git a/dist/extensions/object-selection/RenderSelectedObjects.svelte b/dist/extensions/object-selection/RenderSelectedObjects.svelte
-index 0cf31db85f00eaf03a99752717d276aa2e797fad..ed9a11033356452055da070f5c3733781e8b8e51 100644
+index 0cf31db85f00eaf03a99752717d276aa2e797fad..60ff5cc1ecca2e976874544118a4ab3dd5a72973 100644
 --- a/dist/extensions/object-selection/RenderSelectedObjects.svelte
 +++ b/dist/extensions/object-selection/RenderSelectedObjects.svelte
 @@ -6,16 +6,35 @@
@@ -171,7 +171,7 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..ed9a11033356452055da070f5c373378
    const { invalidate } = useThrelte()
    const objectSelection = useObjectSelection()
    const { addObject, removeObject } = useStudioObjectsRegistry()
-@@ -109,7 +128,77 @@
+@@ -109,7 +128,88 @@
      }
    )
  
@@ -190,7 +190,18 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..ed9a11033356452055da070f5c373378
 +  outlineMaterial.depthTest = false
 +
 +  {
-+    const vUv = uv()
++    // PATCH (spaceplate): WebGPU compat -- sample the render target with V flipped.
++    //
++    // The GLSL this replaces sampled the quad's `uv` attribute directly. That is
++    // correct on WebGL, where a framebuffer's origin and a texture's UV origin are both
++    // bottom-left. WebGPU puts the render pass origin at the top-left while `uv` still
++    // starts bottom-left, so the identical sample lands mirrored in Y: the outline drew
++    // reflected about the middle of the viewport and slid the opposite way to the object
++    // whenever the camera moved or zoomed.
++    //
++    // The eight neighbour offsets below are unchanged -- they are symmetric about the
++    // centre tap, so negating dFdy does not affect the edge detect.
++    const vUv = vec2(uv().x, uv().y.oneMinus())
 +    // Screen-space derivatives give a line width that stays constant in pixels.
 +    const sampleStep = vec2(dFdx(vUv.x), dFdy(vUv.y)).mul(lineWidth)
 +    const currentColor = texture(renderTarget.texture, vUv)
@@ -250,7 +261,7 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..ed9a11033356452055da070f5c373378
    selectionMesh.raycast = () => {}
    selectionMesh.position.z = -5
    selectionMesh.frustumCulled = false
-@@ -146,34 +235,32 @@
+@@ -146,34 +246,32 @@
      addObject(selectionMesh)
      return () => {
        removeObject(selectionMesh)
