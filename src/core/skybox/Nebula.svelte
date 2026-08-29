@@ -19,11 +19,24 @@
 	// - The screen-edge vignette is gone with it: dimming toward the FRAME border on a
 	//   world-anchored sky betrays the overlay every time the camera turns.
 	// - The field's rare peaks -- the bright blobs that read as "galaxies" -- are
-	//   soft-clamped (d*a/(d+a)) before colouring: the smoke passes through almost
-	//   untouched, the cores get pressed into gentle dense patches.
-	// - The smoke layer is blue instead of the original green.
+	//   soft-clamped (d*a/(d+a)) before use: the body passes through almost untouched,
+	//   the cores get pressed into gentle dense patches.
 	// - The original's screen-noise stars are dropped: Stars.svelte covers that with
 	//   billboards that have real sizes and survive camera rotation.
+	//
+	// AND THEN THE BIGGER DEPARTURE. The first pass kept the demo's two tinted layers
+	// spread across the whole sphere and added a Milky Way glow on top. It looked like a
+	// nebula, which is exactly the problem: a sky with nebulosity in every direction is
+	// the view from inside one. From a planet the galaxy is a BAND and the rest is empty.
+	// So the two layers were repurposed into that band's anatomy --
+	//
+	//   layer 2 (18 iterations) -> the glow's mottling: unresolved star clouds
+	//   layer 1 (26 iterations) -> DUST: an obscuring mask that carves the rifts
+	//
+	// -- the palette was desaturated toward warm-white, the band was made asymmetric
+	// about the galactic bulge, and an airglow wash was added so the off-band sky is dark
+	// rather than mathematically black. What is left of the Shadertoy is its field(), and
+	// that turns out to be the only part that was ever doing sky-shaped work.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import {
@@ -33,6 +46,7 @@
 		cameraProjectionMatrix,
 		dot,
 		float,
+		mix,
 		modelViewMatrix,
 		positionLocal,
 		positionWorld,
@@ -45,16 +59,20 @@
 		vec4
 	} from 'three/tsl';
 	import { descriptor } from './model';
-	import { MILKY_WAY_NORMAL, MILKY_WAY_SIGMA } from './milkyWay';
+	import { MILKY_WAY_CORE, MILKY_WAY_NORMAL, MILKY_WAY_SIGMA } from './milkyWay';
 
 	interface Props {
 		/** Distance of the backdrop dome. Cosmetic -- depth is pinned to the far plane. */
 		radius?: number;
-		/** Overall strength. 1 is the faithful Shadertoy look; the default keeps the smoke a backdrop rather than the subject. */
+		/** Overall strength of the galactic glow. */
 		intensity?: number;
+		/** How hard the dust lanes bite. 0 = an even band, 1 = shredded. */
+		dustDensity?: number;
+		/** Strength of the horizon airglow wash. 0 disables it, giving a pure-black night. */
+		airglow?: number;
 	}
 
-	let { radius = 1000, intensity = 0.55 }: Props = $props();
+	let { radius = 1000, intensity = 0.55, dustDensity = 0.85, airglow = 1 }: Props = $props();
 
 	const { invalidate, autoRenderTask } = useThrelte();
 
@@ -123,9 +141,9 @@
 
 			// Synthesised "audio" bands, murmuring rather than pulsing: the original
 			// swings these at music rates (a full breathe every ~5s, very visible);
-			// these periods run minutes, so brightness drifts instead of thumping.
-			const f0 = float(0.45).add(sin(t.mul(0.021)).mul(0.03));
-			const f1 = float(0.42).add(sin(t.mul(0.017).add(4)).mul(0.03));
+			// these periods run minutes, so the field drifts instead of thumping. Two of
+			// the original four are gone with the layers they used to tint -- these two
+			// survive as the field's seed inputs, which is what keeps it evolving at all.
 			const f2 = float(0.5).add(sin(t.mul(0.013).add(1)).mul(0.03));
 			const f3 = float(0.48).add(sin(t.mul(0.019).add(3)).mul(0.03));
 
@@ -135,36 +153,55 @@
 			// instead of sliding apart and revealing themselves as two decals.
 			const drift = vec3(sin(t.div(210)), sin(t.div(170)), sin(t.div(260)));
 
-			// Layer 1 -- the warm structure. The original's uvs/4 slice becomes dir/4. The
-			// explicit annotation keeps the loosely-typed Fn result from widening the vec4
-			// overloads below into nonsense.
+			// THE BAND IS THE SUBJECT, NOT A STRIPE LAID OVER A BACKDROP. The previous
+			// version rendered the fractal smoke across the entire sphere and then added a
+			// Milky Way glow on top of it. That is why the night never read as a night:
+			// unresolved nebulosity in every direction is what you see from INSIDE a
+			// nebula, not what you see standing on a planet, where the galaxy is a band
+			// and the rest of the sky is essentially empty. So the fractal is now the
+			// band's internal structure rather than wallpaper competing with it.
+			//
+			// The profile matches the star-density band in Stars.svelte (shared constants
+			// in milkyWay.ts) -- the river of stars and the river of light must be the
+			// same river.
+			const offPlane = dot(dir, vec3(...MILKY_WAY_NORMAL));
+			const band = offPlane
+				.mul(offPlane)
+				.negate()
+				.div(2 * MILKY_WAY_SIGMA * MILKY_WAY_SIGMA)
+				.exp();
+			// Asymmetry along the band: a broad warm swell toward the galactic bulge, a
+			// thin cold thread away from it. An evenly bright ring is the clearest tell
+			// that a sky was generated.
+			const bulge = smoothstep(float(-0.15), float(0.8), dot(dir, vec3(...MILKY_WAY_CORE)));
+			const bandShape = band.mul(float(0.35).add(bulge.mul(1.15)));
+
+			// Layer 1 is now DUST, not a second glow -- the change that buys the most
+			// realism per line. The Great Rift is the defining feature of the naked-eye
+			// Milky Way, and it is an absence: cold molecular cloud in the foreground
+			// blocking the light behind it. An additive-only sky can never produce one, so
+			// this layer stopped emitting and started obscuring. Sampled coarser than the
+			// glow (0.19 vs 0.217) so the rifts are larger than the mottling they carve.
+			//
+			// The explicit annotation keeps the loosely-typed Fn result from widening the
+			// vec3/vec4 overloads below into nonsense.
 			const d1: THREE.Node<'float'> = field(
 				dir
-					.mul(0.25)
+					.mul(0.19)
 					.add(vec3(1, -1.3, 0))
 					.add(drift.mul(0.05)),
 				f2
 			);
-			// Soft-saturate BEFORE colouring. The raw field's rare peaks are the "galaxies"
-			// -- several times brighter than everything else, and they own the sky.
-			// d*a/(d+a) is ~linear through the smoke (d << a) and asymptotes at a, so cores
-			// become gentle dense patches instead of glowing blobs. This layer gets the
-			// low ceiling (0.6) and the quieter multipliers: it is counterpoint, not subject.
+			// Soft-saturate BEFORE use. The raw field's rare peaks are several times higher
+			// than everything else; d*a/(d+a) is ~linear through the body (d << a) and
+			// asymptotes at a, so those peaks become dense patches instead of hard holes.
 			const d1s = d1.mul(0.6).div(d1.add(0.6));
-			const d1sq = d1s.mul(d1s);
-			const c1 = vec4(
-				f2.mul(0.9).mul(d1sq.mul(d1s)),
-				f1.mul(0.8).mul(d1sq),
-				f3.mul(0.55).mul(d1s),
-				float(1)
-			);
+			const dust = float(1).sub(d1s.mul(dustDensity)).max(0.06);
 
-			// Layer 2 -- the "smoke": blue instead of the original green, at a FIXED scale --
-			// the original's breathing zoom (sin terms on the divisor) pumps in and out,
-			// which is mesmerising in a demo and queasy on a sky. Same soft-saturation but
-			// with a high ceiling (1.0): this layer IS the smoke, so only its densest
-			// patches get pressed down. The blue term is the original's t2*freqs[0],
-			// carrying the hue.
+			// Layer 2 -- the glow's mottling: the unresolved light of the stars too faint
+			// to resolve, clumped the way real star clouds clump. FIXED scale; the
+			// original's breathing zoom (sin terms on the divisor) pumps in and out, which
+			// is mesmerising in a demo and queasy on a sky.
 			const d2: THREE.Node<'float'> = field2(
 				dir
 					.div(float(4.6))
@@ -173,28 +210,43 @@
 				f3
 			);
 			const d2s = d2.mul(1.0).div(d2.add(1.0));
-			const d2sq = d2s.mul(d2s);
-			const c2 = vec4(d2sq.mul(d2s).mul(0.5), d2sq.mul(0.72), d2s.mul(f0.mul(2.1)), d2s);
 
-			// The Milky Way band: the unresolved light of all the stars too faint to
-			// resolve, as a glow laid over the smoke and mottled by it, so it reads as
-			// structure in the sky rather than a painted stripe. The profile matches the
-			// star-density band in Stars.svelte (shared constants in milkyWay.ts) -- the
-			// river of stars and the river of light must be the same river. Slightly cool
-			// white, like the real thing.
-			const offPlane = dot(dir, vec3(...MILKY_WAY_NORMAL));
-			const band = offPlane
-				.mul(offPlane)
-				.negate()
-				.div(2 * MILKY_WAY_SIGMA * MILKY_WAY_SIGMA)
-				.exp();
-			const mw = vec3(0.72, 0.78, 0.92).mul(band.mul(float(0.14).add(d2s.mul(0.18))));
+			// Warm-white in the bulge, cool grey out on the thread. The old layers were
+			// scored (0.5, 0.72, f0*2.1) and (0.9, 0.8, 0.55) -- a teal smoke with magenta
+			// cores, which is a Shadertoy palette, not a sky. Naked-eye nebulosity is very
+			// nearly colourless; what little hue there is comes from the bulge being warm.
+			const hue = mix(vec3(0.62, 0.7, 0.88), vec3(0.95, 0.86, 0.72), bulge);
+			// Dust does not only block, it REDDENS what gets through -- the same physics
+			// that makes a low sun orange. Cheap, and it is what keeps the rifts from
+			// reading as flat grey holes punched in a stripe.
+			const reddened = mix(hue, hue.mul(vec3(1, 0.78, 0.58)), d1s);
+			const glow = reddened.mul(bandShape.mul(float(0.1).add(d2s.mul(0.42))).mul(dust));
 
-			return c1.add(c2).add(vec4(mw.x, mw.y, mw.z, float(1)));
+			// A trace of the smoke survives off-band so the empty sky is not perfectly
+			// dead, but at a fraction of its old weight -- it is texture, not a subject.
+			const haze = vec3(0.16, 0.22, 0.34).mul(d2s.mul(0.1));
+
+			// AIRGLOW. A moonless night is not black: atmospheric oxygen emission plus
+			// scattered starlight leave a faint wash, brightest a few degrees up where the
+			// line of sight runs longest through the emitting layer. This matters more here
+			// than it would elsewhere, because SkyMesh renders NOTHING below -2.31 deg of
+			// sun elevation (see the SkyLight note in src/CLAUDE.md), so without this term
+			// the off-band night sky is mathematically pure black -- which reads as outer
+			// space rather than as being outdoors after dark.
+			const air = vec3(0.055, 0.075, 0.105)
+				.mul(smoothstep(float(0.02), float(0.5), dir.y).oneMinus())
+				.mul(airglow);
+
+			// Alpha is a FLAT 1 and the fade is left entirely to opacityNode. The old
+			// version returned c1.a + c2.a + mw.a = 2 + d2s, and AdditiveBlending is
+			// (SrcAlpha, One), so the whole nebula was being multiplied by 2-3x past
+			// `intensity` -- and non-linearly in density, since d2s rode in the alpha as
+			// well as the colour. Every value in this function was being read against a
+			// silent gain of two and a half.
+			return vec4(glow.add(haze).mul(intensity).add(air), float(1));
 		});
 
-		const color = smoke();
-		material.colorNode = vec4(color.rgb.mul(intensity), color.a);
+		material.colorNode = smoke();
 
 		// Fade out below the horizon, as Stars does: without a ground plane a full sphere
 		// of smoke underfoot reads wrong, and with one the depth test hides it anyway.
