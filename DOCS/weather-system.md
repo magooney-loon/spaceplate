@@ -867,9 +867,9 @@ that consumer.
 
 It works on WebGPU, and the mechanism dictates the implementation. Three's
 `NodeManager.updateFog()` converts `scene.fog` into a `fog()` node, binding colour and
-density through `reference()` — so **mutating the instance every frame is a uniform write
+distances through `reference()` — so **mutating the instance every frame is a uniform write
 and costs nothing**. But it caches that node against the fog _object's identity_
-(`sceneData.fog !== sceneFog`), so assigning a new `FogExp2` rebuilds the node and
+(`sceneData.fog !== sceneFog`), so assigning a new `Fog` rebuilds the node and
 invalidates every material's cache key. One instance, created at mount, mutated forever.
 
 Two consequences that are not optional:
@@ -879,12 +879,13 @@ Two consequences that are not optional:
   density at all resolves the entire sky to a flat fog colour. The sky is what the fog is
   a haze _toward_, never something the fog is applied to. That is precisely why the day
   curve authors a per-keyframe `fogColor` in the first place.
-- **The curve's densities are a shape, not a magnitude.** Taken raw, sunset's authored
-  0.038 puts 44% fog at 20 world units on a _clear_ evening. `SkyFog`'s `densityScale`
-  (default 0.5) is the world-scale knob, and it belongs in the component for the same
-  reason `SkyLight` owns its shadow bounds: it depends on the game's world scale, not on
-  the sky. At 0.5 a clear noon fades 18% at 60 units — honest aerial perspective — while
-  `fog` still white-outs to 76% at 20 units.
+- **The curve's densities are a far-band weight, not world-unit density.** The old
+  `FogExp2` path made sunset's clear haze visible too close to the camera, so nearby
+  models picked up the horizon colour before the view actually reached the horizon.
+  `SkyFog` now uses linear `Fog` against the active camera's `far` plane: clear weather
+  fades only across the end of the camera range, with `fogDensity` deciding how much of
+  that band is present across the day. The weather `fog` channel can still pull the band
+  inward for actual low visibility.
 
 Colours are read as **sRGB**, not working-space linear: the curve's fog colours are
 authored by eye, so `[0.7, 0.78, 0.9]` has to mean the pale blue it looks like.

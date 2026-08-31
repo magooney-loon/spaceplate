@@ -71,7 +71,7 @@
 		scale = 1000,
 		envIntervalMs = 250,
 		envSunDeltaDeg = 1,
-		environmentIntensity = 5.25,
+		environmentIntensity = 0.25,
 		maxCloudCoverage = 0.52,
 		cloudCoverageCurve = 0.42,
 		cloudDensityRange = [0.45, 0.97],

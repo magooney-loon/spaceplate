@@ -213,12 +213,12 @@ skyQueries.getWeather(); // live channel vector — read, never cache
   published and blended for phase 4. **`wind` cannot drive `SkyMesh.cloudSpeed`** — that uniform is
   multiplied by absolute elapsed time, so changing it teleports the cloud pattern.
 
-**Scene fog is owned by `SkyFog.svelte`.** One `FogExp2`, created at mount and mutated per frame —
+**Scene fog is owned by `SkyFog.svelte`.** One linear `Fog`, created at mount and mutated per frame —
 assigning a _new_ fog object rebuilds three's fog node and invalidates every material's cache key.
-Every sky layer sets `material.fog = false`; at radius 1000 any density at all would resolve the
-whole sky to flat fog colour. The day curve's densities are a _shape_, not a magnitude —
-`SkyFog`'s `densityScale` (default 0.5) is the world-scale knob, and it lives in the component for
-the same reason `SkyLight` owns its shadow bounds.
+Every sky layer sets `material.fog = false`; at radius 1000 any fog would resolve the whole sky to
+flat fog colour. Clear-weather fog is camera-relative horizon masking: it starts near the active
+camera's far range, while the weather `fog` channel can pull the band inward for actual low
+visibility.
 
 **Rayleigh is the sunrise colour knob, not turbidity.** Turbidity feeds mie, which is
 wavelength-flat, so raising it grows a grey halo — `sunrise` at turbidity 9 measured a glow band
