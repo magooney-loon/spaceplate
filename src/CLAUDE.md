@@ -35,10 +35,14 @@ core/
     Skybox.svelte         — Mount + THE sky driver task + env/cube texture mode switch
     Sky.svelte            — WebGPU-native sky dome (three's SkyMesh), descriptor consumer
     SkyLight.svelte       — Descriptor-driven key light (sun→moon crossover) + hemisphere fill
+    SkyFog.svelte         — scene.fog (FogExp2) from the day curve + fog channel
     Stars.svelte          — TSL billboard star field (NOT points — see below)
+    Nebula.svelte         — TSL fbm smoke on the dome, faded by starVisibility
+    Meteors.svelte        — TSL streak field, faded by starVisibility
     Moon.svelte           — Phase-shaded moon sphere, tidally locked
-    model/                — Pure sky model: clock, sunPath, dayCurve, phases, events,
-                           types + sky.svelte.ts façade (descriptor, skyActions, skyMeta)
+    model/                — Pure sky model: clock, sunPath, dayCurve, weatherMixer, phases,
+                           events, types + sky.svelte.ts façade (descriptor, skyActions,
+                           skyQueries, skyMeta)
 
   utils/
     Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock)
@@ -65,12 +69,13 @@ import { soundActions, MouseLook } from '$core';
 
 Exceptions that stay path imports (documented in each barrel): `*Extension.svelte` Studio panels,
 `useX.ts` Studio-aware hooks, and runtime components like `PhysicsController.svelte`.
-Modules *inside* an extension import each other relatively, never through their own barrel — that
+Modules _inside_ an extension import each other relatively, never through their own barrel — that
 would create a circular module graph.
 
 ## Architecture rules
 
 ### HUD vs 3D scene
+
 - **3D content** (meshes, lights, cameras) lives inside `<Canvas>` — `Scene.svelte` → scene components.
 - **HTML overlays** (buttons, panels, forms) cannot live inside Canvas — `SceneHud.svelte` → HUD components.
 - HUD components are siblings to Canvas in a `position: relative` wrapper.
@@ -86,7 +91,7 @@ Two things are currently torn out — don't assume they work:
 - **`core/utils/Renderer.svelte` is a stub.** The ~300-line TSL RenderPipeline covering 25 effects was
   removed because it rebuilt itself continuously. Rendering is plain: Threlte's `autoRenderTask`
   draws the scene, no composer in between. `autoRender` is therefore left at its default (`true`);
-  if a pipeline returns, set `autoRender={false}` as a Canvas *option*, never from an `$effect`.
+  if a pipeline returns, set `autoRender={false}` as a Canvas _option_, never from an `$effect`.
 - **`PostProcessingExtension` is unregistered** in `App.svelte` — its Studio panel broke post-migration;
   the rebuild is planned in `DOCS/post-processing.md`. `SkyboxExtension` is registered again as the
   time + environment panel for the descriptor-driven sky (`DOCS/weather-system.md`).
@@ -100,6 +105,7 @@ The post-processing rebuild is planned in `DOCS/post-processing.md`; the sky/wea
 `DOCS/weather-system.md`.
 
 ### Sound system
+
 - `core/audio/GlobalAudio.svelte` owns all `<Audio>` Threlte components — never unmounts (no race conditions).
 - `soundTriggers` / `soundActions` live in `core/audio/globalAudio.svelte.ts`.
   **Always import from the `.ts` file, not the `.svelte` file** — named exports from `<script module>`
@@ -111,6 +117,7 @@ The post-processing rebuild is planned in `DOCS/post-processing.md`; the sky/wea
   `Loader.svelte` shows the enable prompt that unlocks it.
 
 ### Scene state machine (`extensions/scene/`)
+
 - Scenes defined in `SCENES: SceneConfig[]` — each entry has `id`, `label`, `icon`.
   Adding a scene = one entry in `SCENES` + its `id` in `SceneType` (`types.ts`).
 - `sceneActions.setScene(scene)` transitions (plays swoosh, logs);
@@ -129,6 +136,7 @@ overrides + clock/time/weather), applied imperatively from `setScene()` and **ne
 carry only `id` / `label` / `icon`, and `SceneExtension.svelte` is a plain scene switcher.
 
 ### Task pipeline (`core/utils/tasks.ts`)
+
 - Four ordered stages per frame: `physicsStage` (before render) → `renderStage` (default) →
   `uiStage` (after) → `audioStage` (after ui).
 - `useGameTasks()` returns `{ stages, createPhysicsTask, createUiTask, createAudioTask }`.
@@ -158,12 +166,59 @@ import { mouseLookState, mouseLookActions, BASE_SENS } from '$core';
 ```
 
 ### Skybox (`extensions/skybox/`)
+
 - Environment-mode state only: `environmentState.mode` picks procedural sky (default) | `environment` (HDR) | `cube` (cubemap);
   `ENV_TEXTURES` / `CUBE_TEXTURES` come from `envTextures.ts`. Persists to localStorage (dev convenience).
 - The old preset layer (sky scalars, star presets, transitions, user presets) is **deleted** — the sky is
   time-driven now and lives in `core/skybox/model` (see `DOCS/weather-system.md`).
-- `SkyboxExtension.svelte` is the Studio panel: time scrubber / speed / jump buttons (procedural mode only)
-  + environment mode & texture pickers. It drives the sky through the engine API (`skyActions`), same as a game would.
+- `SkyboxExtension.svelte` is the Studio panel: time scrubber / speed / jump buttons and the weather
+  buttons + raw channel sliders (procedural mode only), plus environment mode & texture pickers.
+  It drives the sky through the engine API (`skyActions`), same as a game would.
+
+**Weather (`core/skybox/model/weatherMixer.ts`)** — weather is a modulation layer over the day
+curve, never a replacement for it: a storm at noon is still noon under clouds.
+
+```ts
+import { skyActions, skyQueries, skyMeta } from '$core/skybox/model';
+
+skyActions.setWeather('storm', { over: 30_000 }); // named target, 30 s blend
+skyActions.setWeather({ fog: 0.9 }, { over: 0 }); // raw partial, snapped
+skyActions.clearWeather({ over: 10_000 });
+skyQueries.getWeather(); // live channel vector — read, never cache
+```
+
+- Named weathers (`clear` `cloudy` `overcast` `fog` `rain` `storm` `snow`) are **target vectors**,
+  kept in code like `DEFAULT_DAY_CURVE`. Six channels: `cloudCover` `cloudType` `fog`
+  `precipitation` `wind` `lightning`, each 0–1.
+- A raw partial leaves unmentioned channels **where they are**. `over: 0` snaps and counts as a
+  discontinuity (immediate env re-bake). Blends run on wall-clock ms, not scaled game time.
+- Per-weather `stagger` delays a channel's _onset_ as a fraction of the blend; all channels still
+  finish together. That is what makes a storm arrive rather than appear.
+- `descriptor.weather` is plain and per-frame. `skyMeta` mirrors the active name, `blending`, and
+  four channels as `$state`, gated to 1% so a 20 s blend wakes the reactive graph a few dozen times.
+- **The key light reads `deckFactor(cloudCover)`, never raw cover** — smoothstepped from
+  `DECK_THRESHOLD` (0.4) to 1.0, so scattered cloud leaves shadows completely alone and only a
+  closed layer flattens them. The sky boots at a non-zero `cloudCover`; scaling the light
+  linearly cost every scene 31% of its key light before anything called `setWeather`.
+  Attenuation, the ambient return, the light's desaturation and the night fills all go through
+  it. The baseline sky modulation (haze, stars, fog density) deliberately uses raw cover —
+  none of it hits shadows.
+- **`cloudCover` values are authored against SkyMesh's look, not as a physical fraction.** Its
+  cloud mask is `smoothstep(1 - coverage, 1 - coverage + 0.3, fbm)`, so by ~0.5 the dome reads
+  as a flat sheet. `overcast` is therefore authored at **0.35** and sits _below_
+  `DECK_THRESHOLD` — it keeps its shadows. The flat, shadowless deck lives at `rain`, `snow`
+  and `storm`. Ordering is boot 0.2 < cloudy 0.25 < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.
+- `cloudCover` and `fog` are the only channels with renderers today (SkyMesh cloud coverage,
+  `SkyFog`, plus scattering / star visibility / exposure / key-light attenuation). The rest are
+  published and blended for phase 4. **`wind` cannot drive `SkyMesh.cloudSpeed`** — that uniform is
+  multiplied by absolute elapsed time, so changing it teleports the cloud pattern.
+
+**Scene fog is owned by `SkyFog.svelte`.** One `FogExp2`, created at mount and mutated per frame —
+assigning a _new_ fog object rebuilds three's fog node and invalidates every material's cache key.
+Every sky layer sets `material.fog = false`; at radius 1000 any density at all would resolve the
+whole sky to flat fog colour. The day curve's densities are a _shape_, not a magnitude —
+`SkyFog`'s `densityScale` (default 0.5) is the world-scale knob, and it lives in the component for
+the same reason `SkyLight` owns its shadow bounds.
 
 **Three traps if you touch the celestial layers (`core/skybox/Stars.svelte`, `Moon.svelte`):**
 
@@ -182,6 +237,7 @@ lifts it. So night and twilight lighting comes from `SkyLight`'s hemisphere fill
 curve's scattering; below the cutoff those numbers render nothing. See `DOCS/weather-system.md` §15.2.
 
 ### Post-processing (`extensions/postprocessing/`)
+
 State module is intact and untouched but **currently unused** — kept as the starting point for the
 rebuild. 25+ effect definitions, preset save/load/update/delete, `resetAll()` / `resetEffect(name)`
 (the latter preserves `enabled`), bundled presets in `bundledPresets.ts`. Nothing imports it at
@@ -208,10 +264,11 @@ Action-based mapping for keyboard, mouse, and gamepad. Persists to localStorage
 Works in production without Studio.
 
 **`core/input/Keymapper.svelte`** — mounted once in `App.svelte`, owns all `<svelte:window>` listeners:
+
 - `keydown`/`keyup` → `inputState.runtime.keyboardPressed`; `mousedown`/`mouseup` →
   `inputState.runtime.mousePressed` (skips UI elements); `blur` → clears pressed state (no stuck keys).
 - `Ctrl+H` intercepted as a global engine shortcut before input routing.
-- The key bound to `openSettings` toggles `overlayState.settingsOpen` — in-game it only *opens*
+- The key bound to `openSettings` toggles `overlayState.settingsOpen` — in-game it only _opens_
   (use Back to close); ignored while rebinding or typing in an input.
 - `Escape` cancels an active binding capture instead of binding.
 
@@ -230,9 +287,9 @@ LMB primary · R reload · F use · C crouch · X drop · Z prone · T emote · 
 ```ts
 import { inputActions, inputQueries, inputState, advanceInputFrame } from '$extensions/input';
 
-inputQueries.isPressed('player1', 'jump');            // current frame
-inputQueries.wasPressed('player1', 'primaryAction');  // edge detect — needs advanceInputFrame
-inputQueries.getMoveVector('player1');                // { x, y }
+inputQueries.isPressed('player1', 'jump'); // current frame
+inputQueries.wasPressed('player1', 'primaryAction'); // edge detect — needs advanceInputFrame
+inputQueries.getMoveVector('player1'); // { x, y }
 inputQueries.getAxis('player1', 'lookX');
 
 inputActions.startCapture('player1', 'jump', 'action');
@@ -243,13 +300,16 @@ inputActions.resetAction('player1', 'jump');
 inputActions.resetPlayerBindings('player1');
 inputActions.resetAllInputSettings();
 
-useTask(() => { advanceInputFrame(); });  // once per frame, enables wasPressed
+useTask(() => {
+	advanceInputFrame();
+}); // once per frame, enables wasPressed
 ```
 
 `scenes/MainMenu/SettingsHud.svelte` is the tabbed UI: **General** (quality, mouse/aim sensitivity,
 reserved shortcuts) · **Audio** · **Controls** (full keybinding editor with add/remove/reset per binding).
 
 ### Settings (`extensions/settings/`)
+
 - Persists to localStorage. Audio: `musicVolume/musicEnabled`, `ambienceVolume/ambienceEnabled`,
   `sfxVolume/sfxEnabled`. Graphics: `quality` (`'low' | 'high'`) — drives DPR and renderer power
   preference. General: `uiVisible` (Ctrl+H), `mouseSensitivity`, `aimSensitivity`.
@@ -285,12 +345,13 @@ Styled multi-channel logging with timestamp + color-coded prefix. Channels: `eng
 
 ```ts
 import { logEngine, logSound, logGltf } from '$extensions/logger';
-logEngine.info('Scene:', scene);   // console.log
-logSound.warn('Missing asset');    // console.warn
-logGltf.error('Failed:', err);     // console.error
+logEngine.info('Scene:', scene); // console.log
+logSound.warn('Missing asset'); // console.warn
+logGltf.error('Failed:', err); // console.error
 ```
 
 Adding a channel touches two files — the Studio UI generates its checkbox from `channelStyles`:
+
 ```ts
 // types.ts
 export type LoggerChannel = 'engine' | … | 'game';
@@ -335,36 +396,52 @@ export type { MyFeatureState, MyFeatureActions } from './types';
 export const myFeatureState = $state<MyFeatureState>({ enabled: true, value: 0.5 });
 
 export const myFeatureActions: MyFeatureActions = {
-  setEnabled(v) { myFeatureState.enabled = v; logSettings.info('Enabled:', v); },
-  setValue(v)   { myFeatureState.value = v; }
+	setEnabled(v) {
+		myFeatureState.enabled = v;
+		logSettings.info('Enabled:', v);
+	},
+	setValue(v) {
+		myFeatureState.value = v;
+	}
 };
 ```
 
 ```svelte
 <!-- MyFeatureExtension.svelte — Studio UI only -->
 <script lang="ts">
-  import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-  import { Folder, Slider, Checkbox } from 'svelte-tweakpane-ui';
-  import { myFeatureState, myFeatureActions } from './myFeature.svelte';
-  import { extensionScope } from './types';
-  import type { Snippet } from 'svelte';
+	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
+	import { Folder, Slider, Checkbox } from 'svelte-tweakpane-ui';
+	import { myFeatureState, myFeatureActions } from './myFeature.svelte';
+	import { extensionScope } from './types';
+	import type { Snippet } from 'svelte';
 
-  interface Props { children?: Snippet }
-  let { children }: Props = $props();
+	interface Props {
+		children?: Snippet;
+	}
+	let { children }: Props = $props();
 
-  const { createExtension } = useStudio();
-  createExtension({ scope: extensionScope, state: () => ({}), actions: {} });
+	const { createExtension } = useStudio();
+	createExtension({ scope: extensionScope, state: () => ({}), actions: {} });
 </script>
 
 <ToolbarItem position="left">
-  <DropDownPane icon="mdiStar" title="My Feature">
-    <Folder title="Settings" expanded={true}>
-      <Checkbox label="Enabled" value={myFeatureState.enabled}
-        on:change={() => myFeatureActions.setEnabled(!myFeatureState.enabled)} />
-      <Slider label="Value" value={myFeatureState.value} min={0} max={1} step={0.01}
-        on:change={(e) => myFeatureActions.setValue(e.detail.value)} />
-    </Folder>
-  </DropDownPane>
+	<DropDownPane icon="mdiStar" title="My Feature">
+		<Folder title="Settings" expanded={true}>
+			<Checkbox
+				label="Enabled"
+				value={myFeatureState.enabled}
+				on:change={() => myFeatureActions.setEnabled(!myFeatureState.enabled)}
+			/>
+			<Slider
+				label="Value"
+				value={myFeatureState.value}
+				min={0}
+				max={1}
+				step={0.01}
+				on:change={(e) => myFeatureActions.setValue(e.detail.value)}
+			/>
+		</Folder>
+	</DropDownPane>
 </ToolbarItem>
 
 {@render children?.()}
@@ -377,12 +454,12 @@ import { myFeatureState, myFeatureActions } from './myFeature.svelte';
 import { extensionScope } from './types';
 
 export const useMyFeature = () => {
-  try {
-    const { useExtension } = useStudio();
-    return useExtension(extensionScope);
-  } catch {
-    return { state: myFeatureState, ...myFeatureActions };
-  }
+	try {
+		const { useExtension } = useStudio();
+		return useExtension(extensionScope);
+	} catch {
+		return { state: myFeatureState, ...myFeatureActions };
+	}
 };
 ```
 
@@ -392,31 +469,36 @@ production. Add the import to the `Promise.all([...])` and the component to `ext
 
 ### Extension inventory
 
-| Extension | State | Actions | Studio UI |
-|-----------|-------|---------|-----------|
-| `scene` | `sceneState` | `sceneActions` | `SceneExtension.svelte` ✅ registered |
-| `settings` | `settingsState`, `overlayState` | `audioActions`, `graphicsActions`, `generalActions` | none (state-only) |
-| `input` | `inputState` | `inputActions`, `inputQueries`, `advanceInputFrame` | none (runtime only) |
-| `logger` | `loggerState` | `loggerActions.toggleChannel(ch)` | `LoggerExtension.svelte` ✅ |
-| `sound` | `soundState` | (via `settingsState.audio`) | `SoundExtension.svelte` ✅ |
-| `physics` | `physicsState` | `physicsActions` | `PhysicsExtension.svelte` ✅ |
-| `gltf-viewer` | `gltfViewerState` | `gltfViewerActions` | `GltfViewerExtension.svelte` ✅ (dev only) |
-| `stats` | — | — | `StatsExtension.svelte` ✅ (stats-gl draw calls / triangles / timestamps) |
-| `skybox` | `environmentState` (env mode + textures) | `skyboxActions` (mode/texture setters) | `SkyboxExtension.svelte` ✅ time + env panel |
-| `postprocessing` | `postprocessingState`, `postprocessingPresetsState` | `postprocessingActions` | `PostProcessingExtension.svelte` ⛔ unregistered |
+| Extension        | State                                               | Actions                                             | Studio UI                                                                 |
+| ---------------- | --------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------- |
+| `scene`          | `sceneState`                                        | `sceneActions`                                      | `SceneExtension.svelte` ✅ registered                                     |
+| `settings`       | `settingsState`, `overlayState`                     | `audioActions`, `graphicsActions`, `generalActions` | none (state-only)                                                         |
+| `input`          | `inputState`                                        | `inputActions`, `inputQueries`, `advanceInputFrame` | none (runtime only)                                                       |
+| `logger`         | `loggerState`                                       | `loggerActions.toggleChannel(ch)`                   | `LoggerExtension.svelte` ✅                                               |
+| `sound`          | `soundState`                                        | (via `settingsState.audio`)                         | `SoundExtension.svelte` ✅                                                |
+| `physics`        | `physicsState`                                      | `physicsActions`                                    | `PhysicsExtension.svelte` ✅                                              |
+| `gltf-viewer`    | `gltfViewerState`                                   | `gltfViewerActions`                                 | `GltfViewerExtension.svelte` ✅ (dev only)                                |
+| `stats`          | —                                                   | —                                                   | `StatsExtension.svelte` ✅ (stats-gl draw calls / triangles / timestamps) |
+| `skybox`         | `environmentState` (env mode + textures)            | `skyboxActions` (mode/texture setters)              | `SkyboxExtension.svelte` ✅ time + weather + env panel                    |
+| `postprocessing` | `postprocessingState`, `postprocessingPresetsState` | `postprocessingActions`                             | `PostProcessingExtension.svelte` ⛔ unregistered                          |
 
 ### Common patterns
 
 **localStorage persistence** — write inside actions, not `$effect`:
+
 ```ts
 const MY_KEY = 'my-key';
 export const myState = $state({ value: parseFloat(localStorage.getItem(MY_KEY) ?? '0.5') });
 export const myActions = {
-  setValue(v: number) { myState.value = v; localStorage.setItem(MY_KEY, String(v)); }
+	setValue(v: number) {
+		myState.value = v;
+		localStorage.setItem(MY_KEY, String(v));
+	}
 };
 ```
 
 **Cross-extension state access** — import directly, no wrappers; runes are reactive across modules:
+
 ```ts
 import { settingsState } from '$extensions/settings';
 settingsState.audio.sfxVolume = 0.8;
@@ -427,9 +509,12 @@ infinite loop (`effect_update_depth_exceeded`). It caused both the render-pipeli
 skybox preset crash. Depend on primitives (`$derived(state.quality)`), not whole objects.
 
 **Use `on:change`, not `bind:`, for tweakpane toggles** — `bind:` bypasses actions:
+
 ```svelte
-<Checkbox bind:value={state.enabled} />                                      <!-- ❌ -->
-<Checkbox value={state.enabled} on:change={() => actions.toggleEnabled()} /> <!-- ✅ -->
+<Checkbox bind:value={state.enabled} />
+<!-- ❌ -->
+<Checkbox value={state.enabled} on:change={() => actions.toggleEnabled()} />
+<!-- ✅ -->
 ```
 
 **`ToolbarButton` uses the `onclick` prop (Svelte 5), NOT `on:click`** — `on:click` silently does nothing.
@@ -438,15 +523,15 @@ skybox preset crash. Depend on primitives (`$derived(state.quality)`), not whole
 
 ### svelte-tweakpane-ui components
 
-| Component | Use case |
-|-----------|----------|
-| `Checkbox` | Boolean toggles — `on:change` |
-| `Slider` | Numeric — `min/max/step` |
-| `Button` | Actions — `on:click` |
-| `Folder` | Group controls — `expanded={true}` |
-| `DropDownPane` | Main extension panel in the toolbar |
-| `List` | Select — `options={[{ value, text }]}` |
-| `Separator` | Divider |
+| Component      | Use case                               |
+| -------------- | -------------------------------------- |
+| `Checkbox`     | Boolean toggles — `on:change`          |
+| `Slider`       | Numeric — `min/max/step`               |
+| `Button`       | Actions — `on:click`                   |
+| `Folder`       | Group controls — `expanded={true}`     |
+| `DropDownPane` | Main extension panel in the toolbar    |
+| `List`         | Select — `options={[{ value, text }]}` |
+| `Separator`    | Divider                                |
 
 ## SpacetimeDB client
 

@@ -2,6 +2,7 @@
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { Environment, CubeEnvironment } from '@threlte/extras';
 	import Sky from './Sky.svelte';
+	import SkyFog from './SkyFog.svelte';
 	import SkyLight from './SkyLight.svelte';
 	import Moon from './Moon.svelte';
 	import Nebula from './Nebula.svelte';
@@ -74,5 +75,10 @@
 		<Stars radius={1000} />
 		<Meteors radius={1000} />
 		<Moon radius={1000} />
+		<!-- Scene fog. Mounted only in procedural mode because its colour comes from the
+		     day curve, which is the procedural sky's authored look -- an HDR environment
+		     brings its own horizon and would fight it. Renders nothing itself; it drives
+		     scene.fog, so its position in the group is immaterial. -->
+		<SkyFog />
 	</T.Group>
 {/if}

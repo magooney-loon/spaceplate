@@ -75,6 +75,8 @@
 	// against itself; writing depth would only let it punch a hole in the sky.
 	material.depthWrite = false;
 	material.toneMapped = true;
+	// Never fogged -- a sky layer at radius 1000. See SkyFog.svelte.
+	material.fog = false;
 
 	// Depth pinned to the far plane, exactly as SkyMesh does (`position.z = position.w`).
 	// This is load-bearing, not an optimisation: the camera's far plane is 144 while the

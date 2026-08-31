@@ -19,18 +19,31 @@ import {
 	type PathOptions
 } from './sunPath';
 import { emit } from './events';
+import {
+	AMBIENT_RETURN,
+	bodyVisibility,
+	createWeatherMixer,
+	deckFactor,
+	keyAttenuation,
+	modulateBaseline,
+	WEATHERS,
+	type WeatherOptions
+} from './weatherMixer';
 import type {
 	ClockKind,
 	DayKeyframe,
 	PhaseName,
 	RGB,
 	SkyDescriptor,
-	WeatherChannels
+	WeatherChannels,
+	WeatherTarget
 } from './types';
 
 export * from './types';
 export { DEFAULT_DAY_CURVE } from './dayCurve';
 export { on, off } from './events';
+export { WEATHERS, CHANNEL_NAMES, DEFAULT_BLEND_MS } from './weatherMixer';
+export type { WeatherDefinition, WeatherOptions, ChannelName } from './weatherMixer';
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
@@ -102,13 +115,16 @@ const KEY_MIN_ELEVATION = 3;
 /**
  * The channel vector the sky boots on.
  *
- * Note this is the *default*, not the named `clear` weather that phase 2's mixer will
- * ship -- that one targets `cloudCover: 0` and stays a true empty sky. This is simply
- * the look the template opens with, and a partly-clouded sky is a better first frame
- * than an empty one.
+ * Note this is the *default*, not the named `clear` weather -- that one targets
+ * `cloudCover: 0` and stays a true empty sky. This is simply the look the template opens
+ * with, and a partly-clouded sky is a better first frame than an empty one.
+ *
+ * Held below `overcast`'s 0.35, or the app would boot cloudier than its own overcast
+ * weather. It was 0.37 through phase 1, when `cloudCover` fed nothing but SkyMesh's
+ * coverage uniform and the ordering did not matter.
  */
 const defaultWeather = (): WeatherChannels => ({
-	cloudCover: 0.37,
+	cloudCover: 0.2,
 	cloudType: 0,
 	fog: 0,
 	precipitation: 0,
@@ -131,19 +147,38 @@ export const descriptor: SkyDescriptor = {
 };
 
 /**
+ * The weather mixer, wired straight onto `descriptor.weather`.
+ *
+ * It owns and mutates that exact object, so the descriptor never needs a per-frame copy
+ * and consumers that cached `descriptor.weather` keep seeing live values.
+ */
+const mixer = createWeatherMixer(descriptor.weather);
+
+/**
  * The reactive surface -- deliberately tiny.
  *
- * HUD overlays and the Studio panel need to re-render on phase changes, so these four
- * values are `$state`. They are WRITTEN by the tick and never read by it, which keeps
- * the one-way rule intact. Everything numeric and per-frame stays on `descriptor`.
+ * HUD overlays and the Studio panel need to re-render on phase and weather changes, so
+ * these values are `$state`. They are WRITTEN by the tick and never read by it, which
+ * keeps the one-way rule intact. Everything numeric and per-frame stays on `descriptor`.
  *
- * Writes are gated to a game-minute by `publishMeta` -- see there for why.
+ * The channel mirrors are here because a blend is something a dev panel genuinely needs
+ * to watch arrive. They are gated hard (`CHANNEL_EPSILON`), so a 20 s storm blend wakes
+ * the reactive graph a few dozen times in total rather than 1200 times.
+ *
+ * All writes are gated by `publishMeta` -- see there for why.
  */
 export const skyMeta = $state({
 	t: 0,
 	day: 0,
 	phase: 'night' as PhaseName,
-	isDaytime: false
+	isDaytime: false,
+	/** Last named weather set, or `'custom'` after a raw target. */
+	weather: 'default',
+	blending: false,
+	cloudCover: descriptor.weather.cloudCover,
+	fog: descriptor.weather.fog,
+	precipitation: descriptor.weather.precipitation,
+	wind: descriptor.weather.wind
 });
 
 // Manual clock as the template default: the app boots on a curated sunset rather
@@ -163,6 +198,8 @@ const sunColor: RGB = [...SUN_ZENITH] as RGB;
 
 /** One game-minute. Anything finer is below what the readouts and scrubber resolve. */
 const META_EPSILON = 1 / 1440;
+/** 1% of a channel. Below that no readout or slider in the panel moves a pixel. */
+const CHANNEL_EPSILON = 0.01;
 
 /**
  * Push the tiny reactive slice, but only when it actually moved.
@@ -180,6 +217,30 @@ let publishedT = -1;
 let publishedDay = -1;
 let publishedPhase: PhaseName | null = null;
 let publishedDaytime: boolean | null = null;
+let publishedWeather: string | null = null;
+let publishedBlending: boolean | null = null;
+const publishedChannels = { cloudCover: -1, fog: -1, precipitation: -1, wind: -1 };
+
+/** Mirror the four channels a dev panel watches, gated to CHANNEL_EPSILON. */
+const publishWeather = (w: WeatherChannels) => {
+	if (publishedWeather !== mixer.name) {
+		publishedWeather = mixer.name;
+		skyMeta.weather = mixer.name;
+	}
+	if (publishedBlending !== mixer.blending) {
+		publishedBlending = mixer.blending;
+		skyMeta.blending = mixer.blending;
+	}
+	for (const key of ['cloudCover', 'fog', 'precipitation', 'wind'] as const) {
+		// Also fires when a blend lands exactly on its target, since `to` is reached
+		// only once and the epsilon gate would otherwise strand the final value.
+		if (Math.abs(w[key] - publishedChannels[key]) >= CHANNEL_EPSILON || !mixer.blending) {
+			if (publishedChannels[key] === w[key]) continue;
+			publishedChannels[key] = w[key];
+			skyMeta[key] = w[key];
+		}
+	}
+};
 
 const publishMeta = (t: number, day: number, phase: PhaseName, daytime: boolean) => {
 	// Compared cyclically: 0.9999 -> 0.0001 is one minute forward, not a day backward.
@@ -201,13 +262,33 @@ const publishMeta = (t: number, day: number, phase: PhaseName, daytime: boolean)
 	}
 };
 
-/** Recompute the descriptor from the current clock sample. */
-const compose = (t: number, day: number) => {
+/**
+ * Recompute the descriptor from the current clock sample.
+ *
+ * `deltaMs` advances the weather blend. It is 0 on the jump paths (setTime, setClock),
+ * which recompose without time passing -- weather must not creep forward because
+ * someone scrubbed the clock.
+ */
+const compose = (t: number, day: number, deltaMs = 0) => {
 	// Written in place, not reassigned: consumers may hold a reference to
 	// `descriptor.sun` across frames, and reassigning would silently strand them.
 	sunAt(t, pathOptions, descriptor.sun);
 	moonAt(t, pathOptions, descriptor.moon);
 	sampleDayCurve(t, descriptor.sky, curve);
+
+	// Weather goes ON TOP of the sampled baseline, never instead of it (§5.1). The
+	// ordering is the whole design: the curve decides what time it is, the mixer decides
+	// what the weather is doing to that, and an overcast sunset still reads as evening.
+	if (deltaMs > 0) mixer.tick(deltaMs);
+	const weather = descriptor.weather;
+	modulateBaseline(descriptor.sky, weather);
+
+	// A body's visibility is how much of it reaches the ground. Nothing consumes this
+	// yet -- it is the slice a cloud-aware lens flare or a "can the player see the moon"
+	// gameplay query reads, and it costs one multiply to publish honestly.
+	const seen = bodyVisibility(weather);
+	descriptor.sun.visibility = seen;
+	descriptor.moon.visibility = seen;
 
 	const elevation = descriptor.sun.elevation;
 	const rising = isRising(t);
@@ -230,21 +311,71 @@ const compose = (t: number, day: number) => {
 	const key = horizon > 0 ? descriptor.sun : descriptor.moon;
 	directionAt(Math.max(key.elevation, KEY_MIN_ELEVATION), key.azimuth, descriptor.light.direction);
 	lerpRGB(MOON_COLOR, sunColor, horizon, descriptor.light.color);
-	descriptor.light.intensity = lerp(
+	// A cloud deck is a grey diffuser: it strips the warmth out of the light as well as
+	// the strength. Desaturating toward the colour's own luminance keeps the day/night
+	// crossfade intact underneath -- overcast midnight stays blue-ish, just flatter.
+	//
+	// Gated on `deck`, not raw cover, exactly like the intensity below: scattered cloud
+	// must not grey out a sunset the app boots into. See DECK_THRESHOLD.
+	const deck = deckFactor(weather.cloudCover);
+	const desaturate = 0.7 * deck;
+	if (desaturate > 0) {
+		const c = descriptor.light.color;
+		const luminance = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+		c[0] = lerp(c[0], luminance, desaturate);
+		c[1] = lerp(c[1], luminance, desaturate);
+		c[2] = lerp(c[2], luminance, desaturate);
+	}
+
+	const clearSkyKey = lerp(
 		MOON_INTENSITY * clamp01(descriptor.moon.elevation / 20),
 		SUN_INTENSITY * sunStrength,
 		horizon
 	);
+	// Weather takes its cut here, at the very end, so every constant above still means
+	// what it says under a clear sky and only one expression decides how much a deck
+	// removes.
+	const attenuation = keyAttenuation(weather);
+	descriptor.light.intensity = clearSkyKey * attenuation;
+
 	// Fill light. See MOON_AMBIENT for why this is not optional once the sun is down.
 	//
 	// Two independent sources, combined with max() rather than added: moonlight and
 	// twilight are alternatives, not contributors. Whichever is doing the lighting wins,
 	// and the loser fading out never claws brightness back off the winner.
-	const moonFill = MOON_AMBIENT * clamp01(descriptor.moon.elevation / 20);
-	// Rises from -18 to the horizon, then hands back to the env map by +12.
+	//
+	// Both are then scaled by the DECK factor, because a real deck blocks moonlight and
+	// twilight too -- an overcast night is genuinely darker than a clear one, and skipping
+	// this would leave a storm at midnight brighter than the clear sky it replaced.
+	// Scattered cloud must leave them alone, or the boot default dims every night scene.
+	const moonFill = MOON_AMBIENT * clamp01(descriptor.moon.elevation / 20) * (1 - 0.9 * deck);
+	// A triangle peaked at -6 degrees: rises from -18, full at civil twilight, GONE by the
+	// horizon.
+	//
+	// It used to peak at 0 and fade out by +12, which erased the shadows at sunrise and
+	// sunset. The numbers: at elevation 0 the key light is 0.098 -- the sun runs at its
+	// 0.25 strength floor and the sun->moon crossfade halves it again -- against a fill of
+	// 0.224. Flat fill at 2.3x the key light is a scene with no shadows in it, exactly when
+	// the sun is on the horizon and the shadows should be at their longest.
+	//
+	// -6 is the right peak because that is the blind spot this fill exists for: SkyMesh
+	// zeroes its sun term below -2.31 degrees (§15.2), so the env map is black through all
+	// of civil twilight and the blue hour the day curve authors lights nothing. Above the
+	// horizon that is simply not true any more -- the dome renders, the env map carries the
+	// ambient, and adding a second flat term on top double-counts it.
 	const twilightFill =
-		TWILIGHT_AMBIENT * clamp01((elevation + 18) / 18) * (1 - clamp01(elevation / 12));
-	descriptor.light.ambient = Math.max(Math.max(moonFill, twilightFill), DAY_AMBIENT * horizon);
+		TWILIGHT_AMBIENT *
+		clamp01((elevation + 18) / 12) *
+		(1 - clamp01((elevation + 6) / 6)) *
+		(1 - 0.5 * deck);
+	// The overcast return is ADDED, not max()'d: it is not an alternative to the night
+	// fills, it is the light the deck just took off the key coming back diffusely. That
+	// is what makes strong attenuation read as "flat and bright" instead of "dark" --
+	// see AMBIENT_RETURN. It scales with what was actually removed, so a clear sky adds
+	// exactly zero and nothing about the daytime look changes until weather arrives.
+	const overcastReturn = clearSkyKey * (1 - attenuation) * AMBIENT_RETURN;
+	descriptor.light.ambient =
+		Math.max(Math.max(moonFill, twilightFill), DAY_AMBIENT * horizon) + overcastReturn;
 
 	descriptor.meta.t = t;
 	descriptor.meta.day = day;
@@ -252,6 +383,7 @@ const compose = (t: number, day: number) => {
 	descriptor.meta.isDaytime = daytime;
 
 	publishMeta(t, day, phase, daytime);
+	publishWeather(weather);
 
 	if (lastPhase !== phase) {
 		const previous = lastPhase;
@@ -263,6 +395,39 @@ const compose = (t: number, day: number) => {
 		lastDaytime = daytime;
 		if (previous !== null) emit(daytime ? 'sunrise' : 'sunset', { t, day });
 	}
+};
+
+/**
+ * Point the weather mixer at a named weather or a raw channel target (§5.3).
+ *
+ * Fire-and-forget and idempotent: calling it twice blends to the same place. There is
+ * no transition state machine for callers to trip over -- the mixer has internal state,
+ * this API does not expose it. Whether the call came from game code, a Studio button or
+ * a server subscription, it converges on the same mixer, which is what makes the
+ * multiplayer path in §6 one code path rather than two.
+ *
+ * A free function rather than a method so `clearWeather` can delegate to it: a method
+ * referencing `skyActions` from inside its own initializer makes the object's inferred
+ * type circular.
+ */
+const setWeather = (target: WeatherTarget, options: WeatherOptions = {}) => {
+	if (typeof target === 'string' && !WEATHERS[target]) {
+		// Silently blending to nothing would look like a dropped call. Named weathers are
+		// data, so a typo is the likely cause and it has to be loud.
+		throw new Error(
+			`sky.setWeather: unknown weather '${target}'. Known: ${Object.keys(WEATHERS).join(', ')}`
+		);
+	}
+	mixer.set(target, options);
+	// A snap is a jump, exactly like a time scrub: the env map has to re-bake now rather
+	// than on the next interval, and the descriptor has to carry the new values before
+	// any consumer reads it this frame.
+	if (options.over === 0) {
+		discontinuity = true;
+		const sample = clock.sample();
+		compose(sample.t, sample.day);
+	}
+	emit('weatherChanged', { weather: mixer.name, channels: descriptor.weather });
 };
 
 export const skyActions = {
@@ -310,10 +475,28 @@ export const skyActions = {
 		discontinuity = true;
 	},
 
+	/**
+	 * Point the weather mixer at a named weather or a raw channel target (§5.3).
+	 *
+	 * Fire-and-forget and idempotent: calling it twice blends to the same place. There
+	 * is no transition state machine for callers to trip over -- the mixer has internal
+	 * state, this API does not expose it. Whether the call came from game code, a Studio
+	 * button or a server subscription, it lands on the same mixer.
+	 */
+	setWeather,
+
+	/** Blend back to `clear`. Same call as any other target, no special path. */
+	clearWeather(options: WeatherOptions = {}) {
+		setWeather('clear', options);
+	},
+
 	/** Advance the model. Called once per frame by exactly one driver task. */
 	tick(deltaMs: number) {
 		const { t, day } = frozen ? clock.sample() : clock.advance(deltaMs);
-		compose(t, day);
+		// The weather blend runs on wall-clock ms, deliberately NOT on scaled game time:
+		// `setWeather('storm', { over: 30_000 })` must mean thirty seconds the player
+		// experiences, whatever the day is doing around it.
+		compose(t, day, deltaMs);
 	},
 
 	/** True once after a jump; reading it clears the flag. */
@@ -331,7 +514,10 @@ export const skyQueries = {
 	getPhase: () => descriptor.meta.phase,
 	isDaytime: () => descriptor.meta.isDaytime,
 	getTime: () => ({ t: descriptor.meta.t, day: descriptor.meta.day }),
-	getWeather: () => descriptor.weather
+	/** The live channel vector. Mutated in place each tick -- read it, never cache it. */
+	getWeather: () => descriptor.weather,
+	getWeatherName: () => mixer.name,
+	isWeatherBlending: () => mixer.blending
 };
 
 // Seed so the very first frame reads a composed descriptor rather than defaults.

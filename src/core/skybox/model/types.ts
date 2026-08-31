@@ -56,7 +56,11 @@ export type CelestialBody = {
 	visibility: number;
 };
 
-/** Weather channel values (§5.2). Phase 1 leaves these at their clear-sky defaults. */
+/**
+ * Weather channel values (§5.2). Every channel is an independent intensity in [0,1] --
+ * fog without rain, wind without clouds. A weather *state* is just a named target
+ * vector over these, which is why `WeatherTarget` accepts either.
+ */
 export type WeatherChannels = {
 	cloudCover: number;
 	cloudType: number;
@@ -65,6 +69,15 @@ export type WeatherChannels = {
 	wind: number;
 	lightning: number;
 };
+
+/**
+ * What `setWeather` takes: a name from the WEATHERS library, or a raw partial vector.
+ *
+ * A raw target is as valid as a named one -- `setWeather({ cloudCover: 0.9, fog: 0.4 })`
+ * is a first-class call, not an escape hatch. Channels the target omits keep their
+ * current values rather than snapping to a default, so a partial really is partial.
+ */
+export type WeatherTarget = string | Partial<WeatherChannels>;
 
 /** What a light consumer needs. Shadow config is game-specific and stays out. */
 export type LightHints = {

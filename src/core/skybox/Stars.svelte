@@ -239,6 +239,10 @@
 		// Stars are their own light source; tone mapping them at night's 0.62 exposure
 		// would dim the one thing that is supposed to be bright in a dark frame.
 		material.toneMapped = false;
+		// Sky layers are never fogged: they sit at radius 1000, far past anything scene
+		// fog is tuned for, and fogging an additive layer mixes toward the fog colour
+		// rather than dimming it. See SkyFog.svelte.
+		material.fog = false;
 
 		// The explicit generic is required: `attribute` infers its node type from the
 		// argument's *value*, so a bare 'vec2' widens to `string` and every downstream

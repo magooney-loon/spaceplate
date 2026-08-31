@@ -10,9 +10,13 @@ Companions: `post-processing.md` (the render pipeline this eventually feeds),
 `scene-environment.md` (how a scene pins its own time and weather),
 `webgpu-notes.md` (WebGPU and reactivity rules the implementation must obey).
 
-**Status:** concept agreed, nothing implemented. Open questions from the first draft
-are resolved in §11 (fixed sun arc, moon in v1, sky as the scene's only key light,
-single weather mixer, `weather.json`, one server `environment` table).
+**Status:** phases 1 and 2 are implemented. Time core, day curve, sun/moon paths, the
+descriptor-driven key light, stars, moon, and now the weather mixer with its modulation
+layer and scene fog all ship. Phase 3 (server adapter) is next; phase 4 (cloud,
+precipitation and lightning render layers) and phase 5 (`weather.json` + keyframe
+editor) are untouched. Open questions from the first draft are resolved in §11 (fixed
+sun arc, moon in v1, sky as the scene's only key light, single weather mixer,
+`weather.json`, one server `environment` table).
 
 ---
 
@@ -38,7 +42,7 @@ of them over a duration. That model breaks down the moment you want any of these
 
 There is also a structural problem: the existing presets are secretly one thing.
 `sunrise`, `day`, `sunset`, `night` are not four different skies — they are four
-*points on the same day*. The rework makes that structural.
+_points on the same day_. The rework makes that structural.
 
 ### Lessons carried forward from the WebGPU migration
 
@@ -68,11 +72,11 @@ Three concerns, strictly separated:
                      └──────────────┘
 ```
 
-1. **Time** — *when is it*. A single source of truth for the current moment.
+1. **Time** — _when is it_. A single source of truth for the current moment.
    Pluggable: local clock, server clock, manual scrub.
-2. **Atmosphere** — *what the sky is like at that moment*. A pure function:
+2. **Atmosphere** — _what the sky is like at that moment_. A pure function:
    time-of-day + weather → a frame descriptor of atmospheric parameters.
-3. **Rendering** — *how it is drawn*. Sky dome, star field, clouds, fog,
+3. **Rendering** — _how it is drawn_. Sky dome, star field, clouds, fog,
    precipitation, environment map. Pure consumers; they never feed back.
 
 **The rule that keeps this sane: data flows one way.** Clock → model →
@@ -96,11 +100,11 @@ Everything else derives from `t`. It is the only time value anyone reads.
 Time has pluggable sources. The engine **never owns time** — it reads it from a
 clock, and games bring their own:
 
-| Clock | What it does | Who uses it |
-|---|---|---|
-| `realtime` | Follows the player's wall clock, optionally pinned to a timezone/UTC offset | "The sky outside my window" — the obvious pick for games that want it |
-| `external` | Reads a value the game supplies each tick | **Server time** (SpacetimeDB), scripted timelines, replays |
-| `manual` | Fixed value, changed only when someone calls `setTime` | **Template default** (boots on a curated sunset) — Studio scrubber, cutscenes, screenshots, tests |
+| Clock      | What it does                                                                | Who uses it                                                                                       |
+| ---------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `realtime` | Follows the player's wall clock, optionally pinned to a timezone/UTC offset | "The sky outside my window" — the obvious pick for games that want it                             |
+| `external` | Reads a value the game supplies each tick                                   | **Server time** (SpacetimeDB), scripted timelines, replays                                        |
+| `manual`   | Fixed value, changed only when someone calls `setTime`                      | **Template default** (boots on a curated sunset) — Studio scrubber, cutscenes, screenshots, tests |
 
 Every clock carries a **scale** (`1` = real time, `60` = one game day per 24
 minutes, `0` = frozen). Scale multiplies elapsed time; it does not change the
@@ -173,13 +177,13 @@ neighbouring keyframes.
   concept survives), colours interpolate in a sane space. Keyframes can carry
   per-property curves (hold, linear, smooth) if flat lerp ever feels cheap.
 
-What the curve holds: the *baseline* sky — scattering parameters, exposure, star
+What the curve holds: the _baseline_ sky — scattering parameters, exposure, star
 visibility, base fog colour. What it does **not** hold: weather (§5).
 
 **Keyframe times are not free — they are the inverse of the sun arc.** This was learned
 the hard way: the first curve was authored by eye and drifted badly from §3.3's arc. The
 `sunrise` keyframe fired at **+9.4°** of sun elevation, `goldenHour` at **+23°**,
-`sunset` at **−4.7°**, `dusk` at **−23°**. The sky's *look* and the sun's *position*
+`sunset` at **−4.7°**, `dusk` at **−23°**. The sky's _look_ and the sun's _position_
 disagreed by 20–30° of elevation, worst on the evening side — which reads as "the
 day/night cycle feels off" without any single value being wrong.
 
@@ -192,7 +196,7 @@ t = 0.25 ± asin(elevation / maxElevation) / 2π      (− morning, + … see da
 giving twelve keyframes: night (−75°), astronomicalDawn (−18°), dawn (−6°), sunrise (0°),
 goldenMorning (+6°), morning (+44°), noon (+75°), afternoon (+44°), goldenHour (+6°),
 sunset (0°), dusk (−6°), astronomicalDusk (−18°). The twilight keyframes cluster tightly
-because twilight *is* short on this arc.
+because twilight _is_ short on this arc.
 
 The consequence: **the arc's peak elevation is part of the curve's contract.** Changing
 `maxElevation` moves every twilight boundary and silently un-pins the curve. Keyframe
@@ -217,7 +221,7 @@ weather mixer    ──▶ modulation (cloud, fog, rain, wind...)
 ```
 
 A storm at noon is still noon under clouds. The sun still drives scattering and
-light; weather *attenuates, adds, and obscures*. That composition — day curve
+light; weather _attenuates, adds, and obscures_. That composition — day curve
 under weather, never instead of it — is what makes this a system rather than a
 preset swap. An overcast sunset still reads as evening: dimmer, grey, but
 evening.
@@ -227,18 +231,18 @@ evening.
 Weather is a vector of independent **channels**, each with an intensity
 `∈ [0, 1]` plus channel parameters:
 
-| Channel | Roughly governs |
-|---|---|
-| `cloudCover` | Opacity/extent of the cloud layer |
-| `cloudType` | Cumulus / stratus / storm towers (blends) |
-| `fog` | Fog/haze density and colour bias |
-| `precipitation` | None / rain / snow, intensity |
-| `wind` | Speed + direction — drives clouds, particles, audio |
-| `lightning` | Storm-cell flicker events |
-| `special` | Aurora, eclipse, blood moon — game-specific overlays |
+| Channel         | Roughly governs                                      |
+| --------------- | ---------------------------------------------------- |
+| `cloudCover`    | Opacity/extent of the cloud layer                    |
+| `cloudType`     | Cumulus / stratus / storm towers (blends)            |
+| `fog`           | Fog/haze density and colour bias                     |
+| `precipitation` | None / rain / snow, intensity                        |
+| `wind`          | Speed + direction — drives clouds, particles, audio  |
+| `lightning`     | Storm-cell flicker events                            |
+| `special`       | Aurora, eclipse, blood moon — game-specific overlays |
 
 Channels are independent: fog without rain, wind without clouds. A weather
-*state* is just a named target vector over these channels.
+_state_ is just a named target vector over these channels.
 
 ### 5.3 The mixer
 
@@ -255,10 +259,25 @@ setWeather('storm', { over: 30_000 })
   once — clouds first, then wind, then rain (staggered channel onset is a
   parameter of the weather definition).
 - Raw targets are as valid as named ones: `setWeather({ cloudCover: 0.9, fog:
-  0.4 })` with no name at all.
+0.4 })` with no name at all.
 - The mixer is the **single authoritative weather state**. Whether a call came
   from local game code or a server table subscription, it converges on the same
   mixer — one code path.
+
+**As built** (`model/weatherMixer.ts`): `stagger` is a per-channel _fraction of the
+blend duration_ to wait before that channel starts moving; every channel still finishes
+together. Only the onset is staggered, so a blend has one end time and `blending` is one
+boolean. Measured on `setWeather('storm', { over: 20_000 })`: cloud cover leads, wind
+reaches half at 12 s, precipitation starts at 10 s, lightning at 14 s, everything lands
+at 20 s.
+
+A raw partial target leaves unmentioned channels **where they are** rather than
+defaulting them — `setWeather({ fog: 0.9 })` is a fog call, not a whole-sky call.
+`over: 0` snaps, and is treated as a discontinuity exactly like a time scrub, so the env
+map re-bakes immediately instead of on the next interval.
+
+Blend durations run on **wall-clock ms, not scaled game time**. `over: 30_000` means
+thirty seconds the player experiences, whatever `timeScale` the day is running at.
 
 ### 5.4 Who drives weather
 
@@ -327,7 +346,7 @@ Consumers subscribe to the slices they care about:
   scene's **only key light** — the hardcoded `<T.DirectionalLight>` in
   `core/Camera.svelte` is replaced by a descriptor-driven light that follows
   the sun by day and the moon by night. The model itself still only
-  *publishes*; a small consumer component applies the hints to the real light
+  _publishes_; a small consumer component applies the hints to the real light
   and owns the shadow configuration (game-specific, stays out of the
   descriptor). The baked `scene.environment` remains the ambient half, as
   today.
@@ -381,7 +400,7 @@ Design notes:
   renderer.
 - **Everything is fire-and-forget idempotent.** Calling `setWeather('storm')`
   twice blends to the same place. No transition state machine for callers to
-  trip over — the *mixer* has internal state; the *API* does not expose it.
+  trip over — the _mixer_ has internal state; the _API_ does not expose it.
 - **Studio is just another caller.** The time scrubber calls `setTime`, the
   weather buttons call `setWeather`. No privileged path — which means the dev
   panel costs nothing to maintain and cannot drift from the real API.
@@ -396,12 +415,12 @@ because it shapes the architecture.
 With time-driven parameters, sky values change **every frame**. But consumers
 have wildly different costs, so updates are tiered:
 
-| Tier | Cadence | Consumers |
-|---|---|---|
-| **Visual** | Every frame | Sky dome uniforms, sun position — cheap, must be smooth |
-| **Lighting** | Every frame or every few | Scene light hints |
-| **Environment map** | Throttled / on-significant-change | The baked cube map that lights the scene |
-| **Gameplay/events** | On threshold crossing | Phase change, sunrise, weather targets reached |
+| Tier                | Cadence                           | Consumers                                               |
+| ------------------- | --------------------------------- | ------------------------------------------------------- |
+| **Visual**          | Every frame                       | Sky dome uniforms, sun position — cheap, must be smooth |
+| **Lighting**        | Every frame or every few          | Scene light hints                                       |
+| **Environment map** | Throttled / on-significant-change | The baked cube map that lights the scene                |
+| **Gameplay/events** | On threshold crossing             | Phase change, sunrise, weather targets reached          |
 
 The environment map is the trap. Today `Sky.svelte` re-bakes the env cube
 whenever sky parameters change — correct for a static sky, ruinous for a moving
@@ -420,18 +439,18 @@ cost decisions locally without the model ever knowing what a cube camera is.
 Mapping old → new. Nothing here is done in this doc; this is the plan of record
 for where things land.
 
-| Today | Becomes |
-|---|---|
-| `skyboxState` scalars (`turbidity`, `elevation`...) | Derived outputs of the atmosphere sampler — nobody sets them by hand |
-| `SKY_PRESETS` (`dawn`/`day`/`sunset`/`night`...) | Keyframes on the day curve (they already are, semantically) |
-| `cloudy`/`overcast`/"storm-ish" presets | Weather target vectors in the mixer |
-| `transitionState` + preset-pair lerp machinery | Deleted — curve sampling and the weather mixer replace it |
-| `starsState` (17 fields) | One number: star visibility in the descriptor, consumed by `core/skybox/Stars.svelte` (§15.4) |
-| `environmentState` (env/cube texture modes) | Stays, orthogonal — a sky-driven env map is one mode among several |
-| User presets in `localStorage` | Gone — authored keyframes/weather live in a committed file (the `graphics.json` story), Studio edits the live state and saves |
-| `Sky.svelte` | A consumer of the descriptor's `sky` + `sun` slices; gains the env budget logic |
-| Hardcoded `<T.DirectionalLight>` in `core/Camera.svelte` | Replaced by the descriptor-driven key light (sun/moon crossover) — and the light moves out of the camera component, where it never belonged |
-| `SkyboxExtension.svelte` panel | **Rewritten in phase 1** as the time + environment panel: clock scrubber, speed presets, jump buttons, env-mode switch. Weather buttons arrive with phase 2, keyframe editor + save-to-file in phase 5 |
+| Today                                                    | Becomes                                                                                                                                                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `skyboxState` scalars (`turbidity`, `elevation`...)      | Derived outputs of the atmosphere sampler — nobody sets them by hand                                                                                                                                   |
+| `SKY_PRESETS` (`dawn`/`day`/`sunset`/`night`...)         | Keyframes on the day curve (they already are, semantically)                                                                                                                                            |
+| `cloudy`/`overcast`/"storm-ish" presets                  | Weather target vectors in the mixer                                                                                                                                                                    |
+| `transitionState` + preset-pair lerp machinery           | Deleted — curve sampling and the weather mixer replace it                                                                                                                                              |
+| `starsState` (17 fields)                                 | One number: star visibility in the descriptor, consumed by `core/skybox/Stars.svelte` (§15.4)                                                                                                          |
+| `environmentState` (env/cube texture modes)              | Stays, orthogonal — a sky-driven env map is one mode among several                                                                                                                                     |
+| User presets in `localStorage`                           | Gone — authored keyframes/weather live in a committed file (the `graphics.json` story), Studio edits the live state and saves                                                                          |
+| `Sky.svelte`                                             | A consumer of the descriptor's `sky` + `sun` slices; gains the env budget logic                                                                                                                        |
+| Hardcoded `<T.DirectionalLight>` in `core/Camera.svelte` | Replaced by the descriptor-driven key light (sun/moon crossover) — and the light moves out of the camera component, where it never belonged                                                            |
+| `SkyboxExtension.svelte` panel                           | **Rewritten in phase 1** as the time + environment panel: clock scrubber, speed presets, jump buttons, env-mode switch. Weather buttons arrive with phase 2, keyframe editor + save-to-file in phase 5 |
 
 The 888-line `skybox.svelte.ts` dissolves into: a clock module, a day-curve
 module, a weather mixer, a descriptor, and an index that wires them. Each is
@@ -443,15 +462,15 @@ small, pure, and independently testable.
 
 Resolved — v1 scope is now fixed:
 
-| # | Question | Decision |
-|---|---|---|
-| 1 | Sun path | **Fixed arc.** A real solar model (latitude/season) can arrive later as an alternative path module; downstream reads only the derived direction |
-| 2 | Moon | **In v1.** Mirrored fixed arc, configurable lag, default opposition = full moon. Phase rendering later, via the lag knob |
-| 3 | Scene lighting | **The sky is the only key light.** A descriptor-driven light (sun → moon crossover) replaces the hardcoded one in `Camera.svelte`. The model publishes hints; a consumer component applies them and owns shadow config |
-| 4 | Weather stacking | **Single mixer, last-writer-wins per channel** with blend durations |
-| 5 | Config file | **New `weather.json`**, separate from `graphics.json` |
-| 6 | Server schema | **One `environment` table** for time + weather |
-| 7 | `t = 0` mapping | **Midnight, solar time** (unchallenged default). Timezones are the `realtime` clock's concern, not the model's |
+| #   | Question         | Decision                                                                                                                                                                                                               |
+| --- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Sun path         | **Fixed arc.** A real solar model (latitude/season) can arrive later as an alternative path module; downstream reads only the derived direction                                                                        |
+| 2   | Moon             | **In v1.** Mirrored fixed arc, configurable lag, default opposition = full moon. Phase rendering later, via the lag knob                                                                                               |
+| 3   | Scene lighting   | **The sky is the only key light.** A descriptor-driven light (sun → moon crossover) replaces the hardcoded one in `Camera.svelte`. The model publishes hints; a consumer component applies them and owns shadow config |
+| 4   | Weather stacking | **Single mixer, last-writer-wins per channel** with blend durations                                                                                                                                                    |
+| 5   | Config file      | **New `weather.json`**, separate from `graphics.json`                                                                                                                                                                  |
+| 6   | Server schema    | **One `environment` table** for time + weather                                                                                                                                                                         |
+| 7   | `t = 0` mapping  | **Midnight, solar time** (unchallenged default). Timezones are the `realtime` clock's concern, not the model's                                                                                                         |
 
 Still open, none blocking:
 
@@ -472,10 +491,11 @@ Each phase leaves the app working. Concrete module-level detail is in §16.
    with it.
 2. **Weather mixer.** Channel targets + blending, modulating the day-curve
    output. First visible effects via parameters we already render (scattering,
-   fog colour, star visibility, exposure) — weather you can *see* before any
-   new renderer exists.
+   fog colour, star visibility, exposure) — weather you can _see_ before any
+   new renderer exists. **Done**, plus the one renderer that had to come with it:
+   `SkyFog` (§15.6), because "fog colour" was authored data nothing consumed.
 3. **Server adapter.** SpacetimeDB `environment` table + `external` clock sync
-   + weather subscriptions. Multiplayer parity.
+   - weather subscriptions. Multiplayer parity.
 4. **New render layers.** Clouds, precipitation, lightning — the visually
    expensive half, each consuming descriptor slices. Needs its own WebGPU-native
    plan; sketched in §17, not designed here.
@@ -616,7 +636,7 @@ const sunIntensity = EE.mul( max( 0.0, ... ) );    // -> exactly 0 below the cut
 
 With `vSunE = 0` the whole dome collapses to `0.1 * Fex * 0.04 + vec3(0, 0.0003,
 0.00075)` — a hard ceiling around **0.005 linear luminance**. Turbidity and rayleigh
-cannot lift it; raising rayleigh actually makes it *darker*, since it only increases
+cannot lift it; raising rayleigh actually makes it _darker_, since it only increases
 extinction against that fixed night term.
 
 Two consequences, both load-bearing:
@@ -649,7 +669,7 @@ It moves to `skybox/SkyLight.svelte`, which:
   crossfade, rather than two lights fighting.
 
 **The key light must never aim below the horizon.** The intensity crossfade band runs
-from −6° to +6°, so between −6° and 0° the *sun* still drives the light while sitting
+from −6° to +6°, so between −6° and 0° the _sun_ still drives the light while sitting
 underground — which lights every underside in the scene and throws its shadow upward.
 The model clamps the elevation used to aim the light to a 3° floor (`KEY_MIN_ELEVATION`),
 so civil twilight becomes raking horizontal light. That is also physically the right
@@ -670,14 +690,14 @@ low sun angles. Flagged, not solved here.
 `HemisphereLight` driving the descriptor's `light.ambient`. The ambient half is not
 optional: because the env map bakes black below −2.31° of sun elevation (§15.2), a
 night scene with only the key light leaves every surface facing away from the moon at
-*exactly zero*. Measured against a noon-lit surface:
+_exactly zero_. Measured against a noon-lit surface:
 
-| | lit side | shadow side |
-|---|---|---|
-| midnight, before | 7.2% | **0.0%** |
-| midnight, after | 36.4% | 9.9% |
-| civil dawn, after | 22.4% | 14.7% |
-| noon | 100% | 0% |
+|                   | lit side | shadow side |
+| ----------------- | -------- | ----------- |
+| midnight, before  | 7.2%     | **0.0%**    |
+| midnight, after   | 36.4%    | 9.9%        |
+| civil dawn, after | 22.4%    | 14.7%       |
+| noon              | 100%     | 0%          |
 
 (Percentages are relative to noon, so they moved once daytime exposure came down — the
 absolute night values did not change.)
@@ -688,7 +708,7 @@ never claws brightness off it. The daytime term is deliberately **zero**: the en
 genuinely does carry daylight, and an earlier version that faded to a small daytime
 value brightened noon by 10%, changing a look nobody asked to change.
 
-### 15.4 Star field — built, and *not* point sprites
+### 15.4 Star field — built, and _not_ point sprites
 
 `@threlte/extras`' `<Stars>` is a raw `ShaderMaterial` and cannot render on WebGPU
 (`webgpu-notes.md` §1). The replacement is `core/skybox/Stars.svelte`, driven by the
@@ -701,7 +721,7 @@ Three's own source says so outright (quoted in `webgpu-notes.md` §1.1).
 
 So the field is **billboarded quads**: four vertices per star, offset in view space
 inside the TSL vertex node, one draw call. Since every star sits at the same radius, a
-fixed view-space offset is a fixed *angular* size, so no per-vertex distance maths is
+fixed view-space offset is a fixed _angular_ size, so no per-vertex distance maths is
 needed. 2200 stars ≈ 395 KB and one draw call; on-screen sizes run 1.8–7.6 px at fov 60.
 
 Two details that are load-bearing rather than cosmetic:
@@ -724,13 +744,13 @@ The lit term is `smoothstep(-0.08, 0.28, dot(surfaceNormal, sunDirection))`, so 
 phase is driven entirely by the `moonLag` knob that §3.4 already specified. Measured
 illuminated fraction of the disc:
 
-| `moonLag` | lit | phase |
-|---|---|---|
-| 0.5 (default) | 97% | full |
-| 0.375 | 86% | waning gibbous |
-| 0.25 | 45% | quarter |
-| 0.125 | 7% | crescent |
-| 0.0 | 0% | new |
+| `moonLag`     | lit | phase          |
+| ------------- | --- | -------------- |
+| 0.5 (default) | 97% | full           |
+| 0.375         | 86% | waning gibbous |
+| 0.25          | 45% | quarter        |
+| 0.125         | 7%  | crescent       |
+| 0.0           | 0%  | new            |
 
 The normal is rebuilt from `positionWorld` minus a moon-centre uniform rather than read
 from `normalWorld`, so it cannot be disturbed by the custom vertex node. The sphere is
@@ -741,6 +761,119 @@ Without the lock the moon appears to spin as it crosses the sky.
 Neither layer reaches the environment map: `Sky.svelte` bakes by passing the dome mesh
 alone to `CubeCamera.update()`, so the moon never burns a hotspot into the ambient term
 the way the sun disc would.
+
+### 15.6 Scene fog — the consumer the day curve was waiting for
+
+`fogColor` and `fogDensity` were authored on all twelve keyframes in phase 1 and **nothing
+consumed them**. There was no `scene.fog` anywhere in the repo, so a `fog` or `storm`
+target had nothing to show for itself at ground level. `core/skybox/SkyFog.svelte` is
+that consumer.
+
+It works on WebGPU, and the mechanism dictates the implementation. Three's
+`NodeManager.updateFog()` converts `scene.fog` into a `fog()` node, binding colour and
+density through `reference()` — so **mutating the instance every frame is a uniform write
+and costs nothing**. But it caches that node against the fog _object's identity_
+(`sceneData.fog !== sceneFog`), so assigning a new `FogExp2` rebuilds the node and
+invalidates every material's cache key. One instance, created at mount, mutated forever.
+
+Two consequences that are not optional:
+
+- **Every sky layer sets `material.fog = false`** — the dome, Stars, Nebula, Meteors and
+  the Moon. They sit at radius 1000 while fog is tuned for a 144-unit far plane, so any
+  density at all resolves the entire sky to a flat fog colour. The sky is what the fog is
+  a haze _toward_, never something the fog is applied to. That is precisely why the day
+  curve authors a per-keyframe `fogColor` in the first place.
+- **The curve's densities are a shape, not a magnitude.** Taken raw, sunset's authored
+  0.038 puts 44% fog at 20 world units on a _clear_ evening. `SkyFog`'s `densityScale`
+  (default 0.5) is the world-scale knob, and it belongs in the component for the same
+  reason `SkyLight` owns its shadow bounds: it depends on the game's world scale, not on
+  the sky. At 0.5 a clear noon fades 18% at 60 units — honest aerial perspective — while
+  `fog` still white-outs to 76% at 20 units.
+
+Colours are read as **sRGB**, not working-space linear: the curve's fog colours are
+authored by eye, so `[0.7, 0.78, 0.9]` has to mean the pale blue it looks like.
+
+Fog is mounted only in procedural-sky mode. An HDR or cubemap environment brings its own
+horizon colour and the day curve's would fight it.
+
+### 15.7 Wind cannot drive `SkyMesh.cloudSpeed`
+
+The obvious phase-2 win — bind the `wind` channel to `cloudSpeed` — **does not work**, and
+the reason generalizes to phase 4.
+
+`SkyMesh` scrolls its cloud plane with `cloudUV += time * cloudSpeed`, so the offset is
+proportional to _absolute elapsed time_. Changing the speed teleports the pattern by
+`elapsed × Δspeed`: a barely visible hitch a few seconds into a session, a total scramble
+of the sky an hour in. There is no offset uniform to compensate with.
+
+Cloud motion driven by wind therefore needs a layer that accumulates its own offset,
+which is phase 4's problem. `wind` ships as a published, blended channel with no renderer
+— as do `precipitation`, `cloudType` and `lightning`.
+
+### 15.8 The modulation, measured
+
+`modulateBaseline()` applies the channel vector over the sampled baseline in place. Three
+of its rules are the ones worth knowing, because each was a wrong first guess:
+
+- **Rayleigh goes DOWN under cover, not up.** An overcast sky is not a bluer sky, it is a
+  greyer one. Turbidity and mie rise; the blue-scattering term falls. Raising all three
+  together is the classic mistake and produces a vivid, saturated storm.
+- **Exposure barely moves** (−8% at full cover). Almost all of an overcast day's
+  darkening is the key light losing its throw. Doing both at full strength double-counts
+  and crushes an overcast noon into dusk.
+- **The fog-colour lift is gated on luminance.** Fog desaturates toward the baseline's own
+  luminance, darkens under a deck, and lifts toward white as fog thickens — so storm comes
+  out dark grey and fog comes out a bright white-out, from the same expression and with no
+  per-weather colour table. Ungated, the lift made a midnight storm 0.11 grey against the
+  clear night's 0.02: fog glowing brighter than the sky above it.
+
+The key light takes its cut at the very end of `compose`, in one expression
+(`keyAttenuation`), so every constant in §15.3 still means what it says under a clear sky.
+Full cover removes 85% of the key; **45% of what was removed comes back as ambient fill**
+(`AMBIENT_RETURN`). That second half is what keeps strong attenuation from meaning "dark":
+the deck intercepts the light, it does not destroy it, so overcast reads flat and bright
+rather than dim.
+
+**The light reads a deck factor, never raw cover** (`deckFactor`, `DECK_THRESHOLD = 0.4`).
+The first implementation scaled linearly with `cloudCover` and that was a straightforward
+bug, not a tuning choice: the sky boots at a non-zero `cloudCover`, so every scene silently
+lost 31% of its key light and gained 0.111 of fill before anything called `setWeather`.
+Washed-out shadows in the default scene were the visible symptom.
+
+It is also wrong physically. A directional light models the sun as permanently visible;
+37% cover means the sun is _intermittently_ occluded, which one directional light cannot
+represent and which, at ground level, looks like a sunny day with clouds in it. Cover only
+starts behaving like a diffuser once it closes into a layer. So `deckFactor` smoothsteps
+from 0.4 to 1.0 — exactly zero below the threshold, full only at solid cover — and
+everything touching the key light goes through it: attenuation, the ambient return, the
+colour desaturation, and the night fills. The baseline modulation above deliberately does
+_not_: thin cloud genuinely adds haze and hides stars, and none of that touches shadows.
+
+Measured, against a clear noon at 100%:
+
+|                        | deck | key   | fill  | key/fill  | total |
+| ---------------------- | ---- | ----- | ----- | --------- | ----- |
+| **boot / clear**, noon | 0.00 | 0.785 | 0.000 | ∞ (crisp) | 100%  |
+| cloudy, noon           | 0.02 | 0.745 | 0.018 | 41.2      | 97%   |
+| fog, noon              | 0.00 | 0.318 | 0.210 | 1.51      | 67%   |
+| rain, noon             | 0.74 | 0.230 | 0.250 | **0.92**  | 61%   |
+| overcast, noon         | 0.84 | 0.194 | 0.266 | **0.73**  | 59%   |
+| storm, noon            | 1.00 | 0.089 | 0.313 | **0.28**  | 51%   |
+| clear, midnight        | 0.00 | 0.262 | 0.098 | 2.67      | 46%   |
+| storm, midnight        | 1.00 | 0.030 | 0.114 | 0.26      | 18%   |
+
+Once the ratio drops below 1 the fill exceeds the key and the scene is effectively
+shadowless, which is what overcast _is_. Note the last two rows: the night fills are also
+scaled by the deck, because a real layer blocks moonlight and twilight too. Without that, a
+storm at midnight came out brighter than the clear sky it replaced.
+
+`fog` keeps its shadows on purpose (ratio 1.51): it carries only 0.3 cover, so it is ground
+mist under a clear sky, and sunbeams throwing shadows through morning fog is the correct
+answer rather than a missed case.
+
+**The boot default is byte-for-byte the phase-1 look** — verified equal to four decimal
+places on key and fill at midnight, sunrise, noon and sunset. `clear` is identical to it.
+The appearance nobody asked to change does not change until weather arrives.
 
 ---
 
@@ -772,17 +905,17 @@ specified for `graphics.json` and never built; it applies unchanged here, and
 ```ts
 // vite/weatherConfig.ts
 export const weatherConfig = (): Plugin => ({
-  name: 'spaceplate:weather-config',
-  apply: 'serve',                       // dev only; cannot exist in a prod build
-  configureServer(server) {
-    server.middlewares.use('/__weather-config', async (req, res) => {
-      if (req.method !== 'POST') return res.end();
-      const body = await readBody(req);
-      // validate shape + version BEFORE touching disk
-      writeFileSync(CONFIG_PATH, JSON.stringify(body, null, 2) + '\n');
-      res.end('{"ok":true}');
-    });
-  }
+	name: 'spaceplate:weather-config',
+	apply: 'serve', // dev only; cannot exist in a prod build
+	configureServer(server) {
+		server.middlewares.use('/__weather-config', async (req, res) => {
+			if (req.method !== 'POST') return res.end();
+			const body = await readBody(req);
+			// validate shape + version BEFORE touching disk
+			writeFileSync(CONFIG_PATH, JSON.stringify(body, null, 2) + '\n');
+			res.end('{"ok":true}');
+		});
+	}
 });
 ```
 
@@ -806,14 +939,15 @@ Requires a `$config` alias in **both** `vite.config.ts` and `tsconfig.json`.
 Not designed. Recorded so the descriptor contract is understood to be the seam these
 plug into, and so nobody assumes they are close.
 
-| Layer | Consumes | Rough approach | Status |
-|---|---|---|---|
-| Clouds | `clouds.cover/type`, `wind`, `sun` | **See below — SkyMesh already ships one** | partly free |
-| Precipitation | `precipitation.type/intensity`, `wind` | GPU particles / instanced sprites, camera-anchored | not started |
-| Lightning | `lightning` events | Emissive flash + a transient light contribution | not started |
-| Moon disc | `moon.direction`, phase | Textured sphere, phase from the surface normal (§15.5) | **done** |
-| Stars | `stars.visibility` | Billboarded TSL quads, *not* point sprites (§15.4) | **done** |
-| Audio | `wind`, `precipitation` | Crossfading layers; its own extension | not started |
+| Layer         | Consumes                               | Rough approach                                         | Status                              |
+| ------------- | -------------------------------------- | ------------------------------------------------------ | ----------------------------------- |
+| Clouds        | `clouds.cover/type`, `wind`, `sun`     | **See below — SkyMesh already ships one**              | cover bound; type/wind open (§15.7) |
+| Fog           | `fog`, `sky.fogColor/fogDensity`       | `scene.fog` as a mutated `FogExp2` (§15.6)             | **done**                            |
+| Precipitation | `precipitation.type/intensity`, `wind` | GPU particles / instanced sprites, camera-anchored     | not started                         |
+| Lightning     | `lightning` events                     | Emissive flash + a transient light contribution        | not started                         |
+| Moon disc     | `moon.direction`, phase                | Textured sphere, phase from the surface normal (§15.5) | **done**                            |
+| Stars         | `stars.visibility`                     | Billboarded TSL quads, _not_ point sprites (§15.4)     | **done**                            |
+| Audio         | `wind`, `precipitation`                | Crossfading layers; its own extension                  | not started                         |
 
 **SkyMesh already has a procedural cloud layer, and it was on by default.** three
 0.185.1's `SkyMesh` exposes `cloudCoverage` / `cloudDensity` / `cloudScale` /
@@ -825,8 +959,22 @@ map along with everything else.
 `Sky.svelte` now binds `cloudCoverage` to `descriptor.weather.cloudCover`, which hands
 phase 2 a working cloud channel for free. Coverage is the only one that is weather —
 `cloudDensity` (0.64) and `cloudElevation` (0.71) are authored look and live as props on
-`Sky.svelte`. The boot value is `cloudCover: 0.37`; note that this is the *default*
-channel vector, not the named `clear` weather phase 2 will ship, which targets 0.
+`Sky.svelte`. The boot value is `cloudCover: 0.2`; note that this is the _default_
+channel vector, not the named `clear` weather, which targets 0.
+
+**Coverage saturates early, and that sets the whole channel's scale.** The mask is
+`smoothstep(1 - coverage, 1 - coverage + 0.3, fbm)`, so by roughly 0.5 almost all of the
+noise has passed the threshold and the dome reads as a flat sheet rather than as cloud.
+`cloudCover` values are therefore authored against how SkyMesh _looks_, not as a physical
+fraction of sky covered: `overcast` is **0.35**, which is where the sky actually reads as
+overcast.
+
+That has a consequence for the light. 0.35 is below `DECK_THRESHOLD` (§15.8), so `overcast`
+does not attenuate the key light and keeps its shadows; the flat, shadowless deck now lives
+at `rain` (0.8) and above. The full ordering is boot 0.2 < cloudy 0.25 < overcast 0.35 <
+rain 0.8 < snow 0.9 < storm 1.0 — note the gap, and the sharp change in feel across it. If
+phase 4 replaces the fbm layer with something whose coverage is linear, these numbers get
+re-authored and the gap closes.
 
 This substantially shrinks phase 4's cloud task: the question is no longer "write a
 volumetric cloud system" but "is the built-in fbm layer good enough, and what do
@@ -857,7 +1005,7 @@ Non-blocking, but they need answers before the phase they belong to:
    the time + environment control surface. No override layer ever existed.
 3. **Env map and post-processing.** Once `post-processing.md`'s pipeline exists, the
    cube-camera bake runs inside a frame that also has a `RenderPipeline`. `CubeCamera.update()`
-   saves and restores the active render target, so it *should* compose — unverified.
+   saves and restores the active render target, so it _should_ compose — unverified.
 4. **Clock drift smoothing shape.** §6 mandates easing toward server time, never
    snapping, and never running backwards. The actual filter (fixed rate limit? PI
    controller?) is a phase-3 decision.

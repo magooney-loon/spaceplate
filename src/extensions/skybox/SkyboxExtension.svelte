@@ -3,8 +3,8 @@
 	import { Folder, Slider, Checkbox, Button, Separator, List, Monitor } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { environmentState, skyboxActions, ENV_TEXTURES, CUBE_TEXTURES } from './skybox.svelte';
-	import { skyActions, skyMeta, sunAt } from '$core/skybox/model';
-	import type { ClockKind } from '$core/skybox/model';
+	import { skyActions, skyMeta, sunAt, WEATHERS } from '$core/skybox/model';
+	import type { ChannelName, ClockKind } from '$core/skybox/model';
 
 	// The preset machine this panel used to drive (sky scalars, stars, transition
 	// lerps, localStorage presets) is gone -- the sky is time-driven and lives in
@@ -84,6 +84,28 @@
 		}
 	};
 
+	// ── Weather ────────────────────────────────────────────────────────────────
+	// Studio is just another caller (§8): these buttons run the same setWeather a game
+	// or a server subscription would, and the sliders send raw channel targets, which
+	// the API treats as equally valid. There is no privileged panel path, so nothing
+	// here can drift away from the real behaviour.
+
+	const WEATHER_NAMES = Object.keys(WEATHERS);
+
+	/** Blend duration in seconds, so the pane reads in units a human picks. */
+	let blendSeconds = $state(20);
+
+	const applyWeather = (name: string) => skyActions.setWeather(name, { over: blendSeconds * 1000 });
+
+	/**
+	 * A raw channel edit. Snapped (`over: 0`) on purpose: a slider drag is a direct
+	 * manipulation and has to track the handle, not chase it over twenty seconds.
+	 */
+	const setChannel = (channel: ChannelName, value: number) =>
+		skyActions.setWeather({ [channel]: value }, { over: 0 });
+
+	const weatherReadout = $derived(`${skyMeta.weather}${skyMeta.blending ? ' · blending' : ''}`);
+
 	const envTextureOptions = $derived([
 		{ value: null as string | null, text: '— None —' },
 		...ENV_TEXTURES.map((t) => ({ value: t.id as string | null, text: t.name }))
@@ -149,6 +171,63 @@
 				<Button title="Sunrise" on:click={() => scrubTime(0.25)} />
 				<Button title="Noon" on:click={() => scrubTime(0.5)} />
 				<Button title="Sunset" on:click={() => scrubTime(0.75)} />
+			</Folder>
+
+			<!-- Weather modulates the day curve; like time, it only means anything while
+			     the procedural sky is the one being rendered. -->
+			<Folder title="Weather" expanded={true}>
+				<Monitor label="Active" value={weatherReadout} />
+				<Slider label="Blend (s)" bind:value={blendSeconds} min={0} max={60} step={1} />
+				{#each WEATHER_NAMES as name (name)}
+					<Button
+						title={skyMeta.weather === name ? `✓ ${name}` : name}
+						on:click={() => applyWeather(name)}
+					/>
+				{/each}
+				<Separator />
+				<!-- Raw channel targets. The sliders track the live mixer values, so they
+				     also read as a progress display while a named weather blends in. -->
+				<Slider
+					label="Cloud"
+					value={skyMeta.cloudCover}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal') setChannel('cloudCover', e.detail.value as number);
+					}}
+				/>
+				<Slider
+					label="Fog"
+					value={skyMeta.fog}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal') setChannel('fog', e.detail.value as number);
+					}}
+				/>
+				<Slider
+					label="Precipitation"
+					value={skyMeta.precipitation}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal')
+							setChannel('precipitation', e.detail.value as number);
+					}}
+				/>
+				<Slider
+					label="Wind"
+					value={skyMeta.wind}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal') setChannel('wind', e.detail.value as number);
+					}}
+				/>
 			</Folder>
 		{/if}
 

@@ -12,3 +12,10 @@ export { elevationAt, azimuthAt, sunAt, moonAt } from './sunPath';
 export type { PathOptions } from './sunPath';
 export { sampleDayCurve, createBaseline } from './dayCurve';
 export { phaseFor, isRising, isDaytime } from './phases';
+export {
+	createWeatherMixer,
+	modulateBaseline,
+	keyAttenuation,
+	bodyVisibility
+} from './weatherMixer';
+export type { WeatherMixer } from './weatherMixer';

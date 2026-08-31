@@ -1,0 +1,394 @@
+// Weather (§5). Phase 2.
+//
+// Weather is NOT a preset of the sky. It is a modulation layer applied on top of the
+// day-curve baseline: a storm at noon is still noon under clouds. The sun still drives
+// scattering and light; weather attenuates, adds and obscures. That composition -- day
+// curve *under* weather, never *instead of* it -- is what makes this a system rather
+// than the preset swap it replaced.
+//
+// Pure: no Svelte, no three.js. Two halves live here:
+//
+//   createWeatherMixer  -- the stateful-but-plain mixer. Holds the current channel
+//                          vector and eases it toward a target, per channel, with a
+//                          staggered onset. Mutates its channel object in place.
+//   modulateBaseline    -- the pure function that applies a channel vector over a
+//                          sampled SkyBaseline, plus the light/visibility helpers that
+//                          sky.svelte.ts needs to attenuate the key light.
+
+import type { RGB, SkyBaseline, WeatherChannels, WeatherTarget } from './types';
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+/** Smoothstep, matching the day curve's easing so blends read the same way. */
+const ease = (k: number) => k * k * (3 - 2 * k);
+
+export type ChannelName = keyof WeatherChannels;
+
+export const CHANNEL_NAMES: ChannelName[] = [
+	'cloudCover',
+	'cloudType',
+	'fog',
+	'precipitation',
+	'wind',
+	'lightning'
+];
+
+/**
+ * A named weather is a **target vector**, not a script (§5.3).
+ *
+ * `stagger` is the fraction of the blend duration a channel waits before it starts
+ * moving; every channel still finishes together. That is what makes a storm *arrive*
+ * rather than appear: clouds thicken, then the wind gets up, then the rain starts. It
+ * is a property of the weather, not of the mixer, because a fog bank rolling in has a
+ * completely different order to a squall.
+ */
+export type WeatherDefinition = {
+	target: Partial<WeatherChannels>;
+	stagger?: Partial<Record<ChannelName, number>>;
+};
+
+/**
+ * The named weather library.
+ *
+ * Kept in code, exactly as `DEFAULT_DAY_CURVE` is: these are the shipped defaults, and
+ * they move to the authored `weather.json` when the config plumbing lands (§16). Values
+ * are the whole definition -- there is no hidden per-weather colour or light data, so
+ * anything a weather does to the look is reachable from `setWeather({ ... })` with raw
+ * channels too.
+ *
+ * `precipitation`, `lightning` and `wind` have no renderer yet (phase 4). They are
+ * published and blended regardless, because the descriptor is the seam those layers
+ * plug into and shipping the channels first is what lets them arrive as pure consumers.
+ * Until then `snow` and `rain` differ from `overcast` only in the channels a future
+ * layer will read -- `snow` reads on screen as a bright white-out, `rain` as a dark one,
+ * which is honest for what is actually being rendered.
+ */
+export const WEATHERS: Record<string, WeatherDefinition> = {
+	clear: {
+		target: { cloudCover: 0, cloudType: 0, fog: 0, precipitation: 0, wind: 0.08, lightning: 0 }
+	},
+	cloudy: {
+		target: {
+			cloudCover: 0.25,
+			cloudType: 0.2,
+			fog: 0.05,
+			precipitation: 0,
+			wind: 0.25,
+			lightning: 0
+		},
+		stagger: { wind: 0.2 }
+	},
+	overcast: {
+		// 0.35 is an authored LOOK value, not a physical fraction of sky covered.
+		// SkyMesh's cloud layer saturates early -- its mask is
+		// `smoothstep(1 - coverage, 1 - coverage + 0.3, fbm)` -- so by ~0.5 nearly the whole
+		// dome has passed the threshold and the sky reads as a flat sheet rather than as
+		// cloud. 0.35 is where it looks like overcast.
+		//
+		// The consequence is deliberate and worth knowing: 0.35 is below DECK_THRESHOLD, so
+		// `overcast` does NOT attenuate the key light and keeps its shadows. If you want the
+		// flat, shadowless overcast the light model can produce, that lives at `rain` and
+		// above now.
+		target: {
+			cloudCover: 0.35,
+			cloudType: 0.45,
+			fog: 0.18,
+			precipitation: 0,
+			wind: 0.3,
+			lightning: 0
+		},
+		stagger: { fog: 0.3, wind: 0.15 }
+	},
+	fog: {
+		// Low wind on purpose: fog that survives is fog nothing is blowing away.
+		// Little cloud with it: this is ground mist under a mostly clear sky, which is why
+		// it keeps its sunbeams and shadows.
+		target: {
+			cloudCover: 0.15,
+			cloudType: 0.1,
+			fog: 0.85,
+			precipitation: 0,
+			wind: 0.03,
+			lightning: 0
+		},
+		stagger: { fog: 0.1, cloudCover: 0 }
+	},
+	rain: {
+		target: {
+			cloudCover: 0.8,
+			cloudType: 0.6,
+			fog: 0.3,
+			precipitation: 0.6,
+			wind: 0.4,
+			lightning: 0
+		},
+		stagger: { wind: 0.2, fog: 0.3, precipitation: 0.45 }
+	},
+	storm: {
+		target: {
+			cloudCover: 1,
+			cloudType: 1,
+			fog: 0.35,
+			precipitation: 1,
+			wind: 0.85,
+			lightning: 0.8
+		},
+		stagger: { wind: 0.15, fog: 0.3, precipitation: 0.45, lightning: 0.6 }
+	},
+	snow: {
+		target: {
+			cloudCover: 0.9,
+			cloudType: 0.35,
+			fog: 0.5,
+			precipitation: 0.7,
+			wind: 0.3,
+			lightning: 0
+		},
+		stagger: { fog: 0.25, precipitation: 0.4 }
+	}
+};
+
+/** Default blend, in ms. Long enough that weather reads as arriving, not switching. */
+export const DEFAULT_BLEND_MS = 20_000;
+
+export type WeatherOptions = {
+	/** Blend duration in ms. `0` snaps -- callers must treat that as a discontinuity. */
+	over?: number;
+};
+
+type Blend = {
+	from: number;
+	to: number;
+	/** ms to wait before this channel starts moving. */
+	delay: number;
+	/** ms the channel takes once it starts. */
+	duration: number;
+	elapsed: number;
+};
+
+export type WeatherMixer = {
+	/** The live channel vector. Mutated in place -- hold the reference, never copy it. */
+	readonly channels: WeatherChannels;
+	/** Name of the last named weather set, or `'custom'` after a raw target. */
+	readonly name: string;
+	/** True while any channel is still moving. */
+	readonly blending: boolean;
+	/** Point the mixer at a named weather or a raw partial channel vector. */
+	set(target: WeatherTarget, options?: WeatherOptions): void;
+	/** Advance the blend. Mutates `channels`. Returns true if anything moved. */
+	tick(deltaMs: number): boolean;
+};
+
+/**
+ * @param channels the object the mixer will own and mutate. `sky.svelte.ts` passes
+ * `descriptor.weather` directly, so the descriptor never needs a per-frame copy.
+ */
+export const createWeatherMixer = (channels: WeatherChannels): WeatherMixer => {
+	const blends = new Map<ChannelName, Blend>();
+	let name = 'default';
+	let blending = false;
+
+	const resolve = (target: WeatherTarget): Partial<WeatherChannels> => {
+		if (typeof target !== 'string') {
+			name = 'custom';
+			return target;
+		}
+		const definition = WEATHERS[target];
+		if (!definition) return {};
+		name = target;
+		return definition.target;
+	};
+
+	return {
+		channels,
+		get name() {
+			return name;
+		},
+		get blending() {
+			return blending;
+		},
+
+		set(target, options = {}) {
+			const over = Math.max(0, options.over ?? DEFAULT_BLEND_MS);
+			const stagger = typeof target === 'string' ? WEATHERS[target]?.stagger : undefined;
+			const values = resolve(target);
+
+			blends.clear();
+			for (const channel of CHANNEL_NAMES) {
+				const to = values[channel];
+				if (to === undefined) continue;
+
+				const clamped = clamp01(to);
+				if (over === 0) {
+					// A snap. Land it now rather than queueing a zero-length blend, so
+					// callers reading `channels` on the same tick see the final value.
+					channels[channel] = clamped;
+					continue;
+				}
+
+				const delay = over * clamp01(stagger?.[channel] ?? 0);
+				blends.set(channel, {
+					from: channels[channel],
+					to: clamped,
+					delay,
+					// Every channel finishes together; only the onset is staggered.
+					duration: Math.max(1, over - delay),
+					elapsed: 0
+				});
+			}
+
+			blending = blends.size > 0;
+		},
+
+		tick(deltaMs) {
+			if (blends.size === 0) return false;
+
+			for (const [channel, blend] of blends) {
+				blend.elapsed += deltaMs;
+				if (blend.elapsed < blend.delay) continue;
+
+				const k = Math.min(1, (blend.elapsed - blend.delay) / blend.duration);
+				channels[channel] = lerp(blend.from, blend.to, ease(k));
+				if (k >= 1) blends.delete(channel);
+			}
+
+			blending = blends.size > 0;
+			return true;
+		}
+	};
+};
+
+// ── Modulation ─────────────────────────────────────────────────────────────────
+//
+// Everything below is pure: (baseline, channels) -> modulated baseline. No state.
+
+/**
+ * Fraction of the key light a full cloud deck removes.
+ *
+ * Deliberately strong: near solid cover the day is effectively shadowless, which is what
+ * a closed deck does -- it turns a point source into a hemisphere. The light does not
+ * simply vanish, though; see AMBIENT_RETURN.
+ *
+ * Note that with `overcast` authored at 0.35 (a SkyMesh look value, see WEATHERS) the
+ * weathers that actually reach this are `rain`, `snow` and `storm`.
+ */
+export const KEY_ATTENUATION = 0.85;
+/**
+ * Fog's share. Slightly gentler than a deck, but not by much.
+ *
+ * The first pass had this at 0.35, which measured out at 52% of the key surviving the
+ * `fog` weather -- hard directional shadows through a 76%-opaque white-out. Fog scatters
+ * rather than absorbs, so the light does come back (again via AMBIENT_RETURN), but it
+ * stops arriving from a direction, which is the part that matters for shadows.
+ */
+export const KEY_FOG_ATTENUATION = 0.7;
+/**
+ * How much of the light the deck took off the key comes back as ambient fill.
+ *
+ * This is the half that keeps "strong attenuation" from meaning "dark". The energy the
+ * cloud layer intercepts is not destroyed, it is re-emitted diffusely, so an overcast
+ * noon must read flat and bright rather than dim. Without this the same constant that
+ * kills the shadows also kills the daylight, and overcast looks like dusk.
+ */
+export const AMBIENT_RETURN = 0.45;
+
+/**
+ * Cover below which clouds are scattered, not a deck.
+ *
+ * THE LIGHT MUST NOT SCALE LINEARLY WITH COVER. The first pass did, and it was wrong in
+ * a way that had nothing to do with weather: the sky boots at a non-zero `cloudCover`, so
+ * every scene silently lost 31% of its key light and gained 0.111 of hemisphere fill
+ * before anyone called setWeather. The default look changed, and washed-out shadows were
+ * the visible symptom.
+ *
+ * It is also wrong physically. A directional light models the sun as always-visible; 37%
+ * cover means the sun is *intermittently* occluded, which a single directional light
+ * cannot represent and which, at ground level, looks like a sunny day with clouds in the
+ * sky. Only once the cover closes into a layer does it start behaving like a diffuser.
+ *
+ * So the light reads a smoothstepped "deck factor" instead of raw cover: exactly zero
+ * below 0.4 (the boot default is therefore byte-for-byte the phase-1 look), and ramping
+ * to full only as cover approaches solid.
+ */
+export const DECK_THRESHOLD = 0.4;
+
+/**
+ * How much the cloud layer behaves like a deck: 0 = scattered cloud, 1 = solid overcast.
+ *
+ * Everything that touches the KEY LIGHT goes through this -- attenuation, the ambient
+ * return, the colour desaturation, and the night fills in `sky.svelte.ts`. The baseline
+ * sky modulation below deliberately does not: thin cloud genuinely adds haze and hides
+ * stars, and none of that touches the shadows.
+ */
+export const deckFactor = (cloudCover: number): number => {
+	const k = clamp01((clamp01(cloudCover) - DECK_THRESHOLD) / (1 - DECK_THRESHOLD));
+	return k * k * (3 - 2 * k);
+};
+
+/** How much of the key light's direct throw survives the current weather. */
+export const keyAttenuation = (w: WeatherChannels): number =>
+	(1 - KEY_ATTENUATION * deckFactor(w.cloudCover)) * (1 - KEY_FOG_ATTENUATION * clamp01(w.fog));
+
+/**
+ * How much of a celestial body reaches the ground -- the descriptor's `visibility`.
+ *
+ * Slightly harsher than the light attenuation on purpose: a body is either *seen* or it
+ * is not, and thin cover that still passes usable light already hides the disc.
+ */
+export const bodyVisibility = (w: WeatherChannels): number =>
+	clamp01((1 - 0.95 * clamp01(w.cloudCover)) * (1 - 0.6 * clamp01(w.fog)));
+
+/**
+ * Apply the weather channels over a sampled day-curve baseline, in place.
+ *
+ * Called every frame, so it allocates nothing and writes through `out`.
+ */
+export const modulateBaseline = (out: SkyBaseline, w: WeatherChannels): SkyBaseline => {
+	const cloud = clamp01(w.cloudCover);
+	const fog = clamp01(w.fog);
+
+	// Thicker air: more turbidity and more mie, LESS rayleigh. An overcast sky is not a
+	// bluer sky, it is a greyer one, so the blue-scattering term has to come down while
+	// the large-particle terms go up. Raising all three together is the classic mistake
+	// and produces a vivid, saturated storm.
+	out.turbidity = Math.min(20, out.turbidity + cloud * 3.5 + fog * 2.5);
+	out.mieCoefficient = Math.min(0.05, out.mieCoefficient + cloud * 0.004 + fog * 0.005);
+	out.rayleigh = Math.max(0.15, out.rayleigh * (1 - 0.45 * cloud - 0.3 * fog));
+
+	// Only a slight stop-down. Most of an overcast day's darkening is the key light
+	// losing 85% of its throw (keyAttenuation), not the camera closing up. Doing both at
+	// full strength double-counts and crushes an overcast noon into dusk.
+	out.exposure *= 1 - 0.08 * cloud - 0.05 * fog;
+
+	// A deck hides stars outright; fog only veils them.
+	out.starVisibility *= (1 - cloud) * (1 - 0.7 * fog);
+
+	// Fog colour, derived entirely from the two channels rather than authored per
+	// weather: desaturate toward the baseline's own luminance under cover, darken under
+	// a deck, and lift toward white as the fog itself thickens. Storm therefore comes
+	// out dark grey and fog comes out a bright white-out, from the same expression --
+	// and a raw `setWeather({ fog: 0.9 })` gets the identical treatment, which is the
+	// point of having no per-weather colour table.
+	const [r, g, b] = out.fogColor;
+	const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+	const desaturate = clamp01(cloud * 0.75 + fog * 0.6);
+	const darken = 1 - 0.35 * cloud;
+	// The lift is gated on how much light there is to scatter, not on the fog channel
+	// alone. Ungated, a midnight storm came out at 0.11 grey against the clear night's
+	// 0.02 -- fog glowing brighter than the sky it hangs under. Luminance doubles as the
+	// daylight proxy here because the curve's own fog colours already track the day.
+	const lift = 0.28 * fog * Math.min(1, luminance * 2);
+	for (let i = 0; i < 3; i++) {
+		const channel = lerp((out.fogColor as RGB)[i], luminance, desaturate) * darken;
+		(out.fogColor as RGB)[i] = channel + (1 - channel) * lift;
+	}
+
+	// The fog channel is what actually thickens the air; a cloud deck only makes the
+	// existing haze read somewhat heavier. Both terms are deliberately restrained
+	// because the day curve's authored densities are already high at the ends of the
+	// day (0.038 at sunset) and multiply straight through -- SkyFog's `densityScale` is
+	// the world-scale knob, and these are the shape of the curve, not its magnitude.
+	out.fogDensity = out.fogDensity * (1 + 0.6 * cloud) + fog * 0.12;
+
+	return out;
+};

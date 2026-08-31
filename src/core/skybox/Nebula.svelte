@@ -127,6 +127,8 @@
 		material.depthWrite = false;
 		material.blending = THREE.AdditiveBlending;
 		material.toneMapped = false;
+		// Never fogged -- a sky layer at radius 1000. See SkyFog.svelte.
+		material.fog = false;
 
 		// Far-plane depth pinning, as Stars.svelte: honest depth at radius 1000 would be
 		// clipped by the camera's far plane, and the smoke must sort behind everything.

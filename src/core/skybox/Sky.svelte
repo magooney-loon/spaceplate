@@ -44,6 +44,11 @@
 	const { scene, renderer, invalidate, autoRenderTask } = useThrelte();
 
 	const sky = new SkyMesh();
+	// The dome sits at radius 1000 while scene fog is tuned for a 144-unit far plane, so
+	// any exponential fog at all would resolve the entire sky to a flat fog colour. The
+	// sky is what the fog is a haze *toward*, never something the fog is applied to --
+	// which is exactly why the day curve authors `fogColor` per keyframe.
+	(sky.material as THREE.NodeMaterial).fog = false;
 	const sunPosition = new THREE.Vector3();
 	const originalEnvironment = scene.environment;
 	// toneMappingExposure is renderer-global. This component drives it from the day
@@ -126,6 +131,15 @@
 			sky.cloudCoverage.value = descriptor.weather.cloudCover;
 			sky.cloudDensity.value = cloudDensity;
 			sky.cloudElevation.value = cloudElevation;
+
+			// WIND IS DELIBERATELY NOT BOUND TO cloudSpeed, even though it is the obvious
+			// target. SkyMesh scrolls its cloud plane with `cloudUV += time * cloudSpeed`,
+			// so the offset is proportional to ABSOLUTE elapsed time. Changing the speed
+			// therefore teleports the pattern by `elapsed * delta_speed` -- a barely visible
+			// hitch a few seconds in, a total scramble of the sky an hour into a session.
+			// There is no offset uniform to compensate with. Driving cloud motion from wind
+			// needs a cloud layer that accumulates its own offset, which is phase 4's
+			// problem (DOCS/weather-system.md §17).
 
 			// The curve's exposure drives the renderer's tone-mapping exposure -- the
 			// classic three.js sky pattern (SkyMesh has no exposure uniform of its own).
