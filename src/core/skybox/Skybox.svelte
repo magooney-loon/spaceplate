@@ -8,6 +8,7 @@
 	import Nebula from './Nebula.svelte';
 	import Stars from './Stars.svelte';
 	import Meteors from './Meteors.svelte';
+	import Rain from './Rain.svelte';
 	import { skyActions } from './model';
 
 	import { environmentState, ENV_TEXTURES, CUBE_TEXTURES } from '$extensions/skybox';
@@ -75,6 +76,7 @@
 		<Stars radius={1000} />
 		<Meteors radius={1000} />
 		<Moon radius={1000} />
+		<Rain />
 		<!-- Scene fog. Mounted only in procedural mode because its colour comes from the
 		     day curve, which is the procedural sky's authored look -- an HDR environment
 		     brings its own horizon and would fight it. Renders nothing itself; it drives

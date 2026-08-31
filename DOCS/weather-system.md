@@ -1031,7 +1031,7 @@ Requires a `$config` alias in **both** `vite.config.ts` and `tsconfig.json`.
 
 ---
 
-## 17. Render layers (phase 4 — sketch only)
+## 17. Render layers
 
 Not designed. Recorded so the descriptor contract is understood to be the seam these
 plug into, and so nobody assumes they are close.
@@ -1039,8 +1039,9 @@ plug into, and so nobody assumes they are close.
 | Layer         | Consumes                               | Rough approach                                         | Status                              |
 | ------------- | -------------------------------------- | ------------------------------------------------------ | ----------------------------------- |
 | Clouds        | `clouds.cover/type`, `wind`, `sun`     | **See below — SkyMesh already ships one**              | cover bound; type/wind open (§15.7) |
-| Fog           | `fog`, `sky.fogColor/fogDensity`       | `scene.fog` as a mutated `FogExp2` (§15.6)             | **done**                            |
-| Precipitation | `precipitation.type/intensity`, `wind` | GPU particles / instanced sprites, camera-anchored     | not started                         |
+| Fog           | `fog`, `sky.fogColor/fogDensity`       | `scene.fog` as mutated linear `Fog` (§15.6)            | **done**                            |
+| Rain          | `precipitation`, `cloudType`, `wind`   | Billboarded TSL quads, camera-anchored                 | **done**                            |
+| Snow          | `precipitation`, future precip type    | GPU particles / instanced sprites, camera-anchored     | not started                         |
 | Lightning     | `lightning` events                     | Emissive flash + a transient light contribution        | not started                         |
 | Moon disc     | `moon.direction`, phase                | Textured sphere, phase from the surface normal (§15.5) | **done**                            |
 | Stars         | `stars.visibility`                     | Billboarded TSL quads, _not_ point sprites (§15.4)     | **done**                            |

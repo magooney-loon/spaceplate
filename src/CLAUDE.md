@@ -208,10 +208,11 @@ skyQueries.getWeather(); // live channel vector — read, never cache
   as a flat sheet. `overcast` is therefore authored at **0.35** and sits _below_
   `DECK_THRESHOLD` — it keeps its shadows. The flat, shadowless deck lives at `rain`, `snow`
   and `storm`. Ordering is boot 0.2 < cloudy 0.25 < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.
-- `cloudCover` and `fog` are the only channels with renderers today (SkyMesh cloud coverage,
-  `SkyFog`, plus scattering / star visibility / exposure / key-light attenuation). The rest are
-  published and blended for phase 4. **`wind` cannot drive `SkyMesh.cloudSpeed`** — that uniform is
-  multiplied by absolute elapsed time, so changing it teleports the cloud pattern.
+- `cloudCover`, `fog` and rain precipitation have renderers today (SkyMesh cloud coverage,
+  `SkyFog`, `Rain.svelte`, plus scattering / star visibility / exposure / key-light attenuation).
+  Rain uses `cloudType` as a temporary rain-vs-snow gate until the descriptor grows an explicit
+  precipitation type. **`wind` cannot drive `SkyMesh.cloudSpeed`** — that uniform is multiplied by
+  absolute elapsed time, so changing it teleports the cloud pattern.
 
 **Scene fog is owned by `SkyFog.svelte`.** One linear `Fog`, created at mount and mutated per frame —
 assigning a _new_ fog object rebuilds three's fog node and invalidates every material's cache key.

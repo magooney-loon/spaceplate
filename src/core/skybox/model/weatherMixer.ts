@@ -56,12 +56,10 @@ export type WeatherDefinition = {
  * anything a weather does to the look is reachable from `setWeather({ ... })` with raw
  * channels too.
  *
- * `precipitation`, `lightning` and `wind` have no renderer yet (phase 4). They are
- * published and blended regardless, because the descriptor is the seam those layers
- * plug into and shipping the channels first is what lets them arrive as pure consumers.
- * Until then `snow` and `rain` differ from `overcast` only in the channels a future
- * layer will read -- `snow` reads on screen as a bright white-out, `rain` as a dark one,
- * which is honest for what is actually being rendered.
+ * `lightning` and `wind` have no renderer yet (phase 4). They are published and
+ * blended regardless, because the descriptor is the seam those layers plug into and
+ * shipping the channels first is what lets them arrive as pure consumers.
+ * `Rain.svelte` consumes `precipitation` for rain/storm; snow still needs its own layer.
  */
 export const WEATHERS: Record<string, WeatherDefinition> = {
 	clear: {
