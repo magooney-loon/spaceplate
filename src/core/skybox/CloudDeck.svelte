@@ -1,0 +1,339 @@
+<script lang="ts">
+	// The second cloud deck: heavy-weather mass that SkyMesh cannot render.
+	//
+	// WHY IT EXISTS. SkyMesh's built-in fbm layer saturates -- its mask is
+	// `smoothstep(1 - coverage, ..., fbm)` over noise with a hard floor, so past ~0.52
+	// coverage the whole dome is one flat sheet (see Sky.svelte). `Sky.svelte` remaps the
+	// `cloudCover` channel into the band that still draws clouds, which means `rain`,
+	// `snow` and `storm` (0.8-1.0) have nowhere left to go: heavier weather could only
+	// get denser and lower, never *bigger*. This layer is that missing mass. It draws
+	// only above ~0.5 cover -- exactly where SkyMesh runs out -- plus a faint sheared
+	// cirrus band across the middle of the channel so `cloudy`/`overcast` gain streaks.
+	//
+	// WIND, AT LAST. SkyMesh cannot take the wind channel: its `cloudSpeed` uniform is
+	// multiplied by absolute elapsed time, so changing the speed teleports the pattern
+	// (DOCS/weather-system.md §15.7). A layer that owns its offset has no such problem --
+	// this component accumulates a UV offset on the CPU every frame and scrolls both of
+	// its decks with it. That makes it the wind channel's first scroll consumer; Rain
+	// already reads wind for slant.
+	//
+	// Pure descriptor consumer, like every other sky layer: reads
+	// `weather.cloudCover/cloudType/wind` and the `light` hints in a task, writes only its
+	// own uniforms, never the descriptor. Lighting comes from the key-light hints, so the
+	// deck tracks time of day AND the deck's own attenuation of the key for free -- a
+	// storm at sunset gets warm edges, an overcast night goes near-black, and the model
+	// needs to know none of this.
+	//
+	// It also flashes: Lightning.svelte publishes each strike to `flashState` and this
+	// layer lights up around it -- localized to the strike's azimuth, weighted by its own
+	// cloud structure. That in-deck glow, not a screen wash, is where a storm's lightning
+	// reads from; see flashState.ts for why that state is shared plain, not a prop.
+	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
+	import * as THREE from 'three/webgpu';
+	import type { Mesh } from 'three/webgpu';
+	import {
+		Fn,
+		Loop,
+		cameraPosition,
+		cameraProjectionMatrix,
+		clamp,
+		dot,
+		float,
+		floor,
+		fract,
+		mix,
+		modelViewMatrix,
+		positionLocal,
+		positionWorld,
+		pow,
+		smoothstep,
+		sin,
+		uniform,
+		vec2,
+		vec3,
+		vec4
+	} from 'three/tsl';
+	import { descriptor } from './model';
+	import { flashState } from './flashState';
+
+	interface Props {
+		/** Dome radius. Cosmetic -- depth is pinned to the far plane. */
+		radius?: number;
+		/** UV multiplier on the plane projection -- smaller is bigger clouds. */
+		scale?: number;
+		/**
+		 * Plane-projection divisor for the mass deck. Distinct from SkyMesh's storm value
+		 * (0.1) so the two layers sit at different apparent altitudes and parallax.
+		 */
+		elevation?: number;
+		/** cloudCover range over which the mass deck fades in. Above SkyMesh's band. */
+		massFrom?: number;
+		massTo?: number;
+		/** cloudCover range over which the cirrus band is present. */
+		wispFrom?: number;
+		wispTo?: number;
+		seed?: number;
+	}
+
+	let {
+		radius = 1000,
+		scale = 0.3,
+		elevation = 0.38,
+		massFrom = 0.5,
+		massTo = 0.95,
+		wispFrom = 0.12,
+		wispTo = 0.42,
+		seed = 20260831
+	}: Props = $props();
+
+	const { invalidate, autoRenderTask } = useThrelte();
+
+	let mesh = $state.raw<Mesh>();
+
+	// ── Uniforms ───────────────────────────────────────────────────────────────────
+	// All written by the task, read by the node graph. Plain uniform nodes, so a change
+	// is a buffer write, never a recompile.
+	const uStrength = uniform(0); // mass deck weight, 0..1
+	const uWisp = uniform(0); // cirrus band weight, 0..1
+	const uWind = uniform(new THREE.Vector2()); // accumulated scroll offset, OURS alone
+	const uLightColor = uniform(new THREE.Color(1, 1, 1));
+	const uLightAmount = uniform(0);
+	// Horizontal key-light direction, fed to the shader as a sampling offset so the deck
+	// can shade itself: brighter on the side facing the light, like a real cloud would.
+	const uLightDir = uniform(new THREE.Vector2(1, 0));
+	// Lightning, from flashState: `flash` is the softened envelope Lightning publishes
+	// (photosafety-capped at the source -- do not re-amplify), `flashDir` the strike
+	// direction. The deck localizes the glow around it.
+	const uFlash = uniform(0);
+	const uFlashDir = uniform(new THREE.Vector3(0, 0.6, 0.8));
+
+	// ── Noise ──────────────────────────────────────────────────────────────────────
+	// Same value-noise family SkyMesh uses, seeded differently and with a domain rotation
+	// between octaves (SkyMesh's plain `p *= 2` aligns artifacts to the axes).
+
+	const hash21 = Fn(([p]: [any]) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453123)));
+
+	const valueNoise = Fn(([pImmutable]: [any]) => {
+		const p = vec2(pImmutable).toVar();
+		const i = floor(p);
+		const f = fract(p);
+		const ff = f.mul(f).mul(float(3).sub(f.mul(2)));
+
+		const a = hash21(i);
+		const b = hash21(i.add(vec2(1, 0)));
+		const c = hash21(i.add(vec2(0, 1)));
+		const d = hash21(i.add(vec2(1, 1)));
+
+		return mix(mix(a, b, ff.x), mix(c, d, ff.x), ff.y);
+	});
+
+	// A factory, as Nebula's makeField: the octave count is closed over rather than
+	// passed as an Fn argument, because Fn parameters are node-typed.
+	const makeFbm = (octaves: number) =>
+		Fn(([pImmutable]: [any]) => {
+			const p = vec2(pImmutable).toVar();
+			const value = float(0).toVar();
+			const amplitude = float(0.5).toVar();
+
+			Loop(octaves, () => {
+				value.addAssign(amplitude.mul(valueNoise(p)));
+				// Rotate ~36.6 degrees, then lacunarity. The rotation is what breaks the
+				// grid-aligned streaks SkyMesh's plain `p *= 2` produces.
+				p.assign(
+					vec2(p.x.mul(0.803).sub(p.y.mul(0.595)), p.x.mul(0.595).add(p.y.mul(0.803))).mul(2.03)
+				);
+				amplitude.mulAssign(0.5);
+			});
+
+			return value;
+		});
+
+	const fbm5 = makeFbm(5);
+	const fbm4 = makeFbm(4);
+	const fbm3 = makeFbm(3);
+
+	const buildMaterial = (): THREE.MeshBasicNodeMaterial => {
+		const material = new THREE.MeshBasicNodeMaterial();
+		material.side = THREE.BackSide;
+		material.transparent = true;
+		material.depthWrite = false;
+		// NormalBlending, not additive: a storm deck must be able to DARKEN the sky behind
+		// it. Additive layers can only ever add light, which reads as haze, not mass.
+		material.blending = THREE.NormalBlending;
+		// Tone-mapped (default), unlike Nebula/Stars: this layer must sit in the same
+		// exposure space as the SkyMesh dome it composites onto, or it survives the day
+		// curve's exposure changes as a stuck-on decal.
+		// Never fogged -- a sky layer at radius 1000. See SkyFog.svelte.
+		material.fog = false;
+
+		// Far-plane depth pinning, as every dome layer: honest depth at radius 1000 is
+		// clipped by the camera's far plane, and the deck must sort behind the scene.
+		const clip = cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(positionLocal, 1)));
+		material.vertexNode = vec4(clip.xy, clip.w, clip.w);
+
+		const deck = Fn(() => {
+			const dir = positionWorld.sub(cameraPosition).normalize();
+
+			// PLANE PROJECTION, as SkyMesh: where the view ray crosses a virtual cloud
+			// plane. Same construction, different constants, so the two decks sit at
+			// different apparent altitudes and never read as one layer doubled.
+			const uv = dir.xz.div(dir.y.mul(elevation)).mul(scale).add(uWind).toVar();
+
+			// Horizon fade: near the horizon the projection's UV runs to infinity and the
+			// noise degenerates. The fade also reads correctly -- a deck meets the haze.
+			const horizonFade = smoothstep(float(0.03), float(0.16), dir.y);
+
+			// ── Mass deck ────────────────────────────────────────────────────────────
+			// fbm for volume, plus a ridged term for tower/cell structure. Coverage is
+			// threshold-driven like SkyMesh's, but the threshold TRAVELS with strength --
+			// that is the headroom SkyMesh does not have.
+			const seedOffset = vec2((seed % 97) * 0.37, (seed % 89) * 0.53);
+			const n = fbm5(uv.add(seedOffset));
+			const r = fbm3(uv.mul(1.9).add(vec2(19.3, 7.1)));
+			const ridge = r.mul(2).sub(1).abs().oneMinus();
+			const mass = n.mul(0.68).add(ridge.mul(ridge).mul(0.32));
+
+			const threshold = float(0.74).sub(uStrength.mul(0.34));
+			const mask = smoothstep(threshold, threshold.add(0.22), mass);
+
+			// SELF-SHADING: sample the field again, offset toward the key light. The
+			// difference is a cheap normal proxy -- positive where the surface rises
+			// toward the light -- and turns the deck from texture into lit form.
+			const nLight = fbm4(uv.add(uLightDir.mul(0.13)).add(seedOffset));
+			const gradient = clamp(n.sub(nLight).mul(3), float(0), float(1));
+
+			const lit = uLightColor.mul(uLightAmount);
+			const massColor = lit.mul(mix(float(0.55), float(1.35), gradient));
+			const massAlpha = mask.mul(uStrength).mul(horizonFade);
+
+			// ── Cirrus band ──────────────────────────────────────────────────────────
+			// Sheared UV (stretched 1:3.2) reads as wind-smears; scrolls faster and sits
+			// at a higher apparent altitude than the mass deck.
+			const wuv = dir.xz
+				.div(dir.y.mul(0.22))
+				.mul(scale)
+				.mul(vec2(0.8, 3.2))
+				.add(uWind.mul(1.7))
+				.add(vec2(5.2, 13.4));
+			const wn = fbm4(wuv);
+			const wispColor = lit.mul(1.45).add(vec3(0.015));
+			const wispAlpha = smoothstep(float(0.45), float(0.75), wn)
+				.mul(uWisp)
+				.mul(0.42)
+				.mul(horizonFade);
+
+			// Composite the two sub-layers into one (color, alpha) pair: weighted mean of
+			// the colors, clamped sum of the alphas. The epsilon keeps the divide honest
+			// when both layers are empty (alpha 0 -- color is then never read).
+			const totalAlpha = massAlpha.add(wispAlpha).min(1);
+			const color = massColor
+				.mul(massAlpha)
+				.add(wispColor.mul(wispAlpha))
+				.div(totalAlpha.max(1e-4));
+
+			// LIGHTNING. The strike lights the deck from the inside: a sharp angular falloff
+			// around the strike direction, weighted by the local mask so dense cells catch it
+			// and edges stay dark -- structure, which is what makes it read as weather rather
+			// than a lamp behind the sky. The small constant term is the deck-wide bounce.
+			//
+			// Added AFTER the alpha divide, so blending scales it by totalAlpha: only the
+			// deck flashes, never the clear sky through its gaps.
+			const align = pow(dot(dir, uFlashDir).max(0), float(4));
+			const flash = vec3(0.72, 0.8, 1.0)
+				.mul(uFlash)
+				.mul(align.mul(1.25).add(0.06))
+				.mul(float(0.35).add(mask.mul(0.65)));
+
+			return vec4(color.add(flash), totalAlpha);
+		});
+
+		material.colorNode = deck();
+
+		return material;
+	};
+
+	const buildGeometry = (): THREE.SphereGeometry => new THREE.SphereGeometry(radius, 48, 24);
+
+	// Built once, not $derived -- same reasoning as Nebula/Stars: authored constants in, a
+	// derived would hand teardown the new object while the old one leaked. Remount instead.
+	const geometry = buildGeometry();
+	const material = buildMaterial();
+
+	// ── Wind scroll ────────────────────────────────────────────────────────────────
+	// THE ACCUMULATOR (§15.7). The offset only ever advances -- by a rate derived from the
+	// wind channel -- so the pattern is continuous by construction. There is no speed
+	// uniform for a time multiplication to scramble; changing wind changes only how fast
+	// the deck drifts from here on, never where it currently sits.
+	let windX = 0;
+	let windZ = 0;
+
+	const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+	const smooth01 = (edge0: number, edge1: number, v: number) => {
+		const k = clamp01((v - edge0) / (edge1 - edge0));
+		return k * k * (3 - 2 * k);
+	};
+
+	useTask(
+		(delta) => {
+			const w = descriptor.weather;
+			const cover = clamp01(w.cloudCover);
+
+			// Mass deck: only where SkyMesh has saturated. cloudType leans it toward real
+			// storm towers rather than flat sheet -- same semantic Sky.svelte gives it.
+			const strength = smooth01(massFrom, massTo, cover) * (0.55 + 0.45 * clamp01(w.cloudType));
+			// Cirrus: present through the middle of the channel, backed off once the mass
+			// deck takes the sky over.
+			const wisp = smooth01(wispFrom, wispTo, cover) * (1 - 0.6 * smooth01(0.75, 1, cover));
+
+			// Scroll rate in UV units/s: a slow drift that never fully stops (real air
+			// moves) rising to a visible storm wind. Axis is fixed -- the descriptor has
+			// wind speed, not direction; a direction channel would plug in right here.
+			const rate = 0.0025 + clamp01(w.wind) * 0.02;
+			windX += rate * delta;
+			windZ += rate * 0.38 * delta;
+			uWind.value.set(windX, windZ);
+
+			// Light hints already carry time of day AND the deck's own attenuation of the
+			// key (they were composed after the weather cut). The 0.05 floor keeps a
+			// faint silhouette under a night deck so it is not a hole in the sky.
+			const { color, intensity, ambient } = descriptor.light;
+			uLightColor.value.setRGB(color[0], color[1], color[2]);
+			uLightAmount.value = 0.05 + intensity * 0.16 + ambient * 0.55;
+			const d = descriptor.light.direction;
+			const len = Math.hypot(d.x, d.z) || 1;
+			uLightDir.value.set(d.x / len, d.z / len);
+
+			uStrength.value = strength;
+			uWisp.value = wisp;
+
+			// Lightning's published envelope, this frame (this task registers after
+			// Lightning's -- Skybox.svelte mounts it first -- so the deck flashes in the same
+			// frame the bolt appears).
+			uFlash.value = flashState.flash;
+			uFlashDir.value.set(flashState.direction.x, flashState.direction.y, flashState.direction.z);
+
+			if (mesh) mesh.visible = strength + wisp > 0.015;
+			invalidate();
+		},
+		{ before: autoRenderTask, autoInvalidate: false }
+	);
+
+	$effect(() => {
+		return () => {
+			geometry.dispose();
+			material.dispose();
+		};
+	});
+</script>
+
+<!-- renderOrder 2.5: over the moon (a deck occludes it), under the rain (order 3), which
+     is near the camera and must draw last among the sky layers. All these layers pin
+     depth to the far plane, so renderOrder is the only thing sorting them. -->
+<T.Mesh
+	bind:ref={mesh}
+	{geometry}
+	{material}
+	renderOrder={2.5}
+	frustumCulled={false}
+	userData={{ hideInTree: true, selectable: false }}
+/>

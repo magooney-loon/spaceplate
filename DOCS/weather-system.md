@@ -1038,11 +1038,11 @@ plug into, and so nobody assumes they are close.
 
 | Layer         | Consumes                               | Rough approach                                         | Status                              |
 | ------------- | -------------------------------------- | ------------------------------------------------------ | ----------------------------------- |
-| Clouds        | `clouds.cover/type`, `wind`, `sun`     | **See below — SkyMesh already ships one**              | cover bound; type/wind open (§15.7) |
+| Clouds        | `clouds.cover/type`, `wind`, `sun`     | **See below — SkyMesh already ships one**              | cover bound; **heavy deck done** — `CloudDeck.svelte` (wind scroll, §15.7) |
 | Fog           | `fog`, `sky.fogColor/fogDensity`       | `scene.fog` as mutated linear `Fog` (§15.6)            | **done**                            |
 | Rain          | `precipitation`, `cloudType`, `wind`   | Billboarded TSL quads, camera-anchored                 | **done**                            |
 | Snow          | `precipitation`, future precip type    | GPU particles / instanced sprites, camera-anchored     | not started                         |
-| Lightning     | `lightning` events                     | Emissive flash + a transient light contribution        | not started                         |
+| Lightning     | `lightning` events                     | Emissive flash + a transient light contribution        | **done** — `Lightning.svelte` (bolt + sheet strikes, deck-local flash via `flashState`, faint sky wash, shadowless flash light; photosafety-capped envelope) |
 | Moon disc     | `moon.direction`, phase                | Textured sphere, phase from the surface normal (§15.5) | **done**                            |
 | Stars         | `stars.visibility`                     | Billboarded TSL quads, _not_ point sprites (§15.4)     | **done**                            |
 | Audio         | `wind`, `precipitation`                | Crossfading layers; its own extension                  | not started                         |
@@ -1077,8 +1077,11 @@ re-authored and the gap closes.
 This substantially shrinks phase 4's cloud task: the question is no longer "write a
 volumetric cloud system" but "is the built-in fbm layer good enough, and what do
 `cloudType` / `wind` map onto?" — worth answering before anyone starts raymarching.
-`cloudScale` and `cloudSpeed` are still at SkyMesh defaults and are the obvious targets
-for the `wind` channel.
+`cloudScale` and `cloudSpeed` are still at SkyMesh defaults. `wind` now has a consumer,
+but not through `cloudSpeed` (which cannot take it, §15.7): `CloudDeck.svelte` adds the
+heavy-weather mass SkyMesh cannot render past ~0.52 coverage and scrolls it with a
+self-accumulated UV offset, which is the sanctioned home for wind-driven cloud motion.
+`cloudType` leans both layers toward storm towers.
 
 Each remaining layer deserves its own plan when it is actually reached. Phase 4 should
 get a separate document rather than growing this one.

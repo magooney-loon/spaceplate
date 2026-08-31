@@ -208,11 +208,16 @@ skyQueries.getWeather(); // live channel vector — read, never cache
   as a flat sheet. `overcast` is therefore authored at **0.35** and sits _below_
   `DECK_THRESHOLD` — it keeps its shadows. The flat, shadowless deck lives at `rain`, `snow`
   and `storm`. Ordering is boot 0.2 < cloudy 0.25 < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.
-- `cloudCover`, `fog` and rain precipitation have renderers today (SkyMesh cloud coverage,
-  `SkyFog`, `Rain.svelte`, plus scattering / star visibility / exposure / key-light attenuation).
-  Rain uses `cloudType` as a temporary rain-vs-snow gate until the descriptor grows an explicit
-  precipitation type. **`wind` cannot drive `SkyMesh.cloudSpeed`** — that uniform is multiplied by
-  absolute elapsed time, so changing it teleports the cloud pattern.
+- `cloudCover`, `fog`, precipitation, `wind` and `lightning` all have renderers today (SkyMesh
+  cloud coverage, `SkyFog`, `Rain.svelte`, `CloudDeck.svelte` for the heavy deck + wind scroll,
+  `Lightning.svelte` for strikes, plus scattering / star visibility / exposure / key-light
+  attenuation). Rain uses `cloudType` as a temporary rain-vs-snow gate until the descriptor grows
+  an explicit precipitation type. **`wind` cannot drive `SkyMesh.cloudSpeed`** — that uniform is
+  multiplied by absolute elapsed time, so changing it teleports the cloud pattern; the wind-driven
+  deck (`CloudDeck.svelte`) accumulates its own UV offset instead, which is why it can scroll.
+  Lightning publishes its per-frame flash to `flashState.ts` (plain shared state, one writer in
+  `Lightning`'s task, read by `CloudDeck` so the deck lights up around the strike) — per-frame
+  values can never be props (§14.1), and the descriptor's single writer stays the model.
 
 **Scene fog is owned by `SkyFog.svelte`.** One linear `Fog`, created at mount and mutated per frame —
 assigning a _new_ fog object rebuilds three's fog node and invalidates every material's cache key.

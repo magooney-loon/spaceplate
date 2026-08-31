@@ -56,10 +56,11 @@ export type WeatherDefinition = {
  * anything a weather does to the look is reachable from `setWeather({ ... })` with raw
  * channels too.
  *
- * `lightning` and `wind` have no renderer yet (phase 4). They are published and
- * blended regardless, because the descriptor is the seam those layers plug into and
- * shipping the channels first is what lets them arrive as pure consumers.
- * `Rain.svelte` consumes `precipitation` for rain/storm; snow still needs its own layer.
+ * `lightning` drives `Lightning.svelte`'s strike scheduler and `wind` drives
+ * `CloudDeck.svelte`'s scroll offset (plus `Rain.svelte`'s slant) -- every channel now
+ * has a renderer. Snow still needs its own layer: `Rain.svelte` consumes
+ * `precipitation` gated on `cloudType` until the descriptor grows an explicit
+ * precipitation type.
  */
 export const WEATHERS: Record<string, WeatherDefinition> = {
 	clear: {

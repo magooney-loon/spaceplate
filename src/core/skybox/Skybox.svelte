@@ -9,6 +9,8 @@
 	import Stars from './Stars.svelte';
 	import Meteors from './Meteors.svelte';
 	import Rain from './Rain.svelte';
+	import CloudDeck from './CloudDeck.svelte';
+	import Lightning from './Lightning.svelte';
 	import { skyActions } from './model';
 
 	import { environmentState, ENV_TEXTURES, CUBE_TEXTURES } from '$extensions/skybox';
@@ -62,20 +64,33 @@
 {:else}
 	<!-- Procedural sky (default).
 
-	     Order inside the group is cosmetic; what actually decides draw order is that the
-	     dome is opaque while Nebula, Stars, Meteors and Moon are transparent, so all of
-	     them land in the later queue, with renderOrder 1 (Nebula, Stars, Meteors) and 2
-	     (Moon) settling them between themselves.
+	     Two orders live in this group and they are different things:
 
-	     None of these reach the environment map: Sky bakes by passing the dome
-	     mesh alone to CubeCamera.update(), so neither the smoke nor the moon burns a
-	     hotspot into the ambient term the way the sun disc would. -->
+	     DRAW order is decided by the render queue + renderOrder: the dome is opaque while
+	     everything else is transparent, so all of it lands in the later queue, settled
+	     between themselves by renderOrder 1 (Nebula, Stars, Meteors), 2 (Moon), 2.5
+	     (CloudDeck), 2.6 (the lightning bolt), 3 (Rain) and 4 (the lightning wash, very
+	     faint). The deck sits over the moon because a cloud deck occludes it; the rain
+	     draws last because it is nearest.
+
+	     TASK order falls back to mount order among the `before: autoRenderTask` tasks,
+	     and ONE dependency lives here: Lightning publishes the flash to `flashState`, and
+	     CloudDeck reads it, so Lightning mounts first and the deck lights up the same
+	     frame the bolt appears. A swapped order would cost one stale frame -- invisible,
+	     but free to get right.
+
+	     None of these reach the environment map: Sky bakes by passing the dome mesh
+	     alone to CubeCamera.update(), so neither the smoke, the deck, the moon nor a
+	     lightning flash burns a hotspot into the ambient term the way the sun disc
+	     would. -->
 	<T.Group userData={{ hideInTree: true, selectable: false }}>
 		<Sky setEnvironment={true} cubeMapSize={128} scale={1000} />
 		<Nebula radius={1000} />
 		<Stars radius={1000} />
 		<Meteors radius={1000} />
 		<Moon radius={1000} />
+		<Lightning />
+		<CloudDeck radius={1000} />
 		<Rain />
 		<!-- Scene fog. Mounted only in procedural mode because its colour comes from the
 		     day curve, which is the procedural sky's authored look -- an HDR environment
