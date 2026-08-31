@@ -5,13 +5,15 @@
 	import { environmentState, skyboxActions, ENV_TEXTURES, CUBE_TEXTURES } from './skybox.svelte';
 	import { skyActions, skyMeta, sunAt, WEATHERS } from '$core/skybox/model';
 	import type { ChannelName, ClockKind } from '$core/skybox/model';
+	import { requestStrike } from '$core/skybox/flashState';
 
 	// The preset machine this panel used to drive (sky scalars, stars, transition
 	// lerps, localStorage presets) is gone -- the sky is time-driven and lives in
-	// $core/skybox/model. Per weather-system.md §8, Studio is just another caller: this panel
-	// reads skyMeta and calls skyActions. It never writes sky parameters directly.
-	// Weather buttons arrive with the phase-2 mixer; keyframe editing + save-to-file
-	// remain phase 5.
+	// $core/skybox/model. Per weather-system.md §8, Studio is just another caller: this
+	// panel reads skyMeta and calls skyActions. It never writes sky parameters directly.
+	// Keyframe editing + save-to-file remain phase 5. The one deliberate exception is
+	// `requestStrike`: a dev trigger, not an authored-sky control, flowing through the
+	// same shared state the flash already uses (see flashState.ts).
 
 	interface Props {
 		children?: Snippet;
@@ -186,7 +188,9 @@
 				{/each}
 				<Separator />
 				<!-- Raw channel targets. The sliders track the live mixer values, so they
-				     also read as a progress display while a named weather blends in. -->
+				     also read as a progress display while a named weather blends in. All six
+				     channels are here: `cloudType` leans the deck toward storm towers AND picks
+				     rain vs snow; `lightning` arms the strike scheduler. -->
 				<Slider
 					label="Cloud"
 					value={skyMeta.cloudCover}
@@ -195,6 +199,16 @@
 					step={0.01}
 					on:change={(e) => {
 						if (e.detail.origin === 'internal') setChannel('cloudCover', e.detail.value as number);
+					}}
+				/>
+				<Slider
+					label="Cloud Type"
+					value={skyMeta.cloudType}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal') setChannel('cloudType', e.detail.value as number);
 					}}
 				/>
 				<Slider
@@ -228,6 +242,19 @@
 						if (e.detail.origin === 'internal') setChannel('wind', e.detail.value as number);
 					}}
 				/>
+				<Slider
+					label="Lightning"
+					value={skyMeta.lightning}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal') setChannel('lightning', e.detail.value as number);
+					}}
+				/>
+				<!-- Fires one bolt immediately, even with the channel at zero -- tuning the
+				     bolt/deck-flash look must not mean waiting for the next random strike. -->
+				<Button title="⚡ Strike Now" on:click={requestStrike} />
 			</Folder>
 		{/if}
 

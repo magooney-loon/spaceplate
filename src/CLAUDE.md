@@ -172,8 +172,10 @@ import { mouseLookState, mouseLookActions, BASE_SENS } from '$core';
 - The old preset layer (sky scalars, star presets, transitions, user presets) is **deleted** — the sky is
   time-driven now and lives in `core/skybox/model` (see `DOCS/weather-system.md`).
 - `SkyboxExtension.svelte` is the Studio panel: time scrubber / speed / jump buttons and the weather
-  buttons + raw channel sliders (procedural mode only), plus environment mode & texture pickers.
-  It drives the sky through the engine API (`skyActions`), same as a game would.
+  buttons + raw channel sliders (all six, procedural mode only), plus environment mode & texture pickers,
+  and a **⚡ Strike Now** button (`requestStrike()` from `core/skybox/flashState`) that fires one bolt
+  immediately — the dev-tool exception to "panel drives only `skyActions`", since a strike is FX state,
+  not authored sky data.
 
 **Weather (`core/skybox/model/weatherMixer.ts`)** — weather is a modulation layer over the day
 curve, never a replacement for it: a storm at noon is still noon under clouds.
@@ -195,7 +197,7 @@ skyQueries.getWeather(); // live channel vector — read, never cache
 - Per-weather `stagger` delays a channel's _onset_ as a fraction of the blend; all channels still
   finish together. That is what makes a storm arrive rather than appear.
 - `descriptor.weather` is plain and per-frame. `skyMeta` mirrors the active name, `blending`, and
-  four channels as `$state`, gated to 1% so a 20 s blend wakes the reactive graph a few dozen times.
+  all six channels as `$state`, gated to 1% so a 20 s blend wakes the reactive graph a few dozen times.
 - **The key light reads `deckFactor(cloudCover)`, never raw cover** — smoothstepped from
   `DECK_THRESHOLD` (0.4) to 1.0, so scattered cloud leaves shadows completely alone and only a
   closed layer flattens them. The sky boots at a non-zero `cloudCover`; scaling the light

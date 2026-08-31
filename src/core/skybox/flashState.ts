@@ -18,15 +18,28 @@
 export type FlashState = {
 	/**
 	 * Sky/scene flash envelope, ~0..0.55. Already attack-softened and amplitude-capped at
-	 * the source -- consumers must not scale it back up. See the photosensitivity notes
+	 * the source -- consumers must not scale it back up. See the photosafety notes
 	 * in Lightning.svelte.
 	 */
 	flash: number;
 	/** Strike direction, world space, Y up, unit length. Constant for a strike's life. */
 	direction: { x: number; y: number; z: number };
+	/**
+	 * Dev/testing hook: force one BOLT strike on the next frame. Written by callers
+	 * (Studio's Strike button), consumed and cleared by Lightning's scheduler -- one
+	 * writer per field, like everything here. Fires even at a dead channel, because
+	 * tuning the bolt's look should not mean waiting for a storm to roll in.
+	 */
+	strikeRequest: boolean;
 };
 
 export const flashState: FlashState = {
 	flash: 0,
-	direction: { x: 0, y: 0.6, z: 0.8 }
+	direction: { x: 0, y: 0.6, z: 0.8 },
+	strikeRequest: false
+};
+
+/** Force one lightning strike next frame (dev tooling -- see `strikeRequest`). */
+export const requestStrike = (): void => {
+	flashState.strikeRequest = true;
 };

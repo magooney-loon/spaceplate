@@ -205,9 +205,11 @@ export const skyMeta = $state({
 	weather: 'default',
 	blending: false,
 	cloudCover: descriptor.weather.cloudCover,
+	cloudType: descriptor.weather.cloudType,
 	fog: descriptor.weather.fog,
 	precipitation: descriptor.weather.precipitation,
-	wind: descriptor.weather.wind
+	wind: descriptor.weather.wind,
+	lightning: descriptor.weather.lightning
 });
 
 // Manual clock as the template default: the app boots on a curated sunset rather
@@ -248,9 +250,16 @@ let publishedPhase: PhaseName | null = null;
 let publishedDaytime: boolean | null = null;
 let publishedWeather: string | null = null;
 let publishedBlending: boolean | null = null;
-const publishedChannels = { cloudCover: -1, fog: -1, precipitation: -1, wind: -1 };
+const publishedChannels = {
+	cloudCover: -1,
+	cloudType: -1,
+	fog: -1,
+	precipitation: -1,
+	wind: -1,
+	lightning: -1
+};
 
-/** Mirror the four channels a dev panel watches, gated to CHANNEL_EPSILON. */
+/** Mirror the six channels a dev panel watches, gated to CHANNEL_EPSILON. */
 const publishWeather = (w: WeatherChannels) => {
 	if (publishedWeather !== mixer.name) {
 		publishedWeather = mixer.name;
@@ -260,7 +269,14 @@ const publishWeather = (w: WeatherChannels) => {
 		publishedBlending = mixer.blending;
 		skyMeta.blending = mixer.blending;
 	}
-	for (const key of ['cloudCover', 'fog', 'precipitation', 'wind'] as const) {
+	for (const key of [
+		'cloudCover',
+		'cloudType',
+		'fog',
+		'precipitation',
+		'wind',
+		'lightning'
+	] as const) {
 		// Also fires when a blend lands exactly on its target, since `to` is reached
 		// only once and the epsilon gate would otherwise strand the final value.
 		if (Math.abs(w[key] - publishedChannels[key]) >= CHANNEL_EPSILON || !mixer.blending) {

@@ -327,9 +327,10 @@
 	const overlayGeometry = new THREE.SphereGeometry(950, 32, 16);
 	const overlayMaterial = buildOverlayMaterial();
 
-	const beginStrike = (cover: number) => {
+	const beginStrike = (cover: number, forceBolt = false) => {
 		const isRestrike = restrikeDir !== null;
-		const kind: StrikeKind = !isRestrike && cover > 0.25 && rng() < 0.45 ? 'sheet' : 'bolt';
+		const kind: StrikeKind =
+			!isRestrike && !forceBolt && cover > 0.25 && rng() < 0.45 ? 'sheet' : 'bolt';
 
 		// Direction: a re-strike reuses the channel (bearing and all); otherwise a fresh
 		// view-biased azimuth. Sheets sit deeper in the deck -- they are the cell
@@ -414,6 +415,13 @@
 			nowMs += delta * 1000;
 			const channel = clamp01(descriptor.weather.lightning);
 			const cover = clamp01(descriptor.weather.cloudCover);
+
+			// A manual strike request (Studio's Strike button) fires immediately, as a bolt,
+			// even at a dead channel -- tuning the look must not mean waiting for a storm.
+			if (flashState.strikeRequest) {
+				flashState.strikeRequest = false;
+				if (!strike) beginStrike(cover, true);
+			}
 
 			// Dead channel clears any pending strike so the next storm schedules fresh.
 			if (channel <= 0.05) {
