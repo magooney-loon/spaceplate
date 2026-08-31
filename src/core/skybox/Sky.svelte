@@ -22,13 +22,18 @@
 		/** Re-bake early once the sun has moved this many degrees since the last one. */
 		envSunDeltaDeg?: number;
 		/**
-		 * Cloud look. Coverage is NOT here -- it is a weather channel and comes from the
-		 * descriptor, so the phase-2 mixer can drive it. These two are style rather than
-		 * state: how solid the clouds read, and how high the layer sits. If `cloudType`
-		 * ever becomes a real channel it should probably take these over.
+		 * Ceiling on SkyMesh's `cloudCoverage` uniform. THIS IS NOT A STYLE KNOB -- see the
+		 * cloud mapping in the task below. Past ~0.6 the cloud mask saturates to 1 across the
+		 * entire dome and the clouds become invisible, so the weather channel is remapped
+		 * into a band that always renders as cloud.
 		 */
-		cloudDensity?: number;
-		cloudElevation?: number;
+		maxCloudCoverage?: number;
+		/** Exponent on the coverage remap. Below 1 it spends more of the channel's range low. */
+		cloudCoverageCurve?: number;
+		/** SkyMesh `cloudDensity` at zero and at full weight -- how opaque the clouds read. */
+		cloudDensityRange?: [number, number];
+		/** SkyMesh `cloudElevation` at zero and at full weight -- how low the deck sits. */
+		cloudElevationRange?: [number, number];
 	}
 
 	let {
@@ -37,9 +42,14 @@
 		scale = 1000,
 		envIntervalMs = 250,
 		envSunDeltaDeg = 1,
-		cloudDensity = 0.64,
-		cloudElevation = 0.71
+		maxCloudCoverage = 0.52,
+		cloudCoverageCurve = 0.42,
+		cloudDensityRange = [0.45, 0.97],
+		cloudElevationRange = [0.6, 1]
 	}: Props = $props();
+
+	const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+	const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
 	const { scene, renderer, invalidate, autoRenderTask } = useThrelte();
 
@@ -122,15 +132,40 @@
 			sunPosition.set(sun.direction.x, sun.direction.y, sun.direction.z);
 			sky.sunPosition.value.copy(sunPosition);
 
-			// SkyMesh (0.185.1) ships a procedural cloud layer that is ON BY DEFAULT --
-			// cloudCoverage defaults to 0.4. Nothing here ever set it, so the sky spent a
-			// while rendering unmanaged clouds that ignored time and weather entirely.
-			// Coverage is now bound to the descriptor's cloudCover channel, which hands the
-			// phase-2 weather mixer a working cloud layer for free. Density and elevation
-			// are authored look, so they come from props.
-			sky.cloudCoverage.value = descriptor.weather.cloudCover;
-			sky.cloudDensity.value = cloudDensity;
-			sky.cloudElevation.value = cloudElevation;
+			// CLOUDS. All three uniforms are weather-driven, and the coverage one is REMAPPED
+			// rather than passed straight through. That remap is load-bearing.
+			//
+			// SkyMesh builds its cloud mask as
+			//     smoothstep(1 - coverage, 1 - coverage + 0.3, cloudNoise)
+			// and `cloudNoise` is a 5-octave fbm rescaled to `n * 0.5 + 0.5`, which puts it at
+			// mean 0.833, sd 0.088 and -- crucially -- a hard MINIMUM of 0.584. Sampled over
+			// the dome:
+			//
+			//   coverage 0.27  mask mean 0.35, sd 0.29   27% clear gaps   <- most structure
+			//   coverage 0.37  mask mean 0.70, sd 0.31    7% clear gaps   <- the three.js demo
+			//   coverage 0.52  mask mean 0.96, sd 0.13    0% clear gaps
+			//   coverage 0.70+ mask IDENTICALLY 1, sd 0   no clouds visible at all
+			//
+			// Above ~0.6 every sample clears the upper edge of the smoothstep, so the mask is
+			// a constant 1 and the dome is uniformly blended to `cloudColor` -- which is
+			// scaled by `vSunE * 0.00002` and therefore nearly black at low sun. Passing the
+			// channel through raw meant `rain` (0.8), `snow` (0.9) and `storm` (1.0) rendered
+			// as a flat, cloudless, slightly darker sky. They looked CLEARER than `cloudy`.
+			//
+			// So the semantic channel (0 = clear, 1 = solid storm) is remapped into the band
+			// that actually draws clouds, and "heavier weather" is expressed through density
+			// and a lower deck rather than through coverage it cannot use. At full weight
+			// this lands on density 0.97 / elevation 1.0, the values three's own Sky demo
+			// uses for its dramatic overcast.
+			const cover = clamp01(descriptor.weather.cloudCover);
+			// cloudType leans the look toward heavy stratus/storm towers, giving that channel
+			// its first actual job.
+			const heaviness = clamp01(cover * 0.75 + clamp01(descriptor.weather.cloudType) * 0.25);
+			// Exactly 0 short-circuits SkyMesh's whole cloud branch, so `clear` is an empty sky.
+			sky.cloudCoverage.value =
+				cover <= 0 ? 0 : maxCloudCoverage * Math.pow(cover, cloudCoverageCurve);
+			sky.cloudDensity.value = lerp(cloudDensityRange[0], cloudDensityRange[1], heaviness);
+			sky.cloudElevation.value = lerp(cloudElevationRange[0], cloudElevationRange[1], heaviness);
 
 			// WIND IS DELIBERATELY NOT BOUND TO cloudSpeed, even though it is the obvious
 			// target. SkyMesh scrolls its cloud plane with `cloudUV += time * cloudSpeed`,
