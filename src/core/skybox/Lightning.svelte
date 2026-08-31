@@ -8,14 +8,22 @@
 	// The full-sky wash here is deliberately FAINT (an immersion cue, at most a tenth of
 	// the already-halved envelope), and the shadowless flash light carries the scene.
 	//
+	// THE BOLT is a procedural noise path, ported from the classic perlin-lightning
+	// construction: the channel's horizontal offset is a 1-D perlin function of height,
+	// f(y), and the fragment shader draws it as DISTANCE TO PATH -- a thin bright core,
+	// a tight glow, a broad soft halo -- with the width slope-compensated so steep
+	// sections of the path do not pinch thin. A noise-wobbled gate decides how far down
+	// the strike reaches, per seed. There is no per-strike geometry to rebuild, just two
+	// uniforms (path seed + ground gate); the bolt is a single camera-anchored quad.
+	//
 	// PHOTOSAFETY. Flash-induced seizures come from sharp, large-area luminance steps
 	// (WCAG 2.3.1 fails at three general flashes within any one second). Every constant
 	// below is chosen against that:
 	//   - No step edges: every pulse attacks through a ~45-55 ms smoothstep ramp and
-	//     decays exponentially. The bolt ribbon attacks faster (~12 ms) but it is a thin
+	//     decays exponentially. The bolt attacks faster (~12 ms) but it is a thin
 	//     small-area element, not the frame.
 	//   - Amplitude: the sky/scene envelope peaks at ~0.55 for bolt strikes and ~0.43 for
-	//     sheets, and the wash multiplies that by at most 0.15.
+	//     sheets, and the wash multiplies that by at most 0.1.
 	//   - Density: at most 2 pulses per strike, at least 0.6 s between event starts, and
 	//     re-strikes wait 0.45 s -- worst case stays under the three-flashes-per-second
 	//     line with margin, and every ramp is soft on top of that.
@@ -24,10 +32,10 @@
 	//
 	// TIMING. The channel is an intensity, not an event stream, so this component runs
 	// the scheduler: mean inter-event interval falls from ~11 s at the channel's floor to
-	// ~2 s at full storm. Two kinds of event: BOLT strikes (ribbon + flash, can re-strike
+	// ~2 s at full storm. Two kinds of event: BOLT strikes (path + flash, can re-strike
 	// the same channel a few hundred ms later -- real storms do, and the repeat reads as
 	// the channel flickering rather than as a new strike) and SHEET strikes (in-cloud
-	// flash with no ribbon, softer and slower -- cheap frequency that never strobes).
+	// flash with no bolt, softer and slower -- cheap frequency that never strobes).
 	//
 	// WHERE THEY STRIKE. A uniform pick over the compass puts most bolts behind the
 	// player, and a bolt you never see may as well not exist. So azimuths are biased
@@ -35,8 +43,7 @@
 	// the bolt and the flash light are re-anchored on the active camera every frame, as
 	// Rain is -- a strike holds a fixed BEARING wherever the player stands, instead of
 	// living around the world origin. A quarter of strikes still land anywhere on the
-	// compass; those still register through the deck glow (directional, so it shows at
-	// the edge of view), the wash and the scene light.
+	// compass; those still register through the deck glow, the wash and the scene light.
 	//
 	// THE LIGHT STAYS MOUNTED at intensity 0. Toggling a light's visibility changes
 	// three's lights-state hash and recompiles every lit material -- a stutter on every
@@ -45,13 +52,19 @@
 	import * as THREE from 'three/webgpu';
 	import type { DirectionalLight, Mesh } from 'three/webgpu';
 	import {
-		attribute,
+		Fn,
+		Loop,
 		cameraProjectionMatrix,
 		float,
+		floor,
+		fract,
+		mix,
 		modelViewMatrix,
-		pow,
 		positionLocal,
+		smoothstep,
+		sin,
 		uniform,
+		uv,
 		vec3,
 		vec4
 	} from 'three/tsl';
@@ -59,7 +72,7 @@
 	import { flashState } from './flashState';
 
 	interface Props {
-		/** Horizontal distance of the bolt from the active camera. Inside the dome. */
+		/** Horizontal distance of the bolt quad from the active camera. Inside the dome. */
 		distance?: number;
 		/**
 		 * Peak intensity of the flash light. SUN_INTENSITY is 4.75 for scale; 2.5 puts a
@@ -124,7 +137,7 @@
 		t0: number;
 		amp: number;
 		tau: number;
-		/** Ribbon attack: thin element, snappy is safe and reads best. */
+		/** Bolt attack: thin element, snappy is safe and reads best. */
 		attackBolt: number;
 		/** Sky/scene attack: large-area, so this is the photosafety-critical one. */
 		attackSky: number;
@@ -185,145 +198,47 @@
 		return p.amp * rise * Math.exp(-Math.max(0, t - attack) / (p.tau * decayScale));
 	};
 
-	// ── The bolt ───────────────────────────────────────────────────────────────────
-	// Buffers are allocated once at max size and rewritten per strike; a strike every
-	// few seconds must not allocate. Segment = one quad = 4 verts / 6 indices.
-	const MAX_SEGMENTS = 96;
-	const boltPositions = new Float32Array(MAX_SEGMENTS * 4 * 3);
-	const boltSides = new Float32Array(MAX_SEGMENTS * 4);
-	const boltFades = new Float32Array(MAX_SEGMENTS * 4);
-	const boltIndices = new Uint32Array(MAX_SEGMENTS * 6);
-	for (let i = 0; i < MAX_SEGMENTS; i++) {
-		const v = i * 4;
-		const t = i * 6;
-		boltIndices[t] = v;
-		boltIndices[t + 1] = v + 1;
-		boltIndices[t + 2] = v + 2;
-		boltIndices[t + 3] = v;
-		boltIndices[t + 4] = v + 2;
-		boltIndices[t + 5] = v + 3;
-	}
-
-	let usedSegments = 0;
-
-	/** Append one ribbon quad between two bolt points (x, y, halfWidth, fade each). */
-	const emitSegment = (
-		ax: number,
-		ay: number,
-		aw: number,
-		af: number,
-		bx: number,
-		by: number,
-		bw: number,
-		bf: number
-	) => {
-		if (usedSegments >= MAX_SEGMENTS) return;
-		// Perpendicular of the segment direction, in the bolt's XY plane.
-		let dx = bx - ax;
-		let dy = by - ay;
-		const len = Math.hypot(dx, dy) || 1;
-		dx /= len;
-		dy /= len;
-		const px = -dy;
-		const py = dx;
-
-		const base = usedSegments * 4 * 3;
-		const coords = [
-			ax + px * aw,
-			ay + py * aw,
-			bx + px * bw,
-			by + py * bw,
-			bx - px * bw,
-			by - py * bw,
-			ax - px * aw,
-			ay - py * aw
-		];
-		for (let v = 0; v < 4; v++) {
-			boltPositions[base + v * 3] = coords[v * 2];
-			boltPositions[base + v * 3 + 1] = coords[v * 2 + 1];
-			boltPositions[base + v * 3 + 2] = 0;
-		}
-		const sBase = usedSegments * 4;
-		boltSides[sBase] = -1;
-		boltSides[sBase + 1] = -1;
-		boltSides[sBase + 2] = 1;
-		boltSides[sBase + 3] = 1;
-		boltFades[sBase] = af;
-		boltFades[sBase + 1] = bf;
-		boltFades[sBase + 2] = bf;
-		boltFades[sBase + 3] = af;
-		usedSegments++;
-	};
-
-	/** Rewrite the bolt geometry for a fresh strike: main channel + 2-4 branches. */
-	const buildBolt = () => {
-		usedSegments = 0;
-
-		// Main channel, top (inside the deck) to bottom. Wanders, pulled toward a random
-		// ground target so the strike has intent instead of a random walk. Widths are
-		// generous: at 750 units the ribbon must survive as more than a hairline.
-		const segments = 16 + Math.floor(rng() * 6);
-		const groundX = (rng() - 0.5) * 90;
-		let x = (rng() - 0.5) * 30;
-		const points: { x: number; y: number; w: number }[] = [];
-		for (let i = 0; i <= segments; i++) {
-			const k = i / segments;
-			x += (rng() - 0.5) * (14 + 26 * k);
-			x = x * (1 - 0.55 * k) + groundX * 0.55 * k;
-			points.push({
-				x,
-				y: lerp(boltTop, boltBottom, k),
-				w: lerp(11, 4, k) * (0.8 + rng() * 0.4)
-			});
-		}
-		for (let i = 0; i < points.length - 1; i++) {
-			const k = i / (points.length - 1);
-			const fade = Math.min(1, k * 12) * lerp(1, 0.5, k);
-			emitSegment(
-				points[i].x,
-				points[i].y,
-				points[i].w,
-				fade,
-				points[i + 1].x,
-				points[i + 1].y,
-				points[i + 1].w,
-				fade
-			);
-		}
-
-		// Branches peel off mid-channel, thinner, fading to nothing.
-		const branches = 2 + Math.floor(rng() * 3);
-		for (let b = 0; b < branches; b++) {
-			const from = points[2 + Math.floor(rng() * (points.length - 5))];
-			const side = rng() < 0.5 ? -1 : 1;
-			const count = 4 + Math.floor(rng() * 4);
-			const step = (boltTop - boltBottom) * (0.006 + rng() * 0.006);
-			let bx = from.x;
-			let by = from.y;
-			for (let i = 0; i < count; i++) {
-				const nx = bx + side * step * (0.5 + rng());
-				const ny = by - step * (0.8 + rng() * 0.4);
-				const w = from.w * 0.45 * (1 - i / count);
-				emitSegment(bx, by, w, 0.7 * (1 - i / count), nx, ny, w * 0.8, 0.7 * (1 - (i + 1) / count));
-				bx = nx;
-				by = ny;
-			}
-		}
-	};
-
-	const buildBoltGeometry = (): THREE.BufferGeometry => {
-		const geometry = new THREE.BufferGeometry();
-		geometry.setAttribute('position', new THREE.BufferAttribute(boltPositions, 3));
-		geometry.setAttribute('aSide', new THREE.BufferAttribute(boltSides, 1));
-		geometry.setAttribute('aFade', new THREE.BufferAttribute(boltFades, 1));
-		geometry.setIndex(new THREE.BufferAttribute(boltIndices, 1));
-		geometry.setDrawRange(0, 0);
-		return geometry;
-	};
-
-	const uFlash = uniform(0);
+	// ── The bolt shader ────────────────────────────────────────────────────────────
+	// Distance-to-path rendering on one camera-facing quad. The quad's local X is
+	// normalized to ±1.5 (half of its width is 1.5 path units) and Y to 0..1 bottom-to-
+	// top; the path wanders ±0.2 of that. All widths below are in those X units, so they
+	// scale with the quad, which scales with `boltTop - boltBottom`.
 	const uBolt = uniform(0);
-	const uWash = uniform(0);
+	/** Domain offset of the path noise -- the per-strike fingerprint. */
+	const uSeed = uniform(0);
+	/** Where the wobbled ground gate cuts the channel off, as a fraction of height. */
+	const uGate = uniform(0.12);
+
+	// The reference's 1-D noise family, verbatim: hash -> linear value noise -> 6
+	// octaves of doubling frequency / halving amplitude. A factory, as Nebula's
+	// makeField: the octave count is closed over, not passed as an Fn argument.
+	const rand1 = Fn(([p]: [any]) => fract(sin(p).mul(75154.32912)));
+
+	const noise1 = Fn(([pImmutable]: [any]) => {
+		const p = float(pImmutable).toVar();
+		const i = floor(p);
+		const f = p.sub(i);
+		return mix(rand1(i), rand1(i.add(1)), f);
+	});
+
+	const makePerlin1 = (octaves: number) =>
+		Fn(([pImmutable]: [any]) => {
+			const p = float(pImmutable).toVar();
+			const r = float(0).toVar();
+			const s = float(1).toVar();
+			const w = float(1).toVar();
+			Loop(octaves, () => {
+				s.mulAssign(2);
+				w.mulAssign(0.5);
+				r.addAssign(w.mul(noise1(s.mul(p))));
+			});
+			return r;
+		});
+
+	const perlin1 = makePerlin1(6);
+
+	/** THE PATH: the channel's horizontal offset at height `y`, a perlin wander. */
+	const pathAt = (y: any) => float(0.4).mul(perlin1(y.mul(2).add(uSeed)).sub(0.5));
 
 	const buildBoltMaterial = (): THREE.MeshBasicNodeMaterial => {
 		const material = new THREE.MeshBasicNodeMaterial();
@@ -334,23 +249,51 @@
 		material.fog = false;
 		material.side = THREE.DoubleSide;
 
-		// Far-plane depth pinning + frustumCulled={false}: the bolt sits at 750 units
+		// Far-plane depth pinning + frustumCulled={false}: the quad sits at 750 units
 		// against a 144 far plane, exactly like the dome layers.
 		const clip = cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(positionLocal, 1)));
 		material.vertexNode = vec4(clip.xy, clip.w, clip.w);
 
-		// The explicit generic is required -- see Stars.svelte.
-		const aSide = attribute<'float'>('aSide', 'float');
-		const aFade = attribute<'float'>('aFade', 'float');
+		const boltFn = Fn(() => {
+			const uvN = uv();
+			const x = uvN.x.mul(3).sub(1.5).toVar(); // ±1.5 across the quad
+			const y = uvN.y.toVar(); // 0 at the bottom of the quad, 1 at the top
 
-		// Soft power edge: a hot core with a wide falloff reads as glow without a second
-		// ribbon pass. Above-white colour: the core should clip to white through the
-		// additive blend, which is what a lightning core does to your eye.
-		const edge = pow(aSide.abs().oneMinus(), float(0.4));
-		material.colorNode = vec3(1.05, 1.15, 1.4);
-		material.opacityNode = aFade.mul(edge).mul(uBolt);
+			// Path centre at this height, plus a hair higher for the slope term. The
+			// slope compensation is what keeps steep sections of the channel from
+			// pinching: the stroke's width grows with |df/dy| exactly as in the reference.
+			const center = pathAt(y);
+			const centerUp = pathAt(y.add(0.001));
+
+			const dist = x.sub(center).abs().toVar();
+			const coreW = float(0.018).add(centerUp.sub(center).abs().mul(5));
+			const strike = smoothstep(float(0), coreW, dist).oneMinus();
+			const glow = smoothstep(float(0), float(0.07), dist).oneMinus();
+			const halo = smoothstep(float(0), float(1.1), dist).oneMinus();
+
+			const bolt = strike.mul(0.55).add(glow.mul(0.22)).add(halo.mul(0.18));
+
+			// Vertical shaping: fade the channel out as it enters the deck at the top,
+			// and cut it off near the ground along a noise-wobbled line whose height is
+			// drawn per strike -- bolts that stop mid-air read as leaders, not as
+			// geometry clipped by a quad edge.
+			const topFade = smoothstep(float(0.86), float(1), y).oneMinus();
+			const wobble = perlin1(x.mul(1.2).add(uGate.mul(4))).mul(0.03);
+			const ground = smoothstep(uGate, uGate.add(0.05), y.add(wobble));
+
+			return bolt.mul(topFade).mul(ground);
+		});
+
+		// Slightly blue-white and above 1.0: the core should clip toward white through
+		// the additive blend, which is what a lightning core does to the eye.
+		material.colorNode = vec3(0.95, 0.98, 1.12);
+		material.opacityNode = boltFn().mul(uBolt);
+
 		return material;
 	};
+
+	const uFlash = uniform(0);
+	const uWash = uniform(0);
 
 	const buildOverlayMaterial = (): THREE.MeshBasicNodeMaterial => {
 		const material = new THREE.MeshBasicNodeMaterial();
@@ -371,7 +314,15 @@
 		return material;
 	};
 
-	const boltGeometry = buildBoltGeometry();
+	// The quad: tall enough for the full channel (boltBottom..boltTop) and about twice
+	// as wide, so the path's ±0.2 wander, the glow, and the broad halo all fit inside
+	// with room -- the halo's smoothstep (1.1) reaches zero before the quad's edge
+	// (nearest approach ~1.3), or the quad would clip it into a visible rectangle.
+	// Captured once on purpose, like every sky layer's geometry: authored constants in,
+	// and a change re-mounts rather than rebuilding buffers under a live material.
+	// svelte-ignore state_referenced_locally
+	const boltHeight = boltTop - boltBottom;
+	const boltGeometry = new THREE.PlaneGeometry(boltHeight * 2.1, boltHeight);
 	const boltMaterial = buildBoltMaterial();
 	const overlayGeometry = new THREE.SphereGeometry(950, 32, 16);
 	const overlayMaterial = buildOverlayMaterial();
@@ -427,7 +378,7 @@
 					];
 
 		const last = pulses[pulses.length - 1];
-		// Bolt ribbons outlive their pulses: the heated channel glows on for a moment
+		// Bolt paths outlive their pulses: the heated channel glows on for a moment
 		// after the discharge (see the linger term in the task).
 		const durationS =
 			kind === 'bolt'
@@ -447,15 +398,11 @@
 		flashState.direction.y = dir.y;
 		flashState.direction.z = dir.z;
 
-		// Positioning lives in the task, not here: the bolt and the light are re-anchored
-		// on the active camera EVERY frame (as Rain is), so a strike holds a fixed bearing
-		// wherever the player moves.
+		// The whole per-strike variety of the bolt is two uniforms: the path's domain
+		// offset and where the ground gate sits. No geometry is rebuilt.
 		if (kind === 'bolt') {
-			buildBolt();
-			boltGeometry.attributes.position.needsUpdate = true;
-			boltGeometry.attributes.aSide.needsUpdate = true;
-			boltGeometry.attributes.aFade.needsUpdate = true;
-			boltGeometry.setDrawRange(0, usedSegments * 6);
+			uSeed.value = rng() * 100;
+			uGate.value = 0.05 + rng() * 0.2;
 		}
 	};
 
@@ -506,28 +453,29 @@
 						for (const p of strike.pulses) {
 							sum += pulseValue(s, p, p.attackBolt, 0.8);
 						}
-						// LINGER: the channel's afterglow -- the ribbon stays faintly
+						// LINGER: the channel's afterglow -- the path stays faintly
 						// visible for ~a second after the discharge has ended, decaying.
 						const linger = s > 0.08 ? 0.16 * Math.exp(-(s - 0.08) / 0.55) : 0;
 						boltGlow = Math.min(1.25, sum + linger);
 					}
 
 					// CAMERA-ANCHORED, as Rain is: re-derived from the active camera every
-					// frame, so the bolt reads as sky (a fixed bearing and elevation wherever the
-					// player stands) rather than as an object sitting near the world origin.
+					// frame, so the bolt reads as sky (a fixed bearing and elevation wherever
+					// the player stands) rather than as an object sitting near the world
+					// origin. Y centres the quad on the authored top/bottom span.
 					const cam = camera.current.position;
 					if (strike.kind === 'bolt' && bolt && boltGlow > 0.01) {
 						bolt.position.set(
 							cam.x + Math.sin(strike.azimuth) * distance,
-							cam.y,
+							cam.y + (boltTop + boltBottom) / 2,
 							cam.z + Math.cos(strike.azimuth) * distance
 						);
 						bolt.lookAt(cam);
 					}
 					if (flashLight && flash > 0.001) {
-						// A DirectionalLight aims from its position at its TARGET, and the target
-						// is not in the scene graph -- three only updates matrixWorld for objects
-						// it knows about, so it is touched by hand, every frame.
+						// A DirectionalLight aims from its position at its TARGET, and the
+						// target is not in the scene graph -- three only updates matrixWorld
+						// for objects it knows about, so it is touched by hand, every frame.
 						flashLight.position.set(
 							cam.x + strike.dir.x * 40,
 							cam.y + strike.dir.y * 40,
@@ -568,9 +516,9 @@
 	});
 </script>
 
-<!-- The bolt (renderOrder 2.6) draws over the cloud deck (2.5) and under the rain (3);
-     the wash dome (4) draws over everything, very faintly. All depth-pinned to the far
-     plane, so renderOrder is the only sort. The light is always mounted; see the
+<!-- The bolt quad (renderOrder 2.6) draws over the cloud deck (2.5) and under the rain
+     (3); the wash dome (4) draws over everything, very faintly. All depth-pinned to the
+     far plane, so renderOrder is the only sort. The light is always mounted; see the
      header. -->
 <T.Mesh
 	bind:ref={bolt}
