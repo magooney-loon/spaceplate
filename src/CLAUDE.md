@@ -209,9 +209,11 @@ skyQueries.getWeather(); // live channel vector — read, never cache
   `DECK_THRESHOLD` — it keeps its shadows. The flat, shadowless deck lives at `rain`, `snow`
   and `storm`. Ordering is boot 0.2 < cloudy 0.25 < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.
 - `cloudCover`, `fog`, precipitation, `wind` and `lightning` all have renderers today (SkyMesh
-  cloud coverage, `SkyFog`, `Rain.svelte`, `CloudDeck.svelte` for the heavy deck + wind scroll,
-  `Lightning.svelte` for strikes, plus scattering / star visibility / exposure / key-light
-  attenuation). Rain uses `cloudType` as a temporary rain-vs-snow gate until the descriptor grows
+  cloud coverage, `SkyFog`, `Rain.svelte` + `Snow.svelte` for precipitation, `CloudDeck.svelte` for the
+  heavy deck + wind scroll, `Lightning.svelte` for strikes, plus scattering / star visibility /
+  exposure / key-light attenuation). Rain and Snow split on `cloudType` (rain above ~0.5, snow below) —
+  a temporary gate until the descriptor grows an explicit precipitation type. Snow's flakes dim with
+  the light hints, so a night snowfall reads faint and cool.
   an explicit precipitation type. **`wind` cannot drive `SkyMesh.cloudSpeed`** — that uniform is
   multiplied by absolute elapsed time, so changing it teleports the cloud pattern; the wind-driven
   deck (`CloudDeck.svelte`) accumulates its own UV offset instead, which is why it can scroll.

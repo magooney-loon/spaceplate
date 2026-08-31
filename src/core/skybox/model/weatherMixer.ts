@@ -58,9 +58,8 @@ export type WeatherDefinition = {
  *
  * `lightning` drives `Lightning.svelte`'s strike scheduler and `wind` drives
  * `CloudDeck.svelte`'s scroll offset (plus `Rain.svelte`'s slant) -- every channel now
- * has a renderer. Snow still needs its own layer: `Rain.svelte` consumes
- * `precipitation` gated on `cloudType` until the descriptor grows an explicit
- * precipitation type.
+ * has a renderer. Precipitation splits on `cloudType` -- `Rain.svelte` above ~0.5,
+ * `Snow.svelte` below -- until the descriptor grows an explicit precipitation type.
  */
 export const WEATHERS: Record<string, WeatherDefinition> = {
 	clear: {

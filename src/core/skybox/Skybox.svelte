@@ -9,6 +9,7 @@
 	import Stars from './Stars.svelte';
 	import Meteors from './Meteors.svelte';
 	import Rain from './Rain.svelte';
+	import Snow from './Snow.svelte';
 	import CloudDeck from './CloudDeck.svelte';
 	import Lightning from './Lightning.svelte';
 	import { skyActions } from './model';
@@ -69,9 +70,9 @@
 	     DRAW order is decided by the render queue + renderOrder: the dome is opaque while
 	     everything else is transparent, so all of it lands in the later queue, settled
 	     between themselves by renderOrder 1 (Nebula, Stars, Meteors), 2 (Moon), 2.5
-	     (CloudDeck), 2.6 (the lightning bolt), 3 (Rain) and 4 (the lightning wash, very
-	     faint). The deck sits over the moon because a cloud deck occludes it; the rain
-	     draws last because it is nearest.
+	     (CloudDeck), 2.6 (the lightning bolt), 3 (Rain, Snow) and 4 (the lightning wash,
+	     very faint). The deck sits over the moon because a cloud deck occludes it; the
+	     precipitation draws last because it is nearest.
 
 	     TASK order falls back to mount order among the `before: autoRenderTask` tasks,
 	     and ONE dependency lives here: Lightning publishes the flash to `flashState`, and
@@ -92,6 +93,7 @@
 		<Lightning />
 		<CloudDeck radius={1000} />
 		<Rain />
+		<Snow />
 		<!-- Scene fog. Mounted only in procedural mode because its colour comes from the
 		     day curve, which is the procedural sky's authored look -- an HDR environment
 		     brings its own horizon and would fight it. Renders nothing itself; it drives

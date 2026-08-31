@@ -1041,7 +1041,7 @@ plug into, and so nobody assumes they are close.
 | Clouds        | `clouds.cover/type`, `wind`, `sun`     | **See below — SkyMesh already ships one**              | cover bound; **heavy deck done** — `CloudDeck.svelte` (wind scroll, §15.7) |
 | Fog           | `fog`, `sky.fogColor/fogDensity`       | `scene.fog` as mutated linear `Fog` (§15.6)            | **done**                            |
 | Rain          | `precipitation`, `cloudType`, `wind`   | Billboarded TSL quads, camera-anchored                 | **done**                            |
-| Snow          | `precipitation`, future precip type    | GPU particles / instanced sprites, camera-anchored     | not started                         |
+| Snow          | `precipitation`, future precip type    | GPU particles / instanced sprites, camera-anchored     | **done** — `Snow.svelte` (TSL quads, wind drift + sway, light-hint dimming) |
 | Lightning     | `lightning` events                     | Emissive flash + a transient light contribution        | **done** — `Lightning.svelte` (bolt + sheet strikes, deck-local flash via `flashState`, faint sky wash, shadowless flash light; photosafety-capped envelope) |
 | Moon disc     | `moon.direction`, phase                | Textured sphere, phase from the surface normal (§15.5) | **done**                            |
 | Stars         | `stars.visibility`                     | Billboarded TSL quads, _not_ point sprites (§15.4)     | **done**                            |
