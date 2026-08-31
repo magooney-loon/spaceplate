@@ -56,18 +56,43 @@ const lerpRGB = (a: RGB, b: RGB, k: number, out: RGB): RGB => {
 };
 
 // Key-light palette. Warm at the horizon, neutral overhead, cool by moonlight.
-// SUN_INTENSITY is the PEAK output at high sun -- the value the scene was originally
-// tuned around (the old hardcoded light was Math.PI / 4 flat).
 const SUN_HORIZON: RGB = [1, 0.6, 0.35];
 const SUN_ZENITH: RGB = [1, 0.98, 0.95];
 const MOON_COLOR: RGB = [0.55, 0.68, 1];
-const SUN_INTENSITY = Math.PI / 4;
 
-// A playable night, not a physical moon -- real moonlight is ~1/400,000 of sunlight.
-// This is deliberately a THIRD of the sun, well past the "~25% would erase the night"
-// that an earlier draft of this file worried about. That worry was misplaced: what
-// reads as night is the cool colour cast, the black sky and the low exposure, not the
-// key light's absolute value. At a 32nd the scene was simply unlit.
+/**
+ * PEAK key output at high sun.
+ *
+ * This was `Math.PI / 4` -- the value of the old hardcoded light in Camera.svelte -- for
+ * as long as `scene.environment` was fed the raw SkyMesh dome. That dome integrates to
+ * roughly 5.0 of irradiance on an up-facing normal at noon, against this light's 0.745,
+ * so the sun accounted for 13% of a daylit surface and the sky for the other 87%. The
+ * symptom was shadows you could not see (lit rgb(111,141,225) vs shadowed rgb(102,136,223))
+ * and everything tinted sky-blue.
+ *
+ * `Sky.svelte`'s `environmentIntensity` now scales the dome to 0.25. THIS CONSTANT IS THE
+ * OTHER HALF OF THAT CHANGE: it absorbs the daylight the env map stopped delivering, so
+ * scene brightness lands within 0.88-0.97x of where it was through the whole day while the
+ * key goes from 13% of the light to ~70% of it. Measured across the day, a surface turned
+ * to the sun gets 1.2-1.6x brighter and shadow-over-lit falls from 0.96 to 0.29.
+ *
+ * It is deliberately a day-only knob. Removing ambient had to be paid back only where the
+ * ambient was doing the work -- by night the env map contributes ~5% and the moon and fill
+ * constants below are untouched, which is why night measures 0.94x unchanged.
+ */
+const SUN_INTENSITY = 4.75;
+
+/**
+ * A playable night, not a physical moon -- real moonlight is ~1/400,000 of sunlight.
+ *
+ * An ABSOLUTE level, not a fraction of the sun: SkyMesh bakes black below -2.31 degrees
+ * (see MOON_AMBIENT), so nothing about the env map's scale ever reached the night and
+ * nothing about rescaling it should. It does not track SUN_INTENSITY and must not be
+ * "restored" to some ratio of it.
+ *
+ * What reads as night is the cool colour cast, the black sky and the low exposure, not
+ * the key light's absolute value. At a 32nd of this the scene was simply unlit.
+ */
 const MOON_INTENSITY = Math.PI / 12;
 
 /**
@@ -104,11 +129,15 @@ const TWILIGHT_AMBIENT = Math.PI / 14;
 /**
  * Floor on the elevation used to *aim* the key light, in degrees.
  *
- * The intensity crossfade band runs from -6 to +6 degrees, so between -6 and 0 the sun
- * still drives the light while sitting below the horizon. Aiming a directional light
- * from underground lights every underside of the scene and throws shadows upward.
- * Clamping the aim keeps civil twilight as raking horizontal light -- which is what it
- * looks like anyway, since at that point you are lit by the sky, not the sun.
+ * The sun keeps driving the light down to -6 degrees (see `sunSet` in compose), so
+ * without this it would be aimed from underground through all of civil twilight, which
+ * lights every underside in the scene and throws its shadows upward. Clamping the aim
+ * keeps that band as raking horizontal light -- which is what it looks like anyway,
+ * since at that point you are lit by the sky, not the sun.
+ *
+ * Note this deliberately does NOT prop up flat ground at sunrise: `dot(n, l)` on a
+ * horizontal surface under a 3-degree light is 0.05, so the ground goes dark and the
+ * vertical faces take the light. That is what a low sun does.
  */
 const KEY_MIN_ELEVATION = 3;
 
@@ -295,22 +324,45 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	const daytime = isDaytime(elevation);
 	const phase = phaseFor(elevation, rising, pathOptions.maxElevation ?? DEFAULT_MAX_ELEVATION);
 
-	// Crossfade sun -> moon across the horizon band. The handover lands at horizon 0
-	// (sun at -6), where the sun contributes nothing and the moon -- at opposition, so
-	// 6 degrees up -- is at a few percent of peak. Flipping the *direction* through 180
-	// degrees there is the cheapest honest option: interpolating between two opposed
-	// vectors is undefined, and at that intensity the swing is invisible.
-	const horizon = clamp01((elevation + 6) / 12);
-	// Altitude ramp: the sun's STRENGTH keeps growing above the crossfade band. A flat
+	// Sun and moon are computed INDEPENDENTLY and combined with max(), not lerped across
+	// one shared weight.
+	//
+	// The shared weight was `horizon = clamp01((elevation + 6) / 12)`, and it was one
+	// factor doing two unrelated jobs: handing over to the moon AND dimming the sun. At
+	// elevation 0 it sits at 0.5, so a sun sitting exactly on the horizon was cut to the
+	// 0.25 strength floor and then HALVED AGAIN -- an eighth of peak. Measured, the key
+	// delivered 2.8% of the light reaching flat ground at sunrise and 1.7% at golden hour,
+	// so the warm raking light both keyframes are authored for did not exist; the env map
+	// supplied the frame, and it was flat.
+	//
+	// `sunSet` is the job `horizon` was standing in for on the sun's side: the sun's own
+	// extinction across its last six degrees, and nothing else.
+	const sunSet = clamp01((elevation + 6) / 6);
+	// Altitude ramp: the sun's STRENGTH keeps growing above the horizon band. A flat
 	// lerp to SUN_INTENSITY saturated at +6 degrees, which put noon-level light on a
 	// 9-degree late-afternoon sun -- "too bright already at 17:30". Golden hour keeps a
 	// warm quarter-strength floor; full output only above 45 degrees.
 	const sunStrength = 0.25 + 0.75 * clamp01(elevation / 45);
+	const sunKey = SUN_INTENSITY * sunSet * sunStrength;
+	const moonKey = MOON_INTENSITY * clamp01(descriptor.moon.elevation / 20);
+	// max(), like the two ambient fills below and for the same reason: they are
+	// alternatives, so whichever is actually lighting the scene must not be dimmed by the
+	// other one fading out.
+	const clearSkyKey = Math.max(sunKey, moonKey);
+
+	// ONE weight for direction, colour AND intensity, so they cannot disagree. Under
+	// `horizon` the light was 50% moon-blue at sunrise while the sun was the only thing
+	// lighting anything -- a warm keyframe rendered cold.
+	const sunShare = sunKey + moonKey > 0 ? sunKey / (sunKey + moonKey) : 0;
 	lerpRGB(SUN_HORIZON, SUN_ZENITH, clamp01(elevation / 30), sunColor);
 
-	const key = horizon > 0 ? descriptor.sun : descriptor.moon;
+	// The direction still flips through 180 degrees at the handover, because the bodies sit
+	// at opposition by default and interpolating between two opposed vectors is undefined.
+	// It now lands near -4.5 degrees of sun elevation, at ~8% of daytime peak, with colour
+	// and intensity continuous across it.
+	const key = sunShare >= 0.5 ? descriptor.sun : descriptor.moon;
 	directionAt(Math.max(key.elevation, KEY_MIN_ELEVATION), key.azimuth, descriptor.light.direction);
-	lerpRGB(MOON_COLOR, sunColor, horizon, descriptor.light.color);
+	lerpRGB(MOON_COLOR, sunColor, sunShare, descriptor.light.color);
 	// A cloud deck is a grey diffuser: it strips the warmth out of the light as well as
 	// the strength. Desaturating toward the colour's own luminance keeps the day/night
 	// crossfade intact underneath -- overcast midnight stays blue-ish, just flatter.
@@ -327,11 +379,6 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 		c[2] = lerp(c[2], luminance, desaturate);
 	}
 
-	const clearSkyKey = lerp(
-		MOON_INTENSITY * clamp01(descriptor.moon.elevation / 20),
-		SUN_INTENSITY * sunStrength,
-		horizon
-	);
 	// Weather takes its cut here, at the very end, so every constant above still means
 	// what it says under a clear sky and only one expression decides how much a deck
 	// removes.
@@ -375,7 +422,7 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	// exactly zero and nothing about the daytime look changes until weather arrives.
 	const overcastReturn = clearSkyKey * (1 - attenuation) * AMBIENT_RETURN;
 	descriptor.light.ambient =
-		Math.max(Math.max(moonFill, twilightFill), DAY_AMBIENT * horizon) + overcastReturn;
+		Math.max(Math.max(moonFill, twilightFill), DAY_AMBIENT * sunShare) + overcastReturn;
 
 	descriptor.meta.t = t;
 	descriptor.meta.day = day;

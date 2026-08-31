@@ -22,6 +22,35 @@
 		/** Re-bake early once the sun has moved this many degrees since the last one. */
 		envSunDeltaDeg?: number;
 		/**
+		 * `scene.environmentIntensity` for the baked dome. THIS IS NOT A STYLE KNOB either --
+		 * without it the sky is the only thing lighting the scene.
+		 *
+		 * SkyMesh's output is authored to be looked AT under a tone-mapping exposure, not to
+		 * be integrated as an IBL, and its absolute scale (`EE = 1000`, then `* 0.04`) is
+		 * arbitrary. Fed to `scene.environment` raw it buries the key light. Measured, by
+		 * integrating the dome's radiance against a cosine lobe -- the same quantity three's
+		 * `getIBLIrradiance` returns -- for an up-facing normal under a clear sky:
+		 *
+		 *   time      sky irradiance   key light   key's share of the light on flat ground
+		 *   sunrise            0.121       0.003     2.8%
+		 *   golden am          1.204       0.021     1.7%
+		 *   noon               5.031       0.745    12.9%
+		 *
+		 * A shadow at noon therefore rendered rgb(102,136,223) against a lit rgb(111,141,225)
+		 * -- a 4% difference, i.e. no directional lighting in the scene at any hour, plus a
+		 * heavy blue cast (noon irradiance was [1.78, 5.19, 13.08], a 7:1 blue:red).
+		 *
+		 * 0.25 puts the key back in charge without making the ambient a hard black: shadow
+		 * over lit lands at 0.27-0.33 through the day and 0.10-0.15 at night.
+		 *
+		 * IT IS PAIRED WITH `SUN_INTENSITY` in the model. Lowering this alone darkens every
+		 * daylit scene; the sun constant was raised to absorb exactly what this removes.
+		 * Move them together or re-measure. Do NOT compensate with the day curve's exposure
+		 * -- that is renderer-global, so it drags the dome up with the scene and the sky
+		 * blows out (noon horizon already tone-maps past white at the current 0.78).
+		 */
+		environmentIntensity?: number;
+		/**
 		 * Ceiling on SkyMesh's `cloudCoverage` uniform. THIS IS NOT A STYLE KNOB -- see the
 		 * cloud mapping in the task below. Past ~0.6 the cloud mask saturates to 1 across the
 		 * entire dome and the clouds become invisible, so the weather channel is remapped
@@ -42,6 +71,7 @@
 		scale = 1000,
 		envIntervalMs = 250,
 		envSunDeltaDeg = 1,
+		environmentIntensity = 5.25,
 		maxCloudCoverage = 0.52,
 		cloudCoverageCurve = 0.42,
 		cloudDensityRange = [0.45, 0.97],
@@ -61,6 +91,7 @@
 	(sky.material as THREE.NodeMaterial).fog = false;
 	const sunPosition = new THREE.Vector3();
 	const originalEnvironment = scene.environment;
+	const originalEnvironmentIntensity = scene.environmentIntensity;
 	// toneMappingExposure is renderer-global. This component drives it from the day
 	// curve while it is mounted, so it has to hand it back on unmount -- otherwise
 	// switching to the HDR or cubemap mode leaves the renderer stuck on whatever
@@ -185,8 +216,14 @@
 
 			if (!setEnvironment) {
 				scene.environment = originalEnvironment;
+				scene.environmentIntensity = originalEnvironmentIntensity;
 				return;
 			}
+
+			// Written every frame rather than only on a bake, so the prop stays live. It is a
+			// plain number three tracks as a uniform (NodeMaterialObserver), so an unchanged
+			// value costs nothing and a changed one triggers no recompile.
+			scene.environmentIntensity = environmentIntensity;
 
 			if (!shouldBake(delta * 1000)) return;
 
@@ -212,6 +249,7 @@
 	$effect(() => {
 		return () => {
 			scene.environment = originalEnvironment;
+			scene.environmentIntensity = originalEnvironmentIntensity;
 			renderer.toneMappingExposure = originalExposure;
 			renderTarget?.dispose();
 			sky.geometry.dispose();

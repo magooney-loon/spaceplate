@@ -94,6 +94,7 @@ export type LightHints = {
 	 * the baked env map is black at night -- see MOON_AMBIENT in sky.svelte.ts.
 	 */
 	ambient: number;
+
 };
 
 /**

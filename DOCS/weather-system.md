@@ -607,6 +607,50 @@ by the budget below.
 `SkyMesh` has no moon. A moon disc is a separate small mesh or a TSL contribution to
 the dome — deferred, per §11.
 
+**Rayleigh is the sunrise colour knob. Turbidity is not.** This is the single easiest
+value in the curve to author backwards, and the first pass did. Turbidity feeds `vBetaM`,
+and mie scattering is nearly wavelength-flat, so raising it grows a big **grey** halo —
+measured, `sunrise` at turbidity 9 / rayleigh 2.8 produced a glow band of
+`rgb(131,122,131)` at saturation **0.14**. A colourless sunrise. The red comes from
+rayleigh **extinction** along the long horizon path (`Fex`): blue scatters out of the line
+of sight and red survives. Rayleigh 5 at the same keyframe:
+
+| view elevation | turbidity 9 / rayleigh 2.8 | turbidity 6 / rayleigh 5 |
+| -------------- | -------------------------- | ------------------------ |
+| +12°           | `rgb(182,185,198)`         | `rgb(161,133,108)`       |
+| +6°            | `rgb(213,204,206)`         | `rgb(190,126,99)`        |
+| +2°            | `rgb(220,174,167)`         | `rgb(164,56,47)`         |
+| 0°             | `rgb(203,102,97)`          | `rgb(72,2,3)`            |
+| −15°           | `rgb(129,28,22)`           | `rgb(19,0,0)`            |
+
+Turbidity still controls how large and bright the halo is, so it comes down alongside.
+Note the last row: SkyMesh clamps `zenithAngle = acos(max(0, dot(up, dir)))`, so the whole
+**below-horizon** half of the dome renders at the horizon's optical depth with the sun's
+forward-scatter still applied. With no ground in the scene that was a bright warm smear
+filling the lower half of frame; rayleigh collapses it.
+
+**Preetham's warm window is only ~0–2° of sun elevation, and no uniform widens it.** The
+redness rides the `mix(1, sqrt(vSunE * ratio * Fex), pow(1 - sunDir.y, 5))` term, whose
+weight is 1.0 at the horizon and already 0.57 by +6°. Measured on an R-minus-B scale over
+the sun-side sky, sweeping rayleigh 2.8 → 6 at every sun elevation:
+
+| sun elevation | warm (R−B) | clipped |
+| ------------- | ---------- | ------- |
+| 0°            | +0.06      | 0%      |
+| 2°            | −0.05      | 0%      |
+| 6°            | −0.36      | 20%     |
+| 14°           | −0.65      | 100%    |
+
+So the `goldenMorning` / `goldenHour` keyframes at **+6° are not golden and cannot be made
+so** — they render blue, and at the original exposure 0.72 six of eight sampled elevations
+were past white, i.e. a flat sheet with no gradient in it. They are retuned only to stop
+clipping (5–6 of 8, which is where the curve flattens; lower exposure buys nothing and
+only costs the scene). The golden look lives on `sunrise` / `sunset`. Don't spend an
+afternoon tuning +6°.
+
+None of this touches scene lighting — with the env map at 0.25 the key dominates, and
+ground and sun-facing surfaces measure identical across the whole rayleigh sweep.
+
 ### 15.2 The environment map budget — the one real trap
 
 `Sky.svelte` today re-bakes the env cube (`CubeCamera` → `CubeRenderTarget`) whenever
@@ -639,7 +683,36 @@ With `vSunE = 0` the whole dome collapses to `0.1 * Fex * 0.04 + vec3(0, 0.0003,
 cannot lift it; raising rayleigh actually makes it _darker_, since it only increases
 extinction against that fixed night term.
 
-Two consequences, both load-bearing:
+**The dome must be scaled before it is used as an IBL — `scene.environmentIntensity`.**
+SkyMesh's output is authored to be looked _at_ under a tone-mapping exposure, and its
+absolute scale (`EE = 1000`, then `* 0.04`) is arbitrary. Fed to `scene.environment` raw
+it buries the key light. Measured by integrating the dome's radiance against a cosine
+lobe — the quantity three's `getIBLIrradiance` returns — for an up-facing normal under a
+clear sky:
+
+| time      | sky irradiance | key light | key's share of the light on flat ground |
+| --------- | -------------- | --------- | --------------------------------------- |
+| sunrise   | 0.121          | 0.003     | 2.8%                                    |
+| golden am | 1.204          | 0.021     | 1.7%                                    |
+| morning   | 4.454          | 0.528     | 10.6%                                   |
+| noon      | 5.031          | 0.745     | 12.9%                                   |
+
+A noon shadow therefore rendered `rgb(102,136,223)` against a lit `rgb(111,141,225)` — a
+4% difference, i.e. **no directional lighting in the scene at any hour** — plus a heavy
+blue cast, since noon irradiance was `[1.78, 5.19, 13.08]`, a 7:1 blue:red.
+
+`Sky.svelte`'s `environmentIntensity` (default **0.25**) fixes the ratio, and
+`SUN_INTENSITY` (π/4 → **4.75**) absorbs the daylight the env map stops delivering.
+**They are one change and must move together.** With both: scene brightness stays within
+0.88–0.97× of the old look through the whole day, a sun-facing surface gets 1.2–1.6×
+brighter, shadow-over-lit falls from 0.96 to 0.29, and night is untouched at 0.94×
+(the env map contributes ~5% there, so the moon and fill constants do not scale).
+
+**Do not compensate with the day curve's `exposure` instead.** It is renderer-global, so
+it drags the dome up with the scene — and at the current 0.78 the noon horizon already
+tone-maps past white. Solving the rebase that way needed +2.4 stops and blew out the sky.
+
+Two further consequences, both load-bearing:
 
 1. §7's "the baked `scene.environment` remains the ambient half" is **true by day only**.
    At night the cube bakes black and the scene has exactly one light. That is why the
@@ -675,12 +748,30 @@ The model clamps the elevation used to aim the light to a 3° floor (`KEY_MIN_EL
 so civil twilight becomes raking horizontal light. That is also physically the right
 answer: at that point you are lit by the sky, not by the sun.
 
-The direction still flips 180° at the handover (sun −6° / moon +6°), because
-interpolating between two opposed vectors is undefined and the moon is at opposition by
-default. Measured, that flip happens at **3.8% of daytime peak intensity**, with
-intensity continuous across it (0.0296 → 0.0301) — invisible in practice. If a moon lag
-other than opposition ever makes it visible, the fix is to fade the light out and back
-in across the handover, not to slerp.
+**The sun and the moon are computed independently and combined with `max()`.** They were
+lerped across one shared weight, `horizon = clamp01((elevation + 6) / 12)`, and that one
+factor was doing two unrelated jobs: handing over to the moon _and_ dimming the sun. At
+elevation 0 it sits at 0.5, so a sun sitting exactly on the horizon was cut to its 0.25
+strength floor and then **halved again** — an eighth of peak. Measured, the key delivered
+2.8% of the light reaching flat ground at sunrise and 1.7% at golden hour, so the warm
+raking light both keyframes are authored for did not exist. The same weight also made the
+light 50% moon-blue at sunrise, rendering a warm keyframe cold.
+
+Now: `sunSet = clamp01((elevation + 6) / 6)` is the sun's own extinction across its last
+six degrees and nothing else; `sunShare = sunKey / (sunKey + moonKey)` is the single
+weight driving direction, colour **and** intensity, so they cannot disagree.
+
+The direction still flips 180° at the handover, because interpolating between two opposed
+vectors is undefined and the moon is at opposition by default. The flip now lands near
+**−4.5°** of sun elevation at ~8% of daytime peak, with colour and intensity continuous
+across it. If a moon lag other than opposition ever makes it visible, the fix is to fade
+the light out and back in across the handover, not to slerp.
+
+Note `KEY_MIN_ELEVATION` deliberately does **not** prop up flat ground at sunrise:
+`dot(n, l)` on a horizontal surface under a 3° light is 0.05, so the ground goes dark and
+the vertical faces take the light. That is what a low sun does, and it is why flat ground
+measures 0.36× its old brightness at sunrise while a sun-facing surface goes from
+`rgb(7,6,13)` to `rgb(69,49,51)`.
 
 The shadow camera bounds are currently a fixed ±20 box. With a light that tracks a
 moving sun, that box needs to follow the camera or grow — otherwise shadows vanish at
@@ -698,6 +789,11 @@ _exactly zero_. Measured against a noon-lit surface:
 | midnight, after   | 36.4%    | 9.9%        |
 | civil dawn, after | 22.4%    | 14.7%       |
 | noon              | 100%     | 0%          |
+
+That table counts the **lights only**. Its "noon, shadow 0%" row is what made the env-map
+problem above easy to miss: the directional light really does contribute nothing to a
+shadowed surface, but `scene.environment` was contributing 87% of the frame's light and
+was not in the measurement. Read it alongside the irradiance table in §15.2.
 
 (Percentages are relative to noon, so they moved once daytime exposure came down — the
 absolute night values did not change.)

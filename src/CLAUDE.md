@@ -220,6 +220,13 @@ whole sky to flat fog colour. The day curve's densities are a _shape_, not a mag
 `SkyFog`'s `densityScale` (default 0.5) is the world-scale knob, and it lives in the component for
 the same reason `SkyLight` owns its shadow bounds.
 
+**Rayleigh is the sunrise colour knob, not turbidity.** Turbidity feeds mie, which is
+wavelength-flat, so raising it grows a grey halo — `sunrise` at turbidity 9 measured a glow band
+of `rgb(131,122,131)`, saturation 0.14. The red comes from rayleigh *extinction* along the horizon
+path. Related: Preetham's warm window is only ~0–2° of sun elevation, so `goldenMorning` /
+`goldenHour` at +6° render blue and cannot be made golden — they're tuned only to stop clipping.
+See `DOCS/weather-system.md` §15.1.
+
 **Three traps if you touch the celestial layers (`core/skybox/Stars.svelte`, `Moon.svelte`):**
 
 - **The camera's far plane is 144, the sky dome is at radius 1000.** Anything on the dome must pin
@@ -235,6 +242,13 @@ the same reason `SkyLight` owns its shadow bounds.
 lifts it. So night and twilight lighting comes from `SkyLight`'s hemisphere fill
 (`descriptor.light.ambient`), not from the env map. Don't "fix" a dark night by tuning the day
 curve's scattering; below the cutoff those numbers render nothing. See `DOCS/weather-system.md` §15.2.
+
+**By day it is the opposite problem, and `Sky.svelte`'s `environmentIntensity` (0.25) is what
+holds it.** The raw dome integrates to ~5.0 of irradiance at noon against the key light's 0.745,
+so unscaled it supplied 87% of every daylit frame — shadows 4% darker than lit, everything tinted
+blue. `environmentIntensity` and the model's `SUN_INTENSITY` (4.75, was π/4) are **one change**:
+the second absorbs exactly what the first removes. Move them together and re-measure, and never
+compensate with the day curve's `exposure` — that's renderer-global and blows out the dome.
 
 ### Post-processing (`extensions/postprocessing/`)
 

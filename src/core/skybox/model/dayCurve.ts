@@ -80,10 +80,27 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 	},
 	{
 		// 0 deg. The sun is exactly on the horizon -- peak scattering, peak colour.
+		//
+		// TURBIDITY IS NOT THE COLOUR KNOB HERE; RAYLEIGH IS. This keyframe was authored at
+		// turbidity 9 / rayleigh 2.8 on the assumption that "more scattering" meant "more
+		// sunrise". It does not. Turbidity feeds `vBetaM`, and mie scattering is nearly
+		// wavelength-flat, so raising it grows a big GREY halo -- measured, the glow band
+		// within 35 degrees of the sun came out rgb(131,122,131) at saturation 0.14. A
+		// colourless sunrise, which is exactly what "washed out" looked like.
+		//
+		// The red comes from rayleigh EXTINCTION along the horizon path (`Fex` in SkyMesh):
+		// blue is scattered out of the line of sight and red survives. Rayleigh 5 puts the
+		// band at rgb(184,135,105) at 8 degrees, rgb(181,82,68) at 3 and rgb(72,2,3) at the
+		// horizon -- and collapses the below-horizon smear that used to fill the lower half
+		// of frame from rgb(94,10,7) to rgb(8,0,0) at -20 degrees.
+		//
+		// Turbidity still sets how BIG and how bright that halo is, so it comes down with it.
+		// None of this touches scene lighting: the env map is at 0.25 and the key dominates,
+		// so ground and sun-facing surfaces measure identical before and after.
 		t: 0.25,
 		name: 'sunrise',
-		turbidity: 9,
-		rayleigh: 2.8,
+		turbidity: 6,
+		rayleigh: 5,
 		mieCoefficient: 0.005,
 		mieDirectionalG: 0.78,
 		exposure: 0.68,
@@ -93,13 +110,27 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 	},
 	{
 		// +6 deg. Morning golden hour -- the mirror of goldenHour below.
+		//
+		// IT IS NOT ACTUALLY GOLDEN, AND IT CANNOT BE MADE SO. Preetham's warm window is
+		// roughly 0 to 2 degrees of SUN elevation and no uniform widens it: the redness rides
+		// the `mix(1, sqrt(vSunE * ratio * Fex), pow(1 - sunDir.y, 5))` term, whose weight is
+		// 1.0 at the horizon and already 0.57 by +6. Above ~4 degrees the sun-side sky
+		// measures blue (warm -0.36 on an R-minus-B scale) whatever turbidity and rayleigh
+		// do, and by +14 it is 100% clipped white. Don't spend an afternoon here; the golden
+		// look lives on the `sunrise` / `sunset` keyframes, which is where it has been moved.
+		//
+		// What IS worth doing is stopping it clipping. At the old turbidity 6 / rayleigh 2 /
+		// exposure 0.72, six of seven sampled elevations from -20 to +25 were past white --
+		// a flat blue-white sheet with no gradient in it. The values below take that to four,
+		// which is where the curve flattens out; pushing exposure lower buys nothing more and
+		// only costs the scene (0.62 keeps the ground at 0.9x, 0.48 drops it to 0.7x).
 		t: 0.2627,
 		name: 'goldenMorning',
-		turbidity: 6,
-		rayleigh: 2,
+		turbidity: 5,
+		rayleigh: 4,
 		mieCoefficient: 0.0045,
 		mieDirectionalG: 0.82,
-		exposure: 0.72,
+		exposure: 0.62,
 		starVisibility: 0,
 		fogColor: [0.62, 0.5, 0.4],
 		fogDensity: 0.03
@@ -144,24 +175,27 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		fogDensity: 0.018
 	},
 	{
-		// +6 deg. Golden hour proper.
+		// +6 deg. Golden hour proper -- and just as un-golden as `goldenMorning`; see the
+		// note there. Same de-clipping rebalance.
 		t: 0.7373,
 		name: 'goldenHour',
-		turbidity: 6,
-		rayleigh: 2,
+		turbidity: 5,
+		rayleigh: 4,
 		mieCoefficient: 0.0045,
 		mieDirectionalG: 0.85,
-		exposure: 0.72,
+		exposure: 0.62,
 		starVisibility: 0,
 		fogColor: [0.72, 0.55, 0.38],
 		fogDensity: 0.028
 	},
 	{
-		// 0 deg. The sun touches the horizon.
+		// 0 deg. The sun touches the horizon. Same rebalance as `sunrise` -- see the note
+		// there on why rayleigh and not turbidity carries the colour. Kept marginally hazier
+		// and warmer than sunrise, as evenings read.
 		t: 0.75,
 		name: 'sunset',
-		turbidity: 10,
-		rayleigh: 3,
+		turbidity: 7,
+		rayleigh: 5.2,
 		mieCoefficient: 0.005,
 		mieDirectionalG: 0.78,
 		exposure: 0.68,
