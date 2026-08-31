@@ -113,9 +113,20 @@ export const instancedVec4 = (array: Float32Array) =>
  */
 export const pinFarPlane = (clip: THREE.Node<'vec4'>) => vec4(clip.xy, clip.w, clip.w);
 
+/**
+ * The standard model-view-projection, for a layer that keeps HONEST depth.
+ *
+ * Used by the near-camera layers (rain streaks, impact rings and bursts) which must be
+ * occluded by scene geometry, as opposed to the dome layers which pin to the far plane.
+ * Written out rather than left to `material.positionNode` because these layers read
+ * `positionLocal` for their quad corner, and `positionNode` is what `positionLocal`
+ * resolves FROM -- feeding one from the other is circular.
+ */
+export const projectClip = (localPosition: THREE.Node<'vec3'>) =>
+	cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(localPosition, 1)));
+
 /** The whole vertex node for a layer whose geometry is already at the dome's radius. */
-export const domeVertexNode = () =>
-	pinFarPlane(cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(positionLocal, 1))));
+export const domeVertexNode = () => pinFarPlane(projectClip(positionLocal));
 
 /**
  * Camera-facing billboard: offset the corner AFTER the model-view transform, so the quad

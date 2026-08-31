@@ -36,8 +36,23 @@
 	// heaviest in the subsystem at 2.20 MB, against 0.40 MB now.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import type { Mesh } from 'three/webgpu';
-	import { cos, float, fract, positionLocal, sin, sqrt, time, uniform, vec3 } from 'three/tsl';
+	import {
+		cos,
+		float,
+		fract,
+		mix,
+		modelWorldMatrix,
+		positionLocal,
+		sin,
+		smoothstep,
+		sqrt,
+		time,
+		uniform,
+		vec3,
+		vec4
+	} from 'three/tsl';
 	import { clamp01, descriptor, mulberry32, smooth01 } from './model';
+	import { sampleHeightField } from './heightField';
 	import {
 		billboardClip,
 		instancedQuad,
@@ -168,6 +183,22 @@
 		// have honest depth and must be occluded by the world.
 		material.vertexNode = billboardClip(vec3(x, y, z), corner.mul(aSize));
 
+		// SETTLING. The same height field Rain collides against (heightField.ts), read the
+		// same way: the mesh is camera-anchored with no rotation or scale, so the flake's
+		// world position is just the local one through the model matrix.
+		//
+		// Snow does NOT splash -- a flake that reaches a surface has landed, so it fades
+		// out over the last few centimetres of its fall rather than vanishing on a step.
+		// That soft edge matters more here than it does for rain: flakes are slow enough to
+		// watch individually, and a hard cut reads as popping.
+		//
+		// Where the field has no data `valid` is 0, `settle` collapses to 1, and flakes
+		// fall through as they did before -- the same fail-safe Rain relies on.
+		const world = modelWorldMatrix.mul(vec4(x, y, z, 1)).xyz;
+		const { height: surfaceWorldY, valid } = sampleHeightField(world);
+		const aboveSurface = world.y.sub(surfaceWorldY);
+		const settle = mix(float(1), smoothstep(float(0), float(0.35), aboveSurface), valid);
+
 		// THE SPECK: inverse-distance falloff, ported from the reference's
 		// 0.5/distance - 1. The quad's corners are +/-1, so distance to centre is
 		// length(corner) * 0.5 with the quad's edge at 0.5 -- the exact normalisation
@@ -177,7 +208,7 @@
 		const speck = float(0.5).div(dist.max(1e-3)).sub(1).clamp(0, 1);
 
 		material.colorNode = vec3(uLight);
-		material.opacityNode = opacity.mul(speck).mul(aBright);
+		material.opacityNode = opacity.mul(speck).mul(aBright).mul(settle);
 
 		return { geometry: instancedQuad(count), material };
 	};

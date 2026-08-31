@@ -12,6 +12,8 @@
 	import Snow from './Snow.svelte';
 	import CloudDeck from './CloudDeck.svelte';
 	import Lightning from './Lightning.svelte';
+	import HeightField from './HeightField.svelte';
+	import type { Group } from 'three/webgpu';
 	import { descriptor, skyActions, CHANNEL_NAMES } from './model';
 	import { SKY_LAYER_USERDATA } from './skyLayer';
 
@@ -83,6 +85,11 @@
 			? (CUBE_TEXTURES.find((t) => t.id === environmentState.cubeTextureId) ?? null)
 			: null
 	);
+
+	// Handed to HeightField so it can hide the whole sky for the duration of its pass --
+	// the dome, the celestial layers AND the precipitation itself, none of which is a
+	// surface rain should land on. See HeightField.svelte.
+	let skyGroup = $state.raw<Group>();
 </script>
 
 <!-- The key light is descriptor-driven and mounts in every mode: an HDR or cubemap
@@ -120,7 +127,12 @@
 	     alone to CubeCamera.update(), so neither the smoke, the deck, the moon nor a
 	     lightning flash burns a hotspot into the ambient term the way the sun disc
 	     would. -->
-	<T.Group userData={SKY_LAYER_USERDATA}>
+	<!-- The precipitation height field. Mounted OUTSIDE the group it hides, and before it,
+	     so its pass has run by the time Rain and Snow read the map. Renders nothing
+	     itself. -->
+	<HeightField exclude={() => skyGroup} />
+
+	<T.Group bind:ref={skyGroup} userData={SKY_LAYER_USERDATA}>
 		<Sky setEnvironment={true} cubeMapSize={128} scale={1000} />
 		<Nebula radius={1000} />
 		<Stars radius={1000} />
