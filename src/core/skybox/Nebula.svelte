@@ -43,12 +43,9 @@
 		Fn,
 		Loop,
 		cameraPosition,
-		cameraProjectionMatrix,
 		dot,
 		float,
 		mix,
-		modelViewMatrix,
-		positionLocal,
 		positionWorld,
 		pow,
 		smoothstep,
@@ -59,6 +56,7 @@
 		vec4
 	} from 'three/tsl';
 	import { descriptor } from './model';
+	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
 	import { MILKY_WAY_CORE, MILKY_WAY_NORMAL, MILKY_WAY_SIGMA } from './milkyWay';
 
 	interface Props {
@@ -75,6 +73,8 @@
 	let { radius = 1000, intensity = 0.55, dustDensity = 0.85, airglow = 1 }: Props = $props();
 
 	const { invalidate, autoRenderTask } = useThrelte();
+
+	let mesh = $state.raw<THREE.Mesh>();
 
 	const visibility = uniform(0);
 
@@ -121,19 +121,14 @@
 	const field2 = makeField(18);
 
 	const buildMaterial = (): THREE.MeshBasicNodeMaterial => {
-		const material = new THREE.MeshBasicNodeMaterial();
-		material.side = THREE.BackSide;
-		material.transparent = true;
-		material.depthWrite = false;
-		material.blending = THREE.AdditiveBlending;
-		material.toneMapped = false;
-		// Never fogged -- a sky layer at radius 1000. See SkyFog.svelte.
-		material.fog = false;
+		const material = skyLayerMaterial({
+			side: THREE.BackSide,
+			blending: THREE.AdditiveBlending
+		});
 
-		// Far-plane depth pinning, as Stars.svelte: honest depth at radius 1000 would be
-		// clipped by the camera's far plane, and the smoke must sort behind everything.
-		const clip = cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(positionLocal, 1)));
-		material.vertexNode = vec4(clip.xy, clip.w, clip.w);
+		// Far-plane depth pinning: honest depth at radius 1000 would be clipped by the
+		// camera's far plane, and the smoke must sort behind everything. See skyLayer.ts.
+		material.vertexNode = domeVertexNode();
 
 		const smoke = Fn(() => {
 			// The view ray; sampling the field along it is what makes this a sky instead
@@ -252,6 +247,10 @@
 
 		// Fade out below the horizon, as Stars does: without a ground plane a full sphere
 		// of smoke underfoot reads wrong, and with one the depth test hides it anyway.
+		//
+		// `positionWorld` is correct HERE, unlike in the instanced layers, because this
+		// layer's geometry really is a sphere of `radius` -- so y/radius is the altitude
+		// sine. See `altitudeOf` in skyLayer.ts for where copying this line went wrong.
 		const horizon = smoothstep(float(-0.06), float(0.1), positionWorld.y.div(float(radius)));
 		material.opacityNode = horizon.mul(visibility);
 		return material;
@@ -267,8 +266,14 @@
 
 	useTask(
 		() => {
-			visibility.value = descriptor.sky.starVisibility;
-			invalidate();
+			const visible = descriptor.sky.starVisibility;
+			visibility.value = visible;
+			// The smoke drifts off the TSL `time` node, so it animates every frame -- but
+			// only while it is on screen. Skipping the draw also skips a full-dome
+			// 44-iteration fractal, easily the most expensive fragment shader in the sky.
+			// See Skybox.svelte on renderMode.
+			if (mesh) mesh.visible = visible > 0.002;
+			if (visible > 0.002) invalidate();
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
@@ -282,9 +287,10 @@
 </script>
 
 <T.Mesh
+	bind:ref={mesh}
 	{geometry}
 	{material}
 	renderOrder={1}
 	frustumCulled={false}
-	userData={{ hideInTree: true, selectable: false }}
+	userData={SKY_LAYER_USERDATA}
 />

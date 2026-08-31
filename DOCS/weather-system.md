@@ -10,13 +10,23 @@ Companions: `post-processing.md` (the render pipeline this eventually feeds),
 `scene-environment.md` (how a scene pins its own time and weather),
 `webgpu-notes.md` (WebGPU and reactivity rules the implementation must obey).
 
-**Status:** phases 1 and 2 are implemented. Time core, day curve, sun/moon paths, the
-descriptor-driven key light, stars, moon, and now the weather mixer with its modulation
-layer and scene fog all ship. Phase 3 (server adapter) is next; phase 4 (cloud,
-precipitation and lightning render layers) and phase 5 (`weather.json` + keyframe
-editor) are untouched. Open questions from the first draft are resolved in §11 (fixed
-sun arc, moon in v1, sky as the scene's only key light, single weather mixer,
-`weather.json`, one server `environment` table).
+**Status:** phases 1, 2 and 4 are implemented. Time core, day curve, sun/moon paths, the
+descriptor-driven key light, stars, moon, the weather mixer with its modulation layer and
+scene fog, and the render layers (cloud deck, rain, snow, lightning) all ship. **Phase 3
+(server adapter) and phase 5 (`weather.json` + keyframe editor) are untouched** — there is
+no `environment` table in `spacetimedb/`, no `src/config/`, and no `$config` alias; the
+day curve and weather library still live in code. Audio (§17) is not started. Open
+questions from the first draft are resolved in §11 (fixed sun arc, moon in v1, sky as the
+scene's only key light, single weather mixer, `weather.json`, one server `environment`
+table).
+
+**A consolidation pass has since landed over the layers.** Shared scalar helpers moved to
+`model/math.ts` (they had been duplicated up to ten times) and shared TSL/geometry plumbing
+to `skybox/skyLayer.ts`; the four particle layers became instanced; `invalidate()` was
+given a single owner per reason so a frozen sky can idle under Threlte's `'on-demand'`
+renderMode. Three bugs fell out of it, recorded where they happened: the meteor horizon
+fade (§15.4), the `wind` channel's sign (§15.7), and the missing `astronomicalDusk` phase
+(§3.5).
 
 ---
 

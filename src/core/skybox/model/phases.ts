@@ -29,7 +29,11 @@ export const phaseFor = (
 ): PhaseName => {
 	if (sunElevation >= maxElevation * 0.95) return 'noon';
 	if (sunElevation < -18) return 'night';
-	if (sunElevation < -6) return rising ? 'astronomicalDawn' : 'dusk';
+	// The evening side used to answer 'dusk' for BOTH of the next two bands while the
+	// morning side distinguished 'astronomicalDawn' from 'dawn' -- so the day curve had an
+	// `astronomicalDusk` keyframe that no phase name corresponded to, and `phaseChange`
+	// fired a different number of times going down than coming up.
+	if (sunElevation < -6) return rising ? 'astronomicalDawn' : 'astronomicalDusk';
 	if (sunElevation < 0) return rising ? 'dawn' : 'dusk';
 	if (sunElevation < 6) return rising ? 'sunrise' : 'sunset';
 	if (sunElevation < 20) return rising ? 'morning' : 'goldenHour';

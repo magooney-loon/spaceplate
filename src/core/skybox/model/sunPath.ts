@@ -2,6 +2,7 @@
 // authorable. A real solar model (latitude + day-of-year) can arrive later as an
 // alternative module, because everything downstream reads only the derived direction.
 
+import { smooth01 } from './math';
 import type { CelestialBody, Vec3 } from './types';
 
 const DEG = Math.PI / 180;
@@ -62,8 +63,6 @@ export const createBody = (): CelestialBody => ({
 	visibility: 0
 });
 
-const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-
 const bodyAt = (t: number, maxElevation: number, out: CelestialBody): CelestialBody => {
 	const elevation = elevationAt(t, maxElevation);
 	out.elevation = elevation;
@@ -73,8 +72,7 @@ const bodyAt = (t: number, maxElevation: number, out: CelestialBody): CelestialB
 	// per-frame discontinuity that every consumer inherits -- a moon disc would pop on,
 	// a gameplay check would chatter on the boundary. Cloud occlusion multiplies into
 	// this once the weather mixer exists.
-	const k = clamp01((elevation + 2) / 4);
-	out.visibility = k * k * (3 - 2 * k);
+	out.visibility = smooth01(-2, 2, elevation);
 	return out;
 };
 

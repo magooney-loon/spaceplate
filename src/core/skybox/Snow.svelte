@@ -31,26 +31,22 @@
 	// midnight would read as a spark.
 	//
 	// The mesh is recentered on the active camera every frame, as Rain is, so the box
-	// follows the player without needing a world-sized particle system.
+	// follows the player without needing a world-sized particle system. The quad is
+	// instanced for the same reason Rain's is: this layer's per-flake data was the
+	// heaviest in the subsystem at 2.20 MB, against 0.40 MB now.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
-	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';
+	import { cos, float, fract, positionLocal, sin, sqrt, time, uniform, vec3 } from 'three/tsl';
+	import { clamp01, descriptor, mulberry32, smooth01 } from './model';
 	import {
-		attribute,
-		cameraProjectionMatrix,
-		float,
-		fract,
-		modelViewMatrix,
-		positionLocal,
-		sin,
-		cos,
-		sqrt,
-		time,
-		uniform,
-		vec3,
-		vec4
-	} from 'three/tsl';
-	import { descriptor } from './model';
+		billboardClip,
+		instancedQuad,
+		instancedVec2,
+		instancedVec3,
+		instancedVec4,
+		skyLayerMaterial,
+		SKY_LAYER_USERDATA
+	} from './skyLayer';
 
 	interface Props {
 		count?: number;
@@ -97,96 +93,43 @@
 	/** Flake brightness, derived from the light hints. White in day, grey-blue at night. */
 	const uLight = uniform(0.3);
 
-	const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-	const smooth01 = (edge0: number, edge1: number, v: number) => {
-		const k = clamp01((v - edge0) / (edge1 - edge0));
-		return k * k * (3 - 2 * k);
-	};
-
-	const mulberry32 = (a: number) => () => {
-		a |= 0;
-		a = (a + 0x6d2b79f5) | 0;
-		let t = Math.imul(a ^ (a >>> 15), 1 | a);
-		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-	};
-
-	const buildGeometry = (): THREE.BufferGeometry => {
+	/**
+	 * Builds the field and its material together, once. One closure because every input
+	 * is a BUILD-TIME prop -- see the same note in Stars.svelte.
+	 */
+	const build = () => {
 		const rng = mulberry32(seed);
-		const geometry = new THREE.BufferGeometry();
 
-		const positions = new Float32Array(count * 4 * 3);
-		const corners = new Float32Array(count * 4 * 2);
-		const params = new Float32Array(count * 4 * 4); // speed, size, phase, swayAmp
-		const params2 = new Float32Array(count * 4 * 2); // windMul, bright
-		const indices = new Uint32Array(count * 6);
-		const CORNERS = [-1, -1, 1, -1, 1, 1, -1, 1];
+		// Per-flake data: box position, (speed, size, phase, swayAmp), (windMul, bright).
+		const centers = new Float32Array(count * 3);
+		const params = new Float32Array(count * 4);
+		const params2 = new Float32Array(count * 2);
 
 		for (let i = 0; i < count; i++) {
-			const x = (rng() - 0.5) * width;
-			const y = (rng() - 0.5) * height;
-			const z = (rng() - 0.5) * depth;
-			const speed = minSpeed + rng() * (maxSpeed - minSpeed);
-			const size = sizeWorld * (0.4 + rng() * 0.9);
-			const phase = rng();
-			const amp = swayAmp * (0.4 + rng() * 0.6);
-			const windMul = 0.5 + rng() * 0.8;
-			const bright = 0.75 + rng() * 0.25;
-
-			for (let v = 0; v < 4; v++) {
-				const p = i * 4 + v;
-				positions[p * 3] = x;
-				positions[p * 3 + 1] = y;
-				positions[p * 3 + 2] = z;
-				corners[p * 2] = CORNERS[v * 2];
-				corners[p * 2 + 1] = CORNERS[v * 2 + 1];
-				params[p * 4] = speed;
-				params[p * 4 + 1] = size;
-				params[p * 4 + 2] = phase;
-				params[p * 4 + 3] = amp;
-				params2[p * 2] = windMul;
-				params2[p * 2 + 1] = bright;
-			}
-
-			const base = i * 4;
-			const tri = i * 6;
-			indices[tri] = base;
-			indices[tri + 1] = base + 1;
-			indices[tri + 2] = base + 2;
-			indices[tri + 3] = base;
-			indices[tri + 4] = base + 2;
-			indices[tri + 5] = base + 3;
+			centers[i * 3] = (rng() - 0.5) * width;
+			centers[i * 3 + 1] = (rng() - 0.5) * height;
+			centers[i * 3 + 2] = (rng() - 0.5) * depth;
+			params[i * 4] = minSpeed + rng() * (maxSpeed - minSpeed);
+			params[i * 4 + 1] = sizeWorld * (0.4 + rng() * 0.9);
+			params[i * 4 + 2] = rng();
+			params[i * 4 + 3] = swayAmp * (0.4 + rng() * 0.6);
+			params2[i * 2] = 0.5 + rng() * 0.8; // windMul
+			params2[i * 2 + 1] = 0.75 + rng() * 0.25; // bright
 		}
 
-		geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-		geometry.setAttribute('aCorner', new THREE.BufferAttribute(corners, 2));
-		geometry.setAttribute('aParams', new THREE.BufferAttribute(params, 4));
-		geometry.setAttribute('aParams2', new THREE.BufferAttribute(params2, 2));
-		geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-		return geometry;
-	};
+		const material = skyLayerMaterial();
 
-	const buildMaterial = (): THREE.MeshBasicNodeMaterial => {
-		const material = new THREE.MeshBasicNodeMaterial();
-		material.transparent = true;
-		material.depthWrite = false;
-		material.depthTest = true;
-		material.blending = THREE.NormalBlending;
-		material.toneMapped = false;
-		// As Rain: the box hugs the camera well inside the fog band, and fogging a
-		// NormalBlended sprite mixes it toward the fog colour rather than hiding it.
-		material.fog = false;
-
-		// The explicit generic is required -- see Stars.svelte.
-		const aCorner = attribute<'vec2'>('aCorner', 'vec2');
-		const aParams = attribute<'vec4'>('aParams', 'vec4');
-		const aParams2 = attribute<'vec2'>('aParams2', 'vec2');
+		const aCenter = instancedVec3(centers);
+		const aParams = instancedVec4(params);
+		const aParams2 = instancedVec2(params2);
 		const aSpeed = aParams.x;
 		const aSize = aParams.y;
 		const aPhase = aParams.z;
 		const aSwayAmp = aParams.w;
 		const aWindMul = aParams2.x;
 		const aBright = aParams2.y;
+
+		const corner = positionLocal.xy;
 
 		const halfWidth = float(width * 0.5);
 		const halfHeight = float(height * 0.5);
@@ -199,7 +142,7 @@
 		// (seeded by a per-flake phase so the population starts spread through the box),
 		// and fract() recycles flakes through the box forever.
 		const fall = time.mul(aSpeed).add(aPhase.mul(boxHeight));
-		const y = fract(positionLocal.y.add(halfHeight).sub(fall).div(boxHeight))
+		const y = fract(aCenter.y.add(halfHeight).sub(fall).div(boxHeight))
 			.mul(boxHeight)
 			.sub(halfHeight);
 
@@ -210,8 +153,8 @@
 		// tunes the coherence: ~1.5 swirl cells across the box -- fully shared phase
 		// would move the field as one rigid sheet, fully independent phase reads as
 		// jitter. The 0.5 temporal rate is the reference's lazy meander.
-		const xBase = positionLocal.x.add(halfWidth).add(uWindDrift.mul(aWindMul));
-		const zBase = positionLocal.z.add(halfDepth).add(uWindDrift.mul(aWindMul).mul(0.55));
+		const xBase = aCenter.x.add(halfWidth).add(uWindDrift.mul(aWindMul));
+		const zBase = aCenter.z.add(halfDepth).add(uWindDrift.mul(aWindMul).mul(0.55));
 
 		const swayZ = sin(time.mul(0.5).add(xBase.mul(0.12)))
 			.mul(aSwayAmp)
@@ -221,28 +164,25 @@
 		const swayX = cos(time.mul(0.5).add(z.mul(0.12))).mul(aSwayAmp);
 		const x = fract(xBase.add(swayX).div(boxWidth)).mul(boxWidth).sub(halfWidth);
 
-		// Camera-facing billboard, as Rain/Stars: offset the corner AFTER the
-		// model-view transform. One pure expression, no Fn stack needed (see Stars).
-		const mv = modelViewMatrix.mul(vec4(x, y, z, 1));
-		const offset = aCorner.mul(aSize);
-		material.vertexNode = cameraProjectionMatrix.mul(vec4(mv.xy.add(offset), mv.z, mv.w));
+		// Camera-facing billboard, as Rain/Stars. Deliberately NOT depth-pinned: flakes
+		// have honest depth and must be occluded by the world.
+		material.vertexNode = billboardClip(vec3(x, y, z), corner.mul(aSize));
 
 		// THE SPECK: inverse-distance falloff, ported from the reference's
 		// 0.5/distance - 1. The quad's corners are +/-1, so distance to centre is
 		// length(corner) * 0.5 with the quad's edge at 0.5 -- the exact normalisation
 		// gl_PointCoord gives point sprites. Bright core at a quarter of the radius,
 		// gone at the edge; the epsilon guards the divide at the exact centre.
-		const dist = sqrt(aCorner.x.mul(aCorner.x).add(aCorner.y.mul(aCorner.y))).mul(0.5);
+		const dist = sqrt(corner.x.mul(corner.x).add(corner.y.mul(corner.y))).mul(0.5);
 		const speck = float(0.5).div(dist.max(1e-3)).sub(1).clamp(0, 1);
 
 		material.colorNode = vec3(uLight);
 		material.opacityNode = opacity.mul(speck).mul(aBright);
-		return material;
+
+		return { geometry: instancedQuad(count), material };
 	};
 
-	// Built once, not $derived -- authored constants in; change a prop and remount.
-	const geometry = buildGeometry();
-	const material = buildMaterial();
+	const { geometry, material } = build();
 
 	// The wind accumulator's rate, world units per second at full wind channel.
 	let windDrift = 0;
@@ -256,8 +196,12 @@
 			const snow = w.precipitation * snowType;
 			opacity.value = Math.min(0.95, snow * (0.35 + w.cloudCover * 0.65));
 
-			// Advance the accumulated wind travel. Signed: the channel maps to [-1, 1].
-			windDrift += (w.wind * 2 - 1) * WIND_RATE * delta;
+			// Advance the accumulated wind travel. A 0..1 INTENSITY along a fixed axis,
+			// matching the channel's documented meaning and CloudDeck's reading of it.
+			// This used to be `(w.wind * 2 - 1)`, treating 0.5 as neutral -- so the boot
+			// default (0.1) drifted flakes at 0.88 units/s in still air, twice as fast as
+			// the `snow` weather's own 0.3 and in the opposite direction.
+			windDrift += clamp01(w.wind) * WIND_RATE * delta;
 			uWindDrift.value = windDrift;
 
 			// Flakes are diffuse reflectors: ride the light hints so a night snowfall is
@@ -266,11 +210,14 @@
 			const { ambient, intensity } = descriptor.light;
 			uLight.value = Math.min(1.05, Math.max(0.15, 0.18 + ambient * 0.45 + intensity * 0.08));
 
+			const visible = opacity.value > 0.01;
 			if (mesh) {
-				mesh.visible = opacity.value > 0.01;
+				mesh.visible = visible;
 				mesh.position.copy(camera.current.position);
 			}
-			invalidate();
+			// Animates off the TSL `time` node while it is snowing, and not at all
+			// otherwise. See Skybox.svelte on renderMode.
+			if (visible) invalidate();
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
@@ -292,5 +239,5 @@
 	{material}
 	renderOrder={3}
 	frustumCulled={false}
-	userData={{ hideInTree: true, selectable: false }}
+	userData={SKY_LAYER_USERDATA}
 />

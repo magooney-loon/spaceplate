@@ -13,21 +13,10 @@
 	import { untrack } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
-	import {
-		cameraProjectionMatrix,
-		dot,
-		float,
-		mix,
-		modelViewMatrix,
-		positionLocal,
-		positionWorld,
-		smoothstep,
-		texture,
-		uniform,
-		vec4
-	} from 'three/tsl';
+	import { dot, float, mix, positionWorld, smoothstep, texture, uniform } from 'three/tsl';
 	import { BASE_URL } from '$extensions/settings';
-	import { descriptor } from './model';
+	import { clamp01, descriptor } from './model';
+	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
 
 	interface Props {
 		/** Distance the disc is placed at. Cosmetic only -- depth is pinned to the far plane. */
@@ -69,21 +58,18 @@
 	const moonCenter = uniform(new THREE.Vector3());
 	const discOpacity = uniform(0);
 
-	const material = new THREE.MeshBasicNodeMaterial();
-	material.transparent = true;
-	// The disc is convex and single-sided from here, so it never needs to depth-sort
-	// against itself; writing depth would only let it punch a hole in the sky.
-	material.depthWrite = false;
-	material.toneMapped = true;
-	// Never fogged -- a sky layer at radius 1000. See SkyFog.svelte.
-	material.fog = false;
+	// `toneMapped` on, unlike the emissive layers: the disc has to sit in the same
+	// exposure space as the SkyMesh dome it is seen against. The disc is also convex and
+	// single-sided from here, so it never needs to depth-sort against itself --
+	// `skyLayerMaterial`'s `depthWrite = false` would otherwise let it punch a hole in
+	// the sky.
+	const material = skyLayerMaterial({ toneMapped: true });
 
 	// Depth pinned to the far plane, exactly as SkyMesh does (`position.z = position.w`).
 	// This is load-bearing, not an optimisation: the camera's far plane is 144 while the
 	// dome sits at radius 1000, so a normally-projected moon would be clipped away
 	// entirely. Pinning z also guarantees the disc sorts behind all scene geometry.
-	const clip = cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(positionLocal, 1))).toVar();
-	material.vertexNode = vec4(clip.xy, clip.w, clip.w);
+	material.vertexNode = domeVertexNode();
 
 	// The lit fraction is the angle between the surface normal and the sun -- which IS
 	// the phase. The normal is rebuilt from world position rather than read from
@@ -114,8 +100,6 @@
 
 	let moon = $state.raw<THREE.Mesh>();
 
-	const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-
 	useTask(
 		() => {
 			if (!moon) return;
@@ -142,7 +126,11 @@
 			const daylight = clamp01((sun.elevation + 2) / 8);
 			discOpacity.value = body.visibility * (1 - daylightFade * daylight);
 
-			invalidate();
+			// Nothing here animates on its own -- the disc moves only when the model's
+			// time does, and Skybox's driver task invalidates for that. So this task only
+			// has to invalidate when it moved the mesh itself, which is never
+			// independently. Skip the draw entirely once the disc has faded out.
+			moon.visible = discOpacity.value > 0.002;
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
@@ -162,5 +150,5 @@
 	{material}
 	renderOrder={2}
 	frustumCulled={false}
-	userData={{ hideInTree: true, selectable: false }}
+	userData={SKY_LAYER_USERDATA}
 />

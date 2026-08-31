@@ -19,6 +19,7 @@ import {
 	type PathOptions
 } from './sunPath';
 import { emit } from './events';
+import { clamp01, lerp, lerpRGB } from './math';
 import {
 	AMBIENT_RETURN,
 	bodyVisibility,
@@ -44,16 +45,6 @@ export { DEFAULT_DAY_CURVE } from './dayCurve';
 export { on, off } from './events';
 export { WEATHERS, CHANNEL_NAMES, DEFAULT_BLEND_MS } from './weatherMixer';
 export type { WeatherDefinition, WeatherOptions, ChannelName } from './weatherMixer';
-
-const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-/** Writes into `out` -- compose() runs every frame and must not allocate. */
-const lerpRGB = (a: RGB, b: RGB, k: number, out: RGB): RGB => {
-	out[0] = lerp(a[0], b[0], k);
-	out[1] = lerp(a[1], b[1], k);
-	out[2] = lerp(a[2], b[2], k);
-	return out;
-};
 
 // Key-light palette. Warm at the horizon, neutral overhead, cool by moonlight.
 const SUN_HORIZON: RGB = [1, 0.6, 0.35];

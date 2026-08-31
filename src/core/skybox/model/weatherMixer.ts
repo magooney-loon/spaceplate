@@ -15,12 +15,10 @@
 //                          sampled SkyBaseline, plus the light/visibility helpers that
 //                          sky.svelte.ts needs to attenuate the key light.
 
+// `ease` is the same smoothstep the day curve samples with, so a weather blend and a
+// time transition read the same way.
+import { clamp01, ease, lerp, smooth01 } from './math';
 import type { RGB, SkyBaseline, WeatherChannels, WeatherTarget } from './types';
-
-const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-/** Smoothstep, matching the day curve's easing so blends read the same way. */
-const ease = (k: number) => k * k * (3 - 2 * k);
 
 export type ChannelName = keyof WeatherChannels;
 
@@ -318,10 +316,8 @@ export const DECK_THRESHOLD = 0.4;
  * sky modulation below deliberately does not: thin cloud genuinely adds haze and hides
  * stars, and none of that touches the shadows.
  */
-export const deckFactor = (cloudCover: number): number => {
-	const k = clamp01((clamp01(cloudCover) - DECK_THRESHOLD) / (1 - DECK_THRESHOLD));
-	return k * k * (3 - 2 * k);
-};
+export const deckFactor = (cloudCover: number): number =>
+	smooth01(DECK_THRESHOLD, 1, clamp01(cloudCover));
 
 /** How much of the key light's direct throw survives the current weather. */
 export const keyAttenuation = (w: WeatherChannels): number =>

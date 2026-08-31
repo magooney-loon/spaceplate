@@ -10,6 +10,7 @@
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import type { DirectionalLight, HemisphereLight } from 'three/webgpu';
 	import { descriptor } from './model';
+	import { SKY_LAYER_USERDATA } from './skyLayer';
 
 	interface Props {
 		/** Distance the light is placed along the key direction. */
@@ -42,7 +43,7 @@
 	// at night is most of the frame.
 	let fill = $state.raw<HemisphereLight>();
 
-	const { invalidate, autoRenderTask } = useThrelte();
+	const { autoRenderTask } = useThrelte();
 
 	// Reading the descriptor in a task rather than an $effect is the whole point: the
 	// descriptor is a plain object, so there is nothing to track and no cycle to form.
@@ -66,7 +67,9 @@
 				fill.intensity = ambient * fillScale;
 			}
 
-			invalidate();
+			// No invalidate(): the light is a pure function of the descriptor's `light`
+			// slice, so Skybox.svelte's driver task covers it. See the note there on
+			// Threlte's 'on-demand' renderMode.
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
@@ -84,7 +87,7 @@
 	shadow.mapSize.width={shadowMapSize}
 	shadow.mapSize.height={shadowMapSize}
 	oncreate={(ref) => ref.shadow.camera.updateProjectionMatrix()}
-	userData={{ hideInTree: true, selectable: false }}
+	userData={SKY_LAYER_USERDATA}
 />
 
-<T.HemisphereLight bind:ref={fill} userData={{ hideInTree: true, selectable: false }} />
+<T.HemisphereLight bind:ref={fill} userData={SKY_LAYER_USERDATA} />

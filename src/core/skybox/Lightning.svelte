@@ -54,21 +54,18 @@
 	import {
 		Fn,
 		Loop,
-		cameraProjectionMatrix,
 		float,
 		floor,
 		fract,
 		mix,
-		modelViewMatrix,
-		positionLocal,
 		smoothstep,
 		sin,
 		uniform,
 		uv,
-		vec3,
-		vec4
+		vec3
 	} from 'three/tsl';
-	import { descriptor } from './model';
+	import { clamp01, descriptor, lerp, mulberry32 } from './model';
+	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
 	import { flashState } from './flashState';
 
 	interface Props {
@@ -99,16 +96,6 @@
 	let overlay = $state.raw<Mesh>();
 	let flashLight = $state.raw<DirectionalLight>();
 
-	const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-	const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-
-	const mulberry32 = (a: number) => () => {
-		a |= 0;
-		a = (a + 0x6d2b79f5) | 0;
-		let t = Math.imul(a ^ (a >>> 15), 1 | a);
-		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-	};
 	// Captured once on purpose: the seed is an authored constant and re-reading it
 	// reactively would rebuild the RNG mid-session.
 	// svelte-ignore state_referenced_locally
@@ -241,18 +228,14 @@
 	const pathAt = (y: any) => float(0.4).mul(perlin1(y.mul(2).add(uSeed)).sub(0.5));
 
 	const buildBoltMaterial = (): THREE.MeshBasicNodeMaterial => {
-		const material = new THREE.MeshBasicNodeMaterial();
-		material.transparent = true;
-		material.depthWrite = false;
-		material.blending = THREE.AdditiveBlending;
-		material.toneMapped = false;
-		material.fog = false;
-		material.side = THREE.DoubleSide;
+		const material = skyLayerMaterial({
+			blending: THREE.AdditiveBlending,
+			side: THREE.DoubleSide
+		});
 
 		// Far-plane depth pinning + frustumCulled={false}: the quad sits at 750 units
 		// against a 144 far plane, exactly like the dome layers.
-		const clip = cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(positionLocal, 1)));
-		material.vertexNode = vec4(clip.xy, clip.w, clip.w);
+		material.vertexNode = domeVertexNode();
 
 		const boltFn = Fn(() => {
 			const uvN = uv();
@@ -296,16 +279,12 @@
 	const uWash = uniform(0);
 
 	const buildOverlayMaterial = (): THREE.MeshBasicNodeMaterial => {
-		const material = new THREE.MeshBasicNodeMaterial();
-		material.side = THREE.BackSide;
-		material.transparent = true;
-		material.depthWrite = false;
-		material.blending = THREE.AdditiveBlending;
-		material.toneMapped = false;
-		material.fog = false;
+		const material = skyLayerMaterial({
+			side: THREE.BackSide,
+			blending: THREE.AdditiveBlending
+		});
 
-		const clip = cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(positionLocal, 1)));
-		material.vertexNode = vec4(clip.xy, clip.w, clip.w);
+		material.vertexNode = domeVertexNode();
 
 		// Slightly blue: lightning is hotter than daylight (its flash is ~9500 K against
 		// the sun's ~5800 K), so the wash must never read warm.
@@ -535,7 +514,7 @@
 	renderOrder={2.6}
 	frustumCulled={false}
 	visible={false}
-	userData={{ hideInTree: true, selectable: false }}
+	userData={SKY_LAYER_USERDATA}
 />
 
 <T.Mesh
@@ -545,7 +524,7 @@
 	renderOrder={4}
 	frustumCulled={false}
 	visible={false}
-	userData={{ hideInTree: true, selectable: false }}
+	userData={SKY_LAYER_USERDATA}
 />
 
 <T.DirectionalLight
@@ -553,5 +532,5 @@
 	castShadow={false}
 	color="#b8ceff"
 	intensity={0}
-	userData={{ hideInTree: true, selectable: false }}
+	userData={SKY_LAYER_USERDATA}
 />

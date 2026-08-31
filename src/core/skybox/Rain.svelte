@@ -6,26 +6,25 @@
 	// each drop is a tiny billboarded rectangle animated in the vertex node. The mesh is
 	// recentered on the active camera every frame, so games can change level scale or
 	// camera far range without needing a world-sized particle system.
+	//
+	// The quad is INSTANCED (skyLayer.ts): one head-anchored four-vertex quad drawn
+	// `count` times. Each drop's box position and parameters used to be written into
+	// four vertices apiece -- 1.52 MB of buffers for the shipped count, against 0.25 MB
+	// now, allocated whether or not it is ever raining.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';
+	import { float, fract, positionLocal, pow, smoothstep, time, uniform, vec3 } from 'three/tsl';
+	import { clamp01, descriptor, mulberry32, smooth01 } from './model';
 	import {
-		attribute,
-		cameraProjectionMatrix,
-		float,
-		fract,
-		mix,
-		modelViewMatrix,
-		positionLocal,
-		pow,
-		smoothstep,
-		time,
-		uniform,
-		vec2,
-		vec3,
-		vec4
-	} from 'three/tsl';
-	import { descriptor } from './model';
+		instancedQuad,
+		instancedVec3,
+		instancedVec4,
+		skyLayerMaterial,
+		streakClip,
+		HEAD_ANCHORED_QUAD,
+		SKY_LAYER_USERDATA
+	} from './skyLayer';
 
 	interface Props {
 		count?: number;
@@ -57,87 +56,50 @@
 	let mesh = $state.raw<Mesh>();
 
 	const opacity = uniform(0);
+	/**
+	 * Wind as a 0..1 INTENSITY, matching the channel's documented meaning and every other
+	 * consumer (CloudDeck reads it as a scroll magnitude, `clear` targets 0.08, `storm`
+	 * 0.85). It used to be remapped to [-1, 1] with `wind * 2 - 1`, which made 0.5 the
+	 * neutral point -- so `clear` weather (0.08) slanted the rain at -0.84 while `storm`
+	 * (0.85) managed +0.70. Calm air produced a HARDER slant than a storm, mirrored.
+	 * At 0 the drops now fall straight down, which is what no wind looks like.
+	 */
 	const wind = uniform(0);
 
-	const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-	const smooth01 = (edge0: number, edge1: number, v: number) => {
-		const k = clamp01((v - edge0) / (edge1 - edge0));
-		return k * k * (3 - 2 * k);
-	};
-
-	const mulberry32 = (a: number) => () => {
-		a |= 0;
-		a = (a + 0x6d2b79f5) | 0;
-		let t = Math.imul(a ^ (a >>> 15), 1 | a);
-		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-	};
-
-	const buildGeometry = (): THREE.BufferGeometry => {
+	/**
+	 * Builds the field and its material together, once. One closure because every input
+	 * is a BUILD-TIME prop -- see the same note in Stars.svelte.
+	 */
+	const build = () => {
 		const rng = mulberry32(seed);
-		const geometry = new THREE.BufferGeometry();
 
-		const positions = new Float32Array(count * 4 * 3);
-		const corners = new Float32Array(count * 4 * 2);
-		const params = new Float32Array(count * 4 * 4);
-		const indices = new Uint32Array(count * 6);
-		const CORNERS = [-1, 0, 1, 0, 1, 1, -1, 1];
+		// Per-drop data: box position, and (speed, length, width, phase) packed as a vec4.
+		const centers = new Float32Array(count * 3);
+		const params = new Float32Array(count * 4);
 
 		for (let i = 0; i < count; i++) {
-			const x = (rng() - 0.5) * width;
-			const y = (rng() - 0.5) * height;
-			const z = (rng() - 0.5) * depth;
-			const speed = minSpeed + rng() * (maxSpeed - minSpeed);
-			const dropLength = length * (0.65 + rng() * 0.7);
-			const dropWidth = widthWorld * (0.65 + rng() * 0.9);
-			const phase = rng();
-
-			for (let v = 0; v < 4; v++) {
-				const p = i * 4 + v;
-				positions[p * 3] = x;
-				positions[p * 3 + 1] = y;
-				positions[p * 3 + 2] = z;
-				corners[p * 2] = CORNERS[v * 2];
-				corners[p * 2 + 1] = CORNERS[v * 2 + 1];
-				params[p * 4] = speed;
-				params[p * 4 + 1] = dropLength;
-				params[p * 4 + 2] = dropWidth;
-				params[p * 4 + 3] = phase;
-			}
-
-			const base = i * 4;
-			const tri = i * 6;
-			indices[tri] = base;
-			indices[tri + 1] = base + 1;
-			indices[tri + 2] = base + 2;
-			indices[tri + 3] = base;
-			indices[tri + 4] = base + 2;
-			indices[tri + 5] = base + 3;
+			centers[i * 3] = (rng() - 0.5) * width;
+			centers[i * 3 + 1] = (rng() - 0.5) * height;
+			centers[i * 3 + 2] = (rng() - 0.5) * depth;
+			params[i * 4] = minSpeed + rng() * (maxSpeed - minSpeed);
+			params[i * 4 + 1] = length * (0.65 + rng() * 0.7);
+			params[i * 4 + 2] = widthWorld * (0.65 + rng() * 0.9);
+			params[i * 4 + 3] = rng();
 		}
 
-		geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-		geometry.setAttribute('aCorner', new THREE.BufferAttribute(corners, 2));
-		geometry.setAttribute('aParams', new THREE.BufferAttribute(params, 4));
-		geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-		return geometry;
-	};
+		const material = skyLayerMaterial({ side: THREE.DoubleSide });
 
-	const buildMaterial = (): THREE.MeshBasicNodeMaterial => {
-		const material = new THREE.MeshBasicNodeMaterial();
-		material.transparent = true;
-		material.depthWrite = false;
-		material.depthTest = true;
-		material.blending = THREE.NormalBlending;
-		material.toneMapped = false;
-		material.fog = false;
-		material.side = THREE.DoubleSide;
-
-		const aCorner = attribute<'vec2'>('aCorner', 'vec2');
-		const aParams = attribute<'vec4'>('aParams', 'vec4');
+		const aCenter = instancedVec3(centers);
+		const aParams = instancedVec4(params);
 		const aSpeed = aParams.x;
 		const aLength = aParams.y;
 		const aWidth = aParams.z;
 		const aPhase = aParams.w;
+
+		// Head-anchored quad: x is the cross-axis corner, y walks head (0) to tail (1).
+		const corner = positionLocal.xy;
+		const across = corner.x;
+		const along = corner.y;
 
 		const halfWidth = float(width * 0.5);
 		const halfHeight = float(height * 0.5);
@@ -147,40 +109,38 @@
 		const boxDepth = float(depth);
 
 		const fall = time.mul(aSpeed).add(aPhase.mul(boxHeight));
-		const x = fract(positionLocal.x.add(halfWidth).add(fall.mul(wind).mul(0.16)).div(boxWidth))
+		const x = fract(aCenter.x.add(halfWidth).add(fall.mul(wind).mul(0.16)).div(boxWidth))
 			.mul(boxWidth)
 			.sub(halfWidth);
-		const y = fract(positionLocal.y.add(halfHeight).sub(fall).div(boxHeight))
+		const y = fract(aCenter.y.add(halfHeight).sub(fall).div(boxHeight))
 			.mul(boxHeight)
 			.sub(halfHeight);
-		const z = fract(positionLocal.z.add(halfDepth).add(fall.mul(wind).mul(0.07)).div(boxDepth))
+		const z = fract(aCenter.z.add(halfDepth).add(fall.mul(wind).mul(0.07)).div(boxDepth))
 			.mul(boxDepth)
 			.sub(halfDepth);
 
 		const head = vec3(x, y, z);
-		const tail = vec3(x.sub(wind.mul(aLength).mul(0.35)), y.add(aLength), z.sub(wind.mul(aLength).mul(0.15)));
-		const along = aCorner.y;
-
-		const headVS = modelViewMatrix.mul(vec4(head, 1));
-		const tailVS = modelViewMatrix.mul(vec4(tail, 1));
-		const motion = tailVS.xy.sub(headVS.xy).add(vec2(1e-5, 1e-5)).normalize();
-		const perpendicular = vec2(motion.y.negate(), motion.x);
-		const spine = mix(headVS, tailVS, along);
-		const offset = perpendicular.mul(aCorner.x.mul(aWidth));
-		material.vertexNode = cameraProjectionMatrix.mul(vec4(spine.xy.add(offset), spine.z, spine.w));
+		const tail = vec3(
+			x.sub(wind.mul(aLength).mul(0.35)),
+			y.add(aLength),
+			z.sub(wind.mul(aLength).mul(0.15))
+		);
+		// Deliberately NOT depth-pinned, unlike the dome layers: a drop is near the camera
+		// and must be occluded by scene geometry, so it keeps its honest depth.
+		material.vertexNode = streakClip(head, tail, along, across, aWidth);
 
 		const alongFade = smoothstep(float(0), float(0.18), along).mul(
 			smoothstep(float(0.55), float(1), along).oneMinus()
 		);
-		const edgeFade = pow(aCorner.x.abs().oneMinus(), float(0.7));
+		const edgeFade = pow(across.abs().oneMinus(), float(0.7));
 
 		material.colorNode = vec3(0.55, 0.66, 0.78);
 		material.opacityNode = opacity.mul(alongFade).mul(edgeFade);
-		return material;
+
+		return { geometry: instancedQuad(count, HEAD_ANCHORED_QUAD), material };
 	};
 
-	const geometry = buildGeometry();
-	const material = buildMaterial();
+	const { geometry, material } = build();
 
 	useTask(
 		() => {
@@ -189,13 +149,16 @@
 			const rainType = smooth01(0.45, 0.6, descriptor.weather.cloudType);
 			const rain = descriptor.weather.precipitation * rainType;
 			opacity.value = Math.min(0.62, rain * (0.2 + descriptor.weather.cloudCover * 0.8));
-			wind.value = descriptor.weather.wind * 2 - 1;
+			wind.value = clamp01(descriptor.weather.wind);
 
+			const visible = opacity.value > 0.01;
 			if (mesh) {
-				mesh.visible = opacity.value > 0.01;
+				mesh.visible = visible;
 				mesh.position.copy(camera.current.position);
 			}
-			invalidate();
+			// The fall runs off the TSL `time` node, so it animates every frame while it
+			// is raining -- and not at all when it is not. See Skybox.svelte on renderMode.
+			if (visible) invalidate();
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
@@ -214,5 +177,5 @@
 	{material}
 	renderOrder={3}
 	frustumCulled={false}
-	userData={{ hideInTree: true, selectable: false }}
+	userData={SKY_LAYER_USERDATA}
 />

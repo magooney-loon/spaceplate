@@ -35,15 +35,12 @@
 		Fn,
 		Loop,
 		cameraPosition,
-		cameraProjectionMatrix,
 		clamp,
 		dot,
 		float,
 		floor,
 		fract,
 		mix,
-		modelViewMatrix,
-		positionLocal,
 		positionWorld,
 		pow,
 		smoothstep,
@@ -53,7 +50,8 @@
 		vec3,
 		vec4
 	} from 'three/tsl';
-	import { descriptor } from './model';
+	import { clamp01, descriptor, smooth01 } from './model';
+	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
 	import { flashState } from './flashState';
 
 	interface Props {
@@ -153,23 +151,21 @@
 	const fbm3 = makeFbm(3);
 
 	const buildMaterial = (): THREE.MeshBasicNodeMaterial => {
-		const material = new THREE.MeshBasicNodeMaterial();
-		material.side = THREE.BackSide;
-		material.transparent = true;
-		material.depthWrite = false;
-		// NormalBlending, not additive: a storm deck must be able to DARKEN the sky behind
-		// it. Additive layers can only ever add light, which reads as haze, not mass.
-		material.blending = THREE.NormalBlending;
-		// Tone-mapped (default), unlike Nebula/Stars: this layer must sit in the same
-		// exposure space as the SkyMesh dome it composites onto, or it survives the day
-		// curve's exposure changes as a stuck-on decal.
-		// Never fogged -- a sky layer at radius 1000. See SkyFog.svelte.
-		material.fog = false;
+		const material = skyLayerMaterial({
+			side: THREE.BackSide,
+			// NormalBlending, not additive: a storm deck must be able to DARKEN the sky
+			// behind it. Additive layers can only ever add light, which reads as haze,
+			// not mass.
+			blending: THREE.NormalBlending,
+			// Tone-mapped, unlike Nebula/Stars: this layer must sit in the same exposure
+			// space as the SkyMesh dome it composites onto, or it survives the day
+			// curve's exposure changes as a stuck-on decal.
+			toneMapped: true
+		});
 
 		// Far-plane depth pinning, as every dome layer: honest depth at radius 1000 is
 		// clipped by the camera's far plane, and the deck must sort behind the scene.
-		const clip = cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(positionLocal, 1)));
-		material.vertexNode = vec4(clip.xy, clip.w, clip.w);
+		material.vertexNode = domeVertexNode();
 
 		const deck = Fn(() => {
 			const dir = positionWorld.sub(cameraPosition).normalize();
@@ -267,12 +263,6 @@
 	let windX = 0;
 	let windZ = 0;
 
-	const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-	const smooth01 = (edge0: number, edge1: number, v: number) => {
-		const k = clamp01((v - edge0) / (edge1 - edge0));
-		return k * k * (3 - 2 * k);
-	};
-
 	useTask(
 		(delta) => {
 			const w = descriptor.weather;
@@ -312,8 +302,12 @@
 			uFlash.value = flashState.flash;
 			uFlashDir.value.set(flashState.direction.x, flashState.direction.y, flashState.direction.z);
 
-			if (mesh) mesh.visible = strength + wisp > 0.015;
-			invalidate();
+			const visible = strength + wisp > 0.015;
+			if (mesh) mesh.visible = visible;
+			// The deck scrolls on its own accumulator, so it animates every frame while
+			// there is any deck to scroll -- and not at all under a clear sky. A live
+			// flash also has to reach the screen even if the deck is thin.
+			if (visible || flashState.flash > 0.003) invalidate();
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
@@ -335,5 +329,5 @@
 	{material}
 	renderOrder={2.5}
 	frustumCulled={false}
-	userData={{ hideInTree: true, selectable: false }}
+	userData={SKY_LAYER_USERDATA}
 />

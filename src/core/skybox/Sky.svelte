@@ -11,7 +11,8 @@
 	import { T, useThrelte, useTask } from '@threlte/core/webgpu';
 	import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 	import * as THREE from 'three/webgpu';
-	import { descriptor, skyActions } from './model';
+	import { clamp01, descriptor, lerp, skyActions } from './model';
+	import { SKY_LAYER_USERDATA } from './skyLayer';
 
 	interface Props {
 		setEnvironment?: boolean;
@@ -78,10 +79,7 @@
 		cloudElevationRange = [0.6, 1]
 	}: Props = $props();
 
-	const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-	const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-
-	const { scene, renderer, invalidate, autoRenderTask } = useThrelte();
+	const { scene, renderer, autoRenderTask } = useThrelte();
 
 	const sky = new SkyMesh();
 	// The dome sits at radius 1000 while scene fog is tuned for a 144-unit far plane, so
@@ -123,6 +121,7 @@
 	let hasBaked = false;
 	let lastBakeElevation = 0;
 	let lastBakeAzimuth = 0;
+	let lastBakeCloudCover = 0;
 
 	// THE TRAP (DOCS/weather-system.md §15.2): the old code re-baked the env cube
 	// whenever a sky parameter changed. That was correct for a static sky and ruinous
@@ -142,6 +141,18 @@
 		// north, which would force a bake on a movement of one.
 		const dAzimuth = Math.abs(((descriptor.sun.azimuth - lastBakeAzimuth + 540) % 360) - 180);
 		if (dElevation > envSunDeltaDeg || dAzimuth > envSunDeltaDeg) return true;
+
+		// Nothing that feeds the dome has moved since the last bake, so the interval has
+		// nothing to deliver. Without this a FROZEN sky -- which is the boot default, a
+		// manual clock at timeScale 0 -- re-baked six identical cube faces every 250 ms
+		// forever. Cloud coverage is in the comparison because it is a dome uniform too.
+		if (
+			dElevation === 0 &&
+			dAzimuth === 0 &&
+			descriptor.weather.cloudCover === lastBakeCloudCover
+		) {
+			return false;
+		}
 
 		return msSinceBake >= envIntervalMs;
 	};
@@ -212,7 +223,11 @@
 			// This task is its single owner: nothing else writes toneMappingExposure, and
 			// the tone-mapping MODE stays Threlte's (set from the <Canvas> option).
 			renderer.toneMappingExposure = baseline.exposure;
-			invalidate();
+
+			// No invalidate() here. The dome is a pure function of the descriptor, so the
+			// driver task in Skybox.svelte invalidates whenever the model actually moved
+			// -- which is the only time any of these writes produce a different frame.
+			// See the note there on Threlte's 'on-demand' renderMode.
 
 			if (!setEnvironment) {
 				scene.environment = originalEnvironment;
@@ -242,6 +257,7 @@
 			msSinceBake = 0;
 			lastBakeElevation = sun.elevation;
 			lastBakeAzimuth = sun.azimuth;
+			lastBakeCloudCover = descriptor.weather.cloudCover;
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
@@ -258,4 +274,4 @@
 	});
 </script>
 
-<T is={sky} userData={{ hideInTree: true, selectable: false }} />
+<T is={sky} userData={SKY_LAYER_USERDATA} />

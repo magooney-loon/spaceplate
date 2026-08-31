@@ -40,9 +40,11 @@ core/
     Nebula.svelte         — TSL fbm smoke on the dome, faded by starVisibility
     Meteors.svelte        — TSL streak field, faded by starVisibility
     Moon.svelte           — Phase-shaded moon sphere, tidally locked
+    skyLayer.ts           — Shared layer plumbing: instancedQuad, billboardClip/streakClip,
+                           pinFarPlane/domeVertexNode, altitudeOf, skyLayerMaterial
     model/                — Pure sky model: clock, sunPath, dayCurve, weatherMixer, phases,
-                           events, types + sky.svelte.ts façade (descriptor, skyActions,
-                           skyQueries, skyMeta)
+                           events, math, types + sky.svelte.ts façade (descriptor,
+                           skyActions, skyQueries, skyMeta)
 
   utils/
     Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock)
@@ -236,6 +238,36 @@ of `rgb(131,122,131)`, saturation 0.14. The red comes from rayleigh *extinction*
 path. Related: Preetham's warm window is only ~0–2° of sun elevation, so `goldenMorning` /
 `goldenHour` at +6° render blue and cannot be made golden — they're tuned only to stop clipping.
 See `DOCS/weather-system.md` §15.1.
+
+**`invalidate()` has one owner per reason.** Threlte's `renderMode` defaults to
+`'on-demand'` and `App.svelte`'s `<Canvas>` does not override it, so a frame is drawn only
+when something invalidates. Every sky layer used to invalidate unconditionally, which
+silently made the app `'always'` — including at the boot default, a *manual clock at
+timeScale 0*. The split now:
+
+- **`Skybox.svelte`'s driver task** invalidates when the model actually moved (it compares
+  `meta.t` and the six weather channels — everything else derives from those seven numbers).
+  It covers `Sky`, `SkyFog`, `SkyLight` and `Moon`, which are pure descriptor consumers and
+  **must not call `invalidate()` themselves**.
+- **Layers animated by the TSL `time` node** (`Stars`, `Nebula`, `Meteors`, `CloudDeck`,
+  `Rain`, `Snow`) keep their own `invalidate()`, gated on being visible at all — and set
+  `mesh.visible` so an invisible layer costs no draw call either.
+- **`Lightning`** gates on a live strike, as it always did.
+
+**Particle layers are instanced, and that changes where altitude comes from.** `Stars`,
+`Meteors`, `Rain` and `Snow` use `instancedQuad()` — one four-vertex quad, per-particle data
+in `InstancedBufferAttribute`s (~5–6× less vertex memory than writing each value into four
+vertices). The consequence: **`positionWorld` is now the ±1 quad corner, not the particle**,
+so nothing may read it for altitude. Use `altitudeOf(center, radius)` with the explicit
+instanced centre. Copying `positionWorld.y.div(radius)` from `Stars` into `Meteors` is what
+dimmed every meteor by 16× — Stars stores radius-scaled positions, Meteors stores unit
+directions. Note instancing does *not* relieve WebGPU's 8-`maxVertexBuffers` cap, which is
+why `Meteors` still packs its scalars into two vec4s.
+
+**`wind` is a `[0, 1]` intensity, never bipolar.** `0` = still, `1` = storm, along a fixed
+axis (the descriptor has no wind *direction* yet). `Rain` and `Snow` used to remap it with
+`wind * 2 - 1`, making 0.5 neutral — so `clear` (0.08) slanted rain at −0.84 while `storm`
+(0.85) managed +0.70, i.e. calm air blew harder than a storm, backwards.
 
 **Three traps if you touch the celestial layers (`core/skybox/Stars.svelte`, `Moon.svelte`):**
 

@@ -6,6 +6,9 @@
 // (Sky / SkyLight / Skybox) live one directory up. See DOCS/weather-system.md §14.
 
 export * from './sky.svelte';
+// Shared scalar helpers. The layer components pull clamp01 / smooth01 / mulberry32 from
+// here rather than each redeclaring them, which is what they used to do.
+export { clamp01, ease, lerp, lerpRGB, mulberry32, smooth01 } from './math';
 export { createClock, createRealtimeClock, createExternalClock, createManualClock } from './clock';
 export type { Clock, ClockOptions } from './clock';
 export { elevationAt, azimuthAt, sunAt, moonAt } from './sunPath';

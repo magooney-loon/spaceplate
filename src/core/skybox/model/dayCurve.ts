@@ -36,7 +36,8 @@
 // arc's peak shifts every twilight boundary, so the arc peak is effectively part of
 // this curve's contract.
 
-import type { DayKeyframe, RGB, SkyBaseline } from './types';
+import { ease, lerp, lerpRGB } from './math';
+import type { DayKeyframe, SkyBaseline } from './types';
 
 export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 	{
@@ -230,19 +231,6 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		fogDensity: 0.028
 	}
 ];
-
-const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-
-/** Writes into `out` -- the sampler runs every frame and must not allocate. */
-const lerpRGB = (a: RGB, b: RGB, k: number, out: RGB): RGB => {
-	out[0] = lerp(a[0], b[0], k);
-	out[1] = lerp(a[1], b[1], k);
-	out[2] = lerp(a[2], b[2], k);
-	return out;
-};
-
-/** Smoothstep easing -- flat lerp between keyframes reads mechanical at low counts. */
-const ease = (k: number) => k * k * (3 - 2 * k);
 
 /**
  * Sample the curve at normalized time `t`, writing into `out` rather than allocating.

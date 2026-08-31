@@ -17,7 +17,7 @@
 	// mutated forever.
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
-	import { descriptor } from './model';
+	import { clamp01, descriptor, lerp } from './model';
 
 	interface Props {
 		/**
@@ -50,13 +50,10 @@
 		fallbackFar = 144
 	}: Props = $props();
 
-	const { scene, camera, autoRenderTask, invalidate } = useThrelte();
+	const { scene, camera, autoRenderTask } = useThrelte();
 
 	const previousFog = scene.fog;
 	const fog = new THREE.Fog(0x000000, 0, 1);
-
-	const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-	const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
 	const cameraFar = () => {
 		const active = camera.current;
@@ -85,7 +82,10 @@
 
 			// Assigned once. See the header note -- swapping the object rebuilds nodes.
 			if (scene.fog !== fog) scene.fog = fog;
-			invalidate();
+
+			// No invalidate(): the fog is a pure function of the descriptor and the active
+			// camera's far plane, so Skybox.svelte's driver task covers it. See the note
+			// there on Threlte's 'on-demand' renderMode.
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);

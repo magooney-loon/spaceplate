@@ -13,27 +13,36 @@
 	// star, one draw call, full control over size and falloff. That is also why
 	// @threlte/extras' <Stars> was dropped: it is a raw ShaderMaterial, which WebGPU
 	// silently replaces with a blank NodeMaterial (DOCS/webgpu-notes.md §1).
+	//
+	// The quad is INSTANCED (skyLayer.ts): one four-vertex quad drawn `count` times,
+	// with each star's centre, colour, size, seed and magnitude as per-instance
+	// attributes. It used to write all six of those into four vertices apiece.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import {
-		attribute,
-		cameraProjectionMatrix,
 		dot,
 		float,
 		fract,
 		mix,
-		modelViewMatrix,
 		positionLocal,
-		positionWorld,
 		pow,
 		sin,
 		smoothstep,
 		time,
 		uniform,
-		vec3,
-		vec4
+		vec3
 	} from 'three/tsl';
-	import { descriptor } from './model';
+	import { descriptor, mulberry32 } from './model';
+	import {
+		altitudeOf,
+		billboardClip,
+		instancedFloat,
+		instancedQuad,
+		instancedVec3,
+		pinFarPlane,
+		skyLayerMaterial,
+		SKY_LAYER_USERDATA
+	} from './skyLayer';
 	import { MILKY_WAY_NORMAL as MW, MILKY_WAY_SIGMA } from './milkyWay';
 
 	interface Props {
@@ -72,14 +81,7 @@
 
 	const { invalidate, autoRenderTask } = useThrelte();
 
-	/** Deterministic PRNG -- the same seed must give the same sky on every reload. */
-	const mulberry32 = (a: number) => () => {
-		a |= 0;
-		a = (a + 0x6d2b79f5) | 0;
-		let t = Math.imul(a ^ (a >>> 15), 1 | a);
-		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-	};
+	let mesh = $state.raw<THREE.Mesh>();
 
 	// Two ends of the stellar-colour ramp: hot blue-white to cool amber.
 	//
@@ -95,24 +97,31 @@
 
 	const DEG = Math.PI / 180;
 
-	const buildGeometry = (): THREE.BufferGeometry => {
-		const rng = mulberry32(seed);
-		const geometry = new THREE.BufferGeometry();
+	const visibility = uniform(0);
 
-		const positions = new Float32Array(count * 4 * 3);
-		const corners = new Float32Array(count * 4 * 2);
-		const colors = new Float32Array(count * 4 * 3);
-		const sizes = new Float32Array(count * 4);
-		const seeds = new Float32Array(count * 4);
+	/**
+	 * Builds the field and its material together, once.
+	 *
+	 * ONE CLOSURE because every input here is a BUILD-TIME prop. Reading `count`, `seed`
+	 * or `radius` at the top level would capture only their initial value anyway, which
+	 * is what Svelte's `state_referenced_locally` warning is for -- and it is what we
+	 * want: change one and re-mount, exactly as Sky.svelte treats its SkyMesh. A
+	 * `$derived` would be worse than useless, since it would hand the teardown effect
+	 * the NEW geometry to dispose while the old one leaked.
+	 */
+	const build = () => {
+		const rng = mulberry32(seed);
+
+		// Per-instance data, one entry per star rather than one per quad vertex.
+		const centers = new Float32Array(count * 3);
+		const colors = new Float32Array(count * 3);
+		const sizes = new Float32Array(count);
+		const seeds = new Float32Array(count);
 		// Normalised magnitude, kept as its own attribute rather than recovered from
 		// aColor's luminance: three separate shader terms (halo width, twinkle depth,
 		// saturation) key off "how bright is this star", and luminance is contaminated by
 		// the star's colour, so a red giant would read as fainter than it is.
-		const mags = new Float32Array(count * 4);
-		const indices = new Uint32Array(count * 6);
-
-		// The four corners of the billboard, in units of half-size.
-		const CORNERS = [-1, -1, 1, -1, 1, 1, -1, 1];
+		const mags = new Float32Array(count);
 
 		for (let i = 0; i < count; i++) {
 			// Direction, rejection-sampled against the Milky Way profile (see milkyWay.ts):
@@ -138,9 +147,11 @@
 				band = Math.exp(-(offPlane * offPlane) / (2 * MILKY_WAY_SIGMA * MILKY_WAY_SIGMA));
 				if (rng() < 0.12 + 0.88 * band) break;
 			}
-			dx *= radius;
-			dy *= radius;
-			dz *= radius;
+			// Stored at the dome's radius. `altitudeOf` divides by `radius` to recover the
+			// altitude sine, so this scaling is part of that contract -- see skyLayer.ts.
+			centers[i * 3] = dx * radius;
+			centers[i * 3 + 1] = dy * radius;
+			centers[i * 3 + 2] = dz * radius;
 
 			// Magnitude, cubed so the sky is mostly faint stars with a few bright ones --
 			// a flat distribution reads as television static. Band stars are pulled
@@ -151,7 +162,7 @@
 			// View-space half-extent that subtends `halfAngle` at `radius`. Because every
 			// star sits at the same radius, a fixed view-space offset is a fixed angular
 			// size, so no per-vertex distance maths is needed in the shader.
-			const halfSize = radius * Math.tan(halfAngle);
+			sizes[i] = radius * Math.tan(halfAngle);
 
 			// Brightness is folded into the colour: the material is additive, so a dim
 			// star is simply a dim colour and no extra attribute is needed.
@@ -188,89 +199,32 @@
 			const tintR = HOT[0] + (COOL[0] - HOT[0]) * warmth;
 			const tintG = HOT[1] + (COOL[1] - HOT[1]) * warmth;
 			const tintB = HOT[2] + (COOL[2] - HOT[2]) * warmth;
-			const r = (1 + (tintR - 1) * sat) * brightness;
-			const g = (1 + (tintG - 1) * sat) * brightness;
-			const b = (1 + (tintB - 1) * sat) * brightness;
+			colors[i * 3] = (1 + (tintR - 1) * sat) * brightness;
+			colors[i * 3 + 1] = (1 + (tintG - 1) * sat) * brightness;
+			colors[i * 3 + 2] = (1 + (tintB - 1) * sat) * brightness;
 
-			const twinklePhase = rng();
-
-			for (let v = 0; v < 4; v++) {
-				const p = i * 4 + v;
-				positions[p * 3] = dx;
-				positions[p * 3 + 1] = dy;
-				positions[p * 3 + 2] = dz;
-				corners[p * 2] = CORNERS[v * 2];
-				corners[p * 2 + 1] = CORNERS[v * 2 + 1];
-				colors[p * 3] = r;
-				colors[p * 3 + 1] = g;
-				colors[p * 3 + 2] = b;
-				sizes[p] = halfSize;
-				seeds[p] = twinklePhase;
-				mags[p] = mag;
-			}
-
-			const base = i * 4;
-			const tri = i * 6;
-			indices[tri] = base;
-			indices[tri + 1] = base + 1;
-			indices[tri + 2] = base + 2;
-			indices[tri + 3] = base;
-			indices[tri + 4] = base + 2;
-			indices[tri + 5] = base + 3;
+			seeds[i] = rng();
+			mags[i] = mag;
 		}
 
-		geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-		geometry.setAttribute('aCorner', new THREE.BufferAttribute(corners, 2));
-		geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-		geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-		geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
-		geometry.setAttribute('aMag', new THREE.BufferAttribute(mags, 1));
-		geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-		return geometry;
-	};
-
-	const visibility = uniform(0);
-
-	const buildMaterial = (): THREE.MeshBasicNodeMaterial => {
-		const material = new THREE.MeshBasicNodeMaterial();
-		material.transparent = true;
-		material.depthWrite = false;
-		material.blending = THREE.AdditiveBlending;
 		// Stars are their own light source; tone mapping them at night's 0.62 exposure
 		// would dim the one thing that is supposed to be bright in a dark frame.
-		material.toneMapped = false;
-		// Sky layers are never fogged: they sit at radius 1000, far past anything scene
-		// fog is tuned for, and fogging an additive layer mixes toward the fog colour
-		// rather than dimming it. See SkyFog.svelte.
-		material.fog = false;
+		const material = skyLayerMaterial({ blending: THREE.AdditiveBlending });
 
-		// The explicit generic is required: `attribute` infers its node type from the
-		// argument's *value*, so a bare 'vec2' widens to `string` and every downstream
-		// node method disappears.
-		const aCorner = attribute<'vec2'>('aCorner', 'vec2');
-		const aColor = attribute<'vec3'>('aColor', 'vec3');
-		const aSize = attribute<'float'>('aSize', 'float');
-		const aSeed = attribute<'float'>('aSeed', 'float');
-		const aMag = attribute<'float'>('aMag', 'float');
+		const aCenter = instancedVec3(centers);
+		const aColor = instancedVec3(colors);
+		const aSize = instancedFloat(sizes);
+		const aSeed = instancedFloat(seeds);
+		const aMag = instancedFloat(mags);
 
-		// Billboard in view space: offset the corner AFTER the model-view transform, so
-		// the quad always faces the camera without any per-star rotation.
-		//
-		// Built as ONE PURE EXPRESSION, with no .toVar() and no assignment. That is not a
-		// style preference. TSL's assignment operators need a Fn() stack to record into,
-		// and outside one they fail with "No stack defined for assign operation" -- a
-		// console warning, not a throw. The first version of this used
-		// `mv.xy.addAssign(...)`, the call was dropped, every quad's four vertices stayed
-		// on the same point, and 2200 zero-area triangles rendered precisely nothing.
-		// Either wrap the whole vertex node in Fn() (as SkyMesh does) or, as here, never
-		// mutate: reassembling the vec4 from parts needs no stack at all.
-		const mv = modelViewMatrix.mul(vec4(positionLocal, 1));
-		const offset = aCorner.mul(aSize);
-		const clip = cameraProjectionMatrix.mul(vec4(mv.xy.add(offset), mv.z, mv.w));
-		// Depth pinned to the far plane, as SkyMesh does. Load-bearing: the camera's far
-		// plane is 144 and the field sits at radius 1000, so honest projection would clip
-		// every star. Pinning also puts the field behind all scene geometry.
-		material.vertexNode = vec4(clip.xy, clip.w, clip.w);
+		// The quad corner. With the star's centre in an instanced attribute, the base
+		// geometry's `position` IS the corner -- so `positionLocal.xy` reads exactly where
+		// the old per-vertex `aCorner` attribute did.
+		const corner = positionLocal.xy;
+
+		// Billboarded in view space and pinned to the far plane. Both are load-bearing;
+		// see skyLayer.ts for why neither may be skipped or written with assignments.
+		material.vertexNode = pinFarPlane(billboardClip(aCenter, corner.mul(aSize)));
 
 		// Round falloff from the quad's centre. Two lobes -- a tight core plus a wide,
 		// weak glow -- so a star reads as a point with a halo rather than a fuzzy blob.
@@ -283,14 +237,17 @@
 		// A halo is what makes a star read as BRIGHT -- it is the eye's own scatter -- so
 		// giving one to every star just fogs the field. Faint stars get 0.05 (a clean
 		// point), the brightest 0.35.
-		const dist2 = dot(aCorner, aCorner);
+		const dist2 = dot(corner, corner);
 		const disc = smoothstep(float(0), float(1), dist2).oneMinus();
 		const shape = pow(disc, float(7)).add(pow(disc, float(2)).mul(aMag.mul(0.3).add(0.05)));
 
 		// Fade out below the horizon. Scenes without a ground plane would otherwise show
 		// a full sphere of stars underfoot; scenes with one occlude them by depth anyway.
 		// Defined before the twinkle because scintillation keys off it too.
-		const altitude = positionWorld.y.div(float(radius));
+		//
+		// Read from the instanced CENTRE, never from `positionWorld` -- that is now the
+		// +/-1 quad corner. See `altitudeOf` for the bug the old form caused in Meteors.
+		const altitude = altitudeOf(aCenter, radius);
 		const horizon = smoothstep(float(-0.06), float(0.1), altitude);
 
 		// AIRMASS, the term this file was missing. 1 at the horizon, 0 above ~17 deg.
@@ -356,21 +313,27 @@
 
 		material.colorNode = mix(vec3(lum), aColor, beat.mul(0.3).add(0.82)).mul(extinction);
 		material.opacityNode = shape.mul(flicker).mul(horizon).mul(airmassDim).mul(visibility);
-		return material;
+
+		return { geometry: instancedQuad(count), material };
 	};
 
-	// Built once, deliberately NOT `$derived`. The field's inputs (count, seed, radius)
-	// are authored constants, and a derived would hand the teardown effect the *new*
-	// geometry to dispose while the old one leaked. Change a prop and remount, exactly
-	// as Sky.svelte treats its SkyMesh.
-	const geometry = buildGeometry();
-	const material = buildMaterial();
+	const { geometry, material } = build();
 
 	useTask(
 		() => {
 			// starVisibility is a day-curve output: 1 at solar midnight, 0 by mid-morning.
-			visibility.value = descriptor.sky.starVisibility;
-			invalidate();
+			const visible = descriptor.sky.starVisibility;
+			visibility.value = visible;
+
+			// Skip the draw outright by day rather than submitting 3200 instances that
+			// resolve to zero opacity.
+			if (mesh) mesh.visible = visible > 0.002;
+
+			// Invalidate only while the field is actually on screen. The twinkle runs off
+			// the TSL `time` node, so it genuinely animates every frame and cannot be
+			// gated on the descriptor -- but by day there is nothing to animate, and
+			// Threlte's renderMode defaults to 'on-demand'. See Skybox.svelte.
+			if (visible > 0.002) invalidate();
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
@@ -384,9 +347,10 @@
 </script>
 
 <T.Mesh
+	bind:ref={mesh}
 	{geometry}
 	{material}
 	renderOrder={1}
 	frustumCulled={false}
-	userData={{ hideInTree: true, selectable: false }}
+	userData={SKY_LAYER_USERDATA}
 />
