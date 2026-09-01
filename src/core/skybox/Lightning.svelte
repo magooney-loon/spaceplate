@@ -13,8 +13,37 @@
 	// f(y), and the fragment shader draws it as DISTANCE TO PATH -- a thin bright core,
 	// a tight glow, a broad soft halo -- with the width slope-compensated so steep
 	// sections of the path do not pinch thin. A noise-wobbled gate decides how far down
-	// the strike reaches, per seed. There is no per-strike geometry to rebuild, just two
-	// uniforms (path seed + ground gate); the bolt is a single camera-anchored quad.
+	// the strike reaches, per seed. There is no per-strike geometry to rebuild, just
+	// uniforms; the bolt is a single camera-anchored quad.
+	//
+	// THE THREE BANDS ARE DISJOINT, which is what lets each carry its own COLOUR. They
+	// used to be nested smoothsteps summed on top of each other, so the core pixel was
+	// core + glow + halo all at once and no band could be tinted without tinting the two
+	// inside it. Subtracting each band from the next out (`glow = glowRaw - core`) makes
+	// them an annulus set: a hot near-white core that clips to white through the additive
+	// blend, a tight blue-violet glow around it, a broad cool halo beyond. That is the
+	// photographic look -- and it is why `colorNode` carries the whole spatial structure
+	// while `opacityNode` is left alone (see the note where the material is built).
+	//
+	// WHY NO TWO BOLTS LOOK ALIKE. The path seed and the ground gate varied already, which
+	// changed where the channel wandered but never what KIND of thing it was: every strike
+	// was one unbranched squiggle of the same sinuosity, standing upright, at the same
+	// distance, at the same size in frame. Four more per-strike uniforms fix that --
+	// `uWander` (how much the channel meanders), `uLean` (a linear tilt, so it is not
+	// always a vertical line), and three `uBranch` vec4s, each a fork that peels off the
+	// main channel at its own height and side, grows its own wander as it separates, and
+	// dies out before the ground. A bolt rolls one to three of them.
+	//
+	// DEPTH. `flashState.strikeDistance` was already rolled per strike, but only thunder
+	// read it -- so a bolt the audio treated as a mile away drew at exactly the size and
+	// brightness of one overhead. It now drives the quad's SCALE, the bolt's brightness,
+	// the scene light's share and a per-strike tint: near strikes tower and read blue-
+	// white, distant ones sit small and low with the red-shift of a long air path. The
+	// quad is scaled about its BOTTOM edge rather than its centre, so a distant bolt sits
+	// down near the horizon instead of shrinking toward the middle of the sky.
+	//
+	// None of that touches the photosafety envelope below: the distance term only ever
+	// scales the scene light DOWN from the authored peak, never up.
 	//
 	// PHOTOSAFETY. Flash-induced seizures come from sharp, large-area luminance steps
 	// (WCAG 2.3.1 fails at three general flashes within any one second). Every constant
@@ -115,6 +144,28 @@
 	/** Sheets are their own amplitude (below BOLT_SKY_SCALE) and light the scene less. */
 	const SHEET_LIGHT_SCALE = 0.45;
 
+	// ── Depth ──────────────────────────────────────────────────────────────────────
+	/**
+	 * The range a bolt's distance is rolled over, world units. Also the range the visual
+	 * terms are interpolated across, so the bolt you see and the thunder you hear agree
+	 * about which strike it was.
+	 */
+	const BOLT_NEAR = 200;
+	const BOLT_FAR = 1500;
+	/** Quad scale at the two ends. 1 is the authored `boltTop..boltBottom` span. */
+	const SCALE_NEAR = 1.3;
+	const SCALE_FAR = 0.42;
+	/** How much of the bolt's own brightness survives at each end. */
+	const DIM_NEAR = 1;
+	const DIM_FAR = 0.5;
+	/**
+	 * How much of the scene light a strike takes, by distance. NEAR IS 1, NOT MORE: this
+	 * term may only ever attenuate the authored peak, or it would be a photosafety change
+	 * wearing a lighting change's clothes.
+	 */
+	const LIGHT_NEAR = 1;
+	const LIGHT_FAR = 0.45;
+
 	// ── Strike state ───────────────────────────────────────────────────────────────
 	// Plain variables: written and read only by the task, so reactive proxies would just
 	// add cost. One strike is live at a time -- overlapping envelopes from different
@@ -137,8 +188,12 @@
 		dir: { x: number; y: number; z: number };
 		pulses: Pulse[];
 		durationS: number;
-		/** How much of the envelope the scene light takes (sheets are gentler). */
+		/** How much of the envelope the scene light takes (sheets and far bolts are gentler). */
 		lightScale: number;
+		/** Quad scale, from the strike's distance. Applied about the quad's bottom edge. */
+		boltScale: number;
+		/** Brightness the bolt keeps at this distance. */
+		boltDim: number;
 	};
 
 	let nowMs = 0;
@@ -195,6 +250,39 @@
 	const uSeed = uniform(0);
 	/** Where the wobbled ground gate cuts the channel off, as a fraction of height. */
 	const uGate = uniform(0.12);
+	/**
+	 * How far the channel meanders, in path units. Was the hardcoded 0.4 that gave every
+	 * strike the same sinuosity -- a different squiggle each time, but always a squiggle of
+	 * the same character, which is most of why they read as one repeated bolt.
+	 */
+	const uWander = uniform(0.4);
+	/**
+	 * A linear tilt across the channel's height, so a bolt is not always a vertical line.
+	 * Cheaper than any amount of extra noise and does more for the silhouette than any of
+	 * it: the eye reads overall lean long before it reads wander.
+	 */
+	const uLean = uniform(0);
+	/**
+	 * The forks: (forkY, spread, seed, reach) apiece.
+	 *
+	 * `forkY` is where the branch leaves the main channel, `spread` its signed divergence
+	 * per unit of descent, `seed` its own noise domain and `reach` how far below the fork it
+	 * survives. REACH 0 IS A DEAD BRANCH -- that is how a strike rolls fewer than three
+	 * without a second material or a branch count in the shader: the life term below is
+	 * identically zero for every pixel, and the compiler sees the same code either way.
+	 */
+	const uBranch0 = uniform(new THREE.Vector4());
+	const uBranch1 = uniform(new THREE.Vector4());
+	const uBranch2 = uniform(new THREE.Vector4());
+	/** Indexable, so rolling the forks is a loop rather than three copies of one block. */
+	const branchUniforms = [uBranch0, uBranch1, uBranch2];
+	/**
+	 * Per-strike chromatic shift with distance -- cool blue-white near, red-shifted far by
+	 * the long air path. Deliberately close to luminance-neutral: how BRIGHT a distant bolt
+	 * is belongs to `boltDim`, and folding the two together would make either one impossible
+	 * to tune alone.
+	 */
+	const uBoltTint = uniform(new THREE.Vector3(0.92, 0.98, 1.15));
 
 	// The reference's 1-D noise family, verbatim: hash -> linear value noise -> 6
 	// octaves of doubling frequency / halving amplitude. A factory, as Nebula's
@@ -223,9 +311,17 @@
 		});
 
 	const perlin1 = makePerlin1(6);
+	/**
+	 * Four octaves, for the terms where six buys nothing visible: a branch is thin, short
+	 * and dimmer than the main channel, and the along-length flicker is a broad brightness
+	 * wobble. The main channel keeps all six. This is the difference between the branches
+	 * costing what the bolt already cost and costing twice it.
+	 */
+	const perlin1Fast = makePerlin1(4);
 
-	/** THE PATH: the channel's horizontal offset at height `y`, a perlin wander. */
-	const pathAt = (y: any) => float(0.4).mul(perlin1(y.mul(2).add(uSeed)).sub(0.5));
+	/** THE PATH: the channel's horizontal offset at height `y`, a perlin wander plus lean. */
+	const pathAt = (y: any) =>
+		uWander.mul(perlin1(y.mul(2).add(uSeed)).sub(0.5)).add(uLean.mul(y.sub(0.5)));
 
 	const buildBoltMaterial = (): THREE.MeshBasicNodeMaterial => {
 		const material = skyLayerMaterial({
@@ -237,6 +333,51 @@
 		// against a 144 far plane, exactly like the dome layers.
 		material.vertexNode = domeVertexNode();
 
+		// The three bands, each its own colour -- see the header on why they are disjoint.
+		// Above 1.0 on the core because it should clip toward white through the additive
+		// blend, which is what a lightning core does to the eye.
+		const CORE_COLOR = vec3(1.16, 1.19, 1.24);
+		const GLOW_COLOR = vec3(0.42, 0.62, 1.25);
+		const HALO_COLOR = vec3(0.3, 0.45, 0.95);
+
+		/**
+		 * One fork, as (core, glow) coverage. `b` is (forkY, spread, seed, reach).
+		 *
+		 * It leaves the main channel AT the main channel: `mainCenter` is the base, so at
+		 * the fork height the two are the same line and the branch is attached rather than
+		 * floating beside it. Below that it acquires its own wander over the first tenth of
+		 * its length and diverges linearly at `spread`. Building it as an independent path
+		 * and hoping the ends met was the obvious alternative and it does not work -- the
+		 * seam is exactly where the eye is looking.
+		 */
+		const branchAt = (y: any, x: any, b: any, mainCenter: any) => {
+			const forkY = b.x;
+			const spread = b.y;
+			const reach = b.w;
+			// Positive below the fork, negative above it.
+			const drop = forkY.sub(y);
+
+			const own = float(0.3).mul(perlin1Fast(y.mul(2.6).add(b.z)).sub(0.5));
+			const separation = drop.div(0.12).clamp(0, 1);
+			const center = mainCenter.add(own.mul(separation)).add(spread.mul(drop));
+
+			// Alive only below the fork, and only for `reach` after it. Both terms are
+			// low-to-high smoothsteps: WGSL leaves `smoothstep` undefined for edge0 >= edge1,
+			// and `reach - 0.1 < reach` holds even at reach 0, where this is 0 everywhere
+			// and the branch is switched off entirely.
+			const life = smoothstep(float(0), float(0.03), drop).mul(
+				smoothstep(reach.sub(0.1), reach, drop).oneMinus()
+			);
+
+			// Thinner than the main channel, and thinning further as it runs out of charge.
+			const width = float(0.011).mul(drop.div(reach.max(1e-3)).oneMinus().clamp(0.35, 1));
+			const dist = x.sub(center).abs();
+			const core = smoothstep(float(0), width, dist).oneMinus();
+			const glowRaw = smoothstep(float(0), float(0.045), dist).oneMinus();
+
+			return { core: core.mul(life), glow: glowRaw.sub(core).max(0).mul(life) };
+		};
+
 		const boltFn = Fn(() => {
 			const uvN = uv();
 			const x = uvN.x.mul(3).sub(1.5).toVar(); // ±1.5 across the quad
@@ -245,16 +386,42 @@
 			// Path centre at this height, plus a hair higher for the slope term. The
 			// slope compensation is what keeps steep sections of the channel from
 			// pinching: the stroke's width grows with |df/dy| exactly as in the reference.
-			const center = pathAt(y);
+			const center = pathAt(y).toVar();
 			const centerUp = pathAt(y.add(0.001));
 
 			const dist = x.sub(center).abs().toVar();
-			const coreW = float(0.018).add(centerUp.sub(center).abs().mul(5));
-			const strike = smoothstep(float(0), coreW, dist).oneMinus();
-			const glow = smoothstep(float(0), float(0.07), dist).oneMinus();
-			const halo = smoothstep(float(0), float(1.1), dist).oneMinus();
+			// Tapered toward the ground: a leader thins as it descends. The slope term is
+			// added after the taper so a steep section is still protected from pinching.
+			const coreW = float(0.018)
+				.mul(y.mul(0.32).add(0.7))
+				.add(centerUp.sub(center).abs().mul(5));
 
-			const bolt = strike.mul(0.55).add(glow.mul(0.22)).add(halo.mul(0.18));
+			// DISJOINT BANDS. Each is the next one out minus the one inside it, so the
+			// centre pixel is pure core and every band can carry its own colour.
+			const core = smoothstep(float(0), coreW, dist).oneMinus();
+			const glowRaw = smoothstep(float(0), float(0.07), dist).oneMinus();
+			const glow = glowRaw.sub(core).max(0);
+			const haloRaw = smoothstep(float(0), float(1.1), dist).oneMinus();
+			const halo = haloRaw.sub(glowRaw).max(0);
+
+			// ALONG-LENGTH FLICKER. A real channel does not burn evenly: segments run hotter
+			// than their neighbours, which is the single most recognisable thing about a
+			// photographed bolt after the branching. Centred on 1 so it redistributes
+			// brightness along the channel rather than adding any.
+			const hot = perlin1Fast(y.mul(9).add(uSeed.mul(2.3))).mul(0.75).add(0.64);
+
+			const b0 = branchAt(y, x, uBranch0, center);
+			const b1 = branchAt(y, x, uBranch1, center);
+			const b2 = branchAt(y, x, uBranch2, center);
+			const branchCore = b0.core.add(b1.core).add(b2.core);
+			const branchGlow = b0.glow.add(b1.glow).add(b2.glow);
+
+			// The halo is the air scattering the discharge, not the channel itself, so it
+			// takes neither the flicker nor a branch contribution -- it is one soft bloom
+			// around the whole event.
+			const rgb = CORE_COLOR.mul(core.add(branchCore.mul(0.6)).mul(hot))
+				.add(GLOW_COLOR.mul(glow.mul(0.45).add(branchGlow.mul(0.25)).mul(hot)))
+				.add(HALO_COLOR.mul(halo.mul(0.16)));
 
 			// Vertical shaping: fade the channel out as it enters the deck at the top,
 			// and cut it off near the ground along a noise-wobbled line whose height is
@@ -264,13 +431,17 @@
 			const wobble = perlin1(x.mul(1.2).add(uGate.mul(4))).mul(0.03);
 			const ground = smoothstep(uGate, uGate.add(0.05), y.add(wobble));
 
-			return bolt.mul(topFade).mul(ground);
+			return rgb.mul(topFade).mul(ground);
 		});
 
-		// Slightly blue-white and above 1.0: the core should clip toward white through
-		// the additive blend, which is what a lightning core does to the eye.
-		material.colorNode = vec3(0.95, 0.98, 1.12);
-		material.opacityNode = boltFn().mul(uBolt);
+		// THE WHOLE EFFECT RIDES `colorNode`, AND `opacityNode` IS LEFT ALONE. Under
+		// `AdditiveBlending` three sets blendSrc to SrcAlpha, so what lands in the frame is
+		// `colorNode * opacity` -- and alpha is a fixed-function blend factor, which the
+		// hardware CLAMPS to [0,1]. `uBolt` peaks at 1.25 (the return stroke plus the
+		// linger), so driving opacity with it would silently discard the top 25% of every
+		// strike's punch. Folded into the colour instead it stays in HDR, which is also
+		// where the core's above-1.0 white belongs -- sky layers are not tone mapped.
+		material.colorNode = boltFn().mul(uBoltTint).mul(uBolt);
 
 		return material;
 	};
@@ -357,6 +528,16 @@
 						}
 					];
 
+		// HOW FAR AWAY, rolled BEFORE anything that depends on it -- which is the whole
+		// point. This used to be set at the bottom of the function purely to time thunder,
+		// so the sound and the picture were two unrelated rolls and a bolt could crack
+		// overhead while reading as a distant one. Everything visual now derives from it.
+		const strikeDistance =
+			kind === 'sheet' ? 1200 + rng() * 1800 : BOLT_NEAR + rng() * (BOLT_FAR - BOLT_NEAR);
+		// 1 at the near end of the range, 0 at the far.
+		const nearness =
+			kind === 'sheet' ? 0 : clamp01((BOLT_FAR - strikeDistance) / (BOLT_FAR - BOLT_NEAR));
+
 		const last = pulses[pulses.length - 1];
 		// Bolt paths outlive their pulses: the heated channel glows on for a moment
 		// after the discharge (see the linger term in the task).
@@ -372,7 +553,12 @@
 			dir,
 			pulses,
 			durationS,
-			lightScale: kind === 'sheet' ? SHEET_LIGHT_SCALE : 1
+			// Sheets keep their own authored share; bolts take theirs from distance, and
+			// only ever downward from the authored peak -- see LIGHT_NEAR.
+			lightScale:
+				kind === 'sheet' ? SHEET_LIGHT_SCALE : lerp(LIGHT_FAR, LIGHT_NEAR, nearness),
+			boltScale: lerp(SCALE_FAR, SCALE_NEAR, nearness),
+			boltDim: lerp(DIM_FAR, DIM_NEAR, nearness)
 		};
 		flashState.direction.x = dir.x;
 		flashState.direction.y = dir.y;
@@ -384,15 +570,43 @@
 		// is a channel to the ground near enough to see. That difference is most of why a
 		// storm reads as having depth: near cracks, distant rumbles, and the gap between
 		// the flash and the sound telling you which you just got.
-		flashState.strikeDistance =
-			kind === 'sheet' ? 1200 + rng() * 1800 : 200 + rng() * 1300;
+		flashState.strikeDistance = strikeDistance;
 		flashState.strikeId++;
 
-		// The whole per-strike variety of the bolt is two uniforms: the path's domain
-		// offset and where the ground gate sits. No geometry is rebuilt.
+		// The whole per-strike variety of the bolt is uniforms; no geometry is rebuilt.
 		if (kind === 'bolt') {
 			uSeed.value = rng() * 100;
 			uGate.value = 0.05 + rng() * 0.2;
+			// How much it meanders and which way it leans -- the two terms that decide
+			// whether this reads as the same bolt again. The lean is triangular
+			// ((rng+rng-1) is dense at the centre), so upright is common and a hard slant
+			// is occasional rather than every other strike.
+			uWander.value = 0.25 + rng() * 0.35;
+			uLean.value = (rng() + rng() - 1) * 0.35;
+
+			// One to three forks. The unused slots get reach 0, which the shader reads as
+			// a dead branch -- no branch count ever crosses into the shader.
+			const forks = 1 + Math.floor(rng() * 3);
+			for (let i = 0; i < 3; i++) {
+				const v = branchUniforms[i].value;
+				if (i >= forks) {
+					v.set(0, 0, 0, 0);
+					continue;
+				}
+				const forkY = 0.25 + rng() * 0.55;
+				// Never longer than the drop to the ground gate: a fork that outran the
+				// main channel's own termination would hang below the bolt it came from.
+				const reach = Math.min(0.1 + rng() * 0.3, forkY * 0.85);
+				v.set(forkY, (rng() < 0.5 ? -1 : 1) * (0.15 + rng() * 0.35), rng() * 100, reach);
+			}
+
+			// Cool blue-white near, red-shifted far -- the long air path scatters the blue
+			// out of a distant discharge exactly as it does a distant anything.
+			uBoltTint.value.set(
+				lerp(1.12, 0.92, nearness),
+				lerp(0.95, 0.98, nearness),
+				lerp(0.8, 1.15, nearness)
+			);
 		}
 	};
 
@@ -453,7 +667,10 @@
 						// LINGER: the channel's afterglow -- the path stays faintly
 						// visible for ~a second after the discharge has ended, decaying.
 						const linger = s > 0.08 ? 0.16 * Math.exp(-(s - 0.08) / 0.55) : 0;
-						boltGlow = Math.min(1.25, sum + linger);
+						// Distance dims the bolt itself. Applied after the cap so the cap
+						// stays what it always was -- a ceiling on the envelope, not a
+						// ceiling that a near strike could sneak back up to.
+						boltGlow = Math.min(1.25, sum + linger) * strike.boltDim;
 					}
 
 					// CAMERA-ANCHORED, as Rain is: re-derived from the active camera every
@@ -544,3 +761,67 @@
 	intensity={0}
 	userData={SKY_LAYER_USERDATA}
 />
+
+
+<!-- {
+  "questions": [
+    {
+      "question": "Forked branches are the biggest missing thing — real lightning is a dendritic channel, this draws one squiggle. How far do you want to take it?",
+      "header": "Branching",
+      "options": [
+        {
+          "label": "2-3 forks per bolt (Recommended)",
+          "description": "Secondary channels peel off the main path at randomised heights, diverge as they descend, thin out and die before the ground. Per-strike random fork heights, sides and spread rates — so no two bolts share a silhouette. Modest shader cost."
+        },
+        {
+          "label": "Full dendritic — forks with sub-forks",
+          "description": "Branches that themselves branch, plus short dead-end stubs along the main channel. The most spectacular and the most expensive: roughly triples the distance-to-path evaluations per pixel."
+        },
+        {
+          "label": "Keep it single-channel",
+          "description": "Leave the silhouette alone and get the variety purely from scale, colour and along-length flicker."
+        }
+      ],
+      "multiSelect": false
+    },
+    {
+      "question": "Should a bolt's apparent size change with how far away it is? (The distance is already rolled for thunder timing — nothing visual uses it yet.)",
+      "header": "Depth",
+      "options": [
+        {
+          "label": "Yes — near bolts big, far ones small and hazy (Recommended)",
+          "description": "Drive the quad's distance and scale off the same roll thunder uses. Near strikes tower and read blue-white; distant ones are small, dimmer and reddened by atmosphere. Big variety win, and it makes the flash-to-thunder gap finally agree with what you saw."
+        },
+        {
+          "label": "Vary brightness and colour only",
+          "description": "Keep every bolt the same size in frame, but let distant ones be dimmer and warmer. Safer compositionally — no bolt ever dominates or gets too small to notice."
+        },
+        {
+          "label": "Leave it fixed",
+          "description": "Every bolt stays at distance 750 as now."
+        }
+      ],
+      "multiSelect": false
+    },
+    {
+      "question": "What character should the bolt itself have?",
+      "header": "Bolt look",
+      "options": [
+        {
+          "label": "Photographic — hot white core, tight blue glow",
+          "description": "Thin near-white core that clips to white through the additive blend, a tight blue-violet inner glow, broad faint halo. Adds along-length flicker so some segments run hotter than others, and a slight taper toward the ground. Reads like a long-exposure photograph."
+        },
+        {
+          "label": "Stylised — thicker, more graphic",
+          "description": "Chunkier channel with a stronger, wider glow and more saturated colour. Reads more like a game effect than a photograph — more legible at a glance, less realistic."
+        },
+        {
+          "label": "Keep the current core/glow/halo balance",
+          "description": "Only add the variety (branches, flicker, per-strike colour), leave the stroke weights as authored."
+        }
+      ],
+      "multiSelect": false
+    }
+  ]
+}
+ -->
