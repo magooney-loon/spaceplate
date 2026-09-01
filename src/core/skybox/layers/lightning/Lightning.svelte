@@ -25,6 +25,16 @@
 	// photographic look -- and it is why `colorNode` carries the whole spatial structure
 	// while `opacityNode` is left alone (see the note where the material is built).
 	//
+	// BOTH MESHES BLEND ADDITIVELY AND WRITE NO ALPHA, which is load-bearing rather than
+	// tidy. They cover huge areas of the frame; the lens layers (RainLens, SnowLens) draw
+	// last and sample the finished frame INCLUDING its alpha; and stock
+	// `AdditiveBlending` is `src.a + dst.a` on the alpha channel. A layer carrying its
+	// coverage in `colorNode` therefore emits src.a = 1 for every pixel it covers, lit or
+	// not, and stamps a screen-sized rectangle of alpha into the frame -- which the wet
+	// lens then read as "composite here at full wetness". That was the hard-edged
+	// rectangle behind a strike: not the bolt at all, the rain lens wearing its outline.
+	// See the blend flags where each material is built.
+	//
 	// WHY NO TWO BOLTS LOOK ALIKE. The path seed and the ground gate varied already, which
 	// changed where the channel wandered but never what KIND of thing it was: every strike
 	// was one unbranched squiggle of the same sinuosity, standing upright, at the same
@@ -63,8 +73,10 @@
 	// the scheduler: mean inter-event interval falls from ~11 s at the channel's floor to
 	// ~2 s at full storm. Two kinds of event: BOLT strikes (path + flash, can re-strike
 	// the same channel a few hundred ms later -- real storms do, and the repeat reads as
-	// the channel flickering rather than as a new strike) and SHEET strikes (in-cloud
-	// flash with no bolt, softer and slower -- cheap frequency that never strobes).
+	// the channel flickering rather than as a new strike, which is why a re-strike
+	// inherits the bearing, the distance AND the path uniforms instead of rolling them)
+	// and SHEET strikes (in-cloud flash with no bolt, softer and slower -- cheap
+	// frequency that never strobes).
 	//
 	// WHERE THEY STRIKE. A uniform pick over the compass puts most bolts behind the
 	// player, and a bolt you never see may as well not exist. So azimuths are biased
@@ -193,14 +205,27 @@
 		boltScale: number;
 		/** Brightness the bolt keeps at this distance. */
 		boltDim: number;
+		/** The rolled distance itself -- kept so a re-strike can resume the same channel. */
+		distance: number;
 	};
 
 	let nowMs = 0;
 	let strike: Strike | null = null;
 	let nextStrikeAtMs = Infinity;
-	// Set when a bolt strike rolls a re-strike: the next strike reuses this direction,
-	// because a channel that flickers is the same channel.
-	let restrikeDir: { x: number; y: number; z: number } | null = null;
+	/**
+	 * Set when a bolt strike rolls a re-strike: the next strike RESUMES this channel
+	 * instead of rolling a new one, because a channel that flickers is the same channel.
+	 *
+	 * It carries the distance, not just the bearing. Distance drives the quad's scale, so
+	 * a re-strike that re-rolled it would jump in size between flickers at a fixed
+	 * bearing -- two different bolts in a row, which is the exact reading this exists to
+	 * avoid. The path uniforms are left alone for the same reason (see `beginStrike`).
+	 */
+	let restrike: {
+		dir: { x: number; y: number; z: number };
+		azimuth: number;
+		distance: number;
+	} | null = null;
 	// Scratch for the camera's forward direction -- the task must not allocate.
 	const camDir = new THREE.Vector3();
 
@@ -324,9 +349,35 @@
 
 	const buildBoltMaterial = (): THREE.MeshBasicNodeMaterial => {
 		const material = skyLayerMaterial({
-			blending: THREE.AdditiveBlending,
+			blending: THREE.CustomBlending,
 			side: THREE.DoubleSide
 		});
+
+		// PURE ADD, AND NOT ONE BIT OF DESTINATION ALPHA. This is `AdditiveBlending` with
+		// its alpha half amputated, and the amputation is the whole point.
+		//
+		// three maps non-premultiplied `AdditiveBlending` to
+		// `setBlend(SrcAlpha, One, One, One)` (WebGPUPipelineUtils.js) -- so the alpha
+		// channel is `src.a + dst.a`, and a layer that leaves `opacityNode` unset emits
+		// src.a = 1 for EVERY pixel it covers, lit or not. This quad covers most of the
+		// frame. It was therefore stamping alpha = 1 across a screen-sized rectangle on
+		// every strike, and `RainLens` -- which draws afterwards (renderOrder 10), samples
+		// the finished frame as a vec4 and multiplies that sample's alpha into its own
+		// wetness -- composited its blur at full strength inside the stamp and at the
+		// frame's real alpha outside it. The bolt was invisible in the artifact: what you
+		// saw was a hard-edged rectangle of over-blurred wet lens, and only while raining.
+		//
+		// It is a regression from moving the coverage out of `opacityNode` (see the note
+		// where `colorNode` is set). That move is right; the alpha it left behind was not.
+		// An emissive layer contributes light, never coverage, so the honest blend is
+		// `dst.rgb + src.rgb` with `dst.a` untouched -- which also drops the RGB path's
+		// dependency on src.a entirely, and with it any way for this to come back.
+		material.blendEquation = THREE.AddEquation;
+		material.blendSrc = THREE.OneFactor;
+		material.blendDst = THREE.OneFactor;
+		material.blendEquationAlpha = THREE.AddEquation;
+		material.blendSrcAlpha = THREE.ZeroFactor;
+		material.blendDstAlpha = THREE.OneFactor;
 
 		// Far-plane depth pinning + frustumCulled={false}: the quad sits at 750 units
 		// against a 144 far plane, exactly like the dome layers.
@@ -338,6 +389,20 @@
 		const CORE_COLOR = vec3(1.16, 1.19, 1.24);
 		const GLOW_COLOR = vec3(0.42, 0.62, 1.25);
 		const HALO_COLOR = vec3(0.3, 0.45, 0.95);
+
+		/**
+		 * Halo radius and weight, in path units (half the quad is 1.5 of them).
+		 *
+		 * The radius is authored to die before the quad's border, and it no longer quite
+		 * does: the channel's centre sits up to `uWander/2 + uLean/2` off the quad's axis
+		 * -- ±0.475 at the shipped ranges -- so the nearest border is 1.025 away, inside
+		 * 1.1. What survives there is ~1% of the halo, which is a step of a few values out
+		 * of 255 against a night sky rather than anything you would call a rectangle, and
+		 * `edgeFade` below closes it without moving the authored look. Retune the radius
+		 * only for the LOOK; the border is the envelope's job, not this number's.
+		 */
+		const HALO_RADIUS = 1.1;
+		const HALO_WEIGHT = 0.16;
 
 		/**
 		 * One fork, as (core, glow) coverage. `b` is (forkY, spread, seed, reach).
@@ -398,7 +463,7 @@
 			const core = smoothstep(float(0), coreW, dist).oneMinus();
 			const glowRaw = smoothstep(float(0), float(0.07), dist).oneMinus();
 			const glow = glowRaw.sub(core).max(0);
-			const haloRaw = smoothstep(float(0), float(1.1), dist).oneMinus();
+			const haloRaw = smoothstep(float(0), float(HALO_RADIUS), dist).oneMinus();
 			const halo = haloRaw.sub(glowRaw).max(0);
 
 			// ALONG-LENGTH FLICKER. A real channel does not burn evenly: segments run hotter
@@ -420,7 +485,7 @@
 			// around the whole event.
 			const rgb = CORE_COLOR.mul(core.add(branchCore.mul(0.6)).mul(hot))
 				.add(GLOW_COLOR.mul(glow.mul(0.45).add(branchGlow.mul(0.25)).mul(hot)))
-				.add(HALO_COLOR.mul(halo.mul(0.16)));
+				.add(HALO_COLOR.mul(halo.mul(HALO_WEIGHT)));
 
 			// Vertical shaping: fade the channel out as it enters the deck at the top,
 			// and cut it off near the ground along a noise-wobbled line whose height is
@@ -430,16 +495,33 @@
 			const wobble = perlin1(x.mul(1.2).add(uGate.mul(4))).mul(0.03);
 			const ground = smoothstep(uGate, uGate.add(0.05), y.add(wobble));
 
-			return rgb.mul(topFade).mul(ground);
+			// THE EDGE ENVELOPE. The quad is invisible geometry, so any pixel still lit at
+			// its border draws the BORDER. HALO_RADIUS is authored to reach zero first and
+			// very nearly does; this makes it structural instead of arithmetic, so the next
+			// retune of the wander, the lean or the bands cannot quietly spend the margin
+			// the way per-strike wander and lean already spent some of it. Only the sides
+			// need it -- `topFade` closes the top, and `ground` closes the bottom (uGate is
+			// at least 0.05 against a wobble of at most 0.03, so the gate is always shut by
+			// the time y reaches 0).
+			const edgeFade = smoothstep(float(0), float(0.05), uvN.x).mul(
+				smoothstep(float(0.95), float(1), uvN.x).oneMinus()
+			);
+
+			return rgb.mul(topFade).mul(ground).mul(edgeFade);
 		});
 
-		// THE WHOLE EFFECT RIDES `colorNode`, AND `opacityNode` IS LEFT ALONE. Under
-		// `AdditiveBlending` three sets blendSrc to SrcAlpha, so what lands in the frame is
-		// `colorNode * opacity` -- and alpha is a fixed-function blend factor, which the
-		// hardware CLAMPS to [0,1]. `uBolt` peaks at 1.25 (the return stroke plus the
-		// linger), so driving opacity with it would silently discard the top 25% of every
-		// strike's punch. Folded into the colour instead it stays in HDR, which is also
-		// where the core's above-1.0 white belongs -- sky layers are not tone mapped.
+		// THE WHOLE EFFECT RIDES `colorNode`, AND `opacityNode` IS LEFT ALONE. Alpha is a
+		// fixed-function blend factor, which the hardware CLAMPS to [0,1]. `uBolt` peaks at
+		// 1.25 (the return stroke plus the linger), so driving opacity with it would
+		// silently discard the top 25% of every strike's punch. Folded into the colour it
+		// stays in HDR, which is also where the core's above-1.0 white belongs -- sky
+		// layers are not tone mapped.
+		//
+		// The catch is that `opacityNode` unset does not mean "no alpha", it means alpha 1
+		// over every pixel of the quad, and under stock `AdditiveBlending` that lands in
+		// the frame. Hence the custom blend above: the colour goes in at One, so nothing
+		// here is scaled by an alpha that is no longer carrying coverage, and no alpha goes
+		// in at all.
 		material.colorNode = boltFn().mul(uBoltTint).mul(uBolt);
 
 		return material;
@@ -451,8 +533,20 @@
 	const buildOverlayMaterial = (): THREE.MeshBasicNodeMaterial => {
 		const material = skyLayerMaterial({
 			side: THREE.BackSide,
-			blending: THREE.AdditiveBlending
+			blending: THREE.CustomBlending
 		});
+
+		// `AdditiveBlending` for the colour (SrcAlpha, One -- the wash's coverage really is
+		// its opacity here), and the same amputated alpha half as the bolt. This one leaves
+		// no edge behind: the dome covers the whole frame, so all it did was raise the lens
+		// layers' wetness slightly on every flash, everywhere at once. Fixed alongside the
+		// bolt because it is the identical mistake and the next reader will look here.
+		material.blendEquation = THREE.AddEquation;
+		material.blendSrc = THREE.SrcAlphaFactor;
+		material.blendDst = THREE.OneFactor;
+		material.blendEquationAlpha = THREE.AddEquation;
+		material.blendSrcAlpha = THREE.ZeroFactor;
+		material.blendDstAlpha = THREE.OneFactor;
 
 		material.vertexNode = domeVertexNode();
 
@@ -463,10 +557,13 @@
 		return material;
 	};
 
-	// The quad: tall enough for the full channel (boltBottom..boltTop) and about twice
-	// as wide, so the path's ±0.2 wander, the glow, and the broad halo all fit inside
-	// with room -- the halo's smoothstep (1.1) reaches zero before the quad's edge
-	// (nearest approach ~1.3), or the quad would clip it into a visible rectangle.
+	// The quad: tall enough for the full channel (boltBottom..boltTop) and about twice as
+	// wide, so the path's wander, its lean, the forks and the halo all fit inside with
+	// room. NOTHING MAY BE LIT AT THE BORDER -- the quad is invisible geometry, so a lit
+	// border draws the border. This comment used to assert that as a fixed budget (a ±0.2
+	// wander against a 1.1 halo) and the budget went stale underneath it the moment wander
+	// and lean became per-strike; that is where the rectangle came from. It is now
+	// enforced in the shader instead, by HALO_RADIUS and the edge envelope.
 	// Captured once on purpose, like every sky layer's geometry: authored constants in,
 	// and a change re-mounts rather than rebuilding buffers under a live material.
 	// svelte-ignore state_referenced_locally
@@ -477,18 +574,22 @@
 	const overlayMaterial = buildOverlayMaterial();
 
 	const beginStrike = (cover: number, forceBolt = false) => {
-		const isRestrike = restrikeDir !== null;
-		const kind: StrikeKind =
-			!isRestrike && !forceBolt && cover > 0.25 && rng() < 0.45 ? 'sheet' : 'bolt';
+		// Captured and cleared up front: four separate decisions below ask whether this
+		// strike is resuming a channel, and exactly one place may consume the record.
+		const resume = restrike;
+		restrike = null;
 
-		// Direction: a re-strike reuses the channel (bearing and all); otherwise a fresh
+		const kind: StrikeKind =
+			!resume && !forceBolt && cover > 0.25 && rng() < 0.45 ? 'sheet' : 'bolt';
+
+		// Direction: a re-strike resumes the channel (bearing and all); otherwise a fresh
 		// view-biased azimuth. Sheets sit deeper in the deck -- they are the cell
 		// backlighting itself, not a channel to the ground.
 		let azimuth: number;
-		let dir = restrikeDir;
-		restrikeDir = null;
-		if (dir) {
-			azimuth = Math.atan2(dir.x, dir.z);
+		let dir: { x: number; y: number; z: number };
+		if (resume) {
+			azimuth = resume.azimuth;
+			dir = resume.dir;
 		} else {
 			azimuth = nextAzimuth();
 			const elevation = kind === 'sheet' ? 0.55 + rng() * 0.25 : 0.5 + rng() * 0.3;
@@ -530,9 +631,13 @@
 		// HOW FAR AWAY, rolled BEFORE anything that depends on it -- which is the whole
 		// point. This used to be set at the bottom of the function purely to time thunder,
 		// so the sound and the picture were two unrelated rolls and a bolt could crack
-		// overhead while reading as a distant one. Everything visual now derives from it.
-		const strikeDistance =
-			kind === 'sheet' ? 1200 + rng() * 1800 : BOLT_NEAR + rng() * (BOLT_FAR - BOLT_NEAR);
+		// overhead while reading as a distant one. Everything visual now derives from it --
+		// which is also why a re-strike must inherit it rather than roll again.
+		const strikeDistance = resume
+			? resume.distance
+			: kind === 'sheet'
+				? 1200 + rng() * 1800
+				: BOLT_NEAR + rng() * (BOLT_FAR - BOLT_NEAR);
 		// 1 at the near end of the range, 0 at the far.
 		const nearness =
 			kind === 'sheet' ? 0 : clamp01((BOLT_FAR - strikeDistance) / (BOLT_FAR - BOLT_NEAR));
@@ -556,7 +661,8 @@
 			// only ever downward from the authored peak -- see LIGHT_NEAR.
 			lightScale: kind === 'sheet' ? SHEET_LIGHT_SCALE : lerp(LIGHT_FAR, LIGHT_NEAR, nearness),
 			boltScale: lerp(SCALE_FAR, SCALE_NEAR, nearness),
-			boltDim: lerp(DIM_FAR, DIM_NEAR, nearness)
+			boltDim: lerp(DIM_FAR, DIM_NEAR, nearness),
+			distance: strikeDistance
 		};
 		flashState.direction.x = dir.x;
 		flashState.direction.y = dir.y;
@@ -573,7 +679,11 @@
 		flashState.strikeId++;
 
 		// The whole per-strike variety of the bolt is uniforms; no geometry is rebuilt.
-		if (kind === 'bolt') {
+		// A RE-STRIKE ROLLS NONE OF IT. It is the same channel discharging a second time,
+		// so it keeps the path, the forks and the tint it already had -- re-rolling them
+		// gave a different bolt at the same bearing, which reads as two strikes rather
+		// than as one channel flickering, and that is the whole point of a re-strike.
+		if (kind === 'bolt' && !resume) {
 			uSeed.value = rng() * 100;
 			uGate.value = 0.05 + rng() * 0.2;
 			// How much it meanders and which way it leans -- the two terms that decide
@@ -628,7 +738,7 @@
 			// Dead channel clears any pending strike so the next storm schedules fresh.
 			if (channel <= 0.05) {
 				nextStrikeAtMs = Infinity;
-				restrikeDir = null;
+				restrike = null;
 			} else if (!strike) {
 				if (!Number.isFinite(nextStrikeAtMs)) scheduleNext(channel);
 				else if (nowMs >= nextStrikeAtMs) beginStrike(cover);
@@ -643,7 +753,11 @@
 					// A bolt strike may immediately queue a re-strike of the same channel:
 					// same direction, short delay. It reads as the channel flickering.
 					if (strike.kind === 'bolt' && channel > 0.25 && rng() < 0.35) {
-						restrikeDir = strike.dir;
+						restrike = {
+							dir: strike.dir,
+							azimuth: strike.azimuth,
+							distance: strike.distance
+						};
 						nextStrikeAtMs = nowMs + lerp(RESTRIKE_DELAY_S[0], RESTRIKE_DELAY_S[1], rng()) * 1000;
 					} else {
 						scheduleNext(channel);
@@ -678,9 +792,16 @@
 					// origin. Y centres the quad on the authored top/bottom span.
 					const cam = camera.current.position;
 					if (strike.kind === 'bolt' && bolt && boltGlow > 0.01) {
+						// SCALED ABOUT THE BOTTOM EDGE, which the quad's own origin cannot
+						// do -- that is at its centre, so scaling it plainly would shrink a
+						// distant bolt toward the middle of the sky, away from the ground it
+						// is supposed to be hitting. Pinning the bottom at `boltBottom` and
+						// putting the centre half a SCALED height above it stands every bolt
+						// on the same line; at scale 1 it is the authored midpoint exactly.
+						bolt.scale.setScalar(strike.boltScale);
 						bolt.position.set(
 							cam.x + Math.sin(strike.azimuth) * distance,
-							cam.y + (boltTop + boltBottom) / 2,
+							cam.y + boltBottom + (boltHeight * strike.boltScale) / 2,
 							cam.z + Math.cos(strike.azimuth) * distance
 						);
 						bolt.lookAt(cam);
@@ -760,68 +881,3 @@
 	intensity={0}
 	userData={SKY_LAYER_USERDATA}
 />
-
-<!-- {
-  "questions": [
-    {
-      "question": "Forked branches are the biggest missing thing — real lightning is a dendritic channel, this draws one squiggle. How far do you want to take it?",
-      "header": "Branching",
-      "options": [
-        {
-          "label": "2-3 forks per bolt (Recommended)",
-          "description": "Secondary channels peel off the main path at randomised heights, diverge as they descend, thin out and die before the ground. Per-strike random fork heights, sides and spread rates — so no two bolts share a silhouette. Modest shader cost."
-        },
-        {
-          "label": "Full dendritic — forks with sub-forks",
-          "description": "Branches that themselves branch, plus short dead-end stubs along the main channel. The most spectacular and the most expensive: roughly triples the distance-to-path evaluations per pixel."
-        },
-        {
-          "label": "Keep it single-channel",
-          "description": "Leave the silhouette alone and get the variety purely from scale, colour and along-length flicker."
-        }
-      ],
-      "multiSelect": false
-    },
-    {
-      "question": "Should a bolt's apparent size change with how far away it is? (The distance is already rolled for thunder timing — nothing visual uses it yet.)",
-      "header": "Depth",
-      "options": [
-        {
-          "label": "Yes — near bolts big, far ones small and hazy (Recommended)",
-          "description": "Drive the quad's distance and scale off the same roll thunder uses. Near strikes tower and read blue-white; distant ones are small, dimmer and reddened by atmosphere. Big variety win, and it makes the flash-to-thunder gap finally agree with what you saw."
-        },
-        {
-          "label": "Vary brightness and colour only",
-          "description": "Keep every bolt the same size in frame, but let distant ones be dimmer and warmer. Safer compositionally — no bolt ever dominates or gets too small to notice."
-        },
-        {
-          "label": "Leave it fixed",
-          "description": "Every bolt stays at distance 750 as now."
-        }
-      ],
-      "multiSelect": false
-    },
-    {
-      "question": "What character should the bolt itself have?",
-      "header": "Bolt look",
-      "options": [
-        {
-          "label": "Photographic — hot white core, tight blue glow",
-          "description": "Thin near-white core that clips to white through the additive blend, a tight blue-violet inner glow, broad faint halo. Adds along-length flicker so some segments run hotter than others, and a slight taper toward the ground. Reads like a long-exposure photograph."
-        },
-        {
-          "label": "Stylised — thicker, more graphic",
-          "description": "Chunkier channel with a stronger, wider glow and more saturated colour. Reads more like a game effect than a photograph — more legible at a glance, less realistic."
-        },
-        {
-          "label": "Keep the current core/glow/halo balance",
-          "description": "Only add the variety (branches, flicker, per-strike colour), leave the stroke weights as authored."
-        }
-      ],
-      "multiSelect": false
-    }
-  ]
-}
-
-Your questions have been answered: "Forked branches are the biggest missing thing — real lightning is a dendritic channel, this draws one squiggle. How far do you want to take it?"="2-3 forks per bolt (Recommended)", "Should a bolt's apparent size change with how far away it is? (The distance is already rolled for thunder timing — nothing visual uses it yet.)"="Yes — near bolts big, far ones small and hazy (Recommended)", "What character should the bolt itself have?"="Photographic — hot white core, tight blue glow". You can now continue with these answers in mind.
- -->

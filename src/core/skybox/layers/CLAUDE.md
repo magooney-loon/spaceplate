@@ -129,6 +129,14 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   `distance` prop (a true-distance bolt would be a few pixels tall).
 - `flash` is already attack-softened and **photosafety-capped at the source — never
   scale it back up** in a consumer.
+- Both of Lightning's meshes blend additively with a **custom blend that writes no
+  destination alpha**. Stock `AdditiveBlending` is `src.a + dst.a`, and a layer that
+  carries its coverage in `colorNode` (as the bolt does, to keep `uBolt`'s 1.25 peak out
+  of alpha's [0,1] clamp) emits `src.a = 1` over its whole quad. The lens layers draw
+  last and multiply the frame's alpha into their own wetness, so that stamp came back as
+  a hard-edged rectangle of over-blurred wet lens on every strike. **Any large additive
+  layer that does not put real coverage in `opacityNode` owes the frame the same custom
+  blend.**
 
 ### `fauna/`
 
