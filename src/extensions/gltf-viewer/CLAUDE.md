@@ -24,6 +24,7 @@ Dev-only (`VITE_GAME_ENGINE=true`).
 - `loadFromPath(path)` for known models in `public/`.
 - `removeModel(id)` revokes Blob URL if applicable.
 - `GltfViewerInstance` uses `useGltf` + `useGltfAnimations` (each instance has its own mixer).
+- Compression support: every load passes `dracoLoader` + `meshoptDecoder` + `ktx2Loader` to `useGltf`. DRACO/KTX2 decoders are fetched on demand from jsdelivr pinned to the installed three version (`three@0.<REVISION>/examples/jsm/libs/…`) — needs network on first compressed load; Meshopt is bundled in three. Uncompressed models never fetch anything.
 - Animation crossfade: enabling a clip → `fadeIn(crossfadeDuration)`, disabling → `fadeOut(...)`. `0` = hard cuts.
 - `AutoColliders` from `@threlte/rapier` when `colliderEnabled` is true.
 - `Show Rig`: mounts a `SkeletonHelper` (from `three/webgpu`) on the loaded scene root while enabled — gated on `model.visible` (a detached mesh stops updating bone world matrices, the helper would freeze); skipped when the model has no bones. Marked `selectable: false, hideInTree: true` for Studio.

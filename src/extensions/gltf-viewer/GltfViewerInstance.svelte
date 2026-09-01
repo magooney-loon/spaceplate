@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { T, useThrelte } from '@threlte/core/webgpu';
-	import { useGltf, useGltfAnimations } from '@threlte/extras';
+	import { useGltf, useGltfAnimations, useDraco, useMeshopt, useKtx2 } from '@threlte/extras';
 	import { AutoColliders } from '@threlte/rapier';
 	import { LoopRepeat, LoopOnce } from 'three';
-	import { SkeletonHelper, type Mesh } from 'three/webgpu';
+	import { SkeletonHelper, REVISION, type Mesh } from 'three/webgpu';
 	import { untrack } from 'svelte';
 	import { gltfViewerActions } from './gltfViewer.svelte';
 	import { logGltf } from '$extensions/logger';
@@ -11,8 +11,24 @@
 
 	let { model }: { model: GltfViewerModel } = $props();
 
+	// Decoders so the viewer opens compressed GLTFs too. DRACO and KTX2 fetch their
+	// decoder binaries on demand from a CDN pinned to the installed three version
+	// (jsdelivr resolves the 0.<REVISION> range; the decoders must match the
+	// GLTFLoader). Meshopt ships inside three — no download. Loaders are cached
+	// module-side by threlte, so N instances cost one decoder fetch. Uncompressed
+	// models never touch the decoders — GLTFLoader only invokes them when the file
+	// actually uses those extensions.
+	const threeCdn = `https://cdn.jsdelivr.net/npm/three@0.${REVISION}`;
+	const dracoLoader = useDraco(`${threeCdn}/examples/jsm/libs/draco/gltf/`);
+	const meshoptDecoder = useMeshopt();
+	const ktx2Loader = useKtx2(`${threeCdn}/examples/jsm/libs/basis/`);
+
 	// untrack: URL is intentionally fixed per instance (keyed by model.id in parent {#each})
-	const gltf = useGltf(untrack(() => model.url));
+	const gltf = useGltf(untrack(() => model.url), {
+		dracoLoader,
+		meshoptDecoder,
+		ktx2Loader
+	});
 	const { actions } = useGltfAnimations(gltf);
 	const { scene } = useThrelte();
 
