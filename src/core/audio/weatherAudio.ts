@@ -38,7 +38,7 @@ const THUNDER_RANGE = 4200;
 
 let lastStrikeId = flashState.strikeId;
 /** Thunder claps waiting on their travel time. Small and short-lived; rarely over 3. */
-const pendingThunder: { atMs: number; volume: number }[] = [];
+const pendingThunder: { atMs: number; volume: number; distance: number }[] = [];
 
 let rainAudio: ThreeAudio | undefined;
 let thunderAudio: ThreeAudio | undefined;
@@ -51,6 +51,35 @@ export const attachRainAudio = (audio: ThreeAudio): void => {
 /** Hand the mounted thunder one-shot to this module. Called once from GlobalAudio. */
 export const attachThunderAudio = (audio: ThreeAudio): void => {
 	thunderAudio = audio;
+};
+
+/**
+ * Make one clap not sound like the last. The recording is a single take, and a storm
+ * that replays it byte-for-byte every strike reads as a sound effect, not weather.
+ * Both terms derive from the strike's distance -- the same cue the volume uses:
+ *
+ * - Playback rate. A near strike cracks sharp and short; a far one stretches into a
+ *   deeper, longer rumble. Tape-style rate moves pitch and duration together, which
+ *   is roughly what multipath smearing does to a distant discharge.
+ * - Lowpass cutoff. Air scatters the high frequencies out of a clap over kilometres,
+ *   so the far end of the range keeps only the rumble. Nearness is squared so the
+ *   crack is reserved for genuinely close strikes -- mid-range stays dark.
+ *
+ * Both are jittered, so even two strikes at the same distance never match. This is the
+ * plain Web Audio graph doing what a buffer-processing pass (cf. three's
+ * webgpu_compute_audio example) would: no compute pass, no readback latency to
+ * desync the scheduled flash-to-sound gap, no second AudioContext per clap.
+ *
+ * The filter node must be created per clap: `clone()` shares the template's filter
+ * array by reference, so a shared node would tie every clap in the air to one cutoff.
+ */
+const modulateClap = (clap: ThreeAudio, distance: number): void => {
+	const nearness = Math.max(0, 1 - distance / THUNDER_RANGE);
+	clap.setPlaybackRate((0.86 + 0.22 * nearness) * (0.96 + Math.random() * 0.08));
+	const filter = clap.context.createBiquadFilter();
+	filter.type = 'lowpass';
+	filter.frequency.value = 400 * 40 ** (nearness * nearness) * (0.7 + Math.random() * 0.7);
+	clap.setFilters([filter]);
 };
 
 export const tickWeatherAudio = (delta: number): void => {
@@ -79,24 +108,25 @@ export const tickWeatherAudio = (delta: number): void => {
 
 	// A new strike: schedule its thunder for when the sound would actually arrive.
 	if (flashState.strikeId !== lastStrikeId) {
-		lastStrikeId = flashState.strikeId;
-		const distance = flashState.strikeDistance;
-		if (distance < THUNDER_RANGE && settingsState.audio.sfxEnabled) {
-			pendingThunder.push({
-				atMs: performance.now() + (distance / SPEED_OF_SOUND) * 1000,
-				// Inverse falloff rather than inverse-square: thunder carries far better
-				// than the point-source law suggests, and squared attenuation makes
-				// anything past a few hundred metres inaudible.
-				volume: Math.max(0.08, 1 - distance / THUNDER_RANGE)
-			});
-		}
+	lastStrikeId = flashState.strikeId;
+	const distance = flashState.strikeDistance;
+	if (distance < THUNDER_RANGE && settingsState.audio.sfxEnabled) {
+		pendingThunder.push({
+		atMs: performance.now() + (distance / SPEED_OF_SOUND) * 1000,
+		// Inverse falloff rather than inverse-square: thunder carries far better
+		// than the point-source law suggests, and squared attenuation makes
+		// anything past a few hundred metres inaudible.
+		volume: Math.max(0.08, 1 - distance / THUNDER_RANGE),
+		distance
+	});
+}
 	}
 
 	if (pendingThunder.length > 0) {
 		const now = performance.now();
 		for (let i = pendingThunder.length - 1; i >= 0; i--) {
 			if (pendingThunder[i].atMs > now) continue;
-			const { volume } = pendingThunder[i];
+			const { volume, distance } = pendingThunder[i];
 			pendingThunder.splice(i, 1);
 			// Polyphonic: a storm can easily put a second strike in the air before the
 			// first has finished rolling, and cutting one off to start the next is the
@@ -104,6 +134,7 @@ export const tickWeatherAudio = (delta: number): void => {
 			if (settingsState.audio.sfxEnabled && thunderAudio?.buffer) {
 				const clone = thunderAudio.clone() as ThreeAudio;
 				clone.setVolume(volume * settingsState.audio.sfxVolume);
+				modulateClap(clone, distance);
 				clone.play();
 			}
 		}
