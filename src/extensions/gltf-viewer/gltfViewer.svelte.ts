@@ -83,11 +83,22 @@ export const gltfViewerActions = {
 	setModelClips(id: string, clips: string[]) {
 		const m = find(id);
 		if (!m) return;
-		m.animationClips = clips;
+		// GLTF files can carry duplicate clip names (Blender NLA exports do it readily).
+		// The panel keys its `each` by clip name -- Svelte throws on duplicate keys -- and
+		// `useGltfAnimations`' actions are name-keyed too, so a duplicate was never
+		// addressable anyway. Dedupe, preserving first-seen order.
+		const unique = [...new Set(clips)];
+		if (unique.length < clips.length) {
+			logGltf.warn(
+				`Ignoring ${clips.length - unique.length} duplicate clip name(s) in`,
+				m.name
+			);
+		}
+		m.animationClips = unique;
 		logGltf.info(
 			'Clips discovered for',
 			m.name + ':',
-			clips.length > 0 ? clips.join(', ') : '(none)'
+			unique.length > 0 ? unique.join(', ') : '(none)'
 		);
 	},
 

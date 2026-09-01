@@ -24,6 +24,7 @@ Dev-only (`VITE_GAME_ENGINE=true`).
 - `loadFromPath(path)` for known models in `public/`.
 - `removeModel(id)` revokes Blob URL if applicable.
 - `GltfViewerInstance` uses `useGltf` + `useGltfAnimations` (each instance has its own mixer).
+- Clip names are deduped in `setModelClips` (first-seen order, warn on drop): GLTFs can carry duplicate clip names (Blender NLA exports do it readily), which would crash the panel's name-keyed `each` with `each_key_duplicate` — and the actions map is name-keyed anyway, so duplicates were never addressable.
 - Compression support: every load passes `dracoLoader` + `meshoptDecoder` + `ktx2Loader` to `useGltf`. DRACO/KTX2 decoders are fetched on demand from jsdelivr pinned to the installed three version (`three@0.<REVISION>/examples/jsm/libs/…`) — needs network on first compressed load; Meshopt is bundled in three. Uncompressed models never fetch anything.
 - Animation crossfade: enabling a clip → `fadeIn(crossfadeDuration)`, disabling → `fadeOut(...)`. `0` = hard cuts.
 - `AutoColliders` from `@threlte/rapier` when `colliderEnabled` is true.
