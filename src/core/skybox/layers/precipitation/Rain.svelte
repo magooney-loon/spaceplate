@@ -48,17 +48,16 @@
 	// ── A SPLASH BELONGS TO A PLACE, NOT TO A DROP ────────────────────────────────────
 	//
 	// The ring and the burst used to be drawn at the drop's CURRENT position, which still
-	// contains `fall * uWindSlant` -- and `fall` keeps accumulating after the drop has
-	// landed. So every splash slid downwind for its whole life: at storm wind the drift is
+	// contains the accumulated wind travel -- and that keeps accumulating after the drop
+	// has landed. So every splash slid downwind for its whole life: at storm wind the drift is
 	// ~7 world units per second against a ring radius of 0.22, meaning a ring travelled
 	// upward of thirty times its own radius while it expanded. Even the boot default (wind
 	// 0.1) moved it more than a radius. Worse, the height sample moved with it, so a ring
 	// could walk off the surface it had supposedly landed on.
 	//
 	// The fix is closed-form, like everything else here. `fallSinceImpact` is exactly
-	// `(uImpact - u) * boxH`, so the fall distance AT the moment of impact is just
-	// `fall - that`, and feeding it back through the same drift expression gives the world
-	// position where the drop actually hit. The splash layers evaluate their whole solution
+	// `(uImpact - u) * boxH`, and rolling the drift expression back by that much gives the
+	// world position where the drop actually hit. The splash layers evaluate their solution
 	// -- position, height sample, timing -- there rather than at the drop's live position,
 	// so a ring stays on the patch of ground it belongs to. `freezeAtImpact` in `motionOf`
 	// is that switch; the streaks, which really are at their live position, leave it off.
@@ -234,6 +233,27 @@
 	 */
 	const uFallTime = uniform(0);
 	/**
+	 * Accumulated HORIZONTAL travel, the exact counterpart of `uFallTime` -- and it exists
+	 * because the trap described just above was fixed on the fall axis and left standing on
+	 * the wind axis.
+	 *
+	 * The drift used to be `fall * uWindSlant` evaluated live. `fall` is unbounded (it is
+	 * `uFallTime * aSpeed`), so multiplying it by a uniform that MOVES is `elapsed x
+	 * slant-change` -- the same §15.7 teleport, on the other axis. It never showed as a
+	 * teleport because `uWindSlant` only ever changes during a weather blend, and a blend
+	 * changes it smoothly; what it produced instead was a continuous sideways SWEEP of the
+	 * whole drop field for as long as the blend ran, at a speed proportional to how long
+	 * the session had been going. Ten minutes in, `fall` is order 6000 and a wind blend of
+	 * 0.5 slant drags the field ~150 units a second across a 35-unit box -- the rain reads
+	 * as suddenly racing along with the clouds, then settling the instant the blend ends.
+	 *
+	 * Accumulating the travel against the same fall step makes a slant change bend the path
+	 * from here on and leave every drop where it is, exactly as `uFallTime` does for speed
+	 * and `Snow`'s `uWindDrift` does for its own drift. In steady wind this is identical to
+	 * the old expression (`slant * uFallTime`), so the look is unchanged.
+	 */
+	const uWindTravel = uniform(new THREE.Vector2());
+	/**
 	 * Splash brightness from the light hints, as Snow does for its flakes. Water is a
 	 * reflector, so a ring at midnight must not glow at its noon brightness.
 	 */
@@ -251,9 +271,9 @@
 
 	/**
 	 * Horizontal travel per unit of fall at full wind, along whatever bearing the weather
-	 * is blowing. Because the drift is multiplied by `fall` -- itself proportional to the
-	 * drop's own speed -- the SLANT this produces is identical for every drop regardless of
-	 * how fast it falls. That is what a curtain of wind-driven rain looks like: one shared
+	 * is blowing. Because the accumulated travel is scaled by the drop's own `aSpeed`, just
+	 * as its fall is, the SLANT this produces is identical for every drop regardless of how
+	 * fast it falls. That is what a curtain of wind-driven rain looks like: one shared
 	 * direction, many speeds.
 	 *
 	 * The streak geometry derives its direction from the same vector, so a drop travels
@@ -381,16 +401,34 @@
 			const u = fract(aCenter.y.add(halfHeight).sub(fall).sub(anchor.y).div(boxHeight));
 			const localY = u.mul(boxHeight).sub(halfHeight);
 
-			// THE HORIZONTAL POSITION AS A FUNCTION OF FALL DISTANCE, rather than of the
-			// current fall alone. Same expression as before, just given a name -- which is
-			// what lets the splash layers re-evaluate it at the fall distance the drop had
-			// when it landed instead of the one it has now.
-			const driftX = (f: THREE.Node<'float'>) =>
-				fract(aCenter.x.add(halfWidth).add(f.mul(uWindSlant.x)).sub(anchor.x).div(boxWidth))
+			// THE HORIZONTAL POSITION, TAKEN A GIVEN FALL DISTANCE AGO. `back` is how far
+			// back along the drop's own fall to evaluate: 0 is where it is now, and the
+			// splash layers pass the distance it has fallen since it landed.
+			//
+			// The travel itself comes from the accumulator, NOT from `fall * uWindSlant` --
+			// see `uWindTravel` for what that cost. The rollback still uses the live slant,
+			// which is exact in steady wind and, mid-blend, is a fraction of a second of
+			// drift evaluated at a slant a fraction of a second stale.
+			const driftX = (back: THREE.Node<'float'>) =>
+				fract(
+					aCenter.x
+						.add(halfWidth)
+						.add(uWindTravel.x.mul(aSpeed))
+						.sub(back.mul(uWindSlant.x))
+						.sub(anchor.x)
+						.div(boxWidth)
+				)
 					.mul(boxWidth)
 					.sub(halfWidth);
-			const driftZ = (f: THREE.Node<'float'>) =>
-				fract(aCenter.z.add(halfDepth).add(f.mul(uWindSlant.y)).sub(anchor.z).div(boxDepth))
+			const driftZ = (back: THREE.Node<'float'>) =>
+				fract(
+					aCenter.z
+						.add(halfDepth)
+						.add(uWindTravel.y.mul(aSpeed))
+						.sub(back.mul(uWindSlant.y))
+						.sub(anchor.z)
+						.div(boxDepth)
+				)
 					.mul(boxDepth)
 					.sub(halfDepth);
 
@@ -414,8 +452,8 @@
 				return { surfaceLocalY, uImpact, valid };
 			};
 
-			const xLive = driftX(fall);
-			const zLive = driftZ(fall);
+			const xLive = driftX(float(0));
+			const zLive = driftZ(float(0));
 			const live = surfaceAt(xLive, zLive);
 
 			let x = xLive;
@@ -423,10 +461,10 @@
 			let surface = live;
 
 			if (freezeAtImpact) {
-				// `u` falls by exactly `1/boxH` per unit of fall, so the fall distance the
-				// drop had covered at impact is `fall - (uImpact - u) * boxH`. One closed
-				// expression, no clock and no stored state -- the same determinism the
-				// collision itself is built on.
+				// `u` falls by exactly `1/boxH` per unit of fall, so the distance the drop
+				// has fallen SINCE impact is `(uImpact - u) * boxH`. One closed expression,
+				// no clock and no stored state -- the same determinism the collision itself
+				// is built on. That rollback is what `driftX`/`driftZ` take.
 				//
 				// GUARDED BY `valid`, which is not optional. Where the live column has no
 				// height data `uImpact` is the sentinel -1, and feeding that through would
@@ -435,9 +473,13 @@
 				// nowhere. Holding at the live fall in that case leaves the second sample on
 				// the same empty column, so `below` stays 0 and nothing draws -- the module's
 				// standing fail-safe (heightField.ts), not a new failure mode.
-				const fallAtImpact = mix(fall, fall.sub(live.uImpact.sub(u).mul(boxHeight)), live.valid);
-				x = driftX(fallAtImpact);
-				z = driftZ(fallAtImpact);
+				const fallSinceImpact = mix(
+					float(0),
+					live.uImpact.sub(u).mul(boxHeight),
+					live.valid
+				);
+				x = driftX(fallSinceImpact);
+				z = driftZ(fallSinceImpact);
 				// Re-sampled at the impact column, so a ring's HEIGHT belongs to the place it
 				// landed too. Without this the ring holds still horizontally and then slides
 				// vertically instead, which is worse.
@@ -796,7 +838,13 @@
 			uGustTime.value += delta * (GUST_RATE + wind * GUST_RATE_WIND);
 
 			// Fall distance accumulates; the rate is what intensity changes. See uFallTime.
-			uFallTime.value += delta * (0.6 + 0.4 * rain);
+			const fallStep = delta * (0.6 + 0.4 * rain);
+			uFallTime.value += fallStep;
+			// The wind's horizontal travel accumulates against THE SAME STEP, so drift stays
+			// a fixed ratio of fall (which is what a slant is) while remaining immune to the
+			// slant moving under it. See uWindTravel.
+			uWindTravel.value.x += uWindSlant.value.x * fallStep;
+			uWindTravel.value.y += uWindSlant.value.y * fallStep;
 
 			// Splashes are water catching the light, so they track the key and fill the
 			// same way Snow's flakes do -- bright in daylight, faint under a night deck.

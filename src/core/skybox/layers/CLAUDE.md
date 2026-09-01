@@ -108,6 +108,15 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 - Rain/Snow animate entirely in the vertex node (a `fract()` sawtooth through a
   camera-anchored box, zero CPU per particle) — that design is why the height field
   exists as a texture rather than geometry queries.
+- **Every axis of that motion is a self-accumulated distance, never `elapsed × rate`.**
+  Same rule as CloudDeck's scroll (§15.7): an unbounded elapsed term multiplied by a
+  uniform that moves displaces the whole field by `elapsed × Δrate`. Rain's fall
+  (`uFallTime`) and horizontal drift (`uWindTravel`), and Snow's `uFallTime` /
+  `uWindDrift`, all accumulate. The wind axis was the one that got missed: `fall ×
+  uWindSlant` swept the entire drop field sideways for the duration of any weather
+  blend, faster the longer the session had run, then stopped dead when the blend
+  finished. A drift that must be re-evaluated at a past time (Rain's splashes) takes a
+  **rollback distance**, not an absolute one.
 - Amounts come from `rainAmount`/`snowAmount` (the `precipitationType` split; sleet
   renders both). Snow's flakes dim with the light hints, so a night snowfall reads
   faint and cool. Lens layers: `RainLens` wets/dries with hysteresis (quick to wet,

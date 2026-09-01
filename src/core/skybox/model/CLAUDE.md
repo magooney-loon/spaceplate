@@ -68,6 +68,12 @@ intensities (0 = none); two are **positions**:
 - `precipitationType` — 0 = snow, 1 = rain, the band between is sleet. Authored to 1
   in every dry weather on purpose: a raw partial leaves unmentioned channels where they
   are, so `setWeather({ precipitation: 0.8 })` gives rain unless you say otherwise.
+  **It only blends when precipitation is non-zero at BOTH ends of the transition** —
+  otherwise the change is applied as a snap at whichever end is dry, where crossing the
+  sleet band cannot be seen. Blending it regardless made `snow → clear` peak at
+  `rainAmount` 0.26 under a heavy deck: the snow turned into a rain shower halfway
+  through clearing. `rain ↔ snow` is wet at both ends and still crosses the band, which
+  is what the band is for.
 - `windDirection` — the wind's compass bearing, one full turn over `[0,1)`. Wraps: the
   mixer blends it along the **shorter arc** (crossing north, not the long way south).
   `windAxisX/Z` hand the vector to renderers; bearing 0 = +Z (the pre-channel default

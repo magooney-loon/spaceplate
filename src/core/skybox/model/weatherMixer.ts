@@ -44,6 +44,12 @@ export const CHANNEL_NAMES: ChannelName[] = [
 const WRAPPED_CHANNELS = new Set<ChannelName>(['windDirection']);
 
 /**
+ * Precipitation at or below which nothing is falling, so `precipitationType` is not
+ * observable and may be changed for free. See the type's handling in `set`.
+ */
+const DRY = 1e-3;
+
+/**
  * A named weather is a **target vector**, not a script (§5.3).
  *
  * `stagger` is the fraction of the blend duration a channel waits before it starts
@@ -254,6 +260,15 @@ export const createWeatherMixer = (channels: WeatherChannels): WeatherMixer => {
 			const stagger = typeof target === 'string' ? WEATHERS[target]?.stagger : undefined;
 			const values = resolve(target);
 
+			// IS ANYTHING FALLING AT EITHER END? `precipitationType` is a POSITION, and the
+			// only one of the eight whose journey is visible independently of its
+			// destination: sweeping it from rain to snow crosses the sleet band, and sleet
+			// is the right thing to see only while something is actually falling through it.
+			// A raw partial that omits `precipitation` leaves it where it is, so the target
+			// reading falls back to the current value rather than to zero.
+			const wetNow = clamp01(channels.precipitation) > DRY;
+			const wetAfter = clamp01(values.precipitation ?? channels.precipitation) > DRY;
+
 			blends.clear();
 			for (const channel of CHANNEL_NAMES) {
 				const to = values[channel];
@@ -265,6 +280,45 @@ export const createWeatherMixer = (channels: WeatherChannels): WeatherMixer => {
 					// A snap. Land it now rather than queueing a zero-length blend, so
 					// callers reading `channels` on the same tick see the final value.
 					channels[channel] = target;
+					continue;
+				}
+
+				// THE TYPE ONLY BLENDS WHEN BOTH ENDS ARE WET. Otherwise the change is
+				// unobservable at one end of the blend, and it is applied THERE instead --
+				// where nothing is falling and nothing can be seen crossing the sleet band.
+				//
+				// Blending it regardless is what made every dry-to-snow transition rain
+				// first. `clear` authors the type at 1 and `snow` at 0 (both deliberately --
+				// see the note on WEATHERS), and `snow` staggers its `precipitation` to 0.4,
+				// so over a 20 s blend the type began sweeping at t=0 while the first flake
+				// did not fall until t=8 s -- by which point the type had reached only ~0.65,
+				// the very top of the sleet band. The snowfall opened as 99% RAIN, sleeted
+				// for a few seconds, and became snow with a third of the blend left. In
+				// reverse, departing snow turned to rain as it thinned out.
+				//
+				// `rain` <-> `snow` is wet at both ends and still blends normally: that
+				// transition genuinely passes through sleet, which is the whole point of
+				// having a band.
+				if (channel === 'precipitationType' && !(wetNow && wetAfter)) {
+					if (!wetNow) {
+						// Nothing is falling yet, so the type is free right now. Setting it
+						// here means the first flake of the coming fall is already the right
+						// kind, instead of arriving as rain and converting in view.
+						channels[channel] = target;
+					} else {
+						// Something is falling now and nothing will be by the end, so the
+						// type is free THEN. A delay of the full duration against the
+						// one-millisecond floor below lands it on the frame the fade
+						// completes -- and `precipitation` is earlier in CHANNEL_NAMES, so
+						// it has already reached zero when this fires.
+						blends.set(channel, {
+							from: channels[channel],
+							to: target,
+							delay: over,
+							duration: 1,
+							elapsed: 0
+						});
+					}
 					continue;
 				}
 
