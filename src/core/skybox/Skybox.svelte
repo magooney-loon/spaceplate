@@ -9,6 +9,7 @@
 	import Stars from './Stars.svelte';
 	import Meteors from './Meteors.svelte';
 	import Rain from './Rain.svelte';
+	import RainLens from './RainLens.svelte';
 	import Snow from './Snow.svelte';
 	import CloudDeck from './CloudDeck.svelte';
 	import Lightning from './Lightning.svelte';
@@ -142,6 +143,12 @@
 		<CloudDeck radius={1000} />
 		<Rain />
 		<Snow />
+		<!-- Water on the lens. Mounted LAST in the group and drawn at renderOrder 10, which
+		     is load-bearing rather than tidy: it reads back the framebuffer, so every layer
+		     whose output it is supposed to refract has to have drawn already. Being inside
+		     this group also means HeightField hides it for the collision pass, which is
+		     what it wants -- a screen-space quad is not a surface rain can land on. -->
+		<RainLens />
 		<!-- Scene fog. Mounted only in procedural mode because its colour comes from the
 		     day curve, which is the procedural sky's authored look -- an HDR environment
 		     brings its own horizon and would fight it. Renders nothing itself; it drives
