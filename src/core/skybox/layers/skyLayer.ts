@@ -30,6 +30,20 @@ import {
 /** Sky layers are engine furniture: never selectable, never shown in the Studio tree. */
 export const SKY_LAYER_USERDATA = { hideInTree: true, selectable: false };
 
+/**
+ * The layer the screen-space lens overlays (RainLens, SnowLens) render on.
+ *
+ * LOAD-BEARING, not organisation. Those quads are written straight to clip space and
+ * read the finished framebuffer (`viewportMipTexture`) — they are only meaningful for
+ * the camera the player looks through. Any OTHER camera rendering the scene (the mirror
+ * sphere's and corner balls' cube-capture faces, the floor reflector's virtual camera,
+ * Studio's selection pre-render, the HeightField pass) would draw them as a fullscreen
+ * layer of re-sampled, wrong-viewport garbage that reads as blown-out bloom. Lens meshes
+ * are moved onto this layer and the ACTIVE camera (`camera.subscribe`) enables it, so
+ * every internal camera — which all use the default layer-0 mask — stops seeing them.
+ */
+export const LENS_LAYER = 1;
+
 // ── Geometry ───────────────────────────────────────────────────────────────────
 
 /** Centred billboard: the quad spans -1..1 on both axes around the particle centre. */

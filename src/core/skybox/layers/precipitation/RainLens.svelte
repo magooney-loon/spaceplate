@@ -54,7 +54,7 @@
 		viewportMipTexture
 	} from 'three/tsl';
 	import { clamp01, descriptor, rainAmount } from '../../model';
-	import { instancedQuad, skyLayerMaterial, SKY_LAYER_USERDATA } from '../skyLayer';
+	import { instancedQuad, skyLayerMaterial, SKY_LAYER_USERDATA, LENS_LAYER } from '../skyLayer';
 
 	interface Props {
 		/**
@@ -388,6 +388,19 @@
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
+
+	$effect(() => {
+		if (mesh) mesh.layers.set(LENS_LAYER);
+	});
+
+	// The active camera — game or Studio editor — is the only one allowed to see the
+	// lens (see LENS_LAYER in skyLayer.ts). Subscribed rather than read once so swapping
+	// cameras carries the layer over; the subscription also fires immediately with the
+	// current camera.
+	$effect(() => {
+		const unsubscribe = camera.subscribe((cam) => cam.layers.enable(LENS_LAYER));
+		return unsubscribe;
+	});
 
 	$effect(() => {
 		return () => {

@@ -53,7 +53,7 @@
 		viewportMipTexture
 	} from 'three/tsl';
 	import { clamp01, descriptor, snowAmount } from '../../model';
-	import { instancedQuad, skyLayerMaterial, SKY_LAYER_USERDATA } from '../skyLayer';
+	import { instancedQuad, skyLayerMaterial, SKY_LAYER_USERDATA, LENS_LAYER } from '../skyLayer';
 
 	interface Props {
 		/**
@@ -374,6 +374,17 @@
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
+
+	$effect(() => {
+		if (mesh) mesh.layers.set(LENS_LAYER);
+	});
+
+	// Same as RainLens: only the active camera may see a screen-space lens
+	// (see LENS_LAYER in skyLayer.ts).
+	$effect(() => {
+		const unsubscribe = camera.subscribe((cam) => cam.layers.enable(LENS_LAYER));
+		return unsubscribe;
+	});
 
 	$effect(() => {
 		return () => {
