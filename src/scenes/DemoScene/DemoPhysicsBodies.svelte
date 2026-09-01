@@ -5,6 +5,7 @@
 	import { RigidBody, Collider, usePhysicsTask, useRapier } from '@threlte/rapier';
 	import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';
 	import * as THREE from 'three';
+	import { CubeCamera, CubeRenderTarget } from 'three/webgpu';
 	import { FlakesTexture } from 'three/addons/textures/FlakesTexture.js';
 	import { logPhysics } from '$extensions/logger';
 	import { useSound } from '$extensions/sound/useSound';
@@ -12,7 +13,7 @@
 
 	const { state: soundState } = useSound();
 	const { world } = useRapier();
-	const { scene, invalidate } = useThrelte();
+	const { scene, renderer, invalidate, autoRenderTask } = useThrelte();
 	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 	const mountId = crypto.randomUUID().slice(0, 8);
 
@@ -166,18 +167,32 @@
 	const ballGeometry = new THREE.SphereGeometry(0.8, 64, 32);
 
 	// Orbiting mirror sphere — three's webgpu_materials_basic example (MeshBasicMaterial
-	// + envMap), adapted like the corner balls: the envMap is the baked procedural sky,
-	// not pisa.png. Node materials only fall back to scene.environment for PBR materials
-	// (NodeMaterial.setupEnvironment), so the bake is assigned explicitly once it exists.
-	// The bake's render target persists across re-bakes, so one assignment is stable.
+	// + envMap), except the envMap is a LIVE cube capture: a small CubeCamera rides at
+	// the sphere's position and re-renders six faces every frame, so the reflection
+	// shows the floor (itself a blurred mirror — see DemoScene), the corner balls,
+	// spawned bodies and the sun disc (which Sky.svelte's env bake hides). The capture
+	// runs AFTER the main render on purpose: the floor's reflector updates its render
+	// target per renderer.render() call for the active camera, so rendering the main
+	// view first keeps the floor's reflection correct for the player's camera — the
+	// sphere then samples a one-frame-old map, which a perpetually moving mirror never
+	// shows. 128px/HalfFloat, sphere hidden during capture to avoid a fully
+	// self-occluded frame. Same CubeCamera-in-a-task pattern as Sky.svelte's bake.
 	const mirrorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-	useTask(() => {
-		if (!mirrorMaterial.envMap && scene.environment) {
-			mirrorMaterial.envMap = scene.environment;
-			mirrorMaterial.needsUpdate = true;
-			invalidate();
-		}
-	});
+	const mirrorCapture = new CubeRenderTarget(128, { type: THREE.HalfFloatType });
+	const mirrorCamera = new CubeCamera(0.1, 50, mirrorCapture as never);
+	mirrorMaterial.envMap = mirrorCapture.texture;
+	let mirrorMesh = $state.raw<THREE.Mesh>();
+	const mirrorPos = new THREE.Vector3();
+	useTask(
+		() => {
+			if (!mirrorMesh) return;
+			mirrorMesh.visible = false;
+			mirrorCamera.position.copy(mirrorMesh.getWorldPosition(mirrorPos));
+			mirrorCamera.update(renderer, scene);
+			mirrorMesh.visible = true;
+		},
+		{ after: autoRenderTask, autoInvalidate: false }
+	);
 
 	// Four balls on the floor's corners, inset so they sit fully on it
 	const EDGE_BALLS: { position: [number, number, number]; material: THREE.MeshPhysicalMaterial }[] =
@@ -187,7 +202,10 @@
 			{ position: [-7, 0.8, 7], material: golf },
 			{ position: [7, 0.8, 7], material: clearcoatNormal }
 		];
-	const ballMeshes: (THREE.Mesh | undefined)[] = [];
+	// $state.raw silences Svelte's binding_property_non_reactive warning on
+	// bind:ref={ballMeshes[i]}. Raw is what we want regardless: the physics task
+	// only ever reads the array, nothing subscribes to it.
+	let ballMeshes = $state.raw<(THREE.Mesh | undefined)[]>([]);
 	let ballYaw = 0;
 
 	const snapshotWorld = () => {
@@ -230,6 +248,7 @@
 		for (const ball of EDGE_BALLS) ball.material.dispose();
 		ballGeometry.dispose();
 		mirrorMaterial.dispose();
+		mirrorCapture.dispose();
 		flakes.dispose();
 		carbonMap.dispose();
 		carbonNormal.dispose();
@@ -310,7 +329,7 @@
 		}}
 	>
 		<Collider shape="ball" args={[0.5]} />
-		<T.Mesh castShadow material={mirrorMaterial}>
+		<T.Mesh castShadow bind:ref={mirrorMesh} material={mirrorMaterial}>
 			<T.SphereGeometry args={[0.5, 32, 32]} />
 
 			<PositionalAudio

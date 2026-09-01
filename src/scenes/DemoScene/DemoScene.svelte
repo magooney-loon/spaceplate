@@ -1,14 +1,39 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { T } from '@threlte/core/webgpu';
+	import { T, useThrelte } from '@threlte/core/webgpu';
 	import { interactivity } from '@threlte/extras';
 	import { RigidBody, Collider, Debug, Attractor, useRapier } from '@threlte/rapier';
+	import * as THREE from 'three/webgpu';
+	import { reflector } from 'three/tsl';
 	import { physicsState } from '$extensions/physics';
 	import PhysicsController from '$extensions/physics/PhysicsController.svelte';
 	import { logPhysics } from '$extensions/logger';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
 
 	interactivity();
+
+	const { scene } = useThrelte();
+
+	// Mirror floor (plain gray + reflection). The reflector's target is
+	// transform-only (rotated flat, it defines the mirror plane at y = 0 under the
+	// floor plate). bounces is left at its DEFAULT (true) ON PURPOSE: that sets the
+	// reflector's update type to per-render-pass, so every camera that renders the
+	// floor (Studio's PiP game-cam and selection pre-renders, the editor camera,
+	// the mirror sphere's cube faces) re-renders the reflection RT for itself. With
+	// bounces: false it refreshed once per frame for whichever camera drew first,
+	// and under the Studio editor camera the reflection slid with the camera
+	// instead of staying anchored to the scene. The reflection rides the emissive
+	// slot so the gray base keeps the sky system's lighting and shadows; clamped
+	// because the reflector RT holds RAW HDR dome radiance (render-target passes
+	// skip tone mapping) and the sunset sky peaks well past 1.
+	const reflection = reflector({ resolutionScale: 0.5 });
+	reflection.target.rotateX(-Math.PI / 2);
+	reflection.target.userData = { selectable: false, hideInTree: true };
+	scene.add(reflection.target);
+
+	const floorMaterial = new THREE.MeshStandardNodeMaterial();
+	floorMaterial.color.set('gray');
+	floorMaterial.emissiveNode = reflection.rgb.clamp(0, 1).mul(0.25);
 
 	const sceneMountId = crypto.randomUUID().slice(0, 8);
 	const { world, rigidBodyObjects, colliderObjects } = useRapier();
@@ -40,6 +65,8 @@
 
 	onDestroy(() => {
 		logPhysics.info(`DemoScene destroy [${sceneMountId}]`, snapshotWorld());
+		reflection.target.removeFromParent();
+		floorMaterial.dispose();
 	});
 </script>
 
@@ -62,9 +89,13 @@
 
 <T.Group userData={{ selectable: false, hideInTree: true }}>
 	<Collider shape="cuboid" args={[10, 0, 10]} />
-	<T.Mesh position={[0, 0, 0]} receiveShadow userData={{ selectable: false, hideInTree: true }}>
+	<T.Mesh
+		position={[0, 0, 0]}
+		receiveShadow
+		material={floorMaterial}
+		userData={{ selectable: false, hideInTree: true }}
+	>
 		<T.BoxGeometry args={[20, 0.001, 20]} />
-		<T.MeshStandardMaterial color="gray" />
 	</T.Mesh>
 </T.Group>
 
