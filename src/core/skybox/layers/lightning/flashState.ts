@@ -15,6 +15,9 @@
 // is the seam to fold in: the scheduler moves into the model and publishes here or into
 // the descriptor proper, and the renderers keep reading unchanged.
 
+/** Which kind of strike is live. A sheet is a cell backlighting itself; a bolt is a channel to the ground. */
+export type StrikeKind = 'bolt' | 'sheet';
+
 export type FlashState = {
 	/**
 	 * Sky/scene flash envelope, ~0..0.55. Already attack-softened and amplitude-capped at
@@ -44,6 +47,14 @@ export type FlashState = {
 	 */
 	strikeDistance: number;
 	/**
+	 * Kind of the strike that incremented `strikeId`. Exists for the AUDIO, like
+	 * `strikeDistance`: a sheet is a cell backlighting itself somewhere back in the deck,
+	 * with no channel to the ground, and a clap for every one of those is what made
+	 * thunder read as too frequent. Audio decides from this which events may thunder.
+	 * The renderers do not use it.
+	 */
+	strikeKind: StrikeKind;
+	/**
 	 * Dev/testing hook: force one BOLT strike on the next frame. Written by callers
 	 * (Studio's Strike button), consumed and cleared by Lightning's scheduler -- one
 	 * writer per field, like everything here. Fires even at a dead channel, because
@@ -57,6 +68,7 @@ export const flashState: FlashState = {
 	direction: { x: 0, y: 0.6, z: 0.8 },
 	strikeId: 0,
 	strikeDistance: 1200,
+	strikeKind: 'bolt',
 	strikeRequest: false
 };
 

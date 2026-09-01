@@ -35,22 +35,31 @@ const SNOW_SHARE = 0.18;
 const SPEED_OF_SOUND = 343;
 /** Distance at which a strike is inaudible. Beyond this no thunder is scheduled. */
 const THUNDER_RANGE = 4200;
+/**
+ * Share of bolt strikes that voice thunder. The strike scheduler is paced for the EYE
+ * (photosafety-bounded: a bolt every couple of seconds at a full channel), and a clap
+ * at that rate stops reading as weather -- dropping some restores the gap. Uniform in
+ * distance on purpose: nearness already decides how a clap sounds, not whether the
+ * storm owes you one.
+ */
+const BOLT_THUNDER_CHANCE = 0.75;
 
 let lastStrikeId = flashState.strikeId;
 /** Thunder claps waiting on their travel time. Small and short-lived; rarely over 3. */
 const pendingThunder: { atMs: number; volume: number; distance: number }[] = [];
 
 let rainAudio: ThreeAudio | undefined;
-let thunderAudio: ThreeAudio | undefined;
+/** The mounted thunder takes, drawn from per clap. Registered by GlobalAudio. */
+const thunderTakes: ThreeAudio[] = [];
 
 /** Hand the mounted, looping rain bed to this module. Called once from GlobalAudio. */
 export const attachRainAudio = (audio: ThreeAudio): void => {
 	rainAudio = audio;
 };
 
-/** Hand the mounted thunder one-shot to this module. Called once from GlobalAudio. */
+/** Hand a mounted thunder one-shot take to this module. Called once per take from GlobalAudio. */
 export const attachThunderAudio = (audio: ThreeAudio): void => {
-	thunderAudio = audio;
+	thunderTakes.push(audio);
 };
 
 /**
@@ -107,19 +116,27 @@ export const tickWeatherAudio = (delta: number): void => {
 	}
 
 	// A new strike: schedule its thunder for when the sound would actually arrive.
+	// Bolts only, and not all of them: a sheet is a cell backlighting itself with no
+	// channel to the ground, and claps for every event -- sheets, bolts, re-strikes --
+	// were what made the storm read as a sound effect on repeat.
 	if (flashState.strikeId !== lastStrikeId) {
-	lastStrikeId = flashState.strikeId;
-	const distance = flashState.strikeDistance;
-	if (distance < THUNDER_RANGE && settingsState.audio.sfxEnabled) {
-		pendingThunder.push({
-		atMs: performance.now() + (distance / SPEED_OF_SOUND) * 1000,
-		// Inverse falloff rather than inverse-square: thunder carries far better
-		// than the point-source law suggests, and squared attenuation makes
-		// anything past a few hundred metres inaudible.
-		volume: Math.max(0.08, 1 - distance / THUNDER_RANGE),
-		distance
-	});
-}
+		lastStrikeId = flashState.strikeId;
+		const distance = flashState.strikeDistance;
+		if (
+			flashState.strikeKind === 'bolt' &&
+			Math.random() < BOLT_THUNDER_CHANCE &&
+			distance < THUNDER_RANGE &&
+			settingsState.audio.sfxEnabled
+		) {
+			pendingThunder.push({
+				atMs: performance.now() + (distance / SPEED_OF_SOUND) * 1000,
+				// Inverse falloff rather than inverse-square: thunder carries far better
+				// than the point-source law suggests, and squared attenuation makes
+				// anything past a few hundred metres inaudible.
+				volume: Math.max(0.08, 1 - distance / THUNDER_RANGE),
+				distance
+			});
+		}
 	}
 
 	if (pendingThunder.length > 0) {
@@ -131,8 +148,13 @@ export const tickWeatherAudio = (delta: number): void => {
 			// Polyphonic: a storm can easily put a second strike in the air before the
 			// first has finished rolling, and cutting one off to start the next is the
 			// one thing that would make it read as a sound effect rather than weather.
-			if (settingsState.audio.sfxEnabled && thunderAudio?.buffer) {
-				const clone = thunderAudio.clone() as ThreeAudio;
+			// The take is drawn uniformly at random: the takes are varieties of weather,
+			// not near/far markers -- distance is already spoken for by the volume, the
+			// rate and the filter, and double-encoding it would make the set predictable.
+			// A take still loading is simply out of the draw; a clap never waits on a fetch.
+			const loaded = thunderTakes.filter((t) => t.buffer);
+			if (settingsState.audio.sfxEnabled && loaded.length > 0) {
+				const clone = loaded[Math.floor(Math.random() * loaded.length)].clone() as ThreeAudio;
 				clone.setVolume(volume * settingsState.audio.sfxVolume);
 				modulateClap(clone, distance);
 				clone.play();

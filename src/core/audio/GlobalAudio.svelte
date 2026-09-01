@@ -15,8 +15,17 @@
 	const AMBIENCE_URL = `${BASE_URL}sounds/ambience.ogg`;
 	const CLICK_URL = `${BASE_URL}sounds/click.mp3`;
 	const SWOOSH_URL = `${BASE_URL}sounds/swoosh.mp3`;
-	const RAIN_URL = `${BASE_URL}sounds/skybox/rain.mp3`;
-	const THUNDER_URL = `${BASE_URL}sounds/skybox/thunder.wav`;
+	// Stereo 64 kbps Opus: the always-on bed keeps its width, at just over half the mp3.
+	const RAIN_URL = `${BASE_URL}sounds/skybox/rain.opus`;
+	// The thunder takes, one per recording. Adding a take is one path here -- the picker
+	// in weatherAudio.ts scales by itself. Kept as mono 48 kbps Opus: the claps are
+	// low-frequency rumble through a non-positional bed, and the whole set is ~220 KB.
+	const THUNDER_URLS = [
+		`${BASE_URL}sounds/skybox/thunder-1.opus`,
+		`${BASE_URL}sounds/skybox/thunder-2.opus`,
+		`${BASE_URL}sounds/skybox/thunder-3.opus`,
+		`${BASE_URL}sounds/skybox/thunder-4.opus`
+	];
 
 	let ostAudio = $state.raw<ThreeAudio>();
 	let ambienceAudio = $state.raw<ThreeAudio>();
@@ -127,10 +136,10 @@
 	userData={{ hideInTree: true, selectable: false }}
 />
 
-	<!-- Weather. The rain bed loops forever and is faded by volume rather than started and
-	     stopped per shower; thunder is a one-shot, cloned per clap so strikes can overlap.
-	     Both are played by ./weatherAudio.ts (ticked from the task above, never by an
-	     effect — the descriptor is not reactive by design). -->
+<!-- Weather. The rain bed loops forever and is faded by volume rather than started and
+     stopped per shower; thunder is one-shots — the takes above, one drawn at random per
+     clap and cloned so strikes can overlap. All are played by ./weatherAudio.ts (ticked
+     from the task above, never by an effect — the descriptor is not reactive by design). -->
 <Audio
 	src={RAIN_URL}
 	loop
@@ -143,12 +152,14 @@
 	userData={{ hideInTree: true, selectable: false }}
 />
 
-<Audio
-	src={THUNDER_URL}
-	autoplay={false}
-	oncreate={(a: ThreeAudio) => {
-		attachThunderAudio(a);
-		logSound.info('Audio loaded: Thunder');
-	}}
-	userData={{ hideInTree: true, selectable: false }}
-/>
+{#each THUNDER_URLS as url, i (url)}
+	<Audio
+		src={url}
+		autoplay={false}
+		oncreate={(a: ThreeAudio) => {
+			attachThunderAudio(a);
+			logSound.info(`Audio loaded: Thunder take ${i + 1}/${THUNDER_URLS.length}`);
+		}}
+		userData={{ hideInTree: true, selectable: false }}
+	/>
+{/each}

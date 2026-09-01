@@ -95,7 +95,7 @@
 	} from 'three/tsl';
 	import { clamp01, descriptor, lerp, mulberry32 } from '../../model';
 	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from '../skyLayer';
-	import { flashState } from './flashState';
+	import { flashState, type StrikeKind } from './flashState';
 
 	interface Props {
 		/** Horizontal distance of the bolt quad from the active camera. Inside the dome. */
@@ -170,7 +170,6 @@
 	// Plain variables: written and read only by the task, so reactive proxies would just
 	// add cost. One strike is live at a time -- overlapping envelopes from different
 	// azimuths read as a strobe fault.
-	type StrikeKind = 'bolt' | 'sheet';
 	type Pulse = {
 		t0: number;
 		amp: number;
@@ -392,9 +391,7 @@
 			const dist = x.sub(center).abs().toVar();
 			// Tapered toward the ground: a leader thins as it descends. The slope term is
 			// added after the taper so a steep section is still protected from pinching.
-			const coreW = float(0.018)
-				.mul(y.mul(0.32).add(0.7))
-				.add(centerUp.sub(center).abs().mul(5));
+			const coreW = float(0.018).mul(y.mul(0.32).add(0.7)).add(centerUp.sub(center).abs().mul(5));
 
 			// DISJOINT BANDS. Each is the next one out minus the one inside it, so the
 			// centre pixel is pure core and every band can carry its own colour.
@@ -408,7 +405,9 @@
 			// than their neighbours, which is the single most recognisable thing about a
 			// photographed bolt after the branching. Centred on 1 so it redistributes
 			// brightness along the channel rather than adding any.
-			const hot = perlin1Fast(y.mul(9).add(uSeed.mul(2.3))).mul(0.75).add(0.64);
+			const hot = perlin1Fast(y.mul(9).add(uSeed.mul(2.3)))
+				.mul(0.75)
+				.add(0.64);
 
 			const b0 = branchAt(y, x, uBranch0, center);
 			const b1 = branchAt(y, x, uBranch1, center);
@@ -555,8 +554,7 @@
 			durationS,
 			// Sheets keep their own authored share; bolts take theirs from distance, and
 			// only ever downward from the authored peak -- see LIGHT_NEAR.
-			lightScale:
-				kind === 'sheet' ? SHEET_LIGHT_SCALE : lerp(LIGHT_FAR, LIGHT_NEAR, nearness),
+			lightScale: kind === 'sheet' ? SHEET_LIGHT_SCALE : lerp(LIGHT_FAR, LIGHT_NEAR, nearness),
 			boltScale: lerp(SCALE_FAR, SCALE_NEAR, nearness),
 			boltDim: lerp(DIM_FAR, DIM_NEAR, nearness)
 		};
@@ -571,6 +569,7 @@
 		// storm reads as having depth: near cracks, distant rumbles, and the gap between
 		// the flash and the sound telling you which you just got.
 		flashState.strikeDistance = strikeDistance;
+		flashState.strikeKind = kind;
 		flashState.strikeId++;
 
 		// The whole per-strike variety of the bolt is uniforms; no geometry is rebuilt.
@@ -761,7 +760,6 @@
 	intensity={0}
 	userData={SKY_LAYER_USERDATA}
 />
-
 
 <!-- {
   "questions": [
