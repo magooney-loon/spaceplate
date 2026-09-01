@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { T } from '@threlte/core/webgpu';
+	import { T, useThrelte } from '@threlte/core/webgpu';
 	import { useGltf, useGltfAnimations } from '@threlte/extras';
 	import { AutoColliders } from '@threlte/rapier';
 	import { LoopRepeat, LoopOnce } from 'three';
+	import { SkeletonHelper, type Mesh } from 'three/webgpu';
 	import { untrack } from 'svelte';
 	import { gltfViewerActions } from './gltfViewer.svelte';
 	import { logGltf } from '$extensions/logger';
@@ -13,6 +14,7 @@
 	// untrack: URL is intentionally fixed per instance (keyed by model.id in parent {#each})
 	const gltf = useGltf(untrack(() => model.url));
 	const { actions } = useGltfAnimations(gltf);
+	const { scene } = useThrelte();
 
 	// Track which clips were active on the previous effect run so we can diff for fade in/out
 	let prevActive = new Set<string>();
@@ -39,6 +41,40 @@
 				clips.map((c) => c.name)
 			);
 		}
+	});
+
+	// Rig (skeleton) overlay. Parented to the root scene and gated on model.visible —
+	// when the mesh is hidden the GLTF scene detaches from the graph, bones stop
+	// updating and a still-visible helper would freeze at the last pose. Helpers of
+	// bone-less (static) meshes render nothing, so they are skipped entirely.
+	$effect(() => {
+		const gltfScene = $gltf?.scene;
+		if (!gltfScene || !model.showRig || !model.visible) return;
+
+		const helper = new SkeletonHelper(gltfScene);
+		if (helper.bones.length === 0) {
+			helper.dispose();
+			return;
+		}
+		helper.userData = { selectable: false, hideInTree: true };
+		scene.add(helper);
+
+		return () => {
+			helper.removeFromParent();
+			helper.dispose();
+		};
+	});
+
+	// Shadow casting — flips castShadow on every mesh of the loaded scene
+	$effect(() => {
+		const gltfScene = $gltf?.scene;
+		if (!gltfScene) return;
+
+		const cast = model.castShadows;
+		gltfScene.traverse((obj) => {
+			const mesh = obj as Mesh;
+			if (mesh.isMesh) mesh.castShadow = cast;
+		});
 	});
 
 	// Drive animation playback reactively from model state

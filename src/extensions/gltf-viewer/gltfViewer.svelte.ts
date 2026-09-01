@@ -16,6 +16,8 @@ const makeModel = (name: string, url: string, isBlobUrl: boolean): GltfViewerMod
 	crossfadeDuration: 0.3,
 	loop: true,
 	visible: true,
+	showRig: false,
+	castShadows: false,
 	colliderEnabled: false,
 	colliderShape: 'trimesh'
 });
@@ -127,6 +129,16 @@ export const gltfViewerActions = {
 	setVisible(id: string, visible: boolean) {
 		const m = find(id);
 		if (m) m.visible = visible;
+	},
+
+	setShowRig(id: string, show: boolean) {
+		const m = find(id);
+		if (m) m.showRig = show;
+	},
+
+	setCastShadows(id: string, cast: boolean) {
+		const m = find(id);
+		if (m) m.castShadows = cast;
 	},
 
 	setColliderShape(id: string, shape: GltfViewerColliderShape) {

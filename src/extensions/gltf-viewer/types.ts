@@ -14,6 +14,8 @@ export type GltfViewerModel = {
 	crossfadeDuration: number; // seconds — 0 = instant
 	loop: boolean;
 	visible: boolean;
+	showRig: boolean; // SkeletonHelper overlay — needs visible model with bones
+	castShadows: boolean;
 	colliderEnabled: boolean;
 	colliderShape: GltfViewerColliderShape;
 };

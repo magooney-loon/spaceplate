@@ -73,6 +73,17 @@
 
 					<Separator />
 
+					<Checkbox
+						label="Show Rig"
+						value={model.showRig}
+						on:change={() => gltfViewerActions.setShowRig(model.id, !model.showRig)}
+					/>
+					<Checkbox
+						label="Cast Shadows"
+						value={model.castShadows}
+						on:change={() => gltfViewerActions.setCastShadows(model.id, !model.castShadows)}
+					/>
+
 					{#if model.animationClips.length > 0}
 						<Folder title="Animations ({model.animationClips.length})" expanded={false}>
 							{#each model.animationClips as clip (clip)}
