@@ -70,6 +70,13 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   unresolved glow) must agree — if they drift, the star band and the light band
   separate and the illusion collapses. The band is asymmetric (bulge toward
   `MILKY_WAY_CORE`) on purpose; an even ring is the clearest "generated sky" tell.
+- Star placement is also rejection-sampled against a build-time CPU port of the
+  Shadertoy "Star Nest" march (see Stars.svelte): the fractal's clumping — star
+  clouds carved into the band's river, knots/filaments/voids off it — at zero
+  per-frame cost (the demo's raymarch is ~8x the Nebula's fragment budget). The
+  nest field is frozen (one static slice of the demo's fly-through); change its
+  constants and the placement stats in the comments were measured, not guessed —
+  re-measure before retuning.
 - Moon is a **sphere**, phase from the surface normal (better than the sketched
   billboard: an equirect map wraps properly). Tidally locked. `frustumCulled={false}`
   mandatory (see pinFarPlane).

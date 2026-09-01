@@ -46,19 +46,27 @@
 	import { MILKY_WAY_NORMAL as MW, MILKY_WAY_SIGMA } from './milkyWay';
 
 	interface Props {
+		/**
+		 * Total stars. Pair-tuned with the nest acceptance below: 6000 keeps the
+		 * band's river dense while the surplus populates the off-band knots, and it
+		 * rose again with the size cut -- smaller quads cover less sky, and a deep
+		 * field needs the count to pay for it.
+		 */
 		count?: number;
 		/** Distance the field is placed at. Cosmetic -- depth is pinned to the far plane. */
 		radius?: number;
 		/**
 		 * Apparent diameter of the faintest and brightest stars, in degrees.
 		 *
-		 * `minSizeDeg` has a floor worth respecting, and it is higher than it looks. The
-		 * bright core is roughly 44% of the quad's half-width, so 0.16 deg (2.9 px at
-		 * 1080p / fov 60) puts the core at ~1.3 px: still under two pixels, still sampled
-		 * erratically as the camera turns, and the resulting shimmer gets blamed on the
-		 * twinkle shader every time. 0.22 deg lands the core near 1.8 px. The faint stars
-		 * that grow as a result are also much dimmer now (see `brightness` below), so they
-		 * read as soft haze rather than as fat dots.
+		 * `minSizeDeg` sits just under the old shimmer floor (0.22 deg, which held the
+		 * core above ~1.8 px at 1080p / fov 60), and that is deliberate: the shimmer the
+		 * floor guarded against belonged to the OLD brightness floor of 0.28, where a
+		 * faint star was a plainly visible dot popping in and out of pixels as the camera
+		 * turned. Faint stars are ~7x dimmer now, sub-pixel flicker in a near-invisible
+		 * dot is nothing anyone can see, and the post-processing AA catches the rest.
+		 * 0.18 deg is a 3.2 px quad -- a point, not a blob. `maxSizeDeg` shrank with it
+		 * (0.5 -> 0.34): the brightest stars are tight glints now, and glints instead of
+		 * cushions are most of what sells the field as far away.
 		 */
 		minSizeDeg?: number;
 		maxSizeDeg?: number;
@@ -70,12 +78,12 @@
 	}
 
 	let {
-		count = 3200,
+		count = 6000,
 		radius = 1000,
-		minSizeDeg = 0.22,
-		maxSizeDeg = 0.5,
-		twinkle = 0.55,
-		twinkleSpeed = 1.6,
+		minSizeDeg = 0.18,
+		maxSizeDeg = 0.34,
+		twinkle = 0.8,
+		twinkleSpeed = 2.4,
 		seed = 20260828
 	}: Props = $props();
 
@@ -86,16 +94,89 @@
 	// Two ends of the stellar-colour ramp: hot blue-white to cool amber.
 	//
 	// These used to be [1, 0.55, 0.28] and [0.58, 0.72, 1] -- a deep ember and a frank
-	// blue -- on the theory that only the population tails would reach them. They did
-	// reach them, and the tails are half the sky (48% by the warmth roll below), so the
-	// field read as confetti. Both ends are pulled in, and more importantly SATURATION IS
-	// NOW COUPLED TO BRIGHTNESS: scotopic vision is very nearly colourblind, so a real
-	// sky shows colour only in its handful of bright stars and renders the rest white.
-	// That coupling, not the ramp ends, is what stops a star field looking like sprinkles.
-	const COOL: [number, number, number] = [1, 0.74, 0.5];
-	const HOT: [number, number, number] = [0.74, 0.83, 1];
+	// blue -- and the field read as confetti, because the tails are half the sky by the
+	// warmth roll below AND every star used to carry its tint at full strength. The
+	// ends were pulled in on the theory that only the population tails should reach
+	// them, but the coupling that actually stopped the confetti was SATURATION RIDING
+	// MAGNITUDE (see `sat` below): scotopic vision is nearly colourblind, so only the
+	// bright population may show colour. With that gate holding, the ends can sit a
+	// little deeper again -- only stars the eye actually lands on ever reach them,
+	// and a sky whose brightest stars are all lukewarm white reads as monochrome.
+	const COOL: [number, number, number] = [1, 0.7, 0.42];
+	const HOT: [number, number, number] = [0.68, 0.79, 1];
 
 	const DEG = Math.PI / 180;
+
+	// ── The star-nest field: a build-time placement oracle ───────────────────────
+	//
+	// Ported from the Shadertoy "Star Nest" demo (p = abs(p)/dot(p,p) - formuparam,
+	// the accumulated orbit drift as brightness) because what that demo sells is
+	// CLUMPING: stars in filaments, knots and star clouds with honestly empty
+	// stretches between them. That was the ingredient this field lacked -- measure
+	// the old sky's off-band neighbour dispersion and it sits at ~1.1, a Poisson
+	// process, television static. The band concentrated the static into a river,
+	// but the river itself accepted ~100% along its whole length: an evenly bright
+	// stripe, which is its own generated-sky tell.
+	//
+	// The demo buys its look with a volumetric raymarch -- 20 steps x 17 iterations
+	// per pixel per frame, roughly 8x the Nebula's fragment cost (already the most
+	// expensive shader in the sky, see layers/CLAUDE.md). That is a non-starter on
+	// the dome; every point would clamp to 1 px on WebGPU anyway (header note), and
+	// none of it would twinkle. So the same march runs ONCE, on the CPU, at build
+	// time, over candidate directions: same field, same clumping, zero per-frame
+	// cost, and the stars stay the sized, twinkling, airmass-extincted quads they
+	// already are. The overlapping additive halos of a knot's members supply the
+	// demo's characteristic glow for free.
+	const NEST_TILE = 0.85;
+	const NEST_FORMUPARAM = 0.53;
+	const NEST_VOLSTEPS = 20;
+	const NEST_STEPSIZE = 0.1;
+	const NEST_ITERATIONS = 17;
+	// The demo's camera at time 0.25 with its endless fly-through frozen: one
+	// static slice, which is all a fixed sky may ever show.
+	const NEST_FROM: [number, number, number] = [1.5, 0.75, 0];
+	// The raw march output spans decades (p10 8e3 .. p99 6e4 over the sky, spikes
+	// far beyond), so it is soft-saturated (x/(x+K)) into a 0.45..0.85 band and
+	// then stretched over the full range. Measured on 8k directions the pair lands
+	// at p10 0.08 / p50 0.38 / p90 0.71: voids that are actually sparse, knots that
+	// actually pop. The three numbers below are a set; retune together or not at all.
+	const NEST_SATURATION = 10_000;
+	const NEST_REMAP_LO = 0.35;
+	const NEST_REMAP_HI = 0.95;
+
+	/** GLSL mod(): JS % returns negatives for negative operands, which would mirror
+	 *  half of the folded field. */
+	const glslMod = (x: number, m: number) => x - Math.floor(x / m) * m;
+
+	/** Nest density for one direction: the full march, clamped to 0..1. */
+	const nestDensity = (dx: number, dy: number, dz: number): number => {
+		let v = 0;
+		let fade = 1;
+		let s = 0.1;
+		for (let r = 0; r < NEST_VOLSTEPS; r++) {
+			// The tiling fold, abs(tile - mod(p, 2*tile)), exactly as demoed.
+			let px = Math.abs(NEST_TILE - glslMod(NEST_FROM[0] + s * dx * 0.5, NEST_TILE * 2));
+			let py = Math.abs(NEST_TILE - glslMod(NEST_FROM[1] + s * dy * 0.5, NEST_TILE * 2));
+			let pz = Math.abs(NEST_TILE - glslMod(NEST_FROM[2] + s * dz * 0.5, NEST_TILE * 2));
+			let a = 0;
+			let pa = 0;
+			for (let i = 0; i < NEST_ITERATIONS; i++) {
+				const d = px * px + py * py + pz * pz;
+				px = Math.abs(px) / d - NEST_FORMUPARAM;
+				py = Math.abs(py) / d - NEST_FORMUPARAM;
+				pz = Math.abs(pz) / d - NEST_FORMUPARAM;
+				const len = Math.sqrt(px * px + py * py + pz * pz);
+				a += Math.abs(len - pa);
+				pa = len;
+			}
+			v += a * a * a * fade; // cubed for contrast, faded with depth -- as demoed
+			fade *= 0.73;
+			s += NEST_STEPSIZE;
+		}
+		const sat = v / (v + NEST_SATURATION);
+		const t = Math.min(1, Math.max(0, (sat - NEST_REMAP_LO) / (NEST_REMAP_HI - NEST_REMAP_LO)));
+		return t * t * (3 - 2 * t);
+	};
 
 	const visibility = uniform(0);
 
@@ -124,18 +205,24 @@
 		const mags = new Float32Array(count);
 
 		for (let i = 0; i < count; i++) {
-			// Direction, rejection-sampled against the Milky Way profile (see milkyWay.ts):
-			// acceptance runs from ~12% far off the band to ~100% inside it, so the star
-			// budget pools into a river instead of spreading as uniform static. The count
-			// is higher than the pre-band 2200 because the off-band sky pays for the river.
+			// Direction, rejection-sampled against the Milky Way profile (see
+			// milkyWay.ts) AND the star-nest field above. The two modulate each other:
+			// the nest carves the band's river into star clouds with gaps between them
+			// (Sagittarius vs Aquila -- an evenly bright river is a generated-sky tell),
+			// and off-band it supplies the clusters, filaments and empty stretches the
+			// real sky keeps beyond the galactic plane. Acceptance runs from 3% in a nest
+			// void to 100% inside a knot; after 64 failed tries the star keeps the last
+			// candidate, so the voids keep a thin uniform floor -- a literally starless
+			// patch reads as a culling bug, not as wilderness.
 			//
-			// The underlying sample is still uniform-on-sphere (uniform cos(theta)), so the
-			// band is the only anisotropy -- rejection sampling on top of a biased sample
-			// would compound the bias.
+			// The underlying sample is still uniform-on-sphere (uniform cos(theta)), so
+			// band and nest are the only anisotropy -- rejection sampling on top of a
+			// biased sample would compound the bias.
 			let dx = 0;
 			let dy = 0;
 			let dz = 0;
 			let band = 0;
+			let nest = 0;
 			for (let tries = 0; tries < 64; tries++) {
 				const cosTheta = rng() * 2 - 1;
 				const phi = rng() * Math.PI * 2;
@@ -145,7 +232,10 @@
 				dz = sinTheta * Math.sin(phi);
 				const offPlane = dx * MW[0] + dy * MW[1] + dz * MW[2];
 				band = Math.exp(-(offPlane * offPlane) / (2 * MILKY_WAY_SIGMA * MILKY_WAY_SIGMA));
-				if (rng() < 0.12 + 0.88 * band) break;
+				nest = nestDensity(dx, dy, dz);
+				const river = band * (0.55 + 0.35 * nest); // the band, carved into clouds
+				const lone = nest * (1 - band); // off-band filaments, knots, voids
+				if (rng() < Math.min(1, 0.03 + 1.75 * river + 0.95 * lone)) break;
 			}
 			// Stored at the dome's radius. `altitudeOf` divides by `radius` to recover the
 			// altitude sine, so this scaling is part of that contract -- see skyLayer.ts.
@@ -156,8 +246,11 @@
 			// Magnitude, cubed so the sky is mostly faint stars with a few bright ones --
 			// a flat distribution reads as television static. Band stars are pulled
 			// fainter still: the real Milky Way is overwhelmingly an unresolved wash with
-			// a handful of field giants on top.
-			const mag = Math.pow(rng(), 3) * (1 - 0.45 * band);
+			// a handful of field giants on top. Nest stars are pushed the other way --
+			// open clusters are where the naked-eye sky keeps its luminous young giants
+			// -- and the boost rides the one magnitude attribute, so size, halo,
+			// saturation and flicker depth all track it without another buffer.
+			const mag = Math.min(1, Math.pow(rng(), 3) * (1 - 0.45 * band) * (0.72 + 0.62 * nest));
 			const halfAngle = (minSizeDeg + (maxSizeDeg - minSizeDeg) * mag) * 0.5 * DEG;
 			// View-space half-extent that subtends `halfAngle` at `radius`. Because every
 			// star sits at the same radius, a fixed view-space offset is a fixed angular
@@ -171,31 +264,37 @@
 			// 1.10 -- a 4:1 range, so all 3000 stars were plainly visible dots of roughly
 			// equal weight, which is the definition of television static. A real sky spans
 			// magnitude 1 to 6, about 100:1 in flux, and reads as a few obvious stars over
-			// a haze of barely-there ones. 0.05 to 1.20 is 24:1: not physical, but enough
+			// a haze of barely-there ones. 0.04 to 1.44 is 36:1: not physical, but enough
 			// that the faint majority sinks into suggestion and the eye gets somewhere to
-			// land. Mean brightness drops from 0.48 to ~0.27, which is why `count` went up.
-			const brightness = 0.05 + 1.15 * mag;
+			// land. The ceiling also pays for the size cut -- a bright star is a tight glint
+			// now, and a glint has to be BRIGHT to read as one.
+			const brightness = 0.04 + 1.4 * mag;
 
 			// Three rough stellar populations rather than a flat ramp, which tints every
 			// star the same lukewarm white: a hot blue-white tail, an amber tail, and a
 			// mostly-white middle. Naked-eye skies skew blue -- hot stars are luminous
-			// enough to be seen from much further away -- so the hot tail is the wider one.
+			// enough to be seen from much further away -- so the hot tail is the wider
+			// one, and it widens further inside the nests: young open clusters are
+			// blue-giant country.
 			const roll = rng();
 			let warmth: number;
-			if (roll < 0.26) {
+			if (roll < 0.26 + 0.18 * nest) {
 				warmth = rng() * 0.3; // Rigel: icy blue-white
-			} else if (roll < 0.46) {
+			} else if (roll < 0.52) {
 				warmth = 0.7 + rng() * 0.3; // Betelgeuse: amber
 			} else {
-				warmth = 0.38 + rng() * 0.26; // Sirius: near-white
+				warmth = 0.34 + rng() * 0.34; // Sirius: near-white, leaning either way
 			}
 
 			// Saturation rides magnitude. Below about magnitude 3 the rods are doing all
 			// the work and colour vision is simply not available, so the faint population
-			// has to render white no matter what class it nominally belongs to. The
-			// exponent skews it further: at the median star (mag 0.125) this is 0.14, so
-			// the bulk of the sky is 86% of the way to white.
-			const sat = 0.06 + 0.94 * Math.pow(mag, 1.2);
+			// has to render white no matter what class it nominally belongs to. But the
+			// first cut of this over-applied the principle: mag^1.2 left the MEDIAN star at
+			// 88% white and the whole field read monochrome. Rods saturate too -- the
+			// brighter half of a real sky shows obvious golds and blues (Betelgeuse is not
+			// a white star). mag^0.45 with a 0.16 floor keeps the faint haze white and lets
+			// everything the eye lands on carry its tint: median ~46%, mag 0.5 at ~78%.
+			const sat = 0.16 + 0.84 * Math.pow(mag, 0.45);
 			const tintR = HOT[0] + (COOL[0] - HOT[0]) * warmth;
 			const tintG = HOT[1] + (COOL[1] - HOT[1]) * warmth;
 			const tintB = HOT[2] + (COOL[2] - HOT[2]) * warmth;
@@ -233,13 +332,18 @@
 		// Note the oneMinus() rather than smoothstep(1, 0, d): both GLSL and WGSL leave
 		// smoothstep UNDEFINED when edge0 >= edge1, so the descending form is a portability
 		// trap that happens to work on some drivers.
-		// The halo's weight now scales with magnitude instead of sitting at a flat 0.22.
-		// A halo is what makes a star read as BRIGHT -- it is the eye's own scatter -- so
-		// giving one to every star just fogs the field. Faint stars get 0.05 (a clean
-		// point), the brightest 0.35.
+		// The halo's weight scales with magnitude instead of sitting at a flat 0.22: a
+		// halo is what makes a star read as BRIGHT -- it is the eye's own scatter -- so
+		// giving one to every star just fogs the field. Faint stars get 0.04 (a clean
+		// point), the brightest 0.26.
+		// The halo was rebuilt when the field went small (see minSizeDeg): disc^2 at up
+		// to 0.35 weight put a soft six-pixel cushion under every bright star, and a
+		// field of cushions reads as a dome NEARBY -- planetarium, not sky. disc^3 at a
+		// lower weight keeps the glint tight; what the nests lose in individual halo
+		// they keep in overlap, which is the part that makes a knot glow.
 		const dist2 = dot(corner, corner);
 		const disc = smoothstep(float(0), float(1), dist2).oneMinus();
-		const shape = pow(disc, float(7)).add(pow(disc, float(2)).mul(aMag.mul(0.3).add(0.05)));
+		const shape = pow(disc, float(7)).add(pow(disc, float(3)).mul(aMag.mul(0.22).add(0.04)));
 
 		// Fade out below the horizon. Scenes without a ground plane would otherwise show
 		// a full sphere of stars underfoot; scenes with one occlude them by depth anyway.
@@ -290,17 +394,25 @@
 		// backdrop with a shimmer pass on it.
 		const beat = mix(slow, slow.mul(fast), airmass);
 		// Skewed three ways: per-star character (some barely move, a few flash hard),
-		// airmass, and magnitude. The magnitude term is new -- a faint star flickering
+		// airmass, and magnitude. The magnitude term matters -- a faint star flickering
 		// hard is indistinguishable from sampling noise, and there are thousands of them.
+		//
+		// THE FLOORS ROSE when the field was first judged DEAD rather than calm: with
+		// the old 0.55 / 0.15-1.0 / 0.3-1.2 / 0.4-1.0 stack, the median mid-sky star
+		// landed at a ~6% brightness wobble -- physically defensible, visually nothing.
+		// Now the median mid-sky star swings ~20%, a bright star near the horizon
+		// flashes past 50%, and only the zenith keeps its slow breath. Alive, layered.
 		const depth = float(twinkle)
-			.mul(float(0.15).add(pow(rndC, float(1.6)).mul(0.85)))
-			.mul(float(0.3).add(airmass.mul(0.9)))
-			.mul(float(0.4).add(aMag.mul(0.6)))
-			.min(0.85);
+			.mul(float(0.3).add(pow(rndC, float(1.6)).mul(0.7)))
+			.mul(float(0.55).add(airmass.mul(0.65)))
+			.mul(float(0.45).add(aMag.mul(0.55)))
+			.min(0.9);
 		const flicker = beat.oneMinus().mul(depth).oneMinus();
-		// Saturation rides the beat: dim moments go pale, glints go vivid. The old range
-		// was 0.75-1.30, and anything past 1 EXTRAPOLATES beyond the authored colour --
-		// on an already-saturated palette that turned every glint into a coloured spark.
+		// Saturation rides the beat: dim moments go pale, glints go vivid. The range is
+		// 0.85-1.30, and anything past 1 EXTRAPOLATES beyond the authored colour. That
+		// is deliberate now: the ramps were pulled in precisely so glints could be
+		// pushed past them -- a glint that flashes COLOUR is half of what makes a bright
+		// star read as alive (the prismatic term below is the other half).
 		const lum = dot(aColor, vec3(0.299, 0.587, 0.114));
 
 		// Atmospheric extinction. Same airmass, doing the other half of its job: light
@@ -311,7 +423,18 @@
 		const extinction = mix(vec3(1), vec3(1, 0.84, 0.68), airmass);
 		const airmassDim = mix(float(1), float(0.55), airmass);
 
-		material.colorNode = mix(vec3(lum), aColor, beat.mul(0.3).add(0.82)).mul(extinction);
+		// PRISMATIC SCINTILLATION, the colour half of the horizon flutter: the same
+		// turbulence that flashes a low star also splits its colours -- horizon stars
+		// visibly flash warm and cool as the air disperses the beam. Keyed off the FAST
+		// lobe (so it flutters, it does not tint) and killed above ~17 deg by the same
+		// airmass gate, because dispersion needs the long path exactly as scintillation
+		// does. +-9% R / +-11% B at the horizon, 0 at the zenith.
+		const prismatic = fast.sub(0.5).mul(airmass).mul(0.5);
+		const chroma = vec3(1).add(prismatic.mul(vec3(0.35, 0.02, -0.42)));
+
+		material.colorNode = mix(vec3(lum), aColor, beat.mul(0.45).add(0.85))
+			.mul(extinction)
+			.mul(chroma);
 		material.opacityNode = shape.mul(flicker).mul(horizon).mul(airmassDim).mul(visibility);
 
 		return { geometry: instancedQuad(count), material };
