@@ -11,6 +11,7 @@
 	import Rain from './Rain.svelte';
 	import RainLens from './RainLens.svelte';
 	import Snow from './Snow.svelte';
+	import SnowLens from './SnowLens.svelte';
 	import CloudDeck from './CloudDeck.svelte';
 	import Lightning from './Lightning.svelte';
 	import HeightField from './HeightField.svelte';
@@ -149,6 +150,11 @@
 		     this group also means HeightField hides it for the collision pass, which is
 		     what it wants -- a screen-space quad is not a surface rain can land on. -->
 		<RainLens />
+		<!-- Frost on the lens, the snow counterpart. Drawn at renderOrder 11, after RainLens,
+		     for the same reason RainLens sits above the sky: each reads back the frame, so
+		     the later one composites over the earlier. Both are only ever live at once
+		     during sleet. -->
+		<SnowLens />
 		<!-- Scene fog. Mounted only in procedural mode because its colour comes from the
 		     day curve, which is the procedural sky's authored look -- an HDR environment
 		     brings its own horizon and would fight it. Renders nothing itself; it drives

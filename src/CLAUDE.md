@@ -218,7 +218,12 @@ skyQueries.getWeather(); // live channel vector — read, never cache
   exposure / key-light attenuation). Rain and Snow split on `cloudType` (rain above ~0.5, snow below) —
   a temporary gate until the descriptor grows an explicit precipitation type. Snow's flakes dim with
   the light hints, so a night snowfall reads faint and cool.
-  an explicit precipitation type. **`wind` cannot drive `SkyMesh.cloudSpeed`** — that uniform is
+  an explicit precipitation type. The two **screen-space lens layers** are the near end of
+  the same split: `RainLens.svelte` (water beading and running on the glass, quick to wet
+  and slow to dry) and `SnowLens.svelte` (dendritic frost creeping in from the frame edges,
+  slow in both directions). Both read the finished frame through `viewportMipTexture` and
+  draw last (renderOrder 10 and 11) — they are post-processing that needs no pipeline, and
+  the draw order is load-bearing, not tidy. **`wind` cannot drive `SkyMesh.cloudSpeed`** — that uniform is
   multiplied by absolute elapsed time, so changing it teleports the cloud pattern; the wind-driven
   deck (`CloudDeck.svelte`) accumulates its own UV offset instead, which is why it can scroll.
   Lightning publishes its per-frame flash to `flashState.ts` (plain shared state, one writer in
