@@ -824,4 +824,6 @@
     }
   ]
 }
+
+Your questions have been answered: "Forked branches are the biggest missing thing — real lightning is a dendritic channel, this draws one squiggle. How far do you want to take it?"="2-3 forks per bolt (Recommended)", "Should a bolt's apparent size change with how far away it is? (The distance is already rolled for thunder timing — nothing visual uses it yet.)"="Yes — near bolts big, far ones small and hazy (Recommended)", "What character should the bolt itself have?"="Photographic — hot white core, tight blue glow". You can now continue with these answers in mind.
  -->
