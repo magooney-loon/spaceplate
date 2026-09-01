@@ -567,8 +567,18 @@
 	const isComputeBackend = (backend: object): boolean =>
 		(backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
 
-	// Set once the first frame has gone through computeAsync: the backend may not be
-	// initialized before anything has rendered, and compute() would warn about it.
+	// THE WARM-UP, AND WHY IT NEEDS TWO FLAGS. The backend may not be initialized before
+	// anything has rendered; `renderer.compute()` in that state warns and falls back to the
+	// async path anyway, so the first pass is issued through `computeAsync`, which awaits
+	// initialization properly.
+	//
+	// `issued` must be set SYNCHRONOUSLY or every frame until the promise settles issues
+	// another warm-up. `ready` may only be set when it actually SETTLES -- one flag doing
+	// both jobs was set on the frame the warm-up was issued, so the very next frame took
+	// the sync path against the initialization it was supposed to be waiting for, which is
+	// the one case the warm-up exists for. It self-healed (three warns and falls back), so
+	// the cost was a console warning and a warm-up that did nothing.
+	let computeIssued = false;
 	let computeReady = false;
 
 	useTask(
@@ -614,14 +624,28 @@
 			uDark.value = 0.05 + 0.07 * norm;
 			uLight.value = 0.3 + 0.5 * norm;
 
-			// Integrate, then draw.
+			// Integrate, then draw. The flock simply holds still for the frame or two the
+			// warm-up takes to settle, which is not visible at startup.
 			if (computeReady) {
 				renderer.compute(computeVelocity);
 				renderer.compute(computePosition);
-			} else {
-				void renderer.computeAsync(computeVelocity);
-				void renderer.computeAsync(computePosition);
-				computeReady = true;
+			} else if (!computeIssued) {
+				computeIssued = true;
+				// Both issued in the same tick, so they keep their order: `computeAsync`
+				// only awaits when the backend is uninitialized, and two calls awaiting the
+				// same init resume in the order they queued -- velocity before the position
+				// pass that integrates what it wrote.
+				void Promise.all([
+					renderer.computeAsync(computeVelocity),
+					renderer.computeAsync(computePosition)
+				])
+					.then(() => {
+						computeReady = true;
+					})
+					.catch(() => {
+						// Let a later frame try again rather than stranding the flock.
+						computeIssued = false;
+					});
 			}
 
 			// The flocks only animate while they exist at all -- the compute passes are
