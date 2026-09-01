@@ -153,11 +153,19 @@
 		const boxHeight = float(height);
 		const boxDepth = float(depth);
 
-		// FALL + WRAP. Identical construction to Rain's Y: travel accumulates with time
-		// (seeded by a per-flake phase so the population starts spread through the box),
-		// and fract() recycles flakes through the box forever.
+		// The box's world origin -- the camera, since the mesh is re-centred on it every
+		// frame. Read from the model matrix, not TSL's `cameraPosition`, for the reason
+		// spelled out in Rain's `motionOf`.
+		const anchor = modelWorldMatrix.mul(vec4(0, 0, 0, 1)).xyz;
+
+		// FALL + WRAP. Identical construction to Rain's Y, including the part that matters
+		// most: the wrap is taken about the anchor IN WORLD SPACE, so a flake hangs at a
+		// fixed world position and is merely recycled when the box moves past it. Wrapping
+		// in box-local space instead translates every flake with the camera, and the field
+		// slides along with the player instead of being something you move through. See the
+		// worked algebra in Rain.svelte.
 		const fall = time.mul(aSpeed).add(aPhase.mul(boxHeight));
-		const y = fract(aCenter.y.add(halfHeight).sub(fall).div(boxHeight))
+		const y = fract(aCenter.y.add(halfHeight).sub(fall).sub(anchor.y).div(boxHeight))
 			.mul(boxHeight)
 			.sub(halfHeight);
 
@@ -168,16 +176,37 @@
 		// tunes the coherence: ~1.5 swirl cells across the box -- fully shared phase
 		// would move the field as one rigid sheet, fully independent phase reads as
 		// jitter. The 0.5 temporal rate is the reference's lazy meander.
+		//
+		// THE SWIRL PHASE IS TAKEN BEFORE THE WRAP, and that is not the same as taking it
+		// after. `xBase` / `zBase` are world quantities -- a per-flake constant plus the
+		// shared wind travel -- so a flake's place in the swirl depends only on where it
+		// is in the WORLD. Phasing off the post-wrap local coordinate instead (which is
+		// what reading `z` here would do, now that the wrap subtracts the anchor) would
+		// make the swirl a function of camera position: walk across the scene and every
+		// flake changes the way it sways. It also removes the seam the original had, where
+		// the phase jumped discontinuously across the wrap boundary.
 		const xBase = aCenter.x.add(halfWidth).add(uWindDrift.mul(aWindMul));
 		const zBase = aCenter.z.add(halfDepth).add(uWindDrift.mul(aWindMul).mul(0.55));
 
 		const swayZ = sin(time.mul(0.5).add(xBase.mul(0.12)))
 			.mul(aSwayAmp)
 			.mul(0.8);
-		const z = fract(zBase.add(swayZ).div(boxDepth)).mul(boxDepth).sub(halfDepth);
+		const zSwayed = zBase.add(swayZ);
+		const z = fract(zSwayed.sub(anchor.z).div(boxDepth)).mul(boxDepth).sub(halfDepth);
 
-		const swayX = cos(time.mul(0.5).add(z.mul(0.12))).mul(aSwayAmp);
-		const x = fract(xBase.add(swayX).div(boxWidth)).mul(boxWidth).sub(halfWidth);
+		const swayX = cos(time.mul(0.5).add(zSwayed.mul(0.12))).mul(aSwayAmp);
+		const x = fract(xBase.add(swayX).sub(anchor.x).div(boxWidth)).mul(boxWidth).sub(halfWidth);
+
+		// WRAP FADE, as Rain: the outer shell of the box fades out so that a flake
+		// recycling to the opposite face is already invisible when it jumps, plus the top
+		// of the box so flakes do not appear out of nothing overhead. Snow needs this more
+		// than rain does -- a flake is slow enough to follow with your eye, which is
+		// exactly what makes a pop legible. Written as `smoothstep(...).oneMinus()` because
+		// WGSL leaves `smoothstep` undefined when its edges are given high-to-low.
+		const shell = x.abs().div(halfWidth).max(z.abs().div(halfDepth));
+		const wrapFade = smoothstep(float(0.72), float(1), shell)
+			.oneMinus()
+			.mul(smoothstep(float(0.86), float(1), y.add(halfHeight).div(boxHeight)).oneMinus());
 
 		// Camera-facing billboard, as Rain/Stars. Deliberately NOT depth-pinned: flakes
 		// have honest depth and must be occluded by the world.
@@ -208,7 +237,7 @@
 		const speck = float(0.5).div(dist.max(1e-3)).sub(1).clamp(0, 1);
 
 		material.colorNode = vec3(uLight);
-		material.opacityNode = opacity.mul(speck).mul(aBright).mul(settle);
+		material.opacityNode = opacity.mul(speck).mul(aBright).mul(settle).mul(wrapFade);
 
 		return { geometry: instancedQuad(count), material };
 	};

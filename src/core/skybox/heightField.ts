@@ -21,7 +21,7 @@
 // props (DOCS/weather-system.md §14.1).
 
 import * as THREE from 'three/webgpu';
-import { float, step, textureLevel, uniform } from 'three/tsl';
+import { float, step, textureLevel, uniform, vec2 } from 'three/tsl';
 
 /**
  * Resolution of the height map. 256 over a 70-unit box is ~0.27 world units per texel --
@@ -92,7 +92,20 @@ export const heightFieldState = {
  * fetch.
  */
 export const sampleHeightField = (worldPosition: THREE.Node<'vec3'>) => {
-	const uv = worldPosition.xz.sub(uHeightCenter).div(uHeightExtent.mul(2)).add(0.5);
+	// World XZ -> map UV, and THE X NEGATION IS LOAD-BEARING. The pass camera looks
+	// straight down with `up = +Z`, and the view basis three builds from that has its X
+	// axis along world -X: `Matrix4.lookAt` sets x = up x z, and here z (eye - target) is
+	// +Y and up is +Z, so x = +Z x +Y = -X. The map is therefore MIRRORED in X against
+	// the world. Z is not: the camera's Y axis comes out as world +Z.
+	//
+	// Sampling without the flip reads the scene's mirror image, which is invisible for
+	// geometry that happens to be symmetric about the map centre and wrong everywhere
+	// else -- drops fall through the real ground and land on empty air where its
+	// reflection would be. Looking straight down cannot avoid a flip on one axis; it can
+	// only choose which one, so it is undone here, in the one place that owns the
+	// world <-> uv mapping.
+	const rel = worldPosition.xz.sub(uHeightCenter).div(uHeightExtent.mul(2));
+	const uv = vec2(rel.x.negate(), rel.y).add(0.5);
 
 	const sample = textureLevel(heightTarget.texture, uv, float(0));
 

@@ -18,9 +18,9 @@
 	// moves: the demo's physics bodies roll around underneath the rain.
 	//
 	// EVERYTHING IT TOUCHES IS RESTORED. The render target, the clear colour and its alpha,
-	// `scene.overrideMaterial`, `scene.background` and the sky group's visibility are all
-	// saved and put back in the same task, so a frame that runs this pass is otherwise
-	// indistinguishable from one that does not.
+	// `scene.overrideMaterial`, `scene.background`, the sky group's visibility and every
+	// light's shadow-update flags are all saved and put back in the same task, so a frame
+	// that runs this pass is otherwise indistinguishable from one that does not.
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { Object3D } from 'three/webgpu';
@@ -66,6 +66,11 @@
 	const passCamera = new THREE.OrthographicCamera();
 	// Looking straight down. `up` must not be parallel to the view direction or the view
 	// matrix is degenerate, so +Z is used rather than the default +Y.
+	//
+	// This choice mirrors the map in X -- the view basis comes out with its X axis along
+	// world -X. No `up` avoids a flip on some axis when looking straight down, so the map
+	// is left as-is and `sampleHeightField` undoes it; see the note there before changing
+	// this vector, because the two must agree.
 	passCamera.up.set(0, 0, 1);
 
 	/**
@@ -87,6 +92,52 @@
 	let lastZ = 0;
 
 	const clearColor = new THREE.Color();
+
+	/**
+	 * Shadow state suspended for the duration of the pass, reused so a pass allocates
+	 * nothing. See `suspendShadows` for why this is needed at all.
+	 */
+	const suspended: { shadow: THREE.LightShadow; autoUpdate: boolean; needsUpdate: boolean }[] = [];
+
+	/**
+	 * Stop three re-rendering every shadow map inside this pass.
+	 *
+	 * `ShadowNode.updateBefore` gates a shadow refresh on the pair (camera, frameId) --
+	 * one update per camera per frame. This pass brings its OWN camera, so the gate always
+	 * misses and every shadow-casting light draws its map a second time, at up to
+	 * `1000 / intervalMs` passes a second, purely as a side effect of asking for a height
+	 * map. Nothing in the result can depend on it: the override material is unlit and
+	 * outputs a world coordinate.
+	 *
+	 * `shadow.autoUpdate` is the right lever because it is read at render time.
+	 * `renderer.shadowMap.enabled` and `light.castShadow` are BUILD-TIME flags baked into
+	 * the light's node graph -- toggling either per pass would recompile every material in
+	 * the scene, which is the failure mode DOCS/webgpu-notes.md warns about.
+	 *
+	 * `needsUpdate` is saved and restored rather than simply cleared: it is a one-shot
+	 * request from somewhere else, and swallowing it here would silently drop a refresh
+	 * that something was relying on.
+	 */
+	const suspendShadows = () => {
+		suspended.length = 0;
+		scene.traverse((object) => {
+			// Structural, not `instanceof Light`: `shadow` lives on the light SUBCLASSES
+			// (directional, spot, point), not on the base class, and this needs all of them.
+			const shadow = (object as Partial<THREE.DirectionalLight>).shadow;
+			if (!shadow) return;
+			suspended.push({ shadow, autoUpdate: shadow.autoUpdate, needsUpdate: shadow.needsUpdate });
+			shadow.autoUpdate = false;
+			shadow.needsUpdate = false;
+		});
+	};
+
+	const restoreShadows = () => {
+		for (const entry of suspended) {
+			entry.shadow.autoUpdate = entry.autoUpdate;
+			entry.shadow.needsUpdate = entry.needsUpdate;
+		}
+		suspended.length = 0;
+	};
 
 	const runPass = () => {
 		const cam = camera.current;
@@ -122,11 +173,13 @@
 		scene.background = null;
 		scene.overrideMaterial = heightMaterial;
 		if (skyGroup) skyGroup.visible = false;
+		suspendShadows();
 
 		renderer.setRenderTarget(heightTarget);
 		renderer.clear();
 		renderer.render(scene, passCamera);
 
+		restoreShadows();
 		renderer.setRenderTarget(previousTarget);
 		scene.overrideMaterial = previousOverride;
 		scene.background = previousBackground;

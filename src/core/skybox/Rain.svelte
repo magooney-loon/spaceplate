@@ -8,6 +8,18 @@
 	// recentered on the active camera every frame, so games can change level scale or
 	// camera far range without needing a world-sized particle system.
 	//
+	// ── THE BOX FOLLOWS THE CAMERA; THE DROPS DO NOT ─────────────────────────────────
+	//
+	// Those are two different things, and conflating them is what made the rain feel like
+	// it was bolted to the player. The mesh is camera-anchored so that drops always
+	// surround the view, but each drop's `fract()` wrap is taken about the anchor IN WORLD
+	// SPACE (see `motionOf`), which pins the drop to a fixed world position and merely
+	// recycles it when the box leaves it behind. Move sideways and the drops stream past
+	// with honest parallax; the splashes stay on the patch of ground they landed on.
+	// Computing the wrap in pure box-local space instead -- which is what this did before
+	// -- translates every drop with the camera, so the whole curtain slides along with you
+	// and no amount of tuning the look can make that read as weather.
+	//
 	// The quad is INSTANCED (skyLayer.ts): one head-anchored four-vertex quad drawn
 	// `count` times. Each drop's box position and parameters used to be written into
 	// four vertices apiece -- 1.52 MB of buffers for the shipped count, against 0.25 MB
@@ -128,8 +140,39 @@
 	 */
 	const uLight = uniform(0.4);
 
+	/**
+	 * The camera's own world velocity in units per second, smoothed. Drives the streak
+	 * orientation only -- see the note where it is used. Smoothed because a raw
+	 * position-delta over dt jitters frame to frame and the streaks would shimmer.
+	 */
+	const uCameraVelocity = uniform(new THREE.Vector3());
+
 	/** Droplets kicked up per impact. Each is one more instance in the burst layer. */
 	const BURST_PER_IMPACT = 3;
+
+	/**
+	 * The drop's horizontal travel per unit of fall, at full wind. Because the drift term
+	 * is multiplied by `fall` -- itself proportional to the drop's own speed -- the SLANT
+	 * these produce is identical for every drop no matter how fast it falls. That is what
+	 * a curtain of wind-driven rain looks like: one shared direction, many speeds.
+	 *
+	 * The streak geometry now derives its direction from these same two numbers, so a drop
+	 * travels ALONG the streak that draws it. The streak used to be built at 0.35 / 0.15
+	 * against a trajectory of 0.16 / 0.07 -- drawn at more than double the slant it
+	 * actually moved at. Raised to keep roughly the streak angle that was on screen before
+	 * while making it the honest one.
+	 */
+	const WIND_SLANT_X = 0.4;
+	const WIND_SLANT_Z = 0.17;
+
+	/** Seconds for the camera-velocity smoother to cover ~63% of a step change. */
+	const VELOCITY_SMOOTHING = 0.12;
+	/**
+	 * A single-frame camera move beyond this is a cut, not motion -- a scene change or a
+	 * respawn. Reporting the implied velocity (thousands of units per second) would lean
+	 * every streak flat for as long as the smoother took to recover.
+	 */
+	const TELEPORT_WORLD = 8;
 
 	/**
 	 * Builds every layer, once. One closure because all of it is BUILD-TIME props -- see
@@ -169,16 +212,62 @@
 			const aSpeed = aParams.x;
 			const aPhase = aParams.w;
 
+			// The box's world origin. The mesh is re-centred on the camera every frame, so
+			// this IS the camera position -- taken from the model matrix rather than TSL's
+			// `cameraPosition` node, which follows whichever camera is currently rendering
+			// (the height pass brings its own) while the anchor is a property of THIS mesh.
+			const anchor = modelWorldMatrix.mul(vec4(0, 0, 0, 1)).xyz;
+
 			const fall = time.mul(aSpeed).add(aPhase.mul(boxHeight));
-			// The sawtooth, kept as its own value: everything below is expressed in it.
-			const u = fract(aCenter.y.add(halfHeight).sub(fall).div(boxHeight));
+
+			// THE WRAP IS TAKEN ABOUT THE ANCHOR, IN WORLD SPACE. Subtracting it inside the
+			// `fract` is the whole of what stops the rain riding along with the player.
+			//
+			// Worked through: with `g` the argument of the fract, the drop's world X comes
+			// out as `aCenter.x + drift - floor(g) * boxWidth`. The camera cancels except
+			// through `floor(g)`, which is piecewise constant -- so the drop hangs at a
+			// FIXED world position and jumps by exactly one box width when the box finally
+			// travels past it. That jump is the only camera-dependent thing left, it lands
+			// on a box face, and `wrapFade` below has already faded the drop out there.
+			//
+			// Precision: `g` is a world coordinate divided by a box dimension, so a camera
+			// tens of thousands of units from the origin begins to quantise the wrap. Far
+			// outside anything that fits inside the 144-unit far plane.
+			const u = fract(aCenter.y.add(halfHeight).sub(fall).sub(anchor.y).div(boxHeight));
 			const localY = u.mul(boxHeight).sub(halfHeight);
-			const x = fract(aCenter.x.add(halfWidth).add(fall.mul(wind).mul(0.16)).div(boxWidth))
+			const x = fract(
+				aCenter.x
+					.add(halfWidth)
+					.add(fall.mul(wind).mul(WIND_SLANT_X))
+					.sub(anchor.x)
+					.div(boxWidth)
+			)
 				.mul(boxWidth)
 				.sub(halfWidth);
-			const z = fract(aCenter.z.add(halfDepth).add(fall.mul(wind).mul(0.07)).div(boxDepth))
+			const z = fract(
+				aCenter.z
+					.add(halfDepth)
+					.add(fall.mul(wind).mul(WIND_SLANT_Z))
+					.sub(anchor.z)
+					.div(boxDepth)
+			)
 				.mul(boxDepth)
 				.sub(halfDepth);
+
+			// WRAP FADE, and it is what buys the recycle above. A drop leaving the box
+			// teleports to the opposite face, and a teleport in plain view reads as a
+			// blink; fading the outer shell means a drop is already at zero by the time it
+			// gets there and fades back in on the far side. It costs nothing to look at
+			// either -- rain has no business ending at a hard wall 35 units out.
+			//
+			// Both terms are `smoothstep(low, high, v).oneMinus()` rather than a smoothstep
+			// with its edges swapped: WGSL leaves `smoothstep` UNDEFINED when edge0 >= edge1.
+			const shell = x.abs().div(halfWidth).max(z.abs().div(halfDepth));
+			const wrapFade = smoothstep(float(0.72), float(1), shell)
+				.oneMinus()
+				// The same at the top of the box, where the FALL recycles: without it, any
+				// drop that never meets a surface pops into existence directly overhead.
+				.mul(smoothstep(float(0.84), float(1), u).oneMinus());
 
 			// The mesh is camera-anchored with no rotation or scale, so this is just a
 			// translation -- but going through the matrix keeps it correct if that ever
@@ -200,7 +289,7 @@
 			// Seconds since impact. Only meaningful while `below` is 1.
 			const secondsSinceImpact = uImpact.sub(u).mul(boxHeight).div(aSpeed);
 
-			return { x, z, localY, surfaceLocalY, below, secondsSinceImpact, aParams };
+			return { x, z, localY, surfaceLocalY, below, secondsSinceImpact, wrapFade, aParams };
 		};
 
 		// ── The streaks ──────────────────────────────────────────────────────────────
@@ -208,6 +297,7 @@
 		{
 			const aCenter = instancedVec3(centers);
 			const aParams = instancedVec4(params);
+			const aSpeed = aParams.x;
 			const aLength = aParams.y;
 			const aWidth = aParams.z;
 			const m = motionOf(aCenter, aParams);
@@ -218,11 +308,29 @@
 			const along = corner.y;
 
 			const head = vec3(m.x, m.localY, m.z);
-			const tail = vec3(
-				m.x.sub(wind.mul(aLength).mul(0.35)),
-				m.localY.add(aLength),
-				m.z.sub(wind.mul(aLength).mul(0.15))
-			);
+
+			// THE STREAK TRAILS ALONG THE DROP'S VELOCITY RELATIVE TO THE CAMERA, because
+			// that is what a motion-blurred drop physically is. Standing still you get the
+			// near-vertical streaks this always drew; move, and they lean into the
+			// direction of travel and stretch -- the effect that makes running or driving
+			// through rain read as speed rather than as a moving photograph. With the
+			// camera at rest `uCameraVelocity` is zero and this reduces exactly to the old
+			// tail, so nothing changes when nothing moves.
+			//
+			// The mesh carries translation only, so a world-space direction is already a
+			// local-space one and no basis change is needed here.
+			const velocity = vec3(wind.mul(WIND_SLANT_X), float(-1), wind.mul(WIND_SLANT_Z))
+				.mul(aSpeed)
+				.sub(uCameraVelocity);
+			// Guarded rather than `.normalize()`: a camera falling at exactly the drop's
+			// own velocity makes this vector zero, and normalising that is NaN -- which
+			// propagates to the quad's clip position and kills the whole draw, not one drop.
+			const relativeSpeed = velocity.length().max(float(1e-4));
+			// Longer streaks the faster the relative motion, but BOUNDED: unclamped, a fast
+			// camera stretches drops clear across the screen.
+			const stretch = relativeSpeed.div(aSpeed).clamp(0.75, 2.4);
+			const tail = head.sub(velocity.div(relativeSpeed).mul(aLength.mul(stretch)));
+
 			// Deliberately NOT depth-pinned, unlike the dome layers: a drop is near the
 			// camera and must be occluded by scene geometry, so it keeps its honest depth.
 			streakMaterial.vertexNode = streakClip(head, tail, along, across, aWidth);
@@ -235,7 +343,11 @@
 			streakMaterial.colorNode = vec3(0.55, 0.66, 0.78);
 			// `below.oneMinus()` is the collision: the streak stops existing the instant it
 			// reaches the surface, and the ring and burst take over from the same solution.
-			streakMaterial.opacityNode = opacity.mul(alongFade).mul(edgeFade).mul(m.below.oneMinus());
+			streakMaterial.opacityNode = opacity
+				.mul(alongFade)
+				.mul(edgeFade)
+				.mul(m.wrapFade)
+				.mul(m.below.oneMinus());
 		}
 
 		// The splash layers run over the first `splashCount` drops. `subarray` is a VIEW,
@@ -271,7 +383,12 @@
 			const r = sqrt(corner.x.mul(corner.x).add(corner.y.mul(corner.y)));
 			const band = smoothstep(float(0), float(0.34), r.sub(progress).abs()).oneMinus();
 			ringMaterial.colorNode = vec3(0.62, 0.72, 0.84).mul(uLight);
-			ringMaterial.opacityNode = opacity.mul(active).mul(band).mul(progress.oneMinus()).mul(0.5);
+			ringMaterial.opacityNode = opacity
+				.mul(active)
+				.mul(m.wrapFade)
+				.mul(band)
+				.mul(progress.oneMinus())
+				.mul(0.5);
 		}
 
 		// ── The burst ────────────────────────────────────────────────────────────────
@@ -332,7 +449,12 @@
 			const d2 = corner.x.mul(corner.x).add(corner.y.mul(corner.y));
 			const speck = smoothstep(float(0), float(1), d2).oneMinus();
 			burstMaterial.colorNode = vec3(0.6, 0.7, 0.82).mul(uLight);
-			burstMaterial.opacityNode = opacity.mul(active).mul(speck).mul(progress.oneMinus()).mul(0.7);
+			burstMaterial.opacityNode = opacity
+				.mul(active)
+				.mul(m.wrapFade)
+				.mul(speck)
+				.mul(progress.oneMinus())
+				.mul(0.7);
 		}
 
 		return {
@@ -354,8 +476,13 @@
 		burstMaterial
 	} = build();
 
+	// Camera-velocity tracking. Plain variables, written and read only by the task below --
+	// a per-frame value can never be a prop or reactive state (DOCS/weather-system.md §14.1).
+	let lastCameraPosition: THREE.Vector3 | null = null;
+	const stepVector = new THREE.Vector3();
+
 	useTask(
-		() => {
+		(delta) => {
 			// Until the descriptor grows an explicit precipitation type, the shipped
 			// weather library distinguishes rain/storm from snow through cloudType.
 			const rainType = smooth01(0.45, 0.6, descriptor.weather.cloudType);
@@ -370,6 +497,30 @@
 
 			const visible = opacity.value > 0.01;
 			const position = camera.current.position;
+
+			// The camera's velocity, from its own position delta rather than from any
+			// physics body: the streaks must lean against whatever is actually moving the
+			// VIEW, which includes a free-fly camera, a cutscene rig or a spectator.
+			// Tracked even while it is not raining, so the first frame of a downpour does
+			// not inherit a smoother primed with a stale value.
+			if (lastCameraPosition === null) {
+				lastCameraPosition = position.clone();
+			} else {
+				stepVector.subVectors(position, lastCameraPosition);
+				lastCameraPosition.copy(position);
+				if (stepVector.length() > TELEPORT_WORLD) {
+					uCameraVelocity.value.set(0, 0, 0);
+				} else if (delta > 0) {
+					// One-pole smoothing, framerate-independent: the `exp` form gives the
+					// same time constant at 30 fps as at 144, where a bare lerp factor
+					// would not.
+					uCameraVelocity.value.lerp(
+						stepVector.divideScalar(delta),
+						1 - Math.exp(-delta / VELOCITY_SMOOTHING)
+					);
+				}
+			}
+
 			for (const mesh of [streaks, rings, bursts]) {
 				if (!mesh) continue;
 				mesh.visible = visible;
