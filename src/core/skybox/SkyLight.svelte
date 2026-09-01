@@ -53,6 +53,17 @@
 		() => {
 			if (!light) return;
 
+			// ONE shadow render per frame, shared by every render pass. Node shadows are
+			// RENDER-update nodes deduped only per camera per render() call, so a scene
+			// with extra cameras (the mirror sphere's six cube faces, the floor
+			// reflector's virtual camera, Studio's PiP/selection passes) otherwise
+			// re-renders this 2048² map once per pass — up to ~14× per frame. With
+			// autoUpdate off and needsUpdate armed here, the first pass of the frame
+			// renders the shadow once and every later pass reuses it (shadow content
+			// depends only on the light and casters, not the viewing camera).
+			light.shadow.autoUpdate = false;
+			light.shadow.needsUpdate = true;
+
 			const { direction, color, intensity, ambient } = descriptor.light;
 			light.position.set(direction.x * distance, direction.y * distance, direction.z * distance);
 			light.color.setRGB(color[0], color[1], color[2]);

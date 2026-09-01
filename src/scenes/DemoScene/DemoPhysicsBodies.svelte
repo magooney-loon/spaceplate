@@ -168,24 +168,33 @@
 
 	// Orbiting mirror sphere — three's webgpu_materials_basic example (MeshBasicMaterial
 	// + envMap), except the envMap is a LIVE cube capture: a small CubeCamera rides at
-	// the sphere's position and re-renders six faces every frame, so the reflection
-	// shows the floor (itself a blurred mirror — see DemoScene), the corner balls,
-	// spawned bodies and the sun disc (which Sky.svelte's env bake hides). The capture
-	// runs AFTER the main render on purpose: the floor's reflector updates its render
-	// target per renderer.render() call for the active camera, so rendering the main
-	// view first keeps the floor's reflection correct for the player's camera — the
-	// sphere then samples a one-frame-old map, which a perpetually moving mirror never
-	// shows. 128px/HalfFloat, sphere hidden during capture to avoid a fully
-	// self-occluded frame. Same CubeCamera-in-a-task pattern as Sky.svelte's bake.
+	// the sphere's position and re-renders six faces, so the reflection shows the floor
+	// (itself a mirror — see DemoScene), the corner balls, spawned bodies and the sun
+	// disc (which Sky.svelte's env bake hides). The capture runs AFTER the main render
+	// on purpose: the floor's reflector updates its render target per
+	// renderer.render() call for the active camera, so rendering the main view first
+	// keeps the floor's reflection correct for the player's camera — the sphere then
+	// samples a one-frame-old map, which a perpetually moving mirror never shows.
+	// 128px/HalfFloat, sphere hidden during capture to avoid a fully self-occluded
+	// frame. Same CubeCamera-in-a-task pattern as Sky.svelte's bake.
+	//
+	// PERF: each capture is six scene renders (plus a reflector update each, see
+	// DemoScene), so it is throttled to ~30 Hz — half the cost, and a 4 u/s mirror
+	// shows no visible stepping at that refresh.
+	const MIRROR_CAPTURE_HZ = 30;
 	const mirrorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 	const mirrorCapture = new CubeRenderTarget(128, { type: THREE.HalfFloatType });
 	const mirrorCamera = new CubeCamera(0.1, 50, mirrorCapture as never);
 	mirrorMaterial.envMap = mirrorCapture.texture;
 	let mirrorMesh = $state.raw<THREE.Mesh>();
 	const mirrorPos = new THREE.Vector3();
+	let captureClock = 0;
 	useTask(
-		() => {
+		(delta) => {
 			if (!mirrorMesh) return;
+			captureClock += delta;
+			if (captureClock < 1 / MIRROR_CAPTURE_HZ) return;
+			captureClock %= 1 / MIRROR_CAPTURE_HZ;
 			mirrorMesh.visible = false;
 			mirrorCamera.position.copy(mirrorMesh.getWorldPosition(mirrorPos));
 			mirrorCamera.update(renderer, scene);
@@ -207,6 +216,12 @@
 	// only ever reads the array, nothing subscribes to it.
 	let ballMeshes = $state.raw<(THREE.Mesh | undefined)[]>([]);
 	let ballYaw = 0;
+
+	// Scratch objects for the per-frame task — allocating a Quaternion/Euler/two
+	// literals every frame is pure GC churn.
+	const _euler = new THREE.Euler();
+	const _quat = new THREE.Quaternion();
+	const _kinRotation = { x: 0, y: 0, z: 0, w: 1 };
 
 	const snapshotWorld = () => {
 		let rigidBodies = 0;
@@ -272,9 +287,14 @@
 			loopS = (loopS + delta * SWEEP_SPEED) % LOOP.length;
 			const p = posAt(loopS);
 			const y = Math.sin(time) * 1.5 + 2.5;
-			const rotQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(time, 0, 0));
+			_euler.set(time, 0, 0);
+			_quat.setFromEuler(_euler);
+			_kinRotation.x = _quat.x;
+			_kinRotation.y = _quat.y;
+			_kinRotation.z = _quat.z;
+			_kinRotation.w = _quat.w;
 			sphereRb.setNextKinematicTranslation({ x: p.x, y, z: p.z });
-			sphereRb.setNextKinematicRotation({ x: rotQ.x, y: rotQ.y, z: rotQ.z, w: rotQ.w });
+			sphereRb.setNextKinematicRotation(_kinRotation);
 		}
 
 	heartbeat += delta;

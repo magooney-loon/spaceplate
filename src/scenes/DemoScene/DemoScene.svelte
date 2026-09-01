@@ -26,6 +26,11 @@
 	// slot so the gray base keeps the sky system's lighting and shadows; clamped
 	// because the reflector RT holds RAW HDR dome radiance (render-target passes
 	// skip tone mapping) and the sunset sky peaks well past 1.
+	// resolutionScale 0.5: the reflector re-renders per render pass (see bounces
+	// above), so its pixel cost multiplies across ~7 renders/frame. 0.5 was chosen
+	// visually over the cheaper 0.25 (the example ships 0.2) — the reflection read
+	// too soft at quarter scale. If perf needs headroom, this is the first knob to
+	// trade back down.
 	const reflection = reflector({ resolutionScale: 0.5 });
 	reflection.target.rotateX(-Math.PI / 2);
 	reflection.target.userData = { selectable: false, hideInTree: true };
