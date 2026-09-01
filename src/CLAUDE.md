@@ -171,13 +171,14 @@ Driven by `settingsState.general.mouseSensitivity` / `aimSensitivity`:
 - Handles promise-based and legacy `requestPointerLock()`; `pointerlockerror` → 800ms retry cooldown; in-flight guard.
 - Never locks in Studio mode (`VITE_GAME_ENGINE=true`) or while the settings overlay is open;
   opening the overlay always releases the lock.
-- `MouseLook.svelte` rig: mount inside a scene (DemoScene does) — auto-requests lock on mount, falls
-  back to the first non-UI click/keydown, releases on unmount.
-- Demo wiring: `secondaryAction` (RMB / Q) engages aim sensitivity; context menu suppressed while locked.
+- `MouseLook.svelte` rig: mount inside a scene to enable it — auto-requests lock on mount, falls
+  back to the first non-UI click/keydown, releases on unmount. Currently unused: no scene mounts it
+  (DemoScene dropped it; the demo camera is a static `[0, 1, 12]` vantage).
+- While mounted, `secondaryAction` (RMB / Q) engages aim sensitivity; context menu suppressed while locked.
 
 ```ts
 import { mouseLookState, mouseLookActions, BASE_SENS } from '$core';
-// yaw/pitch in radians — Camera.svelte orbits the origin with them in demoScene
+// yaw/pitch in radians — consume them from a task to drive a camera
 ```
 
 ### Sky & weather (`core/skybox/`)

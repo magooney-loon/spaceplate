@@ -7,7 +7,6 @@
 	import PhysicsController from '$extensions/physics/PhysicsController.svelte';
 	import { logPhysics } from '$extensions/logger';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
-	import { MouseLook } from '$core';
 
 	interactivity();
 
@@ -45,7 +44,6 @@
 </script>
 
 <PhysicsController />
-<MouseLook />
 
 {#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 	{#if physicsState.debug}
