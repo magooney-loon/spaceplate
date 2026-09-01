@@ -143,23 +143,40 @@
 	});
 
 	// stats-gl turns on `renderer.backend.trackTimestamp` for trackGPU/trackCPT, but on a
-	// three WebGPURenderer it only ever *reads* `renderer.info.render.timestamp` — it never
-	// resolves the queries. The pool then fills up and three warns
-	// "WebGPUTimestampQueryPool [render]: Maximum number of queries exceeded".
-	// Resolving here both silences that and is what actually populates the value stats-gl
-	// reads, so the GPU panel reports real numbers instead of staying at zero.
+	// three WebGPURenderer it only ever *reads* `renderer.info.<queue>.timestamp` — it never
+	// resolves the queries. A pool's `currentQueryIndex` is only rewound inside
+	// `_resolveQueries`, so an unresolved pool fills up and three warns
+	// "WebGPUTimestampQueryPool [<queue>]: Maximum number of queries exceeded".
+	// Resolving here both silences that and is what actually populates the values stats-gl
+	// reads, so the panels report real numbers instead of staying at zero.
+	//
+	// BOTH QUEUES, and the compute one is not optional merely because compute is. three
+	// keeps a SEPARATE POOL PER TYPE -- the render context's uid picks it, `c:` prefix for
+	// compute -- so resolving RENDER never touches the compute pool, and `Birds.svelte`'s
+	// two `renderer.compute()` passes filled it on their own until it warned. It is also
+	// why the CPT panel sat at a flat 0.00: nothing was ever resolved into it.
+	//
+	// Tracked per queue rather than under one flag, so a slow queue cannot hold up the
+	// other's turn. Resolving a queue that ran no passes this frame is a no-op inside three
+	// (`currentQueryIndex === 0` returns the last value), so the compute call costs nothing
+	// on the frames the flock is grounded and the layer computes nothing.
+	//
 	// Fire-and-forget: it must not block the frame, and it rejects harmlessly if the
 	// device is lost or the feature is unsupported.
-	let resolvingTimestamps = false;
+	const TIMESTAMP_QUEUES = [TimestampQuery.RENDER, TimestampQuery.COMPUTE] as const;
+	const resolving = new Set<string>();
 	const resolveGpuTimestamps = () => {
-		if (resolvingTimestamps || !renderer.backend?.trackTimestamp) return;
-		resolvingTimestamps = true;
-		renderer
-			.resolveTimestampsAsync(TimestampQuery.RENDER)
-			.catch(() => {})
-			.finally(() => {
-				resolvingTimestamps = false;
-			});
+		if (!renderer.backend?.trackTimestamp) return;
+		for (const queue of TIMESTAMP_QUEUES) {
+			if (resolving.has(queue)) continue;
+			resolving.add(queue);
+			renderer
+				.resolveTimestampsAsync(queue)
+				.catch(() => {})
+				.finally(() => {
+					resolving.delete(queue);
+				});
+		}
 	};
 
 	useTask(() => {
