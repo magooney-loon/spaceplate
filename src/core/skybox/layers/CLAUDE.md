@@ -101,7 +101,12 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   the sky group hidden for the pass — it is mounted outside and before the group it
   hides). **Contract: `.r` = surface world Y, `.a` = 1 where something was drawn.** Consumers
   treat `a == 0` as "no surface" = the old fall-through behaviour, so a missing pass
-  degrades gracefully instead of hanging drops in mid-air. The render target is created
+  degrades gracefully instead of hanging drops in mid-air. **World XZ → map UV is flipped
+  on BOTH axes, for two unrelated reasons**: X because a straight-down `lookAt` with
+  `up = +Z` builds its view basis along world −X, and Z because a render target is
+  sampled with `v = 0` at the top. Only the first was undone for a long time, and the
+  resulting Z mirror was self-concealing — it mirrors about `z = cameraZ`, so it vanishes
+  whenever the camera sits on the world X axis and the scene is symmetric there. The render target is created
   at module scope so its identity is stable before any material bakes
   `texture(target.texture)` into its node graph — swapping a texture under a live
   material invalidates its cache key.

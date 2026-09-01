@@ -92,20 +92,30 @@ export const heightFieldState = {
  * fetch.
  */
 export const sampleHeightField = (worldPosition: THREE.Node<'vec3'>) => {
-	// World XZ -> map UV, and THE X NEGATION IS LOAD-BEARING. The pass camera looks
-	// straight down with `up = +Z`, and the view basis three builds from that has its X
-	// axis along world -X: `Matrix4.lookAt` sets x = up x z, and here z (eye - target) is
-	// +Y and up is +Z, so x = +Z x +Y = -X. The map is therefore MIRRORED in X against
-	// the world. Z is not: the camera's Y axis comes out as world +Z.
+	// World XZ -> map UV. BOTH NEGATIONS ARE LOAD-BEARING, and they come from two
+	// different places, which is why one of them was missing for so long.
 	//
-	// Sampling without the flip reads the scene's mirror image, which is invisible for
-	// geometry that happens to be symmetric about the map centre and wrong everywhere
-	// else -- drops fall through the real ground and land on empty air where its
-	// reflection would be. Looking straight down cannot avoid a flip on one axis; it can
-	// only choose which one, so it is undone here, in the one place that owns the
-	// world <-> uv mapping.
+	// X, from the VIEW BASIS. The pass camera looks straight down with `up = +Z`, and
+	// `Matrix4.lookAt` sets x = up x z; here z (eye - target) is +Y, so x = +Z x +Y = -X.
+	// The camera's X axis runs along world -X, so ndc.x = -(worldX - centerX) / extent.
+	//
+	// Z, from the TEXTURE CONVENTION. The camera's Y axis comes out as world +Z, so
+	// ndc.y = +(worldZ - centerZ) / extent -- but ndc.y = +1 is the TOP of the target, and
+	// a colour attachment is sampled with v = 0 at the top (WebGPU's origin; `ScreenNode`
+	// flips WebGL's fragcoord to match, and RainLens's `screenUV` note says the same). So
+	// v = 0.5 - ndc.y / 2, one more negation, and it has nothing to do with the `up`
+	// vector. Looking straight down cannot avoid a flip on one axis; sampling a render
+	// target adds a second one on the other, and BOTH are undone here, in the one place
+	// that owns the world <-> uv mapping.
+	//
+	// What the missing Z flip looked like: the map read back MIRRORED about the plane
+	// z = centerZ, and centerZ is the camera's own Z. So it was self-concealing -- park the
+	// camera on the world X axis and the mirror plane passes through the origin, where the
+	// demo scene is roughly symmetric, and collisions look perfect. Orbit round to the Z
+	// axis and the plane sits 13 units off the scene: drops then sampled empty map, fell
+	// through the real ground, and landed on nothing where its reflection would have been.
 	const rel = worldPosition.xz.sub(uHeightCenter).div(uHeightExtent.mul(2));
-	const uv = vec2(rel.x.negate(), rel.y).add(0.5);
+	const uv = vec2(rel.x.negate(), rel.y.negate()).add(0.5);
 
 	const sample = textureLevel(heightTarget.texture, uv, float(0));
 

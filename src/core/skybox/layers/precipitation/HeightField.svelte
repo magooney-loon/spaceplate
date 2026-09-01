@@ -69,8 +69,10 @@
 	//
 	// This choice mirrors the map in X -- the view basis comes out with its X axis along
 	// world -X. No `up` avoids a flip on some axis when looking straight down, so the map
-	// is left as-is and `sampleHeightField` undoes it; see the note there before changing
-	// this vector, because the two must agree.
+	// is left as-is and `sampleHeightField` undoes it. It also undoes a SECOND flip, on Z,
+	// which this vector has nothing to do with: it comes from a render target being
+	// sampled with v = 0 at the top. Read that note in full before changing this vector --
+	// the two must agree, and only one of the two flips is yours.
 	passCamera.up.set(0, 0, 1);
 
 	/**
