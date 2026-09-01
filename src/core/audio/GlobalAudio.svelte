@@ -12,7 +12,8 @@
 	import { attachRainAudio, attachThunderAudio, tickWeatherAudio } from './weatherAudio';
 
 	const OST_URL = `${BASE_URL}sounds/ost.ogg`;
-	const AMBIENCE_URL = `${BASE_URL}sounds/ambience.ogg`;
+	// Stereo 48 kbps Opus, loudness-matched to the previous bed (-21.5 LUFS integrated).
+	const AMBIENCE_URL = `${BASE_URL}sounds/skybox/ambience.opus`;
 	const CLICK_URL = `${BASE_URL}sounds/click.mp3`;
 	const SWOOSH_URL = `${BASE_URL}sounds/swoosh.mp3`;
 	// Stereo 64 kbps Opus: the always-on bed keeps its width, at just over half the mp3.
