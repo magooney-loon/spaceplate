@@ -166,6 +166,44 @@
 
 	const ballGeometry = new THREE.SphereGeometry(0.8, 64, 32);
 
+	// Live reflections for the corner balls — one SHARED cube capture instead of four:
+	// a single CubeCamera parks at the floor's center at ball height (the old
+	// icosahedron spot, safely inside the mirror sphere's orbit ring) and all four
+	// materials sample the same map. Trade-off: parallax is center-of-floor rather
+	// than per-ball — broad content (sky, sun disc, the mirror floor, the orbiting
+	// sphere, spawned bodies) reads correctly; only precise neighbour geometry lands
+	// slightly off, which 0.8-radius spheres don't show.
+	//
+	// The map goes through the same PMREM chain as scene.environment (CubeCamera
+	// flags needsPMREMUpdate itself, PMREMNode re-filters on version change), so the
+	// balls keep roughness-filtered reflections. envMapIntensity is mirrored from
+	// scene.environmentIntensity each tick because an explicit material.envMap
+	// switches the intensity source away from the scene value (MaterialProperties) —
+	// 0.25 under the procedural sky, 1.0 in HDR/cube modes, matching the old look.
+	// ~15 Hz at 96px: the balls are stationary, so only moving content (the mirror
+	// sphere, spawned bodies, weather) needs to refresh, and 6 scene renders per
+	// capture amortize cheaply.
+	const BALL_CAPTURE_HZ = 15;
+	const ballCapture = new CubeRenderTarget(96, { type: THREE.HalfFloatType });
+	const ballCamera = new CubeCamera(0.1, 50, ballCapture as never);
+	ballCamera.position.set(0, 0.8, 0);
+	for (const material of [carPaint, fibers, golf, clearcoatNormal]) {
+		material.envMap = ballCapture.texture;
+	}
+	let ballClock = 0;
+	useTask(
+		(delta) => {
+			ballClock += delta;
+			if (ballClock < 1 / BALL_CAPTURE_HZ) return;
+			ballClock %= 1 / BALL_CAPTURE_HZ;
+			for (const material of [carPaint, fibers, golf, clearcoatNormal]) {
+				material.envMapIntensity = scene.environmentIntensity;
+			}
+			ballCamera.update(renderer, scene);
+		},
+		{ after: autoRenderTask, autoInvalidate: false }
+	);
+
 	// Orbiting mirror sphere — three's webgpu_materials_basic example (MeshBasicMaterial
 	// + envMap), except the envMap is a LIVE cube capture: a small CubeCamera rides at
 	// the sphere's position and re-renders six faces, so the reflection shows the floor
@@ -262,6 +300,7 @@
 		// Manual THREE resources — T.* disposes its own, these are ours
 		for (const ball of EDGE_BALLS) ball.material.dispose();
 		ballGeometry.dispose();
+		ballCapture.dispose();
 		mirrorMaterial.dispose();
 		mirrorCapture.dispose();
 		flakes.dispose();
