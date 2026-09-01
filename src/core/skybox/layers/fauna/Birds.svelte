@@ -9,8 +9,11 @@
 	// stateless -- each particle is a pure function of `time`, so a vertex node
 	// synthesises motion at zero per-frame cost. Flocking is not: separation, alignment
 	// and cohesion are O(n²) interactions between PERSISTENT neighbours, so each bird
-	// carries position / velocity / flap phase in `instancedArray` storage buffers that
-	// two compute passes integrate every frame. That is also why this is the one layer
+	// carries position, velocity and an attitude vec4 (flap phase, roll, previous
+	// heading) in `instancedArray` storage buffers that two compute passes integrate
+	// every frame. Three buffers exactly, which is the vertex-stage limit App.svelte
+	// requests -- anything else a bird needs to remember goes in the vec4, and anything
+	// that never changes goes in a plain vertex attribute. That is also why this is the one layer
 	// that cannot run on the WebGL2 fallback (three's own example is marked "TODO: Fix
 	// example with WebGL backend"): the task gates on the live backend and the flock
 	// simply never mounts work elsewhere.
@@ -29,6 +32,19 @@
 	// is not a rigid formation -- and the pull strength itself breathes on a slow sine.
 	// The paths are quasi-periodic: they never close, and no two flocks wander in
 	// phase. Gust turbulence scaled by the wind channel rides on top.
+	//
+	// WHAT AN INDIVIDUAL BIRD DOES, which is where a flock stops reading as a particle
+	// system. Three things, all of them per-bird and none of them in the reference:
+	//   - IT BANKS. The reference's heading frame is yaw and pitch only, so its birds
+	//     slide round their turns flat. Roll is driven off the yaw RATE, chased rather
+	//     than snapped, and applied FIRST in the rotation chain because it turns about
+	//     the bird's own forward axis. At this distance a wheeling flock is mostly read
+	//     by its tilt.
+	//   - IT GLIDES. Nothing beats its wings continuously. A slow per-bird burst cycle
+	//     drops the flap to a held dihedral and back, overridden by a climb term -- a
+	//     bird pulling up always beats.
+	//   - IT HAS A SIZE. A seeded per-bird scale, so a flock reads as individuals at
+	//     different depths rather than one stamped sprite repeated.
 	//
 	// BOUNDED, NOT JUST PLACED. The layout keeps the flocks far away, but distance is
 	// enforced rather than hoped for: no bird may go below MIN_ALT (the ground plane
@@ -163,29 +179,74 @@
 	 *  sits far outside both; they are the guarantee, not the mechanism. */
 	const MIN_ALT = 12;
 	const KEEP_OUT = 60;
-	/** Soft-range gains: the lift ramps in below y=20 (flock C's lowest wander is
-	 *  ~22, so normal flight never touches it); the radial push ramps in inside
-	 *  KEEP_OUT + 30. */
+	/** Soft-range gains: the lift ramps in below y=20 (the lowest flock's deepest wander
+	 *  is ~21.8 -- see the altitude note on FLOCKS -- so normal flight never touches it);
+	 *  the radial push ramps in inside KEEP_OUT + 30. */
 	const LIFT = 2.5;
 	const CORE_PUSH = 4;
 	const FLAP_AMP = 1.25;
 	const FLAP_RATE_XZ = 8;
 	const FLAP_RATE_Y = 12;
+	/** BANKING. A bird rolls INTO its turn, and how far depends on how fast it is
+	 *  turning -- so the target attitude is driven by the yaw RATE, not the heading.
+	 *  `GAIN` is radians of bank per radian/second of turn, `MAX` the hard limit (~54
+	 *  degrees, a strong but real bank) because a frame-sized spike out of the gust
+	 *  turbulence must never flip a bird onto its back, and `RESPONSE` is how quickly
+	 *  the roll chases that target -- which doubles as the low-pass keeping per-frame
+	 *  turbulence out of the attitude. Without any of this the heading construction is
+	 *  yaw and pitch only, and a wheeling flock slides round its turns flat. */
+	const BANK_GAIN = 0.42;
+	const BANK_MAX = 0.95;
+	const BANK_RESPONSE = 3.5;
+	/** FLAP AND GLIDE. Nothing beats its wings continuously; birds flap in bursts and
+	 *  then hold a glide, and at this distance that alternation is most of what separates
+	 *  a flock from a field of identically animated sprites. `RATE` is the burst cycle in
+	 *  rad/s (~7 s round trip, offset per bird so a flock is never in unison), and
+	 *  `DIHEDRAL` is the shallow V a gliding bird holds -- gliding to a raised wing
+	 *  rather than to zero gives the glide a silhouette of its own instead of making it
+	 *  the flap's midpoint. */
+	const GLIDE_RATE = 0.85;
+	const GLIDE_DIHEDRAL = 0.2;
+	/** Per-bird size. Small enough to read as individuals at different depths rather
+	 *  than as different species. */
+	const SCALE_MIN = 0.78;
+	const SCALE_MAX = 1.34;
 	/** SUN_INTENSITY at full day (model/sky.svelte.ts); normalises the light inputs. */
 	const KEY_FULL = 4.75;
 
 	/**
 	 * The flock layout: azimuth (deg, 0 = dead ahead of the boot camera), distance
 	 * from the scene origin, altitude, share of `count`, and seed spread. Anchors sit
-	 * FAR and LOW -- elevations of roughly 6-15 degrees -- because both stock cameras
+	 * FAR and LOW -- elevations of roughly 8-15 degrees -- because both stock cameras
 	 * look at the origin roughly horizontally: anything overhead is simply never in
-	 * frame. Distances also keep the flocks well outside each other's interaction
-	 * zone, which is what keeps them from merging into one swarm.
+	 * frame.
+	 *
+	 * SIX SMALL FLOCKS RATHER THAN THREE LARGE ONES, at the same total count: three
+	 * flocks over 360 degrees means most bearings have nothing in them, and a sky you
+	 * have to go looking for is not sky dressing. Ten-odd birds apiece reads as a flock
+	 * anyway at this distance.
+	 *
+	 * SPACING IS A CONSTRAINT, NOT A LOOK. Anchors must stay far enough apart that two
+	 * flocks never fall inside each other's ~12.5-unit interaction zone even at the
+	 * extremes of their wander (WANDER + its second harmonic = 30 units either way), so
+	 * the real floor is about 75 units between anchors. The closest pair here is the
+	 * first two at ~153 -- more margin than the three-flock layout had (~115), because
+	 * spreading round the compass buys separation that stacking at one bearing did not.
+	 * Azimuths are deliberately uneven: six flocks exactly 60 degrees apart reads as
+	 * generated the moment you turn on the spot.
+	 *
+	 * ALTITUDES STAY ABOVE THE SOFT LIFT. The lowest is 30, and the deepest a flock
+	 * dips is `altitude - WANDER_Y - PER_BIRD_DRIFT/2 - spread*0.45/2` ~ 21.8, clear of
+	 * the lift ramp's top edge at 20. See LIFT: that ramp is a guarantee, not a
+	 * mechanism, and normal flight must never ride it.
 	 */
 	const FLOCKS = [
-		{ az: 0, distance: 150, altitude: 34, share: 0.38, spread: 20 },
-		{ az: 38, distance: 185, altitude: 46, share: 0.3, spread: 17 },
-		{ az: 205, distance: 210, altitude: 28, share: 0.2, spread: 15 }
+		{ az: 0, distance: 150, altitude: 34, share: 0.17, spread: 14 },
+		{ az: 52, distance: 190, altitude: 47, share: 0.15, spread: 13 },
+		{ az: 118, distance: 165, altitude: 30, share: 0.13, spread: 12 },
+		{ az: 186, distance: 215, altitude: 40, share: 0.15, spread: 14 },
+		{ az: 248, distance: 175, altitude: 32, share: 0.12, spread: 12 },
+		{ az: 308, distance: 200, altitude: 44, share: 0.14, spread: 13 }
 	] as const;
 
 	// ── Uniforms (one set, shared by the computes and the material) ───────────────
@@ -238,8 +299,20 @@
 		const anchors = new Float32Array(count * 3);
 		const positions = new Float32Array(count * 3);
 		const velocities = new Float32Array(count * 3);
-		const phases = new Float32Array(count);
+		/**
+		 * Per-bird ATTITUDE STATE, one vec4: (flap phase, roll, prevHeadingX,
+		 * prevHeadingZ).
+		 *
+		 * Widened from the reference's bare phase float rather than given buffers of its
+		 * own, and that is a hard constraint, not tidiness: the vertex stage may read
+		 * exactly THREE storage buffers (the limit App.svelte requests), and it already
+		 * spends them on position, velocity and this. Roll has to reach the vertex stage,
+		 * and the previous heading has to survive between position passes, so both ride
+		 * here. The anchor buffer stays compute-only for the same reason.
+		 */
+		const states = new Float32Array(count * 4);
 		const shades = new Float32Array(count);
+		const scales = new Float32Array(count);
 
 		const entries: { x: number; y: number; z: number; spread: number }[] = [];
 		for (const flock of FLOCKS) {
@@ -258,12 +331,14 @@
 			}
 		}
 		while (entries.length < count) {
-			// Strays, scattered around the compass.
+			// Strays, scattered around the compass. The altitude floor is 32 rather than
+			// the flocks' 30 because a stray's seed spread is wider, and the same sum has
+			// to clear the soft lift's top edge at 20 (see FLOCKS).
 			const az = rng() * Math.PI * 2;
 			const distance = 150 + rng() * 120;
 			entries.push({
 				x: Math.sin(az) * distance,
-				y: 28 + rng() * 34,
+				y: 32 + rng() * 30,
 				z: -Math.cos(az) * distance,
 				spread: 26
 			});
@@ -287,11 +362,25 @@
 			const vz = rng() - 0.5;
 			const l = Math.hypot(vx, vy, vz) || 1;
 			const s = 0.6 + rng() * 0.9;
-			velocities[i * 3] = (vx / l) * s;
-			velocities[i * 3 + 1] = (vy / l) * s;
-			velocities[i * 3 + 2] = (vz / l) * s;
+			const vxF = (vx / l) * s;
+			const vyF = (vy / l) * s;
+			const vzF = (vz / l) * s;
+			velocities[i * 3] = vxF;
+			velocities[i * 3 + 1] = vyF;
+			velocities[i * 3 + 2] = vzF;
 
-			phases[i] = rng() * 62.83;
+			// Phases spread across the reference's 62.83 (= 2*pi*10) wrap so no two birds
+			// flap in lockstep. Roll starts level.
+			states[i * 4] = rng() * 62.83;
+			states[i * 4 + 1] = 0;
+			// Seeded with the bird's ACTUAL starting heading, in the same (cos ry, sin ry)
+			// form the position pass writes back -- otherwise the first frame reads a turn
+			// from (0,0) to a real heading and banks the whole flock hard on frame one.
+			const hxz = Math.hypot(vxF, vzF) || 1;
+			states[i * 4 + 2] = vxF / hxz;
+			states[i * 4 + 3] = -vzF / hxz;
+
+			scales[i] = SCALE_MIN + rng() * (SCALE_MAX - SCALE_MIN);
 
 			// Plumage: mostly dark to mid greys with a few pale birds -- a real flock
 			// at distance is a mottle, not a fill.
@@ -303,10 +392,10 @@
 		// No setPBO(): that is the WebGL2 compute readback path, and this layer is
 		// WebGPU-only by the gate below. The anchor buffer is read in the COMPUTE pass
 		// only, so the vertex stage still reads exactly three storage buffers --
-		// position, velocity, phase -- which is the count App.svelte requests.
+		// position, velocity, state -- which is the count App.svelte requests.
 		const positionStorage = instancedArray(positions, 'vec3').setName('birdPosition');
 		const velocityStorage = instancedArray(velocities, 'vec3').setName('birdVelocity');
-		const phaseStorage = instancedArray(phases, 'float').setName('birdPhase');
+		const stateStorage = instancedArray(states, 'vec4').setName('birdState');
 		const anchorStorage = instancedArray(anchors, 'vec3').setName('birdAnchor');
 
 		// ── The velocity pass ────────────────────────────────────────────────────────
@@ -474,7 +563,7 @@
 		})().compute(count).setName('Sky birds velocity');
 
 		// ── The position pass ────────────────────────────────────────────────────────
-		// Integrate, advance the flap phase, and enforce THE HARD BOUNDARIES: never
+		// Integrate, advance the attitude state, and enforce THE HARD BOUNDARIES: never
 		// below MIN_ALT, never inside KEEP_OUT of the origin. The floor is applied
 		// first and the keep-out projection only ever scales a position UP (it fires
 		// when the bird is inside the sphere), so the two cannot fight each other.
@@ -490,19 +579,66 @@
 			positionStorage.element(instanceIndex).assign(pos);
 
 			const velocity = velocityStorage.element(instanceIndex);
-			const phase = phaseStorage.element(instanceIndex);
+			const state = stateStorage.element(instanceIndex).toVar();
 
-			const modValue = phase
+			// ── THE BANK ──
+			// The horizontal heading, stored as the SAME (cos ry, sin ry) pair the vertex
+			// node builds its yaw from -- z negated and all. Keeping it in that form is
+			// what makes the turn below a plain 2-D cross product rather than a sign
+			// puzzle: for unit vectors cross(previous, current) is sin of the yaw change,
+			// and at frame scale sin of the change IS the change.
+			const xz = length(velocity.xz).max(1e-6);
+			const hx = velocity.x.div(xz);
+			const hz = velocity.z.negate().div(xz);
+			const turn = state.z.mul(hz).sub(state.w.mul(hx));
+
+			// Bank INTO the turn, proportional to the yaw RATE. Positive `turn` is a
+			// left turn (increasing ry swings the nose toward -z, which is the bird's
+			// left) and positive roll drops the left wing, so the sign works out with no
+			// negation -- the whole reason for storing the heading in the vertex node's
+			// convention rather than the world's.
+			const targetRoll = clamp(
+				turn.div(deltaTime.max(1e-4)).mul(float(BANK_GAIN)),
+				float(-BANK_MAX),
+				float(BANK_MAX)
+			);
+			// Chased, not snapped: a bird rolls into a turn over a beat or two, and the
+			// same smoothing is what keeps a single turbulent frame from throwing the
+			// attitude around.
+			state.y = mix(
+				state.y,
+				targetRoll,
+				clamp(deltaTime.mul(float(BANK_RESPONSE)), float(0), float(1))
+			);
+			state.z = hx;
+			state.w = hz;
+
+			// ── THE FLAP PHASE ── as the reference: faster with speed, faster again on a
+			// climb. Whether the wings are actually beating is the vertex node's call --
+			// see the glide term there. The phase runs regardless, so a bird coming out of
+			// a glide picks up mid-stroke rather than snapping to the top of one.
+			state.x = state.x
 				.add(deltaTime)
 				.add(length(velocity.xz).mul(deltaTime).mul(float(FLAP_RATE_XZ)))
-				.add(max(velocity.y, 0.0).mul(deltaTime).mul(float(FLAP_RATE_Y)));
-			phaseStorage.element(instanceIndex).assign(modValue.mod(62.83));
+				.add(max(velocity.y, 0.0).mul(deltaTime).mul(float(FLAP_RATE_Y)))
+				.mod(62.83);
+
+			stateStorage.element(instanceIndex).assign(state);
 		})().compute(count).setName('Sky birds position');
 
 		// ── The material ─────────────────────────────────────────────────────────
 		// Tone-mapped like CloudDeck and Moon: a bird is an object in the dome's
 		// exposure space, not an emissive phenomenon.
 		const material = skyLayerMaterial({ side: THREE.DoubleSide, toneMapped: true });
+
+		// The two per-bird constants, as plain instanced ATTRIBUTES rather than storage:
+		// they never change, so they cost the vertex stage nothing it is short of. That
+		// distinction is the point -- storage buffers are the scarce resource here (three
+		// in the vertex stage), vertex buffers are not (this takes the geometry to three
+		// of the eight skyLayer.ts documents). `aShade` is read in the FRAGMENT stage and
+		// is auto-lifted to a varying, the same lift Meteors' brightness rides.
+		const aShade = instancedFloat(shades);
+		const aScale = instancedFloat(scales);
 
 		// The vertex node, as the reference: flap the wing tips, rotate the bird into
 		// its velocity's heading frame, add the storage position, project. The mesh's
@@ -512,12 +648,31 @@
 		// resolves to NaN under WGSL.
 		const birdVertex = Fn(() => {
 			const position = positionLocal.toVar();
-			const phase = phaseStorage.element(instanceIndex).toVar();
+			const state = stateStorage.element(instanceIndex).toVar();
 			const heading = normalize(velocityStorage.element(instanceIndex)).toVar();
 
+			// FLAP OR GLIDE, whichever the bird is owed. Two terms, stronger wins: a slow
+			// per-bird burst cycle (golden-angle offset off the index, the same idiom the
+			// target drift uses, so a flock is never in unison), and a climb term --
+			// nothing gains height on a glide, so a bird pulling up always beats.
+			const glide = smoothstep(
+				float(-0.45),
+				float(0.1),
+				sin(uTime.mul(float(GLIDE_RATE)).add(float(instanceIndex).mul(2.399)))
+			);
+			const beat = max(glide, smoothstep(float(-0.2), float(0.12), heading.y));
+
 			If(vertexIndex.equal(4).or(vertexIndex.equal(7)), () => {
-				position.y = sin(phase).mul(float(FLAP_AMP));
+				// Gliding wings are HELD, and held slightly raised -- the shallow dihedral
+				// a soaring bird carries. Mixing toward that rather than toward zero gives
+				// the glide a silhouette of its own instead of parking it at the flap's
+				// midpoint, where it would read as a bird that had simply stopped.
+				position.y = mix(float(GLIDE_DIHEDRAL), sin(state.x).mul(float(FLAP_AMP)), beat);
 			});
+
+			// Per-bird size, applied AFTER the flap so a bigger bird sweeps a bigger wing
+			// rather than a big bird flapping a small one's stroke.
+			position.mulAssign(aScale);
 
 			const world = modelWorldMatrix.mul(position);
 
@@ -536,7 +691,16 @@
 			const maty = mat3(cosry, 0, negate(sinry), 0, 1, 0, sinry, 0, cosry);
 			const matz = mat3(cosrz, sinrz, 0, negate(sinrz), cosrz, 0, 0, 0, 1);
 
-			const finalVert = maty.mul(matz).mul(world);
+			// ROLL, and it goes FIRST in the chain because it is a rotation about the
+			// bird's own FORWARD axis -- which is +x in this frame (the mesh's
+			// rotation.y = pi/2 turns the geometry's +z nose into it), and only stays the
+			// forward axis while the yaw and pitch are still ahead of it. Put it after
+			// them and it becomes a roll about a world axis, which is a bird cartwheeling.
+			const cosrx = cos(state.y);
+			const sinrx = sin(state.y);
+			const matx = mat3(1, 0, 0, 0, cosrx, sinrx, 0, negate(sinrx), cosrx);
+
+			const finalVert = maty.mul(matz).mul(matx).mul(world);
 			finalVert.addAssign(positionStorage.element(instanceIndex));
 
 			// Far-plane pinning, exactly like every dome layer: honest depth at these
@@ -548,10 +712,7 @@
 		material.vertexNode = birdVertex;
 
 		// Plumage: the per-bird shade mixes between the dark and light ends of the
-		// key light's hue. An instanced attribute, not storage -- used in the fragment
-		// stage it is auto-lifted to a varying (the same lift Meteors' brightness
-		// rides), and it keeps the vertex stage at three storage buffers.
-		const aShade = instancedFloat(shades);
+		// key light's hue.
 		material.colorNode = uHue.mul(mix(uDark, uLight, aShade));
 		material.opacityNode = opacity;
 

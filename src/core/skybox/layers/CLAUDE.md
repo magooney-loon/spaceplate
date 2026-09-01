@@ -157,16 +157,33 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 - **Birds is the one layer that is NOT stateless in `time`** — and the design split
   matters more than the GPU cost it explains. Stars, Rain and Snow are pure functions
   of the TSL `time` node; a flock is separation/alignment/cohesion between persistent
-  neighbours, so each bird carries position/velocity/flap phase in `instancedArray`
-  storage buffers integrated by two `renderer.compute()` passes from the layer's task.
-  Storage-in-vertex is also what escapes the 8-`maxVertexBuffers` cap — which is why
-  the app's renderer requests `maxStorageBuffersInVertexStage: 3` (App.svelte).
-- **Few flocks and strays from ONE pass**: every bird carries its own flock ANCHOR in
-  a read-only storage buffer (read in the compute pass only, so the vertex stage stays
-  at three storage buffers). Anchors sit far apart — well outside the ~12-unit
-  interaction zone — which is what keeps flocks from merging; strays are one-bird
-  "flocks", and a speed FLOOR in the clamp keeps them flying loops instead of damping
-  onto their anchors (birds do not hover).
+  neighbours, so each bird carries position/velocity plus an **attitude vec4** (flap
+  phase, roll, previous heading xz) in `instancedArray` storage buffers integrated by
+  two `renderer.compute()` passes from the layer's task. Storage-in-vertex is also what
+  escapes the 8-`maxVertexBuffers` cap — which is why the app's renderer requests
+  `maxStorageBuffersInVertexStage: 3` (App.svelte). **That 3 is the budget**: anything
+  else a bird must remember goes in the vec4, and anything that never changes (plumage
+  shade, per-bird scale) goes in a plain instanced attribute instead.
+- **A bird banks, glides and has a size** — the three things the reference example does
+  not do, and between them most of what stops a flock reading as animated sprites. Roll
+  comes off the yaw RATE (chased, not snapped) and is applied **first** in the rotation
+  chain, because it turns about the bird's own forward axis and only stays forward while
+  yaw and pitch are still ahead of it. The previous heading is stored in the vertex
+  node's own `(cos ry, sin ry)` convention, which is what makes the turn a plain 2-D
+  cross product with no sign correction. The flap phase always advances; whether the
+  wings actually beat is a separate glide term, so a bird leaving a glide picks up
+  mid-stroke.
+- **Several flocks and strays from ONE pass**: every bird carries its own flock ANCHOR
+  in a read-only storage buffer (read in the compute pass only, so the vertex stage
+  stays at three storage buffers). Six flocks of ~10 plus strays, not three of ~20:
+  three anchors over 360° leaves most bearings empty, and sky dressing you have to go
+  looking for is not doing its job. **Anchor spacing is a constraint, not a look** —
+  two anchors must stay outside each other's ~12.5-unit interaction zone even at the
+  extremes of their wander (±30), so the floor is ~72 units and the shipped layout's
+  closest pair is 153. Azimuths are deliberately uneven; evenly spaced flocks read as
+  generated the moment you turn on the spot. Strays are one-bird "flocks", and a speed
+  FLOOR in the clamp keeps them flying loops instead of damping onto their anchors
+  (birds do not hover).
 - **The anchor is a seed, not a leash**: the pull target WANDERS on incommensurate
   sines (seeded per flock from the anchor, plus a smaller per-bird drift), and the
   pull strength breathes on a slow sine — a constant pull to a fixed point is a closed
