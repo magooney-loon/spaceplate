@@ -93,7 +93,7 @@
 		vec3,
 		vec4
 	} from 'three/tsl';
-	import { clamp01, descriptor, mulberry32, rainAmount, windAxisX, windAxisZ } from './model';
+	import { clamp01, descriptor, mulberry32, rainAmount, windAxisX, windAxisZ } from '../../model';
 	import { sampleHeightField } from './heightField';
 	import {
 		billboardClip,
@@ -106,7 +106,7 @@
 		streakClip,
 		HEAD_ANCHORED_QUAD,
 		SKY_LAYER_USERDATA
-	} from './skyLayer';
+	} from '../skyLayer';
 
 	interface Props {
 		count?: number;

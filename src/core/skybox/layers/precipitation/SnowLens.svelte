@@ -52,8 +52,8 @@
 		vec4,
 		viewportMipTexture
 	} from 'three/tsl';
-	import { clamp01, descriptor, snowAmount } from './model';
-	import { instancedQuad, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
+	import { clamp01, descriptor, snowAmount } from '../../model';
+	import { instancedQuad, skyLayerMaterial, SKY_LAYER_USERDATA } from '../skyLayer';
 
 	interface Props {
 		/**

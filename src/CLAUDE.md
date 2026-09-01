@@ -25,26 +25,30 @@ core/
   audio/
     GlobalAudio.svelte    — All <Audio> components; never unmounts
     globalAudio.svelte.ts — soundTriggers + soundActions singleton (import from here in .ts files)
+    weatherAudio.ts       — Rain bed + thunder claps; the sky's audio consumer (see Sound system)
 
   input/
     Keymapper.svelte      — Global keyboard/mouse listeners; routes into the input extension
     MouseLook.svelte      — Mouse-look rig (mount in a scene to enable pointer-locked look)
     mouseLook.svelte.ts   — Mouse look state + pointer lock lifecycle (cross-browser hardened)
 
-  skybox/               — Everything sky/skybox/weather (see "Sky & weather" below)
+  skybox/               — Everything sky/skybox/weather (→ see core/skybox/CLAUDE.md)
     Skybox.svelte         — Mount + THE sky driver task + env/cube texture mode switch
     Sky.svelte            — WebGPU-native sky dome (three's SkyMesh), descriptor consumer
     SkyLight.svelte       — Descriptor-driven key light (sun→moon crossover) + hemisphere fill
     SkyFog.svelte         — scene.fog (FogExp2) from the day curve + fog channel
-    Stars.svelte          — TSL billboard star field (NOT points — see below)
-    Nebula.svelte         — TSL fbm smoke on the dome, faded by starVisibility
-    Meteors.svelte        — TSL streak field, faded by starVisibility
-    Moon.svelte           — Phase-shaded moon sphere, tidally locked
-    skyLayer.ts           — Shared layer plumbing: instancedQuad, billboardClip/streakClip,
-                           pinFarPlane/domeVertexNode, altitudeOf, skyLayerMaterial
+    environment/          — Env-mode state (procedural | HDR | cube) + texture lists — Skybox.svelte
+                           consumes it in every build, so it is engine state, not extension
     model/                — Pure sky model: clock, sunPath, dayCurve, weatherMixer, phases,
                            events, math, types + sky.svelte.ts façade (descriptor,
                            skyActions, skyQueries, skyMeta)
+    layers/               — Every renderer that draws on/around the dome:
+      skyLayer.ts           — Shared plumbing: instancedQuad, billboardClip/streakClip,
+                             pinFarPlane/domeVertexNode, altitudeOf, skyLayerMaterial
+      celestial/            — Stars (TSL billboards, NOT points), Moon, Meteors, Nebula + milkyWay.ts
+      clouds/               — CloudDeck (heavy weather mass + wind scroll)
+      precipitation/        — Rain, Snow, RainLens, SnowLens, HeightField + heightField.ts
+      lightning/            — Lightning + flashState.ts (shared strike state)
 
   utils/
     Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock)
@@ -71,6 +75,8 @@ import { soundActions, MouseLook } from '$core';
 
 Exceptions that stay path imports (documented in each barrel): `*Extension.svelte` Studio panels,
 `useX.ts` Studio-aware hooks, and runtime components like `PhysicsController.svelte`.
+`extensions/skybox` has no barrel at all — it is panel-only since its state moved to
+`core/skybox/environment/`.
 Modules _inside_ an extension import each other relatively, never through their own barrel — that
 would create a circular module graph.
 
@@ -115,6 +121,10 @@ The post-processing rebuild is planned in `DOCS/post-processing.md`; the sky/wea
 - `soundActions.playSwoosh()` — polyphonic (clone per call → overlapping instances).
 - `soundActions.playClick()` — one-shot (stop + restart).
 - `$state.raw<ThreeAudio>()` — prevents Svelte 5 Proxy wrapping of THREE.js class instances.
+- `core/audio/weatherAudio.ts` is the sky's audio consumer: the rain bed and thunder claps read
+  `descriptor.weather` + `flashState` from a task ticked by GlobalAudio — never an `$effect` (the
+  descriptor is not reactive, weather-system.md §14.1). The triggers deliberately do NOT live in the
+  sky layers: layers unmount with the environment mode, and a looping bed must not.
 - **Audio defaults must be `false`** — browser autoplay policy requires audio to start disabled.
   `Loader.svelte` shows the enable prompt that unlocks it.
 
@@ -167,135 +177,30 @@ import { mouseLookState, mouseLookActions, BASE_SENS } from '$core';
 // yaw/pitch in radians — Camera.svelte orbits the origin with them in demoScene
 ```
 
-### Skybox (`extensions/skybox/`)
+### Sky & weather (`core/skybox/`)
 
-- Environment-mode state only: `environmentState.mode` picks procedural sky (default) | `environment` (HDR) | `cube` (cubemap);
-  `ENV_TEXTURES` / `CUBE_TEXTURES` come from `envTextures.ts`. Persists to localStorage (dev convenience).
-- The old preset layer (sky scalars, star presets, transitions, user presets) is **deleted** — the sky is
-  time-driven now and lives in `core/skybox/model` (see `DOCS/weather-system.md`).
-- `SkyboxExtension.svelte` is the Studio panel: time scrubber / speed / jump buttons and the weather
-  buttons + raw channel sliders (all six, procedural mode only), plus environment mode & texture pickers,
-  and a **⚡ Strike Now** button (`requestStrike()` from `core/skybox/flashState`) that fires one bolt
-  immediately — the dev-tool exception to "panel drives only `skyActions`", since a strike is FX state,
-  not authored sky data.
+Full rules live in `src/core/skybox/CLAUDE.md` (plus `model/`, `layers/` and
+`environment/` sub-docs); concept + plan of record in `DOCS/weather-system.md`.
+The essentials:
 
-**Weather (`core/skybox/model/weatherMixer.ts`)** — weather is a modulation layer over the day
-curve, never a replacement for it: a storm at noon is still noon under clouds.
-
-```ts
-import { skyActions, skyQueries, skyMeta } from '$core/skybox/model';
-
-skyActions.setWeather('storm', { over: 30_000 }); // named target, 30 s blend
-skyActions.setWeather({ fog: 0.9 }, { over: 0 }); // raw partial, snapped
-skyActions.clearWeather({ over: 10_000 });
-skyQueries.getWeather(); // live channel vector — read, never cache
-```
-
-- Named weathers (`clear` `cloudy` `overcast` `fog` `rain` `storm` `snow`) are **target vectors**,
-  kept in code like `DEFAULT_DAY_CURVE`. Six channels: `cloudCover` `cloudType` `fog`
-  `precipitation` `wind` `lightning`, each 0–1.
-- A raw partial leaves unmentioned channels **where they are**. `over: 0` snaps and counts as a
-  discontinuity (immediate env re-bake). Blends run on wall-clock ms, not scaled game time.
-- Per-weather `stagger` delays a channel's _onset_ as a fraction of the blend; all channels still
-  finish together. That is what makes a storm arrive rather than appear.
-- `descriptor.weather` is plain and per-frame. `skyMeta` mirrors the active name, `blending`, and
-  all six channels as `$state`, gated to 1% so a 20 s blend wakes the reactive graph a few dozen times.
-- **The key light reads `deckFactor(cloudCover)`, never raw cover** — smoothstepped from
-  `DECK_THRESHOLD` (0.4) to 1.0, so scattered cloud leaves shadows completely alone and only a
-  closed layer flattens them. The sky boots at a non-zero `cloudCover`; scaling the light
-  linearly cost every scene 31% of its key light before anything called `setWeather`.
-  Attenuation, the ambient return, the light's desaturation and the night fills all go through
-  it. The baseline sky modulation (haze, stars, fog density) deliberately uses raw cover —
-  none of it hits shadows.
-- **`cloudCover` values are authored against SkyMesh's look, not as a physical fraction.** Its
-  cloud mask is `smoothstep(1 - coverage, 1 - coverage + 0.3, fbm)`, so by ~0.5 the dome reads
-  as a flat sheet. `overcast` is therefore authored at **0.35** and sits _below_
-  `DECK_THRESHOLD` — it keeps its shadows. The flat, shadowless deck lives at `rain`, `snow`
-  and `storm`. Ordering is boot 0.2 < cloudy 0.25 < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.
-- `cloudCover`, `fog`, precipitation, `wind` and `lightning` all have renderers today (SkyMesh
-  cloud coverage, `SkyFog`, `Rain.svelte` + `Snow.svelte` for precipitation, `CloudDeck.svelte` for the
-  heavy deck + wind scroll, `Lightning.svelte` for strikes, plus scattering / star visibility /
-  exposure / key-light attenuation). Rain and Snow split on `cloudType` (rain above ~0.5, snow below) —
-  a temporary gate until the descriptor grows an explicit precipitation type. Snow's flakes dim with
-  the light hints, so a night snowfall reads faint and cool.
-  an explicit precipitation type. The two **screen-space lens layers** are the near end of
-  the same split: `RainLens.svelte` (water beading and running on the glass, quick to wet
-  and slow to dry) and `SnowLens.svelte` (dendritic frost creeping in from the frame edges,
-  slow in both directions). Both read the finished frame through `viewportMipTexture` and
-  draw last (renderOrder 10 and 11) — they are post-processing that needs no pipeline, and
-  the draw order is load-bearing, not tidy. **`wind` cannot drive `SkyMesh.cloudSpeed`** — that uniform is
-  multiplied by absolute elapsed time, so changing it teleports the cloud pattern; the wind-driven
-  deck (`CloudDeck.svelte`) accumulates its own UV offset instead, which is why it can scroll.
-  Lightning publishes its per-frame flash to `flashState.ts` (plain shared state, one writer in
-  `Lightning`'s task, read by `CloudDeck` so the deck lights up around the strike) — per-frame
-  values can never be props (§14.1), and the descriptor's single writer stays the model.
-
-**Scene fog is owned by `SkyFog.svelte`.** One linear `Fog`, created at mount and mutated per frame —
-assigning a _new_ fog object rebuilds three's fog node and invalidates every material's cache key.
-Every sky layer sets `material.fog = false`; at radius 1000 any fog would resolve the whole sky to
-flat fog colour. Clear-weather fog is camera-relative horizon masking: it starts near the active
-camera's far range, while the weather `fog` channel can pull the band inward for actual low
-visibility.
-
-**Rayleigh is the sunrise colour knob, not turbidity.** Turbidity feeds mie, which is
-wavelength-flat, so raising it grows a grey halo — `sunrise` at turbidity 9 measured a glow band
-of `rgb(131,122,131)`, saturation 0.14. The red comes from rayleigh *extinction* along the horizon
-path. Related: Preetham's warm window is only ~0–2° of sun elevation, so `goldenMorning` /
-`goldenHour` at +6° render blue and cannot be made golden — they're tuned only to stop clipping.
-See `DOCS/weather-system.md` §15.1.
-
-**`invalidate()` has one owner per reason.** Threlte's `renderMode` defaults to
-`'on-demand'` and `App.svelte`'s `<Canvas>` does not override it, so a frame is drawn only
-when something invalidates. Every sky layer used to invalidate unconditionally, which
-silently made the app `'always'` — including at the boot default, a *manual clock at
-timeScale 0*. The split now:
-
-- **`Skybox.svelte`'s driver task** invalidates when the model actually moved (it compares
-  `meta.t` and the six weather channels — everything else derives from those seven numbers).
-  It covers `Sky`, `SkyFog`, `SkyLight` and `Moon`, which are pure descriptor consumers and
-  **must not call `invalidate()` themselves**.
-- **Layers animated by the TSL `time` node** (`Stars`, `Nebula`, `Meteors`, `CloudDeck`,
-  `Rain`, `Snow`) keep their own `invalidate()`, gated on being visible at all — and set
-  `mesh.visible` so an invisible layer costs no draw call either.
-- **`Lightning`** gates on a live strike, as it always did.
-
-**Particle layers are instanced, and that changes where altitude comes from.** `Stars`,
-`Meteors`, `Rain` and `Snow` use `instancedQuad()` — one four-vertex quad, per-particle data
-in `InstancedBufferAttribute`s (~5–6× less vertex memory than writing each value into four
-vertices). The consequence: **`positionWorld` is now the ±1 quad corner, not the particle**,
-so nothing may read it for altitude. Use `altitudeOf(center, radius)` with the explicit
-instanced centre. Copying `positionWorld.y.div(radius)` from `Stars` into `Meteors` is what
-dimmed every meteor by 16× — Stars stores radius-scaled positions, Meteors stores unit
-directions. Note instancing does *not* relieve WebGPU's 8-`maxVertexBuffers` cap, which is
-why `Meteors` still packs its scalars into two vec4s.
-
-**`wind` is a `[0, 1]` intensity, never bipolar.** `0` = still, `1` = storm, along a fixed
-axis (the descriptor has no wind *direction* yet). `Rain` and `Snow` used to remap it with
-`wind * 2 - 1`, making 0.5 neutral — so `clear` (0.08) slanted rain at −0.84 while `storm`
-(0.85) managed +0.70, i.e. calm air blew harder than a storm, backwards.
-
-**Three traps if you touch the celestial layers (`core/skybox/Stars.svelte`, `Moon.svelte`):**
-
-- **The camera's far plane is 144, the sky dome is at radius 1000.** Anything on the dome must pin
-  depth to the far plane in its TSL vertex node (`vec4(clip.xy, clip.w, clip.w)`) or it is clipped
-  away entirely. `SkyMesh` does this internally, which is why the dome works at all.
-- **`frustumCulled={false}` is mandatory** on the moon: its bounding sphere sits 1000 units out,
-  wholly beyond the far plane, so three culls it before drawing.
-- **Never use `THREE.Points` for sized points on WebGPU** — every point is clamped to 1 px and
-  `sizeNode` is silently ignored. Use quads. See `DOCS/webgpu-notes.md` §1.1.
-
-**`scene.environment` is black whenever the sun is down.** `SkyMesh` zeroes its sun term below
-−2.31° of elevation, capping the whole dome near 0.005 luminance — no turbidity/rayleigh value
-lifts it. So night and twilight lighting comes from `SkyLight`'s hemisphere fill
-(`descriptor.light.ambient`), not from the env map. Don't "fix" a dark night by tuning the day
-curve's scattering; below the cutoff those numbers render nothing. See `DOCS/weather-system.md` §15.2.
-
-**By day it is the opposite problem, and `Sky.svelte`'s `environmentIntensity` (0.25) is what
-holds it.** The raw dome integrates to ~5.0 of irradiance at noon against the key light's 0.745,
-so unscaled it supplied 87% of every daylit frame — shadows 4% darker than lit, everything tinted
-blue. `environmentIntensity` and the model's `SUN_INTENSITY` (4.75, was π/4) are **one change**:
-the second absorbs exactly what the first removes. Move them together and re-measure, and never
-compensate with the day curve's `exposure` — that's renderer-global and blows out the dome.
+- **The descriptor is plain, not `$state`** (§14.1): one writer — `Skybox.svelte`'s driver
+  task — and every consumer reads it from its own task. Per-frame values are never props.
+  `skyMeta` is the `$state` mirror for HUD/Studio only, epsilon-gated.
+- **Weather is a modulation layer over the day curve**, never a replacement for it — a
+  storm at noon is still noon under clouds. Eight channels; named weathers are target
+  vectors; blends run on wall-clock ms with staggered onsets.
+- Game-facing API is `skyActions` / `skyQueries` from `$core/skybox/model`:
+  `setWeather('storm', { over: 30_000 })`, `setWeather({ fog: 0.9 }, { over: 0 })` (raw
+  partials are first-class), `clearWeather()`, clock setters, `on('sunrise', ...)`.
+- **`invalidate()` has one owner per reason**: the driver task covers the pure descriptor
+  consumers (Sky, SkyFog, SkyLight, Moon — they must not invalidate themselves);
+  TSL-`time`-animated layers and Lightning gate their own, on visibility.
+- `extensions/skybox/` is **panel-only** (time + weather + env mode + ⚡ Strike Now via
+  `requestStrike()` from `$core/skybox/layers/lightning/flashState`). The env-mode state
+  itself lives in `core/skybox/environment/` — `Skybox.svelte` consumes it in every
+  build, so it is engine state, and the panel is just another caller.
+- Weather audio (rain bed + thunder) is `core/audio/weatherAudio.ts`, outside the layers
+  on purpose: layers unmount with the environment mode, a looping bed must not.
 
 ### Post-processing (`extensions/postprocessing/`)
 
@@ -540,7 +445,7 @@ production. Add the import to the `Promise.all([...])` and the component to `ext
 | `physics`        | `physicsState`                                      | `physicsActions`                                    | `PhysicsExtension.svelte` ✅                                              |
 | `gltf-viewer`    | `gltfViewerState`                                   | `gltfViewerActions`                                 | `GltfViewerExtension.svelte` ✅ (dev only)                                |
 | `stats`          | —                                                   | —                                                   | `StatsExtension.svelte` ✅ (stats-gl draw calls / triangles / timestamps) |
-| `skybox`         | `environmentState` (env mode + textures)            | `skyboxActions` (mode/texture setters)              | `SkyboxExtension.svelte` ✅ time + weather + env panel                    |
+| `skybox`         | — (env-mode state lives in `core/skybox/environment/`) | — (drive `environmentActions` there) | `SkyboxExtension.svelte` ✅ time + weather + env panel                    |
 | `postprocessing` | `postprocessingState`, `postprocessingPresetsState` | `postprocessingActions`                             | `PostProcessingExtension.svelte` ⛔ unregistered                          |
 
 ### Common patterns

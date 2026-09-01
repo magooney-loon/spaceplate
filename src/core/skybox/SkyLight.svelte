@@ -10,7 +10,7 @@
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import type { DirectionalLight, HemisphereLight } from 'three/webgpu';
 	import { descriptor } from './model';
-	import { SKY_LAYER_USERDATA } from './skyLayer';
+	import { SKY_LAYER_USERDATA } from './layers/skyLayer';
 
 	interface Props {
 		/** Distance the light is placed along the key direction. */

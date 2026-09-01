@@ -93,8 +93,8 @@
 		uv,
 		vec3
 	} from 'three/tsl';
-	import { clamp01, descriptor, lerp, mulberry32 } from './model';
-	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
+	import { clamp01, descriptor, lerp, mulberry32 } from '../../model';
+	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from '../skyLayer';
 	import { flashState } from './flashState';
 
 	interface Props {

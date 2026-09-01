@@ -25,7 +25,7 @@
 	import * as THREE from 'three/webgpu';
 	import type { Object3D } from 'three/webgpu';
 	import { positionWorld, vec3 } from 'three/tsl';
-	import { descriptor } from './model';
+	import { descriptor } from '../../model';
 	import { heightFieldState, heightTarget, uHeightCenter, uHeightExtent } from './heightField';
 
 	interface Props {

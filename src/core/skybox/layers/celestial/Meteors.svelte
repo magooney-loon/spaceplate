@@ -35,7 +35,7 @@
 		uniform,
 		vec3
 	} from 'three/tsl';
-	import { descriptor, mulberry32 } from './model';
+	import { descriptor, mulberry32 } from '../../model';
 	import {
 		instancedQuad,
 		instancedVec3,
@@ -44,7 +44,7 @@
 		skyLayerMaterial,
 		streakClip,
 		SKY_LAYER_USERDATA
-	} from './skyLayer';
+	} from '../skyLayer';
 
 	interface Props {
 		/**

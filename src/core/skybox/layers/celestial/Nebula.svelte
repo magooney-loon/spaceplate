@@ -55,8 +55,8 @@
 		vec3,
 		vec4
 	} from 'three/tsl';
-	import { descriptor } from './model';
-	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
+	import { descriptor } from '../../model';
+	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from '../skyLayer';
 	import { MILKY_WAY_CORE, MILKY_WAY_NORMAL, MILKY_WAY_SIGMA } from './milkyWay';
 
 	interface Props {

@@ -31,7 +31,7 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 
 ## What's included
 
-- **Scene Manager** — Application state machine (`mainMenu` / `demoScene`) with instant switching, per-scene HUD routing, and a preset assignment system for PP/skybox
+- **Scene Manager** — Application state machine (`mainMenu` / `demoScene`) with instant switching and per-scene HUD routing
 - **Task Scheduling** — Threlte-based render pipeline with ordered stages:
   - `physicsStage` — Game logic (typically runs in `demoScene`, pauses in menus)
   - `renderStage` — 3D rendering (default)
@@ -39,9 +39,9 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
   - `audioStage` — Audio (always runs)
 - **Input System** — Action-based keyboard/mouse/gamepad mapping with per-player bindings, rebinding UI, and localStorage persistence
 - **Studio Extensions** (`VITE_GAME_ENGINE=true`) — Threlte Studio toolbar panels:
-  - `SceneExtension` — Scene switcher + preset manager (assign PP/skybox presets per scene or globally)
-  - `PostProcessingExtension` — 25+ effects, preset save/load/update, bundled presets, conflict detection
-  - `SkyboxExtension` — Sky/stars presets, animated transitions, environment textures, user presets
+  - `SceneExtension` — Scene switcher
+  - `PostProcessingExtension` — Unregistered since the WebGPU migration (rebuild planned, `DOCS/post-processing.md`)
+  - `SkyboxExtension` — Time scrubber/clock controls, weather buttons + channel sliders, environment mode & texture pickers, ⚡ Strike Now (the sky itself is `core/skybox/`)
   - `SoundExtension` — Volume controls + audio channel toggles
   - `LoggerExtension` — Per-channel log toggles (`engine`, `settings`, `sound`, `postprocessing`, `skybox`, `cache`, `gltf`, `physics`, `input`)
   - `GltfViewerExtension` — Load GLTF/GLB from file or path; inspect animations and colliders in `demoScene`
@@ -107,11 +107,11 @@ Each extension is self-contained: reactive state (`.svelte.ts`), actions, and an
 
 ```
 extensions/
-├── scene/              # Scene state machine + preset assignment system
+├── scene/              # Scene state machine (SCENES router, transitions)
 ├── settings/           # Persistent audio/graphics/general settings
 ├── input/              # Action-based input mapping, bindings, queries
-├── postprocessing/     # 25+ effects, presets, bundledPresets.ts
-├── skybox/             # Sky + stars presets, envTextures.ts, bundledPresets.ts
+├── postprocessing/     # Removed in the WebGPU migration — rebuild planned (DOCS/post-processing.md)
+├── skybox/             # Studio panel only (time/weather/env-mode); the sky itself lives in core/skybox
 ├── sound/              # Positional audio state
 ├── logger/             # Multi-channel styled logging
 ├── gltf-viewer/        # GLTF/GLB loader, animation controls, collider toggles (dev only)

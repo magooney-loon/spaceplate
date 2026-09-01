@@ -2,16 +2,19 @@
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
 	import { Folder, Slider, Checkbox, Button, Separator, List, Monitor } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
-	import { environmentState, skyboxActions, ENV_TEXTURES, CUBE_TEXTURES } from './skybox.svelte';
+	import { environmentState, environmentActions, ENV_TEXTURES, CUBE_TEXTURES } from '$core/skybox/environment';
 	import { skyActions, skyMeta, sunAt, WEATHERS } from '$core/skybox/model';
 	import type { ChannelName, ClockKind } from '$core/skybox/model';
-	import { requestStrike } from '$core/skybox/flashState';
+	import { requestStrike } from '$core/skybox/layers/lightning/flashState';
 
 	// The preset machine this panel used to drive (sky scalars, stars, transition
 	// lerps, localStorage presets) is gone -- the sky is time-driven and lives in
 	// $core/skybox/model. Per weather-system.md §8, Studio is just another caller: this
 	// panel reads skyMeta and calls skyActions. It never writes sky parameters directly.
-	// Keyframe editing + save-to-file remain phase 5. The one deliberate exception is
+	// The environment-mode state likewise moved to core (`$core/skybox/environment`) —
+	// Skybox.svelte consumes it in every build — and this panel drives it through
+	// environmentActions the same way. Keyframe editing + save-to-file remain phase 5.
+	// The one deliberate exception is
 	// `requestStrike`: a dev trigger, not an authored-sky control, flowing through the
 	// same shared state the flash already uses (see flashState.ts).
 
@@ -124,17 +127,17 @@
 		<Folder title="Mode" expanded={true}>
 			<Button
 				title={environmentState.mode === 'sky' ? '✓ Procedural Sky' : 'Procedural Sky'}
-				on:click={() => skyboxActions.setMode('sky')}
+				on:click={() => environmentActions.setMode('sky')}
 			/>
 			<Button
 				title={environmentState.mode === 'environment'
 					? '✓ HDR / EXR Environment'
 					: 'HDR / EXR Environment'}
-				on:click={() => skyboxActions.setMode('environment')}
+				on:click={() => environmentActions.setMode('environment')}
 			/>
 			<Button
 				title={environmentState.mode === 'cube' ? '✓ Cube Map' : 'Cube Map'}
-				on:click={() => skyboxActions.setMode('cube')}
+				on:click={() => environmentActions.setMode('cube')}
 			/>
 		</Folder>
 
@@ -288,14 +291,14 @@
 				{#if ENV_TEXTURES.length === 0}
 					<span style="font-size: 11px; color: rgba(255,255,255,0.4);">
 						No textures — add HDR/EXR files to<br />public/textures/skybox/ and register in
-						envTextures.ts
+						environmentTextures.ts
 					</span>
 				{:else}
 					<List
 						label="Texture"
 						options={envTextureOptions}
 						value={environmentState.envTextureId}
-						on:change={(e) => skyboxActions.setEnvTexture(e.detail.value as string | null)}
+						on:change={(e) => environmentActions.setEnvTexture(e.detail.value as string | null)}
 					/>
 				{/if}
 				<Checkbox label="Use as Background" bind:value={environmentState.envIsBackground} />
@@ -308,14 +311,14 @@
 				{#if CUBE_TEXTURES.length === 0}
 					<span style="font-size: 11px; color: rgba(255,255,255,0.4);">
 						No cube maps — add 6-face sets to<br />public/textures/skybox/cube/ and register in
-						envTextures.ts
+						environmentTextures.ts
 					</span>
 				{:else}
 					<List
 						label="Cube Map"
 						options={cubeTextureOptions}
 						value={environmentState.cubeTextureId}
-						on:change={(e) => skyboxActions.setCubeTexture(e.detail.value as string | null)}
+						on:change={(e) => environmentActions.setCubeTexture(e.detail.value as string | null)}
 					/>
 				{/if}
 				<Checkbox label="Use as Background" bind:value={environmentState.cubeIsBackground} />

@@ -15,8 +15,8 @@
 	import * as THREE from 'three/webgpu';
 	import { dot, float, mix, positionWorld, smoothstep, texture, uniform } from 'three/tsl';
 	import { BASE_URL } from '$extensions/settings';
-	import { clamp01, descriptor } from './model';
-	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
+	import { clamp01, descriptor } from '../../model';
+	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from '../skyLayer';
 
 	interface Props {
 		/** Distance the disc is placed at. Cosmetic only -- depth is pinned to the far plane. */

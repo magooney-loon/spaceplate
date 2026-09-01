@@ -32,7 +32,7 @@
 		uniform,
 		vec3
 	} from 'three/tsl';
-	import { descriptor, mulberry32 } from './model';
+	import { descriptor, mulberry32 } from '../../model';
 	import {
 		altitudeOf,
 		billboardClip,
@@ -42,7 +42,7 @@
 		pinFarPlane,
 		skyLayerMaterial,
 		SKY_LAYER_USERDATA
-	} from './skyLayer';
+	} from '../skyLayer';
 	import { MILKY_WAY_NORMAL as MW, MILKY_WAY_SIGMA } from './milkyWay';
 
 	interface Props {

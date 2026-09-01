@@ -4,22 +4,22 @@
 	import Sky from './Sky.svelte';
 	import SkyFog from './SkyFog.svelte';
 	import SkyLight from './SkyLight.svelte';
-	import Moon from './Moon.svelte';
-	import Nebula from './Nebula.svelte';
-	import Stars from './Stars.svelte';
-	import Meteors from './Meteors.svelte';
-	import Rain from './Rain.svelte';
-	import RainLens from './RainLens.svelte';
-	import Snow from './Snow.svelte';
-	import SnowLens from './SnowLens.svelte';
-	import CloudDeck from './CloudDeck.svelte';
-	import Lightning from './Lightning.svelte';
-	import HeightField from './HeightField.svelte';
+	import Moon from './layers/celestial/Moon.svelte';
+	import Nebula from './layers/celestial/Nebula.svelte';
+	import Stars from './layers/celestial/Stars.svelte';
+	import Meteors from './layers/celestial/Meteors.svelte';
+	import Rain from './layers/precipitation/Rain.svelte';
+	import RainLens from './layers/precipitation/RainLens.svelte';
+	import Snow from './layers/precipitation/Snow.svelte';
+	import SnowLens from './layers/precipitation/SnowLens.svelte';
+	import CloudDeck from './layers/clouds/CloudDeck.svelte';
+	import Lightning from './layers/lightning/Lightning.svelte';
+	import HeightField from './layers/precipitation/HeightField.svelte';
 	import type { Group } from 'three/webgpu';
 	import { descriptor, skyActions, CHANNEL_NAMES } from './model';
-	import { SKY_LAYER_USERDATA } from './skyLayer';
+	import { SKY_LAYER_USERDATA } from './layers/skyLayer';
 
-	import { environmentState, ENV_TEXTURES, CUBE_TEXTURES } from '$extensions/skybox';
+	import { environmentState, ENV_TEXTURES, CUBE_TEXTURES } from './environment';
 
 	const { autoRenderTask, invalidate } = useThrelte();
 

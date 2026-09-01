@@ -27,7 +27,7 @@ Known instances found and fixed:
 | Source | Fix |
 |---|---|
 | `@threlte/extras` `<Sky>` (wraps `examples/jsm/objects/Sky.js`) | Replaced with three's `SkyMesh` (TSL/NodeMaterial port of the same Preetham model) — now `core/skybox/Sky.svelte` |
-| `@threlte/extras` `<Stars>` | Dropped. Reimplemented as billboarded quads in `core/skybox/Stars.svelte` — **not** point sprites, see §1.1 |
+| `@threlte/extras` `<Stars>` | Dropped. Reimplemented as billboarded quads in `core/skybox/layers/celestial/Stars.svelte` — **not** point sprites, see §1.1 |
 | Studio's `AxesHelper` → `Line2`/`LineMaterial` | `three/examples/jsm/lines/webgpu/Line2.js` + `Line2NodeMaterial`. `LineGeometry` is backend-agnostic. **Do not set `blending`** on it — it forces `NoBlending` deliberately, compositing transparency inside the node graph against `viewportOpaqueMipTexture()` |
 | `three-viewport-gizmo` (vendors its own `LineMaterial`) | No WebGPU build exists; axis stems disabled via the library's per-axis `line: false` option |
 
@@ -45,7 +45,7 @@ source (`PointsNodeMaterial`, 0.185.1):
 
 WGSL has no `gl_PointSize` equivalent, so this is a hardware/API limit, not a three bug.
 Anything that needs sized points must draw **quads** — either `Sprite` + instancing, or
-hand-built billboards. `core/skybox/Stars.svelte` does the latter: four vertices per
+hand-built billboards. `core/skybox/layers/celestial/Stars.svelte` does the latter: four vertices per
 star, offset in view space inside the TSL vertex node, one draw call.
 
 ### 1.2 `smoothstep(high, low, x)` is undefined, not reversed

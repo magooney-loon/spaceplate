@@ -1,5 +1,3 @@
-export const extensionScope = 'skybox';
-
 export type SkyboxMode = 'sky' | 'environment' | 'cube';
 
 export type EnvTextureEntry = {

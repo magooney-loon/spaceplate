@@ -50,9 +50,9 @@
 		vec3,
 		vec4
 	} from 'three/tsl';
-	import { clamp01, descriptor, smooth01, windAxisX, windAxisZ } from './model';
-	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
-	import { flashState } from './flashState';
+	import { clamp01, descriptor, smooth01, windAxisX, windAxisZ } from '../../model';
+	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from '../skyLayer';
+	import { flashState } from '../lightning/flashState';
 
 	interface Props {
 		/** Dome radius. Cosmetic -- depth is pinned to the far plane. */

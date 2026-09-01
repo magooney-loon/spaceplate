@@ -12,7 +12,7 @@
 	import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 	import * as THREE from 'three/webgpu';
 	import { clamp01, descriptor, lerp, skyActions } from './model';
-	import { SKY_LAYER_USERDATA } from './skyLayer';
+	import { SKY_LAYER_USERDATA } from './layers/skyLayer';
 
 	interface Props {
 		setEnvironment?: boolean;
