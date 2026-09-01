@@ -8,6 +8,7 @@
 	import Nebula from './layers/celestial/Nebula.svelte';
 	import Stars from './layers/celestial/Stars.svelte';
 	import Meteors from './layers/celestial/Meteors.svelte';
+	import Birds from './layers/fauna/Birds.svelte';
 	import Rain from './layers/precipitation/Rain.svelte';
 	import RainLens from './layers/precipitation/RainLens.svelte';
 	import Snow from './layers/precipitation/Snow.svelte';
@@ -112,12 +113,13 @@
 
 	     Two orders live in this group and they are different things:
 
-	     DRAW order is decided by the render queue + renderOrder: the dome is opaque while
+ 		     DRAW order is decided by the render queue + renderOrder: the dome is opaque while
 	     everything else is transparent, so all of it lands in the later queue, settled
-	     between themselves by renderOrder 1 (Nebula, Stars, Meteors), 2 (Moon), 2.5
-	     (CloudDeck), 2.6 (the lightning bolt), 3 (Rain, Snow) and 4 (the lightning wash,
-	     very faint). The deck sits over the moon because a cloud deck occludes it; the
-	     precipitation draws last because it is nearest.
+	     between themselves by renderOrder 1 (Nebula, Stars, Meteors), 2 (Moon), 2.2
+	     (Birds -- below the deck, in front of the moon), 2.5 (CloudDeck), 2.6 (the
+	     lightning bolt), 3 (Rain, Snow) and 4 (the lightning wash, very faint). The deck
+	     sits over the moon because a cloud deck occludes it; the precipitation draws last
+	     because it is nearest.
 
 	     TASK order falls back to mount order among the `before: autoRenderTask` tasks,
 	     and ONE dependency lives here: Lightning publishes the flash to `flashState`, and
@@ -140,6 +142,7 @@
 		<Stars radius={1000} />
 		<Meteors radius={1000} />
 		<Moon radius={1000} />
+		<Birds />
 		<Lightning />
 		<CloudDeck radius={1000} />
 		<Rain />

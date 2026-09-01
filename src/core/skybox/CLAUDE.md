@@ -50,7 +50,9 @@ invalidates, no effect can loop.
   **must not call `invalidate()` themselves**.
 - **Layers animated by the TSL `time` node** (`Stars`, `Nebula`, `Meteors`, `CloudDeck`,
   `Rain`, `Snow`) keep their own `invalidate()`, gated on being visible, and set
-  `mesh.visible` so an invisible layer costs no draw call either.
+  `mesh.visible` so an invisible layer costs no draw call either. **`Birds`** is the
+  same contract with a different clock: its two `renderer.compute()` passes are what
+  animate it, so they run (and invalidate) only while the flock is ungrounded.
 - **`Lightning`** gates on a live strike. **Lens layers** gate on wetness/frost > 0.
 
 ## Environment modes

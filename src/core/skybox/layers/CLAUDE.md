@@ -8,6 +8,7 @@ celestial/       — Stars, Moon, Meteors, Nebula + milkyWay.ts
 clouds/          — CloudDeck
 precipitation/   — Rain, Snow, RainLens, SnowLens, HeightField + heightField.ts
 lightning/       — Lightning + flashState.ts
+fauna/           — Birds (GPU-compute flock)
 ```
 
 All layers are **descriptor consumers**: they read slices of `descriptor` from tasks,
@@ -53,10 +54,11 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 ## Ordering (decided in `Skybox.svelte`, where everything mounts)
 
 - **Draw order** = render queue + `renderOrder`: 1 (Nebula, Stars, Meteors), 2 (Moon),
-  2.5 (CloudDeck — occludes the moon), 2.6 (bolt), 3 (Rain, Snow — nearest), 4 (the
-  faint lightning sky wash), **10 (RainLens) / 11 (SnowLens)** — the lens layers read
-  back the finished frame via `viewportMipTexture`, so everything they refract must have
-  drawn first. That ordering is load-bearing, not tidy.
+  2.2 (Birds — under the deck, over the moon), 2.5 (CloudDeck — occludes the moon),
+  2.6 (bolt), 3 (Rain, Snow — nearest), 4 (the faint lightning sky wash),
+  **10 (RainLens) / 11 (SnowLens)** — the lens layers read back the finished frame
+  via `viewportMipTexture`, so everything they refract must have drawn first. That
+  ordering is load-bearing, not tidy.
 - **Task order** falls back to mount order among `before: autoRenderTask` tasks; the one
   real dependency is Lightning → CloudDeck (flash published and read in the same frame).
 
@@ -127,3 +129,35 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   `distance` prop (a true-distance bolt would be a few pixels tall).
 - `flash` is already attack-softened and **photosafety-capped at the source — never
   scale it back up** in a consumer.
+
+### `fauna/`
+
+- **Birds is the one layer that is NOT stateless in `time`** — and the design split
+  matters more than the GPU cost it explains. Stars, Rain and Snow are pure functions
+  of the TSL `time` node; a flock is separation/alignment/cohesion between persistent
+  neighbours, so each bird carries position/velocity/flap phase in `instancedArray`
+  storage buffers integrated by two `renderer.compute()` passes from the layer's task.
+  Storage-in-vertex is also what escapes the 8-`maxVertexBuffers` cap — which is why
+  the app's renderer requests `maxStorageBuffersInVertexStage: 3` (App.svelte).
+- **Few flocks and strays from ONE pass**: every bird carries its own flock ANCHOR in
+  a read-only storage buffer (read in the compute pass only, so the vertex stage stays
+  at three storage buffers). Anchors sit far apart — well outside the ~12-unit
+  interaction zone — which is what keeps flocks from merging; strays are one-bird
+  "flocks", and a speed FLOOR in the clamp keeps them flying loops instead of damping
+  onto their anchors (birds do not hover).
+- **Placement is a camera contract, not taste**: anchors sit far and LOW (~6-15°
+  elevation) because both stock cameras look at the origin roughly horizontally —
+  anything overhead is never in frame.
+- **WebGPU-only by gate, not by crash**: three's WebGL2 backend cannot run the
+  reference example (“TODO: Fix example with WebGL backend”), so the task checks
+  `renderer.backend.isWebGPUBackend` and keeps the mesh hidden on the fallback.
+- The flock is descriptor-driven like the weather: diurnal (fades on the inverse of
+  the `starVisibility` ramp), grounded by precipitation/fog (it cannot be fogged —
+  `fog = false` is the layer contract), bent downwind by the weather's bearing. It
+  draws UNDER the deck (renderOrder 2.2 < 2.5) — where clouds are dense the birds go
+  behind them; sky dressing, not actors.
+- **Plumage** is a per-bird shade attribute (mostly dark/mid greys, a few pale birds)
+  mixing between dark and light ends of the key-light hue — auto-lifted to a varying
+  in the fragment stage, the same lift Meteors' brightness rides.
+- Scale ratios come from three.js's `webgpu_compute_birds` (zone ≈ 6 wingspans, speed
+  15× the limit at integration) — retune against those, not against each other.
