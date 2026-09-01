@@ -13,7 +13,7 @@ index.ts                  — barrel re-exports
 
 ## State shape
 
-- **World:** `gravityX/Y/Z` (0, -9.8, 0), `framerate` (60 or 'varying'), `debug` (true).
+- **World:** `gravityX/Y/Z` (0, -9.8, 0), `framerate` (60 or 'varying'), `debug` (false).
 - **Spawn defaults:** `spawnRestitution` (0.5), `spawnFriction` (0.5), `spawnLinearDamping` (0.5), `spawnAngularDamping` (0.5), `spawnGravityScale` (1), `spawnCcd` (true), `spawnCanSleep` (true), `spawnRandom` (true).
 - **Attractor:** `attractorEnabled` (false), `attractorStrength` (0.5), `attractorRange` (2.5), `attractorGravityType` ('static'), `attractorX/Y/Z`.
 - **bodies**: `PhysicsBody[]` — each has `id`, `type` ('ball'|'box'), `position`, `color`, per-body material properties.

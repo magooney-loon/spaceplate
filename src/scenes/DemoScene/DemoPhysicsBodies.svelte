@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { T, useThrelte } from '@threlte/core/webgpu';
+	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { PositionalAudio } from '@threlte/extras';
 	import { RigidBody, Collider, usePhysicsTask, useRapier } from '@threlte/rapier';
 	import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';
@@ -12,7 +12,7 @@
 
 	const { state: soundState } = useSound();
 	const { world } = useRapier();
-	const { invalidate } = useThrelte();
+	const { scene, invalidate } = useThrelte();
 	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 	const mountId = crypto.randomUUID().slice(0, 8);
 
@@ -95,6 +95,20 @@
 
 	const ballGeometry = new THREE.SphereGeometry(0.8, 64, 32);
 
+	// Orbiting mirror sphere — three's webgpu_materials_basic example (MeshBasicMaterial
+	// + envMap), adapted like the corner balls: the envMap is the baked procedural sky,
+	// not pisa.png. Node materials only fall back to scene.environment for PBR materials
+	// (NodeMaterial.setupEnvironment), so the bake is assigned explicitly once it exists.
+	// The bake's render target persists across re-bakes, so one assignment is stable.
+	const mirrorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+	useTask(() => {
+		if (!mirrorMaterial.envMap && scene.environment) {
+			mirrorMaterial.envMap = scene.environment;
+			mirrorMaterial.needsUpdate = true;
+			invalidate();
+		}
+	});
+
 	// Four balls on the floor's corners, inset so they sit fully on it
 	const EDGE_BALLS: { position: [number, number, number]; material: THREE.MeshPhysicalMaterial }[] =
 		[
@@ -145,6 +159,7 @@
 		// Manual THREE resources — T.* disposes its own, these are ours
 		for (const ball of EDGE_BALLS) ball.material.dispose();
 		ballGeometry.dispose();
+		mirrorMaterial.dispose();
 		flakes.dispose();
 		carbonMap.dispose();
 		carbonNormal.dispose();
@@ -223,9 +238,8 @@
 		}}
 	>
 		<Collider shape="ball" args={[0.5]} />
-		<T.Mesh castShadow>
+		<T.Mesh castShadow material={mirrorMaterial}>
 			<T.SphereGeometry args={[0.5, 32, 32]} />
-			<T.MeshStandardMaterial color="#d94a4a" flatShading />
 
 			<PositionalAudio
 				src={POS_URL}

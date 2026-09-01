@@ -24,7 +24,7 @@ const WORLD_DEFAULTS = {
 	gravityY: -9.8,
 	gravityZ: 0,
 	framerate: 60 as PhysicsFramerate,
-	debug: true
+	debug: false
 };
 
 const SPAWN_DEFAULTS = {
