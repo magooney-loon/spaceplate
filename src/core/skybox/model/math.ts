@@ -32,6 +32,14 @@ export const smooth01 = (edge0: number, edge1: number, v: number) => {
 	return ease(clamp01((v - edge0) / (edge1 - edge0)));
 };
 
+/**
+ * Wrap into [0, 1), for the channels that are an ANGLE rather than an intensity.
+ *
+ * `%` alone is not this: JavaScript's remainder keeps the sign of its left operand, so
+ * `-0.25 % 1` is `-0.25` and a bearing eased a hair past due north comes out negative.
+ */
+export const wrap01 = (v: number) => v - Math.floor(v);
+
 /** Writes into `out` -- every caller runs per frame and must not allocate. */
 export const lerpRGB = (a: RGB, b: RGB, k: number, out: RGB): RGB => {
 	out[0] = lerp(a[0], b[0], k);

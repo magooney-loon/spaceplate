@@ -53,7 +53,7 @@
 		vec4,
 		viewportMipTexture
 	} from 'three/tsl';
-	import { clamp01, descriptor, smooth01 } from './model';
+	import { clamp01, descriptor, rainAmount } from './model';
 	import { instancedQuad, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
 
 	interface Props {
@@ -361,11 +361,10 @@
 				}
 			}
 
-			// Same gate as Rain: until the descriptor grows an explicit precipitation type,
-			// rain is precipitation weighted by where cloudType sits. Snow leaves no
-			// droplets on glass, so this layer is deliberately rain-only.
-			const rainType = smooth01(0.45, 0.6, descriptor.weather.cloudType);
-			const rain = descriptor.weather.precipitation * rainType;
+			// The same shared split Rain uses, off the explicit `precipitationType` channel.
+			// Snow leaves no droplets on glass, so this layer is deliberately rain-only --
+			// and during sleet it wets in proportion to the rain half alone.
+			const rain = rainAmount(descriptor.weather);
 
 			const speed = forwardSpeed + lateralSpeed * lateralInfluence;
 			const target = clamp01(speed / speedForFull) * rain * maxWetness;

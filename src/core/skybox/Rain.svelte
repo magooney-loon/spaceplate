@@ -57,15 +57,15 @@
 		smoothstep,
 		sqrt,
 		step,
-		time,
 		uniform,
 		vec3,
 		vec4
 	} from 'three/tsl';
-	import { clamp01, descriptor, mulberry32, smooth01 } from './model';
+	import { clamp01, descriptor, mulberry32, rainAmount, windAxisX, windAxisZ } from './model';
 	import { sampleHeightField } from './heightField';
 	import {
 		billboardClip,
+		instancedFloat,
 		instancedQuad,
 		instancedVec3,
 		instancedVec4,
@@ -126,14 +126,42 @@
 
 	const opacity = uniform(0);
 	/**
-	 * Wind as a 0..1 INTENSITY, matching the channel's documented meaning and every other
-	 * consumer (CloudDeck reads it as a scroll magnitude, `clear` targets 0.08, `storm`
-	 * 0.85). It used to be remapped to [-1, 1] with `wind * 2 - 1`, which made 0.5 the
-	 * neutral point -- so `clear` weather (0.08) slanted the rain at -0.84 while `storm`
-	 * (0.85) managed +0.70. Calm air produced a HARDER slant than a storm, mirrored.
-	 * At 0 the drops now fall straight down, which is what no wind looks like.
+	 * The wind's horizontal travel PER UNIT OF FALL, as a vector: strength folded together
+	 * with the bearing from `windDirection`.
+	 *
+	 * A vector rather than the scalar this used to be, and that is the whole of what gives
+	 * rain a direction. It was two hardcoded axis constants (0.4 on X, 0.17 on Z) applied
+	 * to a bare strength, so every weather blew the same way and the asymmetry between the
+	 * two numbers was just a fudge standing in for a bearing nobody had.
+	 *
+	 * Strength is still a 0..1 INTENSITY upstream. It used to be remapped to [-1, 1] with
+	 * `wind * 2 - 1`, which made 0.5 neutral -- so `clear` (0.08) slanted the rain at -0.84
+	 * while `storm` (0.85) managed +0.70, calm air blowing harder than a storm, mirrored.
 	 */
-	const wind = uniform(0);
+	const uWindSlant = uniform(new THREE.Vector2());
+	/**
+	 * Fraction of the drop field that is alive, compared per drop against its own random.
+	 *
+	 * THIS IS WHAT MAKES INTENSITY REAL. `precipitation` used to drive nothing but alpha,
+	 * so a drizzle was a downpour at lower opacity: the same 9000 drops, the same spacing,
+	 * just more transparent -- which reads as a veil of mist rather than as light rain.
+	 * Culling instead thins the field for real, and because the quad's WIDTH is multiplied
+	 * by the same flag, a dead drop collapses to a degenerate triangle and never reaches
+	 * the rasteriser. Light rain is cheaper than heavy rain, as it should be.
+	 */
+	const uDensity = uniform(1);
+	/** Streak length multiplier: heavy rain falls faster and blurs longer. */
+	const uLengthScale = uniform(1);
+	/**
+	 * Accumulated fall distance in SECONDS-equivalent, replacing the raw `time` node.
+	 *
+	 * Needed the moment fall speed stopped being constant. `time * speed` with a speed that
+	 * changes teleports the whole field by `elapsed x speed-change` -- the §15.7 trap, and
+	 * after an hour of play `elapsed` is large enough to make that a total reshuffle.
+	 * Accumulating instead means a speed change alters only the rate from here on, exactly
+	 * as CloudDeck's scroll and Snow's `uWindDrift` already do.
+	 */
+	const uFallTime = uniform(0);
 	/**
 	 * Splash brightness from the light hints, as Snow does for its flakes. Water is a
 	 * reflector, so a ring at midnight must not glow at its noon brightness.
@@ -151,19 +179,17 @@
 	const BURST_PER_IMPACT = 3;
 
 	/**
-	 * The drop's horizontal travel per unit of fall, at full wind. Because the drift term
-	 * is multiplied by `fall` -- itself proportional to the drop's own speed -- the SLANT
-	 * these produce is identical for every drop no matter how fast it falls. That is what
-	 * a curtain of wind-driven rain looks like: one shared direction, many speeds.
+	 * Horizontal travel per unit of fall at full wind, along whatever bearing the weather
+	 * is blowing. Because the drift is multiplied by `fall` -- itself proportional to the
+	 * drop's own speed -- the SLANT this produces is identical for every drop regardless of
+	 * how fast it falls. That is what a curtain of wind-driven rain looks like: one shared
+	 * direction, many speeds.
 	 *
-	 * The streak geometry now derives its direction from these same two numbers, so a drop
-	 * travels ALONG the streak that draws it. The streak used to be built at 0.35 / 0.15
-	 * against a trajectory of 0.16 / 0.07 -- drawn at more than double the slant it
-	 * actually moved at. Raised to keep roughly the streak angle that was on screen before
-	 * while making it the honest one.
+	 * The streak geometry derives its direction from the same vector, so a drop travels
+	 * ALONG the streak that draws it. The streak used to be built at 0.35 / 0.15 against a
+	 * trajectory of 0.16 / 0.07 -- drawn at more than double the slant it actually moved at.
 	 */
-	const WIND_SLANT_X = 0.4;
-	const WIND_SLANT_Z = 0.17;
+	const WIND_SLANT = 0.4;
 
 	/** Seconds for the camera-velocity smoother to cover ~63% of a step change. */
 	const VELOCITY_SMOOTHING = 0.12;
@@ -181,9 +207,15 @@
 	const build = () => {
 		const rng = mulberry32(seed);
 
-		// Per-drop data: box position, and (speed, length, width, phase) packed as a vec4.
+		// Per-drop data: box position, (speed, length, width, phase) packed as a vec4, and
+		// the density draw.
 		const centers = new Float32Array(count * 3);
 		const params = new Float32Array(count * 4);
+		// ITS OWN RANDOM, not a reuse of the phase in `params.w`. Phase is the drop's
+		// offset down the box, so culling against it would remove every drop within a band
+		// of the fall cycle at once -- horizontal stripes of rain marching downward rather
+		// than a thinner field.
+		const randoms = new Float32Array(count);
 
 		for (let i = 0; i < count; i++) {
 			centers[i * 3] = (rng() - 0.5) * width;
@@ -193,6 +225,7 @@
 			params[i * 4 + 1] = length * (0.65 + rng() * 0.7);
 			params[i * 4 + 2] = widthWorld * (0.65 + rng() * 0.9);
 			params[i * 4 + 3] = rng();
+			randoms[i] = rng();
 		}
 
 		const halfWidth = float(width * 0.5);
@@ -208,9 +241,18 @@
 		 * nodes rather than closing over them, because the splash layers run over a SUBSET
 		 * of the drops and therefore have their own (smaller) attribute buffers.
 		 */
-		const motionOf = (aCenter: THREE.Node<'vec3'>, aParams: THREE.Node<'vec4'>) => {
+		const motionOf = (
+			aCenter: THREE.Node<'vec3'>,
+			aParams: THREE.Node<'vec4'>,
+			aRandom: THREE.Node<'float'>
+		) => {
 			const aSpeed = aParams.x;
 			const aPhase = aParams.w;
+
+			// Alive if this drop's draw came in under the current density. A fixed per-drop
+			// number against a moving threshold, so thinning the field removes a stable
+			// SUBSET rather than reshuffling which drops exist every frame.
+			const alive = step(aRandom, uDensity);
 
 			// The box's world origin. The mesh is re-centred on the camera every frame, so
 			// this IS the camera position -- taken from the model matrix rather than TSL's
@@ -218,7 +260,9 @@
 			// (the height pass brings its own) while the anchor is a property of THIS mesh.
 			const anchor = modelWorldMatrix.mul(vec4(0, 0, 0, 1)).xyz;
 
-			const fall = time.mul(aSpeed).add(aPhase.mul(boxHeight));
+			// `uFallTime`, not the raw `time` node -- see the uniform's note on why a
+			// variable fall speed cannot be a multiplier on absolute elapsed time.
+			const fall = uFallTime.mul(aSpeed).add(aPhase.mul(boxHeight));
 
 			// THE WRAP IS TAKEN ABOUT THE ANCHOR, IN WORLD SPACE. Subtracting it inside the
 			// `fract` is the whole of what stops the rain riding along with the player.
@@ -236,20 +280,12 @@
 			const u = fract(aCenter.y.add(halfHeight).sub(fall).sub(anchor.y).div(boxHeight));
 			const localY = u.mul(boxHeight).sub(halfHeight);
 			const x = fract(
-				aCenter.x
-					.add(halfWidth)
-					.add(fall.mul(wind).mul(WIND_SLANT_X))
-					.sub(anchor.x)
-					.div(boxWidth)
+				aCenter.x.add(halfWidth).add(fall.mul(uWindSlant.x)).sub(anchor.x).div(boxWidth)
 			)
 				.mul(boxWidth)
 				.sub(halfWidth);
 			const z = fract(
-				aCenter.z
-					.add(halfDepth)
-					.add(fall.mul(wind).mul(WIND_SLANT_Z))
-					.sub(anchor.z)
-					.div(boxDepth)
+				aCenter.z.add(halfDepth).add(fall.mul(uWindSlant.y)).sub(anchor.z).div(boxDepth)
 			)
 				.mul(boxDepth)
 				.sub(halfDepth);
@@ -289,7 +325,17 @@
 			// Seconds since impact. Only meaningful while `below` is 1.
 			const secondsSinceImpact = uImpact.sub(u).mul(boxHeight).div(aSpeed);
 
-			return { x, z, localY, surfaceLocalY, below, secondsSinceImpact, wrapFade, aParams };
+			return {
+				x,
+				z,
+				localY,
+				surfaceLocalY,
+				below,
+				secondsSinceImpact,
+				wrapFade,
+				alive,
+				aParams
+			};
 		};
 
 		// ── The streaks ──────────────────────────────────────────────────────────────
@@ -297,10 +343,17 @@
 		{
 			const aCenter = instancedVec3(centers);
 			const aParams = instancedVec4(params);
+			const aRandom = instancedFloat(randoms);
+			const m = motionOf(aCenter, aParams, aRandom);
+
 			const aSpeed = aParams.x;
-			const aLength = aParams.y;
-			const aWidth = aParams.z;
-			const m = motionOf(aCenter, aParams);
+			// Heavier rain draws longer streaks, because it also falls faster.
+			const aLength = aParams.y.mul(uLengthScale);
+			// The density flag rides on the WIDTH, not only on the opacity: a culled drop
+			// collapses to a zero-area quad and is discarded before rasterisation, so
+			// thinning the field genuinely costs less to draw rather than just looking
+			// thinner.
+			const aWidth = aParams.z.mul(m.alive);
 
 			// Head-anchored quad: x is the cross-axis corner, y walks head (0) to tail (1).
 			const corner = positionLocal.xy;
@@ -319,7 +372,7 @@
 			//
 			// The mesh carries translation only, so a world-space direction is already a
 			// local-space one and no basis change is needed here.
-			const velocity = vec3(wind.mul(WIND_SLANT_X), float(-1), wind.mul(WIND_SLANT_Z))
+			const velocity = vec3(uWindSlant.x, float(-1), uWindSlant.y)
 				.mul(aSpeed)
 				.sub(uCameraVelocity);
 			// Guarded rather than `.normalize()`: a camera falling at exactly the drop's
@@ -355,6 +408,9 @@
 		const splashes = Math.max(0, Math.min(splashCount, count));
 		const splashCenters = centers.subarray(0, splashes * 3);
 		const splashParams = params.subarray(0, splashes * 4);
+		// The splash layers inherit the drops' own density draws, so splash count follows
+		// rain intensity for free -- a drizzle spatters as sparsely as it falls.
+		const splashRandoms = randoms.subarray(0, splashes);
 
 		// ── The impact ring ──────────────────────────────────────────────────────────
 		// A ground-aligned quad at the impact point with an expanding, fading annulus.
@@ -362,7 +418,7 @@
 		{
 			const aCenter = instancedVec3(splashCenters);
 			const aParams = instancedVec4(splashParams);
-			const m = motionOf(aCenter, aParams);
+			const m = motionOf(aCenter, aParams, instancedFloat(splashRandoms));
 
 			const corner = positionLocal.xy;
 			const progress = m.secondsSinceImpact.div(ringDuration).clamp(0, 1);
@@ -385,6 +441,7 @@
 			ringMaterial.colorNode = vec3(0.62, 0.72, 0.84).mul(uLight);
 			ringMaterial.opacityNode = opacity
 				.mul(active)
+				.mul(m.alive)
 				.mul(m.wrapFade)
 				.mul(band)
 				.mul(progress.oneMinus())
@@ -402,6 +459,7 @@
 			const burstParams = new Float32Array(burstInstances * 4);
 			// (dirX, dirZ, reach, size)
 			const burstShape = new Float32Array(burstInstances * 4);
+			const burstRandoms = new Float32Array(burstInstances);
 
 			for (let i = 0; i < splashes; i++) {
 				for (let b = 0; b < BURST_PER_IMPACT; b++) {
@@ -413,6 +471,7 @@
 					burstParams[j * 4 + 1] = params[i * 4 + 1];
 					burstParams[j * 4 + 2] = params[i * 4 + 2];
 					burstParams[j * 4 + 3] = params[i * 4 + 3];
+					burstRandoms[j] = randoms[i];
 
 					// Spread around the compass, jittered so the droplets are not a rosette.
 					const angle = ((b + rng() * 0.7) / BURST_PER_IMPACT) * Math.PI * 2;
@@ -426,7 +485,7 @@
 			const aCenter = instancedVec3(burstCenters);
 			const aParams = instancedVec4(burstParams);
 			const aShape = instancedVec4(burstShape);
-			const m = motionOf(aCenter, aParams);
+			const m = motionOf(aCenter, aParams, instancedFloat(burstRandoms));
 
 			const corner = positionLocal.xy;
 			const progress = m.secondsSinceImpact.div(burstDuration).clamp(0, 1);
@@ -451,6 +510,7 @@
 			burstMaterial.colorNode = vec3(0.6, 0.7, 0.82).mul(uLight);
 			burstMaterial.opacityNode = opacity
 				.mul(active)
+				.mul(m.alive)
 				.mul(m.wrapFade)
 				.mul(speck)
 				.mul(progress.oneMinus())
@@ -483,12 +543,31 @@
 
 	useTask(
 		(delta) => {
-			// Until the descriptor grows an explicit precipitation type, the shipped
-			// weather library distinguishes rain/storm from snow through cloudType.
-			const rainType = smooth01(0.45, 0.6, descriptor.weather.cloudType);
-			const rain = descriptor.weather.precipitation * rainType;
-			opacity.value = Math.min(0.62, rain * (0.2 + descriptor.weather.cloudCover * 0.8));
-			wind.value = clamp01(descriptor.weather.wind);
+			const w = descriptor.weather;
+			// `rainAmount` owns the rain/snow split now -- an explicit `precipitationType`
+			// channel rather than a cloudType gate, and one definition shared with Snow and
+			// RainLens instead of three copies of the same two constants.
+			const rain = rainAmount(w);
+
+			// INTENSITY IS SPLIT ACROSS THREE KNOBS, not folded into alpha.
+			//
+			// `presence` reaches full by a quarter intensity and is only there to take the
+			// layer cleanly to zero; from there up it is DENSITY that carries the difference
+			// between a drizzle and a downpour, with length and fall speed behind it. Alpha
+			// alone gave every intensity the same drop spacing, which is why light rain used
+			// to read as a translucent mist instead of as individual drops.
+			const presence = Math.min(1, rain * 4);
+			opacity.value = Math.min(0.62, presence * (0.2 + w.cloudCover * 0.8));
+			uDensity.value = clamp01(0.1 + 0.9 * rain);
+			uLengthScale.value = 0.7 + 0.5 * rain;
+
+			// Wind strength folded together with its bearing, so the drift and the streak
+			// direction cannot disagree -- they read the same vector.
+			const gust = clamp01(w.wind) * WIND_SLANT;
+			uWindSlant.value.set(windAxisX(w) * gust, windAxisZ(w) * gust);
+
+			// Fall distance accumulates; the rate is what intensity changes. See uFallTime.
+			uFallTime.value += delta * (0.6 + 0.4 * rain);
 
 			// Splashes are water catching the light, so they track the key and fill the
 			// same way Snow's flakes do -- bright in daylight, faint under a night deck.

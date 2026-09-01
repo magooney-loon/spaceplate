@@ -58,16 +58,43 @@ export type CelestialBody = {
 };
 
 /**
- * Weather channel values (§5.2). Every channel is an independent intensity in [0,1] --
- * fog without rain, wind without clouds. A weather *state* is just a named target
- * vector over these, which is why `WeatherTarget` accepts either.
+ * Weather channel values (§5.2). Every channel is independent and lives in [0,1] -- fog
+ * without rain, wind without clouds. A weather *state* is just a named target vector over
+ * these, which is why `WeatherTarget` accepts either.
+ *
+ * MOST channels are intensities, where 0 means "none of this". Two are not, and they are
+ * called out below: `precipitationType` and `windDirection` are POSITIONS, where 0 is a
+ * perfectly valid value that means something specific rather than nothing. The mixer
+ * treats `windDirection` specially for exactly that reason -- see WRAPPED_CHANNELS.
  */
 export type WeatherChannels = {
 	cloudCover: number;
+	/** Cloud morphology: 0 wispy, 1 heavy stratus/storm tower. Nothing else. */
 	cloudType: number;
 	fog: number;
+	/** How much is falling. What KIND is `precipitationType`, not this. */
 	precipitation: number;
+	/**
+	 * NOT an intensity: 0 = snow, 1 = rain, and the band between them is sleet.
+	 *
+	 * This used to be inferred from `cloudType`, which cost real things. `snow` had to be
+	 * authored at cloudType 0.35 purely to stay under the rain gate, so a snowstorm could
+	 * not have heavy-looking clouds -- its cloud morphology was hostage to its
+	 * precipitation type. And because a raw partial leaves unmentioned channels where they
+	 * are, `setWeather({ precipitation: 0.8 })` from `clear` (cloudType 0) silently gave
+	 * you SNOW. Splitting the two makes both authorable, and makes sleet something you can
+	 * ask for rather than something that only happened mid-blend.
+	 */
+	precipitationType: number;
+	/** Wind strength. Never bipolar: 0 = still, 1 = storm. */
 	wind: number;
+	/**
+	 * NOT an intensity: the wind's compass bearing, one full turn over [0,1).
+	 *
+	 * Wraps, so the mixer blends it along the SHORTER arc -- easing 0.95 to 0.05 must
+	 * cross north, not spin the long way round through south.
+	 */
+	windDirection: number;
 	lightning: number;
 };
 

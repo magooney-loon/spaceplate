@@ -232,6 +232,18 @@
 							setChannel('precipitation', e.detail.value as number);
 					}}
 				/>
+				<!-- Not an intensity: 0 is snow, 1 is rain, and the middle is sleet. -->
+				<Slider
+					label="Precip Type (snow-rain)"
+					value={skyMeta.precipitationType}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal')
+							setChannel('precipitationType', e.detail.value as number);
+					}}
+				/>
 				<Slider
 					label="Wind"
 					value={skyMeta.wind}
@@ -240,6 +252,19 @@
 					step={0.01}
 					on:change={(e) => {
 						if (e.detail.origin === 'internal') setChannel('wind', e.detail.value as number);
+					}}
+				/>
+				<!-- Also not an intensity: a compass bearing, one full turn over 0..1. It
+				     wraps, so the mixer blends it the short way round. -->
+				<Slider
+					label="Wind Bearing"
+					value={skyMeta.windDirection}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal')
+							setChannel('windDirection', e.detail.value as number);
 					}}
 				/>
 				<Slider

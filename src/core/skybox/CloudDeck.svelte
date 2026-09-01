@@ -50,7 +50,7 @@
 		vec3,
 		vec4
 	} from 'three/tsl';
-	import { clamp01, descriptor, smooth01 } from './model';
+	import { clamp01, descriptor, smooth01, windAxisX, windAxisZ } from './model';
 	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from './skyLayer';
 	import { flashState } from './flashState';
 
@@ -276,11 +276,14 @@
 			const wisp = smooth01(wispFrom, wispTo, cover) * (1 - 0.6 * smooth01(0.75, 1, cover));
 
 			// Scroll rate in UV units/s: a slow drift that never fully stops (real air
-			// moves) rising to a visible storm wind. Axis is fixed -- the descriptor has
-			// wind speed, not direction; a direction channel would plug in right here.
-			const rate = 0.0025 + clamp01(w.wind) * 0.02;
-			windX += rate * delta;
-			windZ += rate * 0.38 * delta;
+			// moves) rising to a visible storm wind. The axis comes from `windDirection`
+			// now -- this is the spot the old comment said a direction channel would plug
+			// into, and it replaces a hardcoded 1 : 0.38 diagonal that made every weather
+			// blow the same way. Still an accumulator, so a change of bearing bends the
+			// drift from here on instead of teleporting the pattern (§15.7).
+			const rate = (0.0025 + clamp01(w.wind) * 0.02) * delta;
+			windX += windAxisX(w) * rate;
+			windZ += windAxisZ(w) * rate;
 			uWind.value.set(windX, windZ);
 
 			// Light hints already carry time of day AND the deck's own attenuation of the

@@ -378,6 +378,16 @@
 		flashState.direction.y = dir.y;
 		flashState.direction.z = dir.z;
 
+		// Publish the strike itself, for consumers that care about the EVENT rather than
+		// the per-frame envelope -- thunder, today. A sheet is the inside of a cell lighting
+		// up somewhere back in the deck, so it draws a farther distance than a bolt, which
+		// is a channel to the ground near enough to see. That difference is most of why a
+		// storm reads as having depth: near cracks, distant rumbles, and the gap between
+		// the flash and the sound telling you which you just got.
+		flashState.strikeDistance =
+			kind === 'sheet' ? 1200 + rng() * 1800 : 200 + rng() * 1300;
+		flashState.strikeId++;
+
 		// The whole per-strike variety of the bolt is two uniforms: the path's domain
 		// offset and where the ground gate sits. No geometry is rebuilt.
 		if (kind === 'bolt') {

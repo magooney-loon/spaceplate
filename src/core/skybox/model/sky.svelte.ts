@@ -23,11 +23,13 @@ import { clamp01, lerp, lerpRGB } from './math';
 import {
 	AMBIENT_RETURN,
 	bodyVisibility,
+	CHANNEL_NAMES,
 	createWeatherMixer,
 	deckFactor,
 	keyAttenuation,
 	modulateBaseline,
 	WEATHERS,
+	type ChannelName,
 	type WeatherOptions
 } from './weatherMixer';
 import type {
@@ -148,7 +150,12 @@ const defaultWeather = (): WeatherChannels => ({
 	cloudType: 0,
 	fog: 0,
 	precipitation: 0,
+	// Rain, not snow -- see the note on `precipitationType` in WEATHERS. Nothing is
+	// falling at boot, so this only decides what a raw `setWeather({ precipitation })`
+	// gets if it never says which kind it wanted.
+	precipitationType: 1,
 	wind: 0.1,
+	windDirection: 0.12,
 	lightning: 0
 });
 
@@ -199,7 +206,9 @@ export const skyMeta = $state({
 	cloudType: descriptor.weather.cloudType,
 	fog: descriptor.weather.fog,
 	precipitation: descriptor.weather.precipitation,
+	precipitationType: descriptor.weather.precipitationType,
 	wind: descriptor.weather.wind,
+	windDirection: descriptor.weather.windDirection,
 	lightning: descriptor.weather.lightning
 });
 
@@ -241,16 +250,18 @@ let publishedPhase: PhaseName | null = null;
 let publishedDaytime: boolean | null = null;
 let publishedWeather: string | null = null;
 let publishedBlending: boolean | null = null;
-const publishedChannels = {
+const publishedChannels: Record<ChannelName, number> = {
 	cloudCover: -1,
 	cloudType: -1,
 	fog: -1,
 	precipitation: -1,
+	precipitationType: -1,
 	wind: -1,
+	windDirection: -1,
 	lightning: -1
 };
 
-/** Mirror the six channels a dev panel watches, gated to CHANNEL_EPSILON. */
+/** Mirror every channel a dev panel watches, gated to CHANNEL_EPSILON. */
 const publishWeather = (w: WeatherChannels) => {
 	if (publishedWeather !== mixer.name) {
 		publishedWeather = mixer.name;
@@ -260,14 +271,11 @@ const publishWeather = (w: WeatherChannels) => {
 		publishedBlending = mixer.blending;
 		skyMeta.blending = mixer.blending;
 	}
-	for (const key of [
-		'cloudCover',
-		'cloudType',
-		'fog',
-		'precipitation',
-		'wind',
-		'lightning'
-	] as const) {
+	// Driven off CHANNEL_NAMES rather than a fourth hand-written copy of the channel
+	// list: this module already keeps three (the boot defaults, the reactive mirror and
+	// the gate below), and a channel missing from THIS one would simply never reach the
+	// panel -- a silent omission rather than a type error.
+	for (const key of CHANNEL_NAMES) {
 		// Also fires when a blend lands exactly on its target, since `to` is reached
 		// only once and the epsilon gate would otherwise strand the final value.
 		if (Math.abs(w[key] - publishedChannels[key]) >= CHANNEL_EPSILON || !mixer.blending) {

@@ -25,6 +25,25 @@ export type FlashState = {
 	/** Strike direction, world space, Y up, unit length. Constant for a strike's life. */
 	direction: { x: number; y: number; z: number };
 	/**
+	 * Increments once per strike, at the instant it begins.
+	 *
+	 * A COUNTER, not a boolean or a timestamp. A boolean needs someone to clear it, which
+	 * means two writers for one field; a timestamp cannot distinguish "no strike yet" from
+	 * "a strike at time zero". A consumer stores the last id it acted on and compares --
+	 * so a listener that mounts mid-storm simply picks up from the next strike rather than
+	 * firing for one it never saw.
+	 */
+	strikeId: number;
+	/**
+	 * Rough distance to the current strike in world units, drawn per strike.
+	 *
+	 * Exists for the AUDIO: thunder is the same event as the flash, heard about three
+	 * seconds per kilometre later, and that gap is most of what makes a storm feel like it
+	 * has a size. The renderers do not use it -- the bolt quad is drawn at a fixed
+	 * `distance` prop, because a bolt scaled by true distance would be a few pixels tall.
+	 */
+	strikeDistance: number;
+	/**
 	 * Dev/testing hook: force one BOLT strike on the next frame. Written by callers
 	 * (Studio's Strike button), consumed and cleared by Lightning's scheduler -- one
 	 * writer per field, like everything here. Fires even at a dead channel, because
@@ -36,6 +55,8 @@ export type FlashState = {
 export const flashState: FlashState = {
 	flash: 0,
 	direction: { x: 0, y: 0.6, z: 0.8 },
+	strikeId: 0,
+	strikeDistance: 1200,
 	strikeRequest: false
 };
 

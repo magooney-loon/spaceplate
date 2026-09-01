@@ -17,7 +17,7 @@
 
 // `ease` is the same smoothstep the day curve samples with, so a weather blend and a
 // time transition read the same way.
-import { clamp01, ease, lerp, smooth01 } from './math';
+import { clamp01, ease, lerp, smooth01, wrap01 } from './math';
 import type { RGB, SkyBaseline, WeatherChannels, WeatherTarget } from './types';
 
 export type ChannelName = keyof WeatherChannels;
@@ -27,9 +27,21 @@ export const CHANNEL_NAMES: ChannelName[] = [
 	'cloudType',
 	'fog',
 	'precipitation',
+	'precipitationType',
 	'wind',
+	'windDirection',
 	'lightning'
 ];
+
+/**
+ * Channels that are an ANGLE, so [0,1) is a circle and not a line.
+ *
+ * These blend along the shorter arc and wrap on write instead of clamping. Easing a
+ * bearing from 0.95 to 0.05 has to cross north in a tenth of a turn; clamped linear
+ * interpolation would instead sweep nine tenths of the way round through south, and the
+ * rain would visibly rotate the wrong way for the whole twenty seconds.
+ */
+const WRAPPED_CHANNELS = new Set<ChannelName>(['windDirection']);
 
 /**
  * A named weather is a **target vector**, not a script (§5.3).
@@ -55,13 +67,29 @@ export type WeatherDefinition = {
  * channels too.
  *
  * `lightning` drives `Lightning.svelte`'s strike scheduler and `wind` drives
- * `CloudDeck.svelte`'s scroll offset (plus `Rain.svelte`'s slant) -- every channel now
- * has a renderer. Precipitation splits on `cloudType` -- `Rain.svelte` above ~0.5,
- * `Snow.svelte` below -- until the descriptor grows an explicit precipitation type.
+ * `CloudDeck.svelte`'s scroll offset (plus `Rain.svelte`'s slant) -- every channel has a
+ * renderer. `precipitationType` picks between `Rain.svelte` and `Snow.svelte` through
+ * `precipitationSplit`, and `windDirection` gives all three of those a bearing.
+ *
+ * NOTE ON `precipitationType` IN DRY WEATHERS. It is authored to 1 (rain) everywhere
+ * nothing is falling, and that is deliberate rather than a leftover. A raw partial leaves
+ * unmentioned channels where they are, so `setWeather({ precipitation: 0.8 })` from a dry
+ * weather inherits whatever type it was carrying -- and "rain" is the answer a caller who
+ * did not mention snow expects. Under the old `cloudType` gate that same call from `clear`
+ * produced snow.
  */
 export const WEATHERS: Record<string, WeatherDefinition> = {
 	clear: {
-		target: { cloudCover: 0, cloudType: 0, fog: 0, precipitation: 0, wind: 0.08, lightning: 0 }
+		target: {
+			cloudCover: 0,
+			cloudType: 0,
+			fog: 0,
+			precipitation: 0,
+			precipitationType: 1,
+			wind: 0.08,
+			windDirection: 0.12,
+			lightning: 0
+		}
 	},
 	cloudy: {
 		target: {
@@ -69,7 +97,9 @@ export const WEATHERS: Record<string, WeatherDefinition> = {
 			cloudType: 0.2,
 			fog: 0.05,
 			precipitation: 0,
+			precipitationType: 1,
 			wind: 0.25,
+			windDirection: 0.18,
 			lightning: 0
 		},
 		stagger: { wind: 0.2 }
@@ -90,7 +120,9 @@ export const WEATHERS: Record<string, WeatherDefinition> = {
 			cloudType: 0.45,
 			fog: 0.18,
 			precipitation: 0,
+			precipitationType: 1,
 			wind: 0.3,
+			windDirection: 0.22,
 			lightning: 0
 		},
 		stagger: { fog: 0.3, wind: 0.15 }
@@ -104,7 +136,9 @@ export const WEATHERS: Record<string, WeatherDefinition> = {
 			cloudType: 0.1,
 			fog: 0.85,
 			precipitation: 0,
+			precipitationType: 1,
 			wind: 0.03,
+			windDirection: 0.05,
 			lightning: 0
 		},
 		stagger: { fog: 0.1, cloudCover: 0 }
@@ -115,7 +149,9 @@ export const WEATHERS: Record<string, WeatherDefinition> = {
 			cloudType: 0.6,
 			fog: 0.3,
 			precipitation: 0.6,
+			precipitationType: 1,
 			wind: 0.4,
+			windDirection: 0.3,
 			lightning: 0
 		},
 		stagger: { wind: 0.2, fog: 0.3, precipitation: 0.45 }
@@ -126,18 +162,27 @@ export const WEATHERS: Record<string, WeatherDefinition> = {
 			cloudType: 1,
 			fog: 0.35,
 			precipitation: 1,
+			precipitationType: 1,
 			wind: 0.85,
+			windDirection: 0.62,
 			lightning: 0.8
 		},
 		stagger: { wind: 0.15, fog: 0.3, precipitation: 0.45, lightning: 0.6 }
 	},
 	snow: {
+		// `cloudType` RAISED from 0.35 to 0.7 now that it no longer selects the
+		// precipitation type. 0.35 was never a look decision -- it was the highest value
+		// that stayed under the old rain gate at 0.45, which forced a heavy snowfall to
+		// render thin, wispy cloud. A snow deck is thick, and both `Sky.svelte` and
+		// `CloudDeck.svelte` read this channel for exactly that.
 		target: {
 			cloudCover: 0.9,
-			cloudType: 0.35,
+			cloudType: 0.7,
 			fog: 0.5,
 			precipitation: 0.7,
+			precipitationType: 0,
 			wind: 0.3,
+			windDirection: 0.44,
 			lightning: 0
 		},
 		stagger: { fog: 0.25, precipitation: 0.4 }
@@ -214,18 +259,29 @@ export const createWeatherMixer = (channels: WeatherChannels): WeatherMixer => {
 				const to = values[channel];
 				if (to === undefined) continue;
 
-				const clamped = clamp01(to);
+				const wrapped = WRAPPED_CHANNELS.has(channel);
+				const target = wrapped ? wrap01(to) : clamp01(to);
 				if (over === 0) {
 					// A snap. Land it now rather than queueing a zero-length blend, so
 					// callers reading `channels` on the same tick see the final value.
-					channels[channel] = clamped;
+					channels[channel] = target;
 					continue;
+				}
+
+				// For an angle, walk the start point around the circle so that plain
+				// interpolation takes the short way. The result can leave [0,1) mid-blend,
+				// which `tick` wraps back on write -- consumers never see it out of range.
+				let from = channels[channel];
+				if (wrapped) {
+					const delta = target - from;
+					if (delta > 0.5) from += 1;
+					else if (delta < -0.5) from -= 1;
 				}
 
 				const delay = over * clamp01(stagger?.[channel] ?? 0);
 				blends.set(channel, {
-					from: channels[channel],
-					to: clamped,
+					from,
+					to: target,
 					delay,
 					// Every channel finishes together; only the onset is staggered.
 					duration: Math.max(1, over - delay),
@@ -244,7 +300,10 @@ export const createWeatherMixer = (channels: WeatherChannels): WeatherMixer => {
 				if (blend.elapsed < blend.delay) continue;
 
 				const k = Math.min(1, (blend.elapsed - blend.delay) / blend.duration);
-				channels[channel] = lerp(blend.from, blend.to, ease(k));
+				const value = lerp(blend.from, blend.to, ease(k));
+				// The short-arc walk in `set` can put `from` outside [0,1); bring the
+				// result back so no consumer ever reads a bearing of -0.05 or 1.05.
+				channels[channel] = WRAPPED_CHANNELS.has(channel) ? wrap01(value) : value;
 				if (k >= 1) blends.delete(channel);
 			}
 
@@ -331,6 +390,52 @@ export const keyAttenuation = (w: WeatherChannels): number =>
  */
 export const bodyVisibility = (w: WeatherChannels): number =>
 	clamp01((1 - 0.95 * clamp01(w.cloudCover)) * (1 - 0.6 * clamp01(w.fog)));
+
+/**
+ * Where the type channel stops being sleet and becomes wholly one thing or the other.
+ *
+ * Endpoints matter more than the midpoint here: outside this band exactly ONE
+ * precipitation layer is live, so the common case pays for one field of particles and not
+ * two. Inside it both render, which is what sleet is.
+ */
+const SLEET_FROM = 0.35;
+const SLEET_TO = 0.65;
+
+/**
+ * How the single `precipitation` amount divides between the rain and snow renderers.
+ *
+ * ONE definition, three consumers (`Rain`, `Snow`, `RainLens`). The gate constants used to
+ * be copy-pasted into each of them -- the precise arrangement `skyLayer.ts` documents as
+ * having already produced a real bug once, where the copies drifted and nobody noticed
+ * because both versions still rendered something.
+ *
+ * The two shares always sum to the amount, so intensity is conserved across the sleet band
+ * rather than doubling in the middle.
+ */
+export const rainShare = (w: WeatherChannels): number =>
+	smooth01(SLEET_FROM, SLEET_TO, clamp01(w.precipitationType));
+
+export const rainAmount = (w: WeatherChannels): number =>
+	clamp01(w.precipitation) * rainShare(w);
+
+export const snowAmount = (w: WeatherChannels): number =>
+	clamp01(w.precipitation) * (1 - rainShare(w));
+
+/**
+ * The wind's horizontal axis, as two scalars rather than a vector.
+ *
+ * Split in two on purpose: every caller reads these once per frame from a task, and
+ * returning an object would allocate 60 times a second per consumer for two numbers. The
+ * §14.1 rule about per-frame values applies to garbage as much as to reactivity.
+ *
+ * `windDirection` is one full turn over [0,1). Bearing 0 points along +Z, which is the
+ * axis `CloudDeck` and `Rain` were both hardcoded to before this channel existed, so a
+ * scene that never sets a direction keeps the look it had.
+ */
+const TAU = Math.PI * 2;
+
+export const windAxisX = (w: WeatherChannels): number => Math.sin(wrap01(w.windDirection) * TAU);
+export const windAxisZ = (w: WeatherChannels): number => Math.cos(wrap01(w.windDirection) * TAU);
 
 /**
  * Apply the weather channels over a sampled day-curve baseline, in place.
