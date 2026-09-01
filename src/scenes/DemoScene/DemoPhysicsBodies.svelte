@@ -16,12 +16,82 @@
 	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 	const mountId = crypto.randomUUID().slice(0, 8);
 
-	// Bouncing sphere — circles the spot at [0, 2.5, 0] where the old icosahedron
-	// used to sit. Radius 5 keeps it well inside the 20x20 floor and clear of the
-	// corner balls (orbit reach 5.5 vs their inner edge at ~9.1).
+	// Mirror sphere choreography: a closed loop at constant speed — one full lap
+	// around each corner ball, then a Bézier chord through the floor's middle (where
+	// spawned bodies collect) on the way to the next ball, so every sweep kicks them
+	// across the floor. Verified against the geometry: 1.7 clearance from every ball
+	// (1.3 combined radii), max axis reach 8.7 (floor edge 10), closest approach to the
+	// center 2.9 (spawn zone |x|,|z| <= 4). ~96 units per lap, 24 s at SWEEP_SPEED.
 	let sphereRb = $state.raw<RapierRigidBody>();
 	let time = 0;
 	let heartbeat = 0;
+	let loopS = 0;
+
+	const CORNERS: [number, number][] = [
+		[-7, -7],
+		[7, -7],
+		[7, 7],
+		[-7, 7]
+	];
+	const ORBIT_RADIUS = 1.7; // around each 0.8 ball — 1.3 combined radii + margin
+	const SWEEP_SPEED = 4; // units/s — enough pace to punt spawned bodies
+
+	// Quadratic Bézier with the control point baked to the floor center (0, 0)
+	const bez = (t: number, p0: number, p1: number): number =>
+		(1 - t) * (1 - t) * p0 + t * t * p1;
+
+	// Orbit anchor: the point of a ball's orbit circle nearest the floor center, so
+	// the travel chord exits each lap aimed at the middle of the floor.
+	const anchorOf = (c: [number, number]): [number, number] => {
+		const len = Math.hypot(c[0], c[1]);
+		return [c[0] * (1 - ORBIT_RADIUS / len), c[1] * (1 - ORBIT_RADIUS / len)];
+	};
+
+	// Sample the loop once with cumulative arc length, so `loopS` maps to a position
+	// at constant speed — no per-segment speed jumps for the physics to absorb.
+	const buildLoop = () => {
+		const samples: { x: number; z: number; s: number }[] = [];
+		let s = 0;
+		for (let i = 0; i < CORNERS.length; i++) {
+			const [bx, bz] = CORNERS[i];
+			const [nx, nz] = CORNERS[(i + 1) % CORNERS.length];
+			const [ax, az] = anchorOf([bx, bz]);
+			const [nax, naz] = anchorOf([nx, nz]);
+			const a0 = Math.atan2(az - bz, ax - bx);
+			const push = (x: number, z: number) => {
+				const prev = samples[samples.length - 1];
+				if (prev) s += Math.hypot(x - prev.x, z - prev.z);
+				samples.push({ x, z, s });
+			};
+			// Full lap around the ball, starting and ending at the anchor
+			for (let k = 0; k <= 96; k++) {
+				const a = a0 + (k / 96) * Math.PI * 2;
+				push(bx + Math.cos(a) * ORBIT_RADIUS, bz + Math.sin(a) * ORBIT_RADIUS);
+			}
+			// Chord through the floor's middle toward the next ball's anchor
+			for (let k = 1; k <= 96; k++) {
+				const t = k / 96;
+				push(bez(t, ax, nax), bez(t, az, naz));
+			}
+		}
+		return { samples, length: s };
+	};
+	const LOOP = buildLoop();
+
+	const posAt = (s: number): { x: number; z: number } => {
+		const target = ((s % LOOP.length) + LOOP.length) % LOOP.length;
+		let lo = 0;
+		let hi = LOOP.samples.length - 1;
+		while (hi - lo > 1) {
+			const mid = (lo + hi) >> 1;
+			if (LOOP.samples[mid].s <= target) lo = mid;
+			else hi = mid;
+		}
+		const a = LOOP.samples[lo];
+		const b = LOOP.samples[hi];
+		const f = (target - a.s) / Math.max(b.s - a.s, 1e-9);
+		return { x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f };
+	};
 
 	// Textures vendored from the three.js clearcoat example
 	// (DOCS/three.js-dev/examples/textures -> public/textures/clearcoat). Loaded the
@@ -176,22 +246,24 @@
 			if (mesh) mesh.rotation.y = ballYaw;
 		}
 
-		// Bouncing sphere orbit
+		// Mirror sphere: constant-speed run along the choreographed loop, still
+		// bobbing y 1..4 and tumbling for the reflections.
 		if (sphereRb) {
 			time += delta;
-			const x = Math.sin(time * 0.5) * 5;
-			const z = Math.cos(time * 0.5) * 5;
+			loopS = (loopS + delta * SWEEP_SPEED) % LOOP.length;
+			const p = posAt(loopS);
 			const y = Math.sin(time) * 1.5 + 2.5;
 			const rotQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(time, 0, 0));
-			sphereRb.setNextKinematicTranslation({ x, y, z });
+			sphereRb.setNextKinematicTranslation({ x: p.x, y, z: p.z });
 			sphereRb.setNextKinematicRotation({ x: rotQ.x, y: rotQ.y, z: rotQ.z, w: rotQ.w });
 		}
 
-		heartbeat += delta;
+	heartbeat += delta;
 		if (heartbeat >= 1) {
 			heartbeat = 0;
 			logPhysics.info(`DemoPhysicsBodies heartbeat [${mountId}]`, {
 				time: Number(time.toFixed(3)),
+				loopS: Number(loopS.toFixed(1)),
 				ballYaw: Number(ballYaw.toFixed(3)),
 				sphere: readTranslation(sphereRb)
 			});
