@@ -22,6 +22,22 @@
 	// single birds anchored to points of their own. A strayed bird that crosses a
 	// flock's zone briefly joins it, which reads as exactly what a stray does.
 	//
+	// THE ANCHOR IS A SEED, NOT A LEASH. A constant pull to a fixed point is a closed
+	// orbit: with the speed floor, a flock laps the same circuit for as long as you
+	// watch, which reads as birds on rails. The pull target instead WANDERS -- sums of
+	// incommensurate sines seeded per flock, plus a smaller per-bird drift so the flock
+	// is not a rigid formation -- and the pull strength itself breathes on a slow sine.
+	// The paths are quasi-periodic: they never close, and no two flocks wander in
+	// phase. Gust turbulence scaled by the wind channel rides on top.
+	//
+	// BOUNDED, NOT JUST PLACED. The layout keeps the flocks far away, but distance is
+	// enforced rather than hoped for: no bird may go below MIN_ALT (the ground plane
+	// and the scene's furniture live there) or inside KEEP_OUT of the origin (the
+	// cameras sit within ~13 of it) -- soft decelerations in the velocity pass, hard
+	// clamps in the position pass. The centre-pull is likewise a spring that scales
+	// with distance from the target, so weather bends a flock downwind but can never
+	// carry it off.
+	//
 	// DESCRIPTOR-DRIVEN, like the weather it lives in:
 	//   - DAY. Birds are diurnal. They fade out through twilight on the same
 	//     `starVisibility` ramp that fades Stars in, so dusk hands the sky over.
@@ -63,9 +79,11 @@
 		normalize,
 		positionLocal,
 		sin,
+		smoothstep,
 		sqrt,
 		uint,
 		uniform,
+		vec3,
 		vertexIndex
 	} from 'three/tsl';
 	import { descriptor, mulberry32, smooth01, windAxisX, windAxisZ } from '../../model';
@@ -106,12 +124,50 @@
 	const SEPARATION = 3.5;
 	const ALIGNMENT = 4.5;
 	const COHESION = 4.5;
-	/** Centre-pull toward the bird's own anchor, per second -- with a vertical bias,
-	 *  because a flock flies as a slab rather than a cube. */
+	/** Centre-pull toward the bird's own flock target, per second -- with a vertical
+	 *  bias, because a flock flies as a slab rather than a cube. Breathes ±35% on a
+	 *  slow sine, and SCALES with distance from the target: ×0.5 at the target,
+	 *  rising to ×PULL_MAX from PULL_RANGE out. A spring rather than a constant
+	 *  shove -- which is what lets weather BEND a flock downwind without ever being
+	 *  able to carry it off (a constant-magnitude pull loses to any stronger wind). */
 	const CENTER_PULL = 1.2;
+	const PULL_RANGE = 15;
+	const PULL_MAX = 10;
 	const SLAB_Y = 1.8;
-	/** Weather wind channel (0..1) to acceleration. */
-	const WIND_GAIN = 10;
+	/** THE TARGET WANDERS. A fixed anchor is a leash: with a constant pull and a speed
+	 *  floor, a flock laps the same closed circuit for as long as you watch, which
+	 * reads as birds on rails. The pull target instead drifts on sums of
+	 *  INCOMMENSURATE sines (per flock, seeded from the anchor), so its path is
+	 *  quasi-periodic and never closes. Amplitudes in world units, frequencies inline
+	 *  in the shader and deliberately irrational against each other. Kept small
+	 *  enough that wandering flocks stay clear of each other's zones. */
+	const WANDER = 20;
+	const WANDER_Y = 4;
+	/** Per-bird drift of the pull target, so a flock is a loose aggregate rather than
+	 *  a rigid formation riding one point. */
+	const PER_BIRD_DRIFT = 3;
+	/** Gust turbulence as acceleration: a base that sways even still air gently, plus
+	 *  a wind-scaled term that tosses a flock in a gale. */
+	const TURB_BASE = 0.3;
+	const TURB_WIND = 1.2;
+	/** Weather wind channel (0..1) to acceleration. Sized to bend, not abduct: with
+	 *  the spring pull above, even full wind only leans a flock ~40 units downwind of
+	 *  its target -- and heavier weather grounds the birds anyway. */
+	const WIND_GAIN = 3.5;
+	/** THE HARD BOUNDARIES. Birds are sky, never scene: no bird below MIN_ALT (the
+	 *  ground plane is y=0 and the scene's furniture lives under this) and none
+	 *  inside KEEP_OUT of the origin (the stock cameras sit within ~13 of it, so 60
+	 *  keeps every bird clearly distant). Enforced as hard clamps in the position
+	 *  pass, with soft decelerations in the velocity pass so a clamp is a slowdown,
+	 *  not a slide. Neither should ever fire at these anchors -- the layout already
+	 *  sits far outside both; they are the guarantee, not the mechanism. */
+	const MIN_ALT = 12;
+	const KEEP_OUT = 60;
+	/** Soft-range gains: the lift ramps in below y=20 (flock C's lowest wander is
+	 *  ~22, so normal flight never touches it); the radial push ramps in inside
+	 *  KEEP_OUT + 30. */
+	const LIFT = 2.5;
+	const CORE_PUSH = 4;
 	const FLAP_AMP = 1.25;
 	const FLAP_RATE_XZ = 8;
 	const FLAP_RATE_Y = 12;
@@ -134,7 +190,14 @@
 
 	// ── Uniforms (one set, shared by the computes and the material) ───────────────
 	const deltaTime = uniform(0);
+	/** The flock's own clock, accumulated in the task -- not the TSL `time` node, for
+	 *  the same §15.7 reason every layer keeps its own: it only advances while the
+	 *  flocks are ungrounded, so nothing jumps when weather clears. Drives the target
+	 *  wander, the pull breathing and the gust turbulence. */
+	const uTime = uniform(0);
 	const uWind = uniform(new THREE.Vector3());
+	/** Gust turbulence magnitude, `TURB_BASE + TURB_WIND × wind` from the task. */
+	const uTurb = uniform(TURB_BASE);
 	/** The key light's hue at unit luminance; the two levels below mix along it. */
 	const uHue = uniform(new THREE.Vector3(1, 1, 1));
 	const uDark = uniform(0.08);
@@ -246,9 +309,9 @@
 		const phaseStorage = instancedArray(phases, 'float').setName('birdPhase');
 		const anchorStorage = instancedArray(anchors, 'vec3').setName('birdAnchor');
 
-		// ── The velocity pass ────────────────────────────────────────────────────
-		// Boids, verbatim from the reference minus its pointer-ray scatter: pull to
-		// the bird's own anchor, then the O(n²) separation / alignment / cohesion
+		// ── The velocity pass ────────────────────────────────────────────────────────
+		// Boids, verbatim from the reference minus its pointer-ray scatter: pull to the
+		// bird's own WANDERING target, then the O(n²) separation / alignment / cohesion
 		// sweep and a speed clamp. The zone thresholds are ratios of the zone radius,
 		// so tuning the three radii retunes the personality without touching the
 		// branches.
@@ -265,17 +328,88 @@
 			const position = positionStorage.element(birdIndex).toVar();
 			const velocity = velocityStorage.element(birdIndex).toVar();
 
-			// The anchor: pull toward the bird's own flock centre, harder vertically
-			// (the slab), plus the weather's wind as a plain acceleration along its
-			// bearing. The division is the epsilon-hardened form of normalize() -- a bird
-			// passing exactly over its anchor must not write NaNs into the buffers.
-			const dirToCenter = position.sub(anchorStorage.element(birdIndex)).toVar();
+			// THE WANDERING TARGET. The anchor is a seed, not a leash: the pull target
+			// drifts on incommensurate sines (so its path never closes), each bird's own
+			// target drifts a little further (so the flock is not a rigid formation), and
+			// the pull strength itself breathes. Together with the gust turbulence below,
+			// this is what keeps the flocks from lapping one visible circuit.
+			const anchor = anchorStorage.element(birdIndex);
+			// Seed per flock from the anchor, so flocks wander out of phase.
+			const seed = anchor.x
+				.mul(0.37)
+				.add(anchor.z.mul(0.71))
+				.add(anchor.y.mul(0.11))
+				.toConst();
+
+			const target = anchor
+				.add(
+					vec3(
+						sin(uTime.mul(0.11).add(seed))
+							.mul(float(WANDER))
+							.add(sin(uTime.mul(0.043).add(seed.mul(2.7))).mul(float(WANDER * 0.5))),
+						sin(uTime.mul(0.06).add(seed.mul(1.7))).mul(float(WANDER_Y)),
+						cos(uTime.mul(0.09).add(seed.mul(1.3)))
+							.mul(float(WANDER))
+							.add(cos(uTime.mul(0.037).add(seed.mul(3.1))).mul(float(WANDER * 0.5)))
+					)
+				)
+				.toVar();
+			// Per-bird drift: golden-angle phase off the bird's own index.
+			const driftPhase = float(birdIndex).mul(0.618);
+			target.addAssign(
+					vec3(
+						sin(uTime.mul(0.21).add(driftPhase)).mul(float(PER_BIRD_DRIFT)),
+						sin(uTime.mul(0.16).add(driftPhase.mul(1.9))).mul(float(PER_BIRD_DRIFT * 0.5)),
+						cos(uTime.mul(0.19).add(driftPhase.mul(1.3))).mul(float(PER_BIRD_DRIFT))
+					)
+			);
+
+			// The pull: toward the wandering target, harder vertically (the slab). The
+			// division is the epsilon-hardened form of normalize() -- a bird passing
+			// exactly over its target must not write NaNs into the buffers.
+			const dirToCenter = position.sub(target).toVar();
 			dirToCenter.y.mulAssign(float(SLAB_Y));
 			const centerDist = length(dirToCenter).max(1e-6);
-			velocity.subAssign(
-				dirToCenter.div(centerDist).mul(deltaTime).mul(float(CENTER_PULL))
-			);
+			// Breathing × distance: ×0.5 at the target itself, ×PULL_MAX from PULL_RANGE
+			// out. The spring that keeps weather from carrying a flock off.
+			const pull = float(CENTER_PULL)
+				.mul(float(0.65).add(float(0.35).mul(sin(uTime.mul(0.043).add(seed.mul(1.1))))))
+				.mul(clamp(centerDist.div(float(PULL_RANGE)), float(0.5), float(PULL_MAX)));
+			velocity.subAssign(dirToCenter.div(centerDist).mul(deltaTime).mul(pull));
+
+			// Wind: the weather's bearing as a plain acceleration, plus gust turbulence
+			// -- slow directional sines that sway still air and toss a gale.
 			velocity.addAssign(uWind.mul(deltaTime).mul(float(WIND_GAIN)));
+			const gustPhase = seed.mul(2.3);
+			velocity.addAssign(
+				vec3(
+					sin(uTime.mul(0.31).add(gustPhase)),
+					sin(uTime.mul(0.23).add(gustPhase.mul(1.7))).mul(0.4),
+					cos(uTime.mul(0.27).add(gustPhase.mul(1.3)))
+				)
+						.mul(uTurb)
+						.mul(deltaTime)
+			);
+
+			// THE SOFT HALF OF THE BOUNDARIES (the hard half lives in the position pass):
+			// a lift that ramps in below the flock band, and a radial push out of the
+			// camera's volume. Neither should ever fire at these anchors -- they exist so
+			// a retune or a freak gust decelerates a bird before the clamp has to catch
+			// it. Edges are given low-to-high: WGSL leaves reversed smoothstep undefined.
+			velocity.y.addAssign(
+				smoothstep(float(14), float(20), position.y)
+					.oneMinus()
+					.mul(deltaTime)
+					.mul(float(LIFT))
+			);
+			const originDist = length(position).max(1e-6);
+			velocity.addAssign(
+				position
+					.div(originDist)
+					.mul(smoothstep(float(KEEP_OUT), float(KEEP_OUT + 30), originDist).oneMinus())
+					.mul(deltaTime)
+					.mul(float(CORE_PUSH))
+			);
 
 			Loop({ start: uint(0), end: uint(count), type: 'uint', condition: '<' }, ({ i }) => {
 				If(i.equal(birdIndex), () => {
@@ -339,13 +473,21 @@
 			velocityStorage.element(birdIndex).assign(velocity);
 		})().compute(count).setName('Sky birds velocity');
 
-		// ── The position pass ────────────────────────────────────────────────────
-		// Integrate, and advance the flap phase by how fast the bird is actually
-		// flying -- a gliding bird stops flapping, a climbing one flaps hardest.
+		// ── The position pass ────────────────────────────────────────────────────────
+		// Integrate, advance the flap phase, and enforce THE HARD BOUNDARIES: never
+		// below MIN_ALT, never inside KEEP_OUT of the origin. The floor is applied
+		// first and the keep-out projection only ever scales a position UP (it fires
+		// when the bird is inside the sphere), so the two cannot fight each other.
 		const computePosition = Fn(() => {
-			positionStorage
-				.element(instanceIndex)
-				.addAssign(velocityStorage.element(instanceIndex).mul(deltaTime).mul(float(INTEGRATION)));
+			const pos = positionStorage.element(instanceIndex).toVar();
+			pos.addAssign(velocityStorage.element(instanceIndex).mul(deltaTime).mul(float(INTEGRATION)));
+
+			pos.y = max(pos.y, float(MIN_ALT));
+			const originDist = length(pos).max(1e-6);
+			If(originDist.lessThan(float(KEEP_OUT)), () => {
+				pos.assign(pos.div(originDist).mul(float(KEEP_OUT)));
+			});
+			positionStorage.element(instanceIndex).assign(pos);
 
 			const velocity = velocityStorage.element(instanceIndex);
 			const phase = phaseStorage.element(instanceIndex);
@@ -452,8 +594,15 @@
 			if (mesh) mesh.visible = visible;
 			if (!visible) return;
 
-			// Wind: the bearing and strength as one acceleration vector.
+			// Wind: the bearing and strength as one acceleration vector, and the gust
+			// magnitude that rides it -- a base sway in still air, tossing in a gale.
 			uWind.value.set(windAxisX(w) * w.wind, 0, windAxisZ(w) * w.wind);
+			uTurb.value = TURB_BASE + TURB_WIND * w.wind;
+
+			// The flock's clock advances with the integration it drives -- same clamped
+			// delta, so backgrounding the tab does not jump the wander.
+			deltaTime.value = Math.min(delta, 0.1);
+			uTime.value += deltaTime.value;
 
 			// Plumage from the key-light hints: the hue at unit luminance, with a dark
 			// end that is the old silhouette and a light end that only exists by day --
@@ -465,9 +614,7 @@
 			uDark.value = 0.05 + 0.07 * norm;
 			uLight.value = 0.3 + 0.5 * norm;
 
-			// Integrate, then draw. The clamp keeps a backgrounded tab's one huge delta
-			// from firing the flocks across the sky on return.
-			deltaTime.value = Math.min(delta, 0.1);
+			// Integrate, then draw.
 			if (computeReady) {
 				renderer.compute(computeVelocity);
 				renderer.compute(computePosition);

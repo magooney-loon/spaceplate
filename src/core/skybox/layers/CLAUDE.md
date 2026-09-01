@@ -145,9 +145,22 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   interaction zone — which is what keeps flocks from merging; strays are one-bird
   "flocks", and a speed FLOOR in the clamp keeps them flying loops instead of damping
   onto their anchors (birds do not hover).
+- **The anchor is a seed, not a leash**: the pull target WANDERS on incommensurate
+  sines (seeded per flock from the anchor, plus a smaller per-bird drift), and the
+  pull strength breathes on a slow sine — a constant pull to a fixed point is a closed
+  orbit, and a flock lapping one visible circuit reads as birds on rails. Gust
+  turbulence scaled by the wind channel rides on top. All of it runs off the layer's
+  own accumulated `uTime`, not the TSL `time` node (§15.7).
 - **Placement is a camera contract, not taste**: anchors sit far and LOW (~6-15°
   elevation) because both stock cameras look at the origin roughly horizontally —
   anything overhead is never in frame.
+- **Distance is enforced, not hoped for**: no bird below `MIN_ALT` (12 — the ground
+  plane and scene furniture live under it) or inside `KEEP_OUT` (60) of the origin,
+  where the stock cameras sit within ~13. Soft decelerations in the velocity pass,
+  hard clamps in the position pass — neither fires at the shipped anchors. The
+  centre-pull also SCALES with distance from the target (a spring, ×0.5 near to
+  ×10 far), so wind bends a flock ~40 units downwind at full strength and can never
+  carry it off — heavier weather grounds the birds anyway.
 - **WebGPU-only by gate, not by crash**: three's WebGL2 backend cannot run the
   reference example (“TODO: Fix example with WebGL backend”), so the task checks
   `renderer.backend.isWebGPUBackend` and keeps the mesh hidden on the fallback.
