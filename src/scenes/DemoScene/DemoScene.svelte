@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { T, useThrelte } from '@threlte/core/webgpu';
-	import { interactivity } from '@threlte/extras';
 	import { RigidBody, Collider, Debug, Attractor, useRapier } from '@threlte/rapier';
 	import * as THREE from 'three/webgpu';
 	import { reflector } from 'three/tsl';
@@ -9,8 +8,6 @@
 	import PhysicsController from '$extensions/physics/PhysicsController.svelte';
 	import { logPhysics } from '$extensions/logger';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
-
-	interactivity();
 
 	const { scene } = useThrelte();
 
