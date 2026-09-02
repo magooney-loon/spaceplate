@@ -99,6 +99,8 @@ export interface EffectDef<P extends EffectParams = EffectParams> {
 	displayColor?: boolean;
 	/** Default parameter values — also seeds the extension state and the panel. */
 	params: () => P;
+	/** Whether the effect starts enabled — seeds the extension state's `enabled` flag. */
+	defaultEnabled?: boolean;
 	/**
 	 * Param keys that are baked into the compiled graph (loop counts, texture sizes)
 	 * and therefore need a rebuild rather than a uniform write. Everything else is

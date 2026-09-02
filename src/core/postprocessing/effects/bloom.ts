@@ -13,7 +13,8 @@ export const bloomEffect: EffectDef<BloomParams> = {
 	role: 'chain',
 	order: 40,
 	requires: [],
-	params: () => ({ strength: 1, radius: 0, threshold: 0 }),
+	params: () => ({ strength: 0.05, radius: 0, threshold: 0 }),
+	defaultEnabled: true,
 	ranges: {
 		strength: { min: 0, max: 3, step: 0.05 },
 		radius: { min: 0, max: 1, step: 0.01 },

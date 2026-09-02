@@ -15,7 +15,8 @@ export const motionBlurEffect: EffectDef<MotionBlurParams> = {
 	order: 35,
 	requires: ['velocity'],
 	structural: ['numSamples'],
-	params: () => ({ numSamples: 16, blurAmount: 1 }),
+	params: () => ({ numSamples: 9, blurAmount: 0.25 }),
+	defaultEnabled: true,
 	ranges: {
 		numSamples: { min: 4, max: 64, step: 1 },
 		blurAmount: { min: 0, max: 4, step: 0.05 }

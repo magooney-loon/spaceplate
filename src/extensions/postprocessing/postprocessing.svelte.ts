@@ -11,7 +11,7 @@ export type { EffectId, PostProcessingState, ExtensionState, ExtensionActions } 
 const defaultState = (): PostProcessingState => {
 	const state = {} as PostProcessingState;
 	for (const def of EFFECTS) {
-		(state as any)[def.id] = { enabled: false, ...def.params() };
+		(state as any)[def.id] = { enabled: def.defaultEnabled ?? false, ...def.params() };
 	}
 	return state;
 };
@@ -48,7 +48,7 @@ export const postprocessingActions = {
 		logPostprocessing.info(`Reset effect: ${id}`);
 	},
 
-	/** Reset everything and disable all effects. */
+	/** Reset everything back to registry defaults (default-enabled effects come back on). */
 	resetAll() {
 		const defaults = defaultState();
 		for (const id of Object.keys(defaults) as EffectId[]) {

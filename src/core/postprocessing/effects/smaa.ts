@@ -10,6 +10,7 @@ export const smaaEffect: EffectDef<SmaaParams> = {
 	order: 1,
 	requires: [],
 	params: () => ({}) as SmaaParams,
+	defaultEnabled: true,
 	// Applies before the output color transform (unlike FXAA) — the default
 	// outputColorTransform=true path handles tonemap/sRGB after it.
 	build: (ctx) => smaa(ctx.color)

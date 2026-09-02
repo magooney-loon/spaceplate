@@ -36,7 +36,8 @@ export const vignetteEffect: EffectDef<VignetteParams> = {
 	role: 'chain',
 	order: 50,
 	requires: [],
-	params: () => ({ intensity: 0.4, smoothness: 0.5, roundness: 0.5 }),
+	params: () => ({ intensity: 0.88, smoothness: 0.8, roundness: 0 }),
+	defaultEnabled: true,
 	ranges: {
 		intensity: { min: 0, max: 1, step: 0.01 },
 		smoothness: { min: 0.01, max: 1.4, step: 0.01 },

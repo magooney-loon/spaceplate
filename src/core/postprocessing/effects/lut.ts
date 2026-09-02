@@ -30,7 +30,9 @@ export const lutEffect: EffectDef<LutParams> = {
 		intensity: { min: 0, max: 1, step: 0.01 }
 	},
 	note: "three's nine example LUTs. Drop more into public/luts/ and append to LUT_CATALOGUE.",
-	params: () => ({ lut: 0, intensity: 1 }),
+	// Bourbon 64 (catalogue index 1) is the default grade.
+	params: () => ({ lut: 1, intensity: 1 }),
+	defaultEnabled: true,
 	build: (ctx, u) => {
 		const index = Math.round(u.lut.value);
 		const map = getLutTexture(index);
