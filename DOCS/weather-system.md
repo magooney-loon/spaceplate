@@ -938,6 +938,13 @@ Two consequences that are not optional:
   fades only across the end of the camera range, with `fogDensity` deciding how much of
   that band is present across the day. The weather `fog` channel can still pull the band
   inward for actual low visibility.
+- **A height term sits under that band** (`scene.fogNode`, per three's
+  `webgpu_fog_height`): `exponentialHeightFogFactor` gives a ground layer that thins with
+  world Y, unioned with the range factor as transmittances. The band alone hangs at a
+  fixed distance from the camera whichever way it looks; the height term is what puts fog
+  in the valley and lets terrain rise out of it. `clearGroundFogShare` scales the day
+  curve's own haze into it, so dawn and dusk — where `fogDensity` peaks — get mist without
+  any `setWeather` call, and noon stays clear.
 
 Colours are read as **sRGB**, not working-space linear: the curve's fog colours are
 authored by eye, so `[0.7, 0.78, 0.9]` has to mean the pale blue it looks like.

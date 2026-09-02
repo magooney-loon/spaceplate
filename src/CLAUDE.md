@@ -42,7 +42,8 @@ core/
     Skybox.svelte         — Mount + THE sky driver task + env/cube texture mode switch
     Sky.svelte            — WebGPU-native sky dome (three's SkyMesh), descriptor consumer
     SkyLight.svelte       — Descriptor-driven key light (sun→moon crossover) + hemisphere fill
-    SkyFog.svelte         — scene.fog (FogExp2) from the day curve + fog channel
+    SkyFog.svelte         — scene.fog + scene.fogNode (range band + height fog) from the
+                            day curve + fog channel
     environment/          — Env-mode state (procedural | HDR | cube) + texture lists — Skybox.svelte
                            consumes it in every build, so it is engine state, not extension
     model/                — Pure sky model: clock, sunPath, dayCurve, weatherMixer, phases,

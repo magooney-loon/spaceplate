@@ -14,13 +14,26 @@ layers/           — every renderer that draws on/around the dome
 environment/      — env-mode state (procedural | HDR | cube) + texture lists
 ```
 
-**Scene fog is owned by `SkyFog.svelte`.** One linear `Fog`, created at mount and
-mutated per frame — assigning a _new_ fog object rebuilds three's fog node and
-invalidates every material's cache key. Clear-weather fog is camera-relative horizon
-masking (it starts near the active camera's far range); the weather `fog` channel
-pulls the band inward for actual low visibility. Every sky layer sets
-`material.fog = false` instead — at radius 1000 any fog would resolve the whole sky to
-flat fog colour (see `layers/CLAUDE.md`).
+**Scene fog is owned by `SkyFog.svelte`.** One linear `Fog` plus one `scene.fogNode`,
+both created at mount and never swapped — assigning a _new_ fog object or node rebuilds
+three's fog node and invalidates every material's cache key. The Fog instance is the
+parameter carrier (colour/near/far, mutated per frame and bound into the node through
+`reference()`, exactly as `NodeManager.updateFog()` would); the node adds a second,
+height-based term.
+
+Two factors, unioned as transmittances (`1 - (1 - range)(1 - height)`):
+
+- **range** — camera-relative horizon masking, starting near the active camera's `far`.
+  The weather `fog` channel pulls that band inward for actual low visibility.
+- **height** — `exponentialHeightFogFactor`, a ground layer that thins with world Y, so
+  fog sits in the world instead of hanging at a fixed distance. Driven by the same two
+  signals as the band plus `clearGroundFogShare`, which lets the day curve's own haze
+  peak (dawn/dusk) produce valley mist with no `setWeather` call at all. Its ceiling
+  rises with its density: thin mist is shallow, a fog bank is deep.
+
+Every sky layer sets `material.fog = false` — at radius 1000 any fog would resolve the
+whole sky to flat fog colour (see `layers/CLAUDE.md`). That opt-out still applies on the
+`fogNode` path; `NodeMaterial` gates on `material.fog` before touching the node.
 
 ## The descriptor contract (§14.1) — the one rule everything else follows
 
