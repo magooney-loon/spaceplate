@@ -11,6 +11,8 @@
 export const bootState = $state({
 	/** Monotonic — every change triggers one warm render in Renderer.svelte. */
 	warmVersion: 0,
+	/** 0..1 across the warmup sweep — the Loader's second progress pass. */
+	warmProgress: 0,
 	/** True once the boot warmup sweep has finished; latches, never resets. */
 	scenesWarmed: false
 });

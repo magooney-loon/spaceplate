@@ -33,6 +33,15 @@
 
 	const tweened = new Tween(0, { duration: 600, easing: cubicOut });
 	$effect(() => {
+		// Two passes, two sources. While assets stream, the LoadingManager drives the
+		// bar. Once settled, ownership flips to the warmup sweep (bootState.warmProgress):
+		// the bar rolls back to 0 and climbs again as scenes are visited and
+		// warm-rendered — the second 0→100 pass reads as the shader compilation it is.
+		// (Straggler loads the sweep discovers no longer touch the bar.)
+		if (settled) {
+			tweened.target = bootState.warmProgress;
+			return;
+		}
 		tweened.target = $total === 0 ? 1 : $progress;
 	});
 
@@ -99,7 +108,7 @@
 			</div>
 		{:else}
 			<!-- Loading screen -->
-			<p class="label">{settled ? 'Preparing the game...' : 'Loading'}</p>
+			<p class="label">{settled ? 'Compiling shaders...' : 'Loading'}</p>
 
 			<!-- Progress bar -->
 			<div class="track">

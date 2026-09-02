@@ -94,6 +94,7 @@ export const sceneActions: ExtensionActions = {
 
 		const started = performance.now();
 		const original = sceneState.currentScene;
+		let step = 0;
 
 		try {
 			for (const { id } of SCENES) {
@@ -106,6 +107,9 @@ export const sceneActions: ExtensionActions = {
 					await nextFrame();
 				}
 				bootState.warmVersion++; // Renderer.svelte warm-renders this configuration
+				// Progress feeds the Loader's second bar pass; set before the grace so the
+				// climb is visible while compilation runs in the background.
+				bootState.warmProgress = ++step / SCENES.length;
 				await delay(WARM_GRACE_MS);
 			}
 
@@ -116,6 +120,7 @@ export const sceneActions: ExtensionActions = {
 			// Latch and restore no matter what — a failed sweep must never wedge the
 			// loader (the sound prompt gates on scenesWarmed) or leave the wrong scene showing.
 			sceneState.currentScene = original;
+			bootState.warmProgress = 1;
 			bootState.scenesWarmed = true;
 		}
 	}
