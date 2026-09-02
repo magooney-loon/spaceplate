@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { T, useThrelte } from '@threlte/core/webgpu';
+	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { useGltf, useGltfAnimations, useDraco, useMeshopt, useKtx2 } from '@threlte/extras';
 	import { AutoColliders } from '@threlte/rapier';
 	import { LoopRepeat, LoopOnce } from 'three';
-	import { SkeletonHelper, REVISION, type Mesh } from 'three/webgpu';
+	import { SkeletonHelper, REVISION, type Group, type Mesh } from 'three/webgpu';
 	import { untrack } from 'svelte';
 	import { gltfViewerActions } from './gltfViewer.svelte';
 	import { logGltf } from '$extensions/logger';
@@ -30,7 +30,9 @@
 		ktx2Loader
 	});
 	const { actions } = useGltfAnimations(gltf);
-	const { scene } = useThrelte();
+	const { scene, invalidate } = useThrelte();
+
+	let group = $state.raw<Group>();
 
 	// Track which clips were active on the previous effect run so we can diff for fade in/out
 	let prevActive = new Set<string>();
@@ -135,10 +137,21 @@
 
 		prevActive = currentActive;
 	});
+
+	// Slowly spins the loaded scene around Y while enabled — driven off the group so
+	// it never fights the animation mixer's own transforms on the GLTF scene root.
+	useTask(
+		(delta) => {
+			if (!group || !model.autoRotate) return;
+			group.rotation.y += model.autoRotateSpeed * delta;
+			invalidate();
+		},
+		{ autoInvalidate: false }
+	);
 </script>
 
 {#if model.visible && $gltf}
-	<T.Group name={model.name}>
+	<T.Group name={model.name} bind:ref={group}>
 		{#if model.colliderEnabled}
 			<AutoColliders shape={model.colliderShape}>
 				<T is={$gltf.scene} />

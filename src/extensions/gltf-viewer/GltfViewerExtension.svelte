@@ -83,6 +83,21 @@
 						value={model.castShadows}
 						on:change={() => gltfViewerActions.setCastShadows(model.id, !model.castShadows)}
 					/>
+					<Checkbox
+						label="Auto Rotate"
+						value={model.autoRotate}
+						on:change={() => gltfViewerActions.setAutoRotate(model.id, !model.autoRotate)}
+					/>
+					{#if model.autoRotate}
+						<Slider
+							label="Rotate Speed"
+							value={model.autoRotateSpeed}
+							min={0.1}
+							max={5}
+							step={0.1}
+							on:change={(e) => gltfViewerActions.setAutoRotateSpeed(model.id, e.detail.value)}
+						/>
+					{/if}
 
 					{#if model.animationClips.length > 0}
 						<Folder title="Animations ({model.animationClips.length})" expanded={false}>

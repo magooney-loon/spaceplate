@@ -18,6 +18,8 @@ const makeModel = (name: string, url: string, isBlobUrl: boolean): GltfViewerMod
 	visible: true,
 	showRig: false,
 	castShadows: false,
+	autoRotate: false,
+	autoRotateSpeed: 0.5,
 	colliderEnabled: false,
 	colliderShape: 'trimesh'
 });
@@ -150,6 +152,16 @@ export const gltfViewerActions = {
 	setCastShadows(id: string, cast: boolean) {
 		const m = find(id);
 		if (m) m.castShadows = cast;
+	},
+
+	setAutoRotate(id: string, enabled: boolean) {
+		const m = find(id);
+		if (m) m.autoRotate = enabled;
+	},
+
+	setAutoRotateSpeed(id: string, speed: number) {
+		const m = find(id);
+		if (m) m.autoRotateSpeed = speed;
 	},
 
 	setColliderShape(id: string, shape: GltfViewerColliderShape) {

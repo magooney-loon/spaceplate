@@ -16,7 +16,7 @@ Dev-only (`VITE_GAME_ENGINE=true`).
 ## State shape
 
 - `models: GltfViewerModel[]`, `selectedId: string | null`.
-- Each model: `id`, `name`, `url`, `isBlobUrl`, `animationClips` (populated after load), `activeAnimations`, `playState` ('playing'|'paused'|'stopped'), `animationSpeed` (1), `crossfadeDuration` (0.3), `loop` (true), `visible` (true), `showRig` (false), `castShadows` (false), `colliderEnabled` (false), `colliderShape` ('trimesh').
+- Each model: `id`, `name`, `url`, `isBlobUrl`, `animationClips` (populated after load), `activeAnimations`, `playState` ('playing'|'paused'|'stopped'), `animationSpeed` (1), `crossfadeDuration` (0.3), `loop` (true), `visible` (true), `showRig` (false), `castShadows` (false), `autoRotate` (false), `autoRotateSpeed` (0.5 rad/s), `colliderEnabled` (false), `colliderShape` ('trimesh').
 
 ## Key behavior
 
