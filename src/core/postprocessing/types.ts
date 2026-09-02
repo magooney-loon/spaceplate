@@ -60,6 +60,13 @@ export interface BuildContext {
 	velocity: any;
 	/** Viewport aspect (w/h), owned by the builder, written by the frame task. */
 	aspect: UniformNode<'float', number>;
+	/**
+	 * Register an intermediate node created inside `build` for disposal. The
+	 * builder only tracks the node an effect RETURNS — anything else owning render
+	 * targets (BloomNode, LensflareNode, ...) must go through here or it leaks on
+	 * rebuild, since Node.dispose() does not cascade to children.
+	 */
+	track: <T>(node: T) => T;
 }
 
 /**

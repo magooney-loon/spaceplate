@@ -70,8 +70,9 @@ core/
     build.ts               — The builder: base pass, MRT union, chain fold, grade, resolve, fallback
     uniforms.ts            — createUniformBag/writeUniformBag — the hot-update path
     luts.svelte.ts         — LUT catalogue + async load cache; three's 9 example LUTs in public/luts/
-    effects/*.ts           — 10 EffectDefs: ssaa, retro (base) · dof, motionBlur, bloom,
-                             afterimage, vignette (chain) · lut (grade) · smaa, fxaa (AA).
+    effects/*.ts           — 10 EffectDefs: ssaa, retro (base) · dof, motionBlur, bloom
+                             (+ lensflare sub-toggle), afterimage, vignette (chain) ·
+                             lut (grade) · smaa, fxaa (AA).
                              vignette.ts is hand-written TSL. pixelation/ao/ssgi/ssr/traa
                              were removed — see DOCS/post-processing.md before reviving one
 

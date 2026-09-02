@@ -35,12 +35,17 @@ MRT rows and the matching `BuildContext` fields).
   shader-cache isolation in `build.ts` load-bearing — see `post-processing.md` §8.7
   before touching it.
 - Param drags are **hot** (uniform writes, no rebuild) except structural params
-  (`motionBlur.numSamples`, `lut.lut`) which rebuild the graph.
+  (`motionBlur.numSamples`, `lut.lut`, `bloom.lensflare`, `bloom.ghostSamples`)
+  which rebuild the graph.
+- `bloom` carries a **lensflare sub-toggle** (a param, not a sibling effect —
+  `LensflareNode` samples the bloom buffer, so no bloom means no flare). The flare
+  runs through `gaussianBlur` to smooth the ¼-res ghosts; its intermediate nodes
+  are registered via `ctx.track()` so a rebuild disposes their render targets.
 - `lut` and `fxaa` declare `displayColor`: the **builder** turns off
   `outputColorTransform` and folds in one `renderOutput()` for whoever asks. An effect
   must never do this itself — with two of them you would tone-map twice.
-- Params with `def.options` (currently only the LUT choice) render as a `List`, not a
-  `Slider`.
+- Params with `def.options` (the LUT choice, the bloom lensflare on/off) render as a
+  `List`, not a `Slider`.
 
 ## Key behavior
 

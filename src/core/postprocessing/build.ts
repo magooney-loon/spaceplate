@@ -115,7 +115,8 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			camera,
 			renderer,
 			pipeline,
-			aspect
+			aspect,
+			track
 		} as unknown as BuildContext;
 
 		const basePass = baseDef

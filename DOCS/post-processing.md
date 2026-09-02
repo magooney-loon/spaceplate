@@ -8,8 +8,8 @@ after the previous 25-effect pipeline was removed wholesale.
 `src/core/utils/Renderer.svelte` owns the `RenderPipeline` (structural rebuild + hot
 uniform effects); the extension is state + a registry-driven Studio panel.
 
-**The shipped set is: ssaa, retro (base) · dof, motion blur, bloom, afterimage,
-vignette (chain) · 3dlut (grade) · smaa, fxaa (AA).**
+**The shipped set is: ssaa, retro (base) · dof, motion blur, bloom (+ lensflare
+sub-toggle), afterimage, vignette (chain) · 3dlut (grade) · smaa, fxaa (AA).**
 
 ### Removed: pixelation, ao, ssgi, ssr, traa
 
@@ -338,6 +338,7 @@ starts from, and they cost nothing to keep here.
 | ✅ | **dof** | `dof(node, viewZNode, focusDistance, focalLength, bokehScale)` | chain | viewZ | viewZ from `basePass.getViewZNode()` — no MRT attachment |
 | ✅ | **motion blur** | `motionBlur(inputNode, velocity, numSamples)` | chain | velocity | A TSL `Fn`, not a node class. **The only remaining MRT consumer** |
 | ✅ | **bloom** | `bloom(node, strength, radius, threshold)` | chain | — | Additive |
+| ✅ | **lensflare** | `lensflare(bloomNode, params)` — sub-toggle inside `bloom` | chain | — | Ghosts are sampled FROM the bloom buffer, hence nested in bloom (no bloom, no flare). `gaussianBlur(flare, 8)` smooths the ¼-res ghosts. `lensflare` + `ghostSamples` are structural |
 | ⬜ | **bloom (emissive)** | same, fed an `emissive` MRT texture | chain | emissive | Not wired. Example sets `emissiveTexture.type = UnsignedByteType` to save bandwidth |
 | ⬜ | **anamorphic** | *composed* | chain | — | **No shipped node.** The example builds a custom high-pass `Fn`, runs `bloom()` on it, tints, and adds. Budget it as real work |
 | ✅ | **afterimage** | `afterImage(node, damp)` | chain | — | Feedback buffer. The "interacts badly with temporal AA" caveat is moot now that TRAA is gone |
