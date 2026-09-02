@@ -4,13 +4,18 @@
 	import { PositionalAudio } from '@threlte/extras';
 	import { RigidBody, Collider, usePhysicsTask, useRapier } from '@threlte/rapier';
 	import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';
-	import * as THREE from 'three';
+	// three/webgpu, not 'three' (src/CLAUDE.md): the two entrypoints are separate builds,
+	// so the same class name from each is a DIFFERENT class object — the mixing hazard
+	// behind DOCS/webgpu-notes.md §1. three/webgpu re-exports all of Three.Core, so this
+	// is a drop-in. (Bundle size is unchanged; the duplicate classes were tree-shaken.)
+	import * as THREE from 'three/webgpu';
 	import { CubeCamera, CubeRenderTarget } from 'three/webgpu';
 	import { FlakesTexture } from 'three/addons/textures/FlakesTexture.js';
 	import { logPhysics } from '$extensions/logger';
 	import { sceneState } from '$extensions/scene';
 	import { useSound } from '$extensions/sound/useSound';
 	import { settingsState, BASE_URL } from '$extensions/settings';
+	import { withoutReflection } from './mirrorFloor';
 
 	const { state: soundState } = useSound();
 	const { world } = useRapier();
@@ -39,8 +44,7 @@
 	const SWEEP_SPEED = 4; // units/s — enough pace to punt spawned bodies
 
 	// Quadratic Bézier with the control point baked to the floor center (0, 0)
-	const bez = (t: number, p0: number, p1: number): number =>
-		(1 - t) * (1 - t) * p0 + t * t * p1;
+	const bez = (t: number, p0: number, p1: number): number => (1 - t) * (1 - t) * p0 + t * t * p1;
 
 	// Orbit anchor: the point of a ball's orbit circle nearest the floor center, so
 	// the travel chord exits each lap aimed at the middle of the floor.
@@ -191,7 +195,10 @@
 	for (const material of [carPaint, fibers, golf, clearcoatNormal]) {
 		material.envMap = ballCapture.texture;
 	}
-	let ballClock = 0;
+	// Half a period out of phase with the mirror capture below, so the two never fall on
+	// the same frame — 30 and 15 Hz otherwise coincide every 1/15 s, putting twelve face
+	// renders in one frame and a visible hitch with them.
+	let ballClock = 1 / (BALL_CAPTURE_HZ * 2);
 	useTask(
 		(delta) => {
 			// Keep-alive: this component stays mounted while other scenes are current —
@@ -203,7 +210,8 @@
 			for (const material of [carPaint, fibers, golf, clearcoatNormal]) {
 				material.envMapIntensity = scene.environmentIntensity;
 			}
-			ballCamera.update(renderer, scene);
+			// Reflection off for the six faces — see mirrorFloor.ts.
+			withoutReflection(() => ballCamera.update(renderer, scene));
 		},
 		{ after: autoRenderTask, autoInvalidate: false }
 	);
@@ -220,9 +228,10 @@
 	// 128px/HalfFloat, sphere hidden during capture to avoid a fully self-occluded
 	// frame. Same CubeCamera-in-a-task pattern as Sky.svelte's bake.
 	//
-	// PERF: each capture is six scene renders (plus a reflector update each, see
-	// DemoScene), so it is throttled to ~30 Hz — half the cost, and a 4 u/s mirror
-	// shows no visible stepping at that refresh.
+	// PERF: each capture is six scene renders, so it is throttled to ~30 Hz — half the
+	// cost, and a 4 u/s mirror shows no visible stepping at that refresh. The floor's
+	// reflection is suspended for the duration (mirrorFloor.ts); it used to add a
+	// half-canvas full-scene render to every one of those six faces.
 	const MIRROR_CAPTURE_HZ = 30;
 	const mirrorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 	const mirrorCapture = new CubeRenderTarget(128, { type: THREE.HalfFloatType });
@@ -241,7 +250,8 @@
 			captureClock %= 1 / MIRROR_CAPTURE_HZ;
 			mirrorMesh.visible = false;
 			mirrorCamera.position.copy(mirrorMesh.getWorldPosition(mirrorPos));
-			mirrorCamera.update(renderer, scene);
+			// Reflection off for the six faces — see mirrorFloor.ts.
+			withoutReflection(() => mirrorCamera.update(renderer, scene));
 			mirrorMesh.visible = true;
 		},
 		{ after: autoRenderTask, autoInvalidate: false }
@@ -342,7 +352,7 @@
 			sphereRb.setNextKinematicRotation(_kinRotation);
 		}
 
-	heartbeat += delta;
+		heartbeat += delta;
 		if (heartbeat >= 1) {
 			heartbeat = 0;
 			logPhysics.info(`DemoPhysicsBodies heartbeat [${mountId}]`, {

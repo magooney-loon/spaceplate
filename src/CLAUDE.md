@@ -91,7 +91,9 @@ core/
 scenes/
   MainMenu/   MainMenu.svelte, MainMenuHud.svelte, SettingsHud.svelte (tabs: General, Audio,
               Controls, System — System reads capabilityState + telemetryState)
-  DemoScene/  DemoScene.svelte, DemoSceneHud.svelte, DemoPhysicsBodies.svelte
+  DemoScene/  DemoScene.svelte, DemoSceneHud.svelte, DemoPhysicsBodies.svelte,
+              mirrorFloor.ts — shared floor handle; the cube captures swap the reflector
+              material out while they render (read it before touching either file)
 
 extensions/   — extension system + per-extension docs (→ see extensions/CLAUDE.md)
   scene/ settings/ input/ logger/ sound/ skybox/ postprocessing/ physics/ gltf-viewer/ stats/

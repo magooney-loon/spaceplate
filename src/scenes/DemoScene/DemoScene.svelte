@@ -8,6 +8,7 @@
 	import PhysicsController from '$extensions/physics/PhysicsController.svelte';
 	import { logPhysics } from '$extensions/logger';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
+	import { registerMirrorFloor, unregisterMirrorFloor } from './mirrorFloor';
 
 	const { scene } = useThrelte();
 
@@ -36,6 +37,26 @@
 	const floorMaterial = new THREE.MeshStandardNodeMaterial();
 	floorMaterial.color.set('gray');
 	floorMaterial.emissiveNode = reflection.rgb.clamp(0, 1).mul(0.25);
+
+	// The same floor without the reflector node, swapped in for the duration of the cube
+	// captures in DemoPhysicsBodies — see mirrorFloor.ts for what that saves (it is the
+	// single biggest cost in this scene). Identical gray base, so the captures see the
+	// floor lit and shadowed as usual, just not mirroring.
+	const floorCaptureMaterial = new THREE.MeshStandardNodeMaterial();
+	floorCaptureMaterial.color.set('gray');
+
+	let floorMesh = $state.raw<THREE.Mesh>();
+	$effect(() => {
+		if (!floorMesh) return;
+		registerMirrorFloor(floorMesh, floorMaterial, floorCaptureMaterial);
+		return unregisterMirrorFloor;
+	});
+
+	// One geometry per spawned-body shape instead of one per body: `<T.SphereGeometry>`
+	// inside the {#each} below built (and uploaded) a fresh buffer for every spawn.
+	// Materials stay per body — their colour is random per spawn.
+	const spawnBallGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+	const spawnBoxGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
 
 	const sceneMountId = crypto.randomUUID().slice(0, 8);
 	const { world, rigidBodyObjects, colliderObjects } = useRapier();
@@ -69,6 +90,9 @@
 		logPhysics.info(`DemoScene destroy [${sceneMountId}]`, snapshotWorld());
 		reflection.target.removeFromParent();
 		floorMaterial.dispose();
+		floorCaptureMaterial.dispose();
+		spawnBallGeometry.dispose();
+		spawnBoxGeometry.dispose();
 	});
 </script>
 
@@ -92,6 +116,7 @@
 <T.Group userData={{ selectable: false, hideInTree: true }}>
 	<Collider shape="cuboid" args={[10, 0, 10]} />
 	<T.Mesh
+		bind:ref={floorMesh}
 		position={[0, 0, 0]}
 		receiveShadow
 		material={floorMaterial}
@@ -136,8 +161,7 @@
 					restitution={body.restitution}
 					friction={body.friction}
 				/>
-				<T.Mesh castShadow>
-					<T.SphereGeometry args={[0.4, 16, 16]} />
+				<T.Mesh castShadow geometry={spawnBallGeometry}>
 					<T.MeshStandardMaterial color={body.color} flatShading />
 				</T.Mesh>
 			{:else}
@@ -147,8 +171,7 @@
 					restitution={body.restitution}
 					friction={body.friction}
 				/>
-				<T.Mesh castShadow>
-					<T.BoxGeometry args={[0.8, 0.8, 0.8]} />
+				<T.Mesh castShadow geometry={spawnBoxGeometry}>
 					<T.MeshStandardMaterial color={body.color} flatShading />
 				</T.Mesh>
 			{/if}

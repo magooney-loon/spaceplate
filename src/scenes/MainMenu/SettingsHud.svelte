@@ -473,11 +473,15 @@
 								</span>
 							</div>
 							<div class="sys-row">
-								<span class="sys-key">FPS</span>
+								<span class="sys-key">FPS (rendered)</span>
 								<span class="sys-value">
 									{telemetryState.fps}
 									<span class="sys-dim">({telemetryState.frameMs} ms)</span>
 								</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Frame loop</span>
+								<span class="sys-value">{telemetryState.loopHz} Hz</span>
 							</div>
 							<div class="sys-row">
 								<span class="sys-key">Draw calls / triangles</span>
@@ -493,8 +497,9 @@
 							</div>
 						</div>
 						<p class="sys-note">
-							Rendering is on-demand: a still scene renders fewer frames on purpose, so FPS here is
-							not the display refresh rate.
+							Rendering is on-demand, so FPS is not the display refresh rate. Frame loop is how
+							often the loop ran at all: loop high with FPS low means renders were skipped because
+							nothing changed; both falling together means the frames themselves got slower.
 						</p>
 					</div>
 

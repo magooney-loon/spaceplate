@@ -13,6 +13,13 @@ export const telemetryState = $state({
 	backend: 'unknown' as Backend,
 	/** Rendered frames per second. On-demand rendering means this is NOT the display Hz. */
 	fps: 0,
+	/**
+	 * Animation-loop ticks per second — frames the scheduler ran, rendered or skipped.
+	 * The pair (fps, loopHz) is the diagnostic: loopHz high with fps low means
+	 * on-demand skipped renders (nothing invalidated); both falling together means the
+	 * frames themselves got slower (GPU load, thermal/power throttling, tab throttling).
+	 */
+	loopHz: 0,
 	/** Mean ms between rendered frames over the last window. */
 	frameMs: 0,
 	drawCalls: 0,
