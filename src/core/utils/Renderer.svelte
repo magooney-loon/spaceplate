@@ -73,17 +73,44 @@
 	const quality = $derived(settingsState.graphics.quality);
 	const structuralKey = $derived(quality + '|' + structuralKeyOf(enabledIds, structuralValues()));
 
+	/**
+	 * Low quality bypasses the pipeline ENTIRELY rather than building an empty one.
+	 *
+	 * `resolveEnabledSet` already drops every effect at this tier, but a *built* pipeline
+	 * is not free just because its graph is: the base `pass()` still allocates a
+	 * full-resolution RGBA16Float colour target plus a Depth24Plus depth buffer, and every
+	 * frame still pays a fullscreen blit from it to the canvas — for a graph that does
+	 * nothing at all. Low is precisely the tier where that VRAM and bandwidth is scarce.
+	 *
+	 * So at low we build nothing, hold no render target, and the task below renders the
+	 * scene straight to the canvas. Tone mapping and the output colour space are the
+	 * renderer's own in that path, which is what `outputColorTransform` would have done.
+	 */
+	const bypass = $derived(quality === 'low');
+
 	// --- structural effect: rebuild the graph ---------------------------------
 
 	$effect(() => {
-		// Tracked reads: the key (hence the enabled set, quality, structural params)
-		// and the camera — Studio's editor/game camera switch must follow.
+		// Tracked reads: the key (hence the enabled set, quality, structural params), the
+		// bypass flag and the camera — Studio's editor/game camera switch must follow.
 		void structuralKey;
+		const skip = bypass;
 		const cam = $camera;
 		if (!cam) return;
 
 		untrack(() => {
 			build?.dispose();
+			build = null;
+
+			// Disposing the build disposed the base pass, and with it the only large
+			// render target we own — so dropping to low actually releases the memory
+			// rather than merely stopping to use it.
+			if (skip) {
+				logPostprocessing.info('Post-processing bypassed: quality is low');
+				invalidate();
+				return;
+			}
+
 			build = buildPipeline({
 				pipeline: renderPipeline,
 				scene,
@@ -154,6 +181,14 @@
 
 	useTask(
 		() => {
+			// `autoRender` is off (App.svelte), so this task is the ONLY thing that draws.
+			// In bypass there is no pipeline to drive, and skipping the frame entirely
+			// would render a blank canvas rather than an unprocessed one.
+			if (bypass) {
+				const cam = camera.current;
+				if (cam) renderer.render(scene, cam);
+				return;
+			}
 			if (!build) return;
 			// Aspect for the vignette's roundness correction — cheap, per frame.
 			renderer.getSize(size);

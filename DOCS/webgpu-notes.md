@@ -266,6 +266,53 @@ and `last_scheduled_effect.fn`. That names the looping sources directly.
 
 Then `rm -rf node_modules/.vite` — Svelte is pre-bundled.
 
+### 3.4 A callback a library invokes from *its* `$effect` inherits that effect
+
+Svelte tracks every reactive read that happens synchronously while an effect runs — it
+does not stop at function boundaries, and it does not care whose function it is. So a
+callback you hand to a library becomes part of that library's dependency graph.
+
+Threlte's `<Canvas>` is exactly this shape
+(`@threlte/core/dist/webgpu/Canvas.svelte`):
+
+```js
+$effect(() => {
+  if (!canvas) return
+  const instance = createRenderer ? createRenderer(canvas) : new WebGPURenderer({ canvas })
+  instance.init().then(() => { if (!disposed) renderer = instance })
+  return () => { disposed = true; renderer = undefined }
+})
+```
+
+`App.svelte`'s `createRenderer` read `settingsState.graphics.quality` to pick a
+`powerPreference`. That one read made the graphics tier a dependency of Threlte's
+effect, so **every quality change built and `init()`ed a whole new `WebGPURenderer`** —
+and the teardown only disposes an instance whose `init()` had not yet resolved, so the
+old device, its swapchain and every resource on it leaked. The second live device
+exhausted GPU memory:
+
+```
+vkAllocateMemory failed with <Unknown VkResult: -1000072003>
+THREE.WebGPURenderer: WebGPU Device Lost
+```
+
+The fix is `untrack()` around the read — or, better, not reading it at all, which is
+where this one landed: `powerPreference` is now a fixed `'high-performance'`, for a
+second and independent reason (§8, "`'low-power'` is not a safe request"). Two things
+make this class of bug hard to spot:
+
+- **The symptom names the wrong thing.** It looked like "low quality is broken" purely
+  because low is the tier people switch *to*; any change did it. It also looks like a
+  memory-size problem, which sends you hunting for the biggest allocation — the
+  post-processing render target was a red herring, and removing it changed nothing.
+- **The stack lies.** Chromium shows where the `device.lost` promise was *registered*
+  (`init`), not where the loss happened.
+
+Generalised rule: **in any callback a library may invoke — `createRenderer`, a factory
+prop, a task — either read no reactive state, or read it through `untrack()`.** If the
+value genuinely must follow a setting, it needs an explicit rebuild path, not accidental
+re-entry through someone else's effect.
+
 ---
 
 ## 4. The viewport Y-origin trap
@@ -443,6 +490,14 @@ compiler rewrite that `svelte-check` cannot consume as a drop-in.
   material forces the whole renderer back to WebGL or fails per-object. It stopped
   mattering once the offending materials were ported, but it is still an open question
   for `Planet.svelte`.
+- **`powerPreference: 'low-power'` is not a safe request.** It goes straight to
+  `navigator.gpu.requestAdapter()` (`WebGPUBackend.js`), so it can hand you a *different
+  adapter* — and on the integrated path here that device dies during init on a cold load
+  with `vkAllocateMemory failed with <Unknown VkResult: -1000072003>`, a code that is not
+  a standard `VkResult`. `App.svelte` now always requests `'high-performance'`. The
+  graphics tier drives `dpr` and the post-processing bypass in `Renderer.svelte`;
+  **adapter selection is not a quality knob**, and a tier that cannot get a working
+  device is not a lower-quality experience, it is a broken one.
 
 ---
 

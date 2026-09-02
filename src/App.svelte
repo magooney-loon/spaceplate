@@ -14,15 +14,31 @@
 	// WebGPURenderer auto-falls back to WebGL when WebGPU isn't available.
 	// antialias disabled in favour of post-processing anti-aliasing.
 	const createRenderer = (canvas: HTMLCanvasElement): WebGPURenderer => {
-		const powerPreference =
-			settingsState.graphics.quality === 'low' ? 'low-power' : 'high-performance';
+		// `powerPreference` is FIXED, and deliberately not tied to the graphics tier.
+		//
+		// 1. `'low-power'` is not a safe request. It selects a different ADAPTER, and on
+		//    the integrated path here that device dies during init on a cold load:
+		//
+		//      vkAllocateMemory failed with <Unknown VkResult: -1000072003>
+		//      THREE.WebGPURenderer: WebGPU Device Lost
+		//
+		// 2. It cannot be reactive anyway. Threlte's <Canvas> calls this function from
+		//    inside its own `$effect`, so a reactive read here becomes a dependency of
+		//    THAT effect — every quality change would rebuild the whole renderer, and its
+		//    teardown does not dispose an already-initialised one, so each change leaked a
+		//    live WebGPU device. See webgpu-notes.md §3.4 before adding any state read to
+		//    this function; `untrack()` it if you must.
+		//
+		// The graphics tier drives `dpr` below and the post-processing bypass in
+		// core/utils/Renderer.svelte. That is the whole of it — adapter selection is not a
+		// quality knob.
 
 		// @threlte/studio's WebGL assumptions are handled in patches/@threlte__studio,
 		// so nothing has to be done to the renderer here.
 		return new WebGPURenderer({
 			canvas,
 			antialias: false,
-			powerPreference
+			powerPreference: 'high-performance'
 		});
 	};
 
@@ -49,7 +65,7 @@
      rendering via its own task ({ after: autoRenderTask }, webgpu-notes.md §2).
      It is a Canvas option on purpose — toggling it from an $effect self-invalidates
      (DOCS/webgpu-notes.md §3.1). -->
-<Canvas createRenderer={createRenderer} dpr={dpr} autoRender={false}>
+<Canvas {createRenderer} {dpr} autoRender={false}>
 	<Renderer />
 	<World
 		gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]}
