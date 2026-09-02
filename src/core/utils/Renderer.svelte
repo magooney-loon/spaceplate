@@ -19,11 +19,12 @@
 	import { untrack } from 'svelte';
 	import * as THREE from 'three/webgpu';
 	import { settingsState } from '$extensions/settings';
-	import { logPostprocessing } from '$extensions/logger';
+	import { logEngine, logPostprocessing } from '$extensions/logger';
 	import { postprocessingState } from '$extensions/postprocessing';
 	import { buildPipeline, type PipelineBuild } from '$core/postprocessing/build';
 	import { EFFECTS, structuralKeyOf } from '$core/postprocessing/registry';
 	import type { EffectValues } from '$core/postprocessing/types';
+	import { bootState } from './boot.svelte';
 
 	const { scene, renderer, camera, autoRenderTask, invalidate } = useThrelte();
 
@@ -175,7 +176,51 @@
 		};
 	});
 
-	// --- the render task ------------------------------------------------------
+	// --- boot warmup -----------------------------------------------------------
+
+	// On-demand rendering draws only when something invalidates, so a quiet scene
+	// behind the loading screen stays cold: every pipeline (the base pass under its
+	// private contextNode + all post effects + the mounted scenes' materials) would
+	// compile at the first frame AFTER the loader hides — exactly the stall a warm
+	// frame removes. Every bootState.warmVersion bump (the scene warmup sweep in
+	// extensions/scene, driven from Loader.svelte) asks for one render through the
+	// real graph while a cover still hides the canvas. renderer.init() is idempotent,
+	// and render() kicks three's async pipeline compilation, which lands in the
+	// background during the sweep's grace delays.
+	//
+	// renderer.compileAsync(scene, camera) is deliberately NOT used: it compiles under
+	// the renderer's default context with no MRT — the wrong variants for this graph,
+	// whose scene pass lives in a private contextNode namespace (build.ts and
+	// DOCS/post-processing.md §8.7). Warming must go through the pipeline itself.
+	let warming = false;
+	$effect(() => {
+		const version = bootState.warmVersion;
+		if (version === 0 || warming) return;
+		warming = true;
+		void (async () => {
+			try {
+				await renderer.init();
+				if (bypass) {
+					const cam = camera.current;
+					if (cam) renderer.render(scene, cam);
+					else return;
+				} else if (build) {
+					renderer.getSize(size);
+					if (size.width > 0 && size.height > 0) build.setAspect(size.width / size.height);
+					renderPipeline.render();
+				} else {
+					return;
+				}
+				logEngine.info(`Warm frame rendered (v${version}) — pipelines compiling in background`);
+			} catch (error) {
+				logEngine.warn('Pipeline warmup failed:', error);
+			} finally {
+				warming = false;
+			}
+		})();
+	});
+
+	// --- the render task ---------------------------------------------------------
 
 	const size = new THREE.Vector2();
 

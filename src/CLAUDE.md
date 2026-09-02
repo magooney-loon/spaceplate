@@ -12,7 +12,10 @@ App.svelte          — Canvas (createRenderer → WebGPURenderer) + Rapier Worl
                       Keymapper / Loader / SceneHud are siblings outside the Canvas
 Root.svelte         — SpacetimeDB provider wrapper (wraps App); mounted by main.ts
 main.ts             — Entry point
-Scene.svelte        — 3D scene router (inside Canvas → Threlte context)
+Scene.svelte        — Keep-alive 3D scene router: scenes mount on first visit (visited latch) and stay
+                      mounted; switching toggles group `visible` only — no dispose, no recompile.
+                      The boot warmup sweep (Loader → sceneActions.warmupScenes) visits every scene
+                      behind the loading screen and warm-renders it via bootState.warmVersion
 SceneHud.svelte     — HTML overlay router (sibling to Canvas) + global settings overlay
 app.css             — Global styles
 module_bindings/    — Generated SpacetimeDB bindings — DO NOT EDIT
@@ -54,8 +57,12 @@ core/
       lightning/            — Lightning + flashState.ts (shared strike state)
 
   utils/
-    Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock)
-    Renderer.svelte       — RenderPipeline owner: structural rebuild + hot uniform effects + render task
+    Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock);
+                            after assets settle it runs the scene warmup sweep before arming the prompt
+    Renderer.svelte       — RenderPipeline owner: structural rebuild + hot uniform effects + render task +
+                            warm frames on bootState.warmVersion bumps
+    boot.svelte.ts        — bootState: loader↔engine boot flags (warmVersion bumps → Renderer warm-renders;
+                            scenesWarmed gates the sound prompt)
     tasks.ts              — Task pipeline: physicsStage, renderStage, uiStage, audioStage
 
   postprocessing/          — Effect registry + pipeline builder (→ DOCS/post-processing.md)

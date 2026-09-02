@@ -4,6 +4,8 @@
 	import { useProgress } from '@threlte/extras';
 	import { logEngine } from '$extensions/logger';
 	import { audioActions } from '$extensions/settings';
+	import { sceneActions } from '$extensions/scene';
+	import { bootState } from './boot.svelte';
 
 	const { progress, active, item, loaded, total, errors } = useProgress();
 
@@ -18,6 +20,10 @@
 		if (settled || $active) return;
 		const timeout = setTimeout(() => {
 			settled = true;
+			// Assets done — kick the scene warmup sweep (visits + warm-renders every
+			// scene while this screen still covers the canvas). It latches
+			// bootState.scenesWarmed when finished, which is what arms the prompt below.
+			void sceneActions.warmupScenes();
 		}, 500);
 		return () => clearTimeout(timeout);
 	});
@@ -31,7 +37,9 @@
 	});
 
 	$effect(() => {
-		if (settled) {
+		// Only after the warmup sweep finished: the prompt must never appear (let
+		// alone let the loader hide) mid-sweep, or the scene flipping behind it shows.
+		if (settled && bootState.scenesWarmed) {
 			const timeout = setTimeout(() => {
 				showPrompt = true;
 			}, 1200);
