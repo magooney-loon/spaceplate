@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>🪐 Spaceplate</h1>
+  <img src="public/logo.png" alt="Spaceplate" width="600">
   <p>Svelte 5 + Threlte + SpacetimeDB boilerplate for real-time 3D web apps</p>
 </div>
 

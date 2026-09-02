@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { sceneActions } from '$extensions/scene';
 	import { soundActions } from '$core';
-	import { overlayState } from '$extensions/settings';
+	import { overlayState, BASE_URL } from '$extensions/settings';
 </script>
 
 <!-- Main Menu HUD -->
 <div class="hud">
-	<!-- Menu Title -->
+	<!-- Menu Title. The wordmark carries its own glow, so no text-shadow stand-in; the
+	     alt text keeps the old title for anyone who never sees the image. -->
 	<div class="title">
-		<h1 style="text-shadow: 0 0 20px #4a90d9;">SPACEPLATE ENGINE</h1>
+		<img class="logo" src="{BASE_URL}logo.png" alt="Spaceplate Engine" />
 		<p class="subtitle">Threlte/Svelte/Spacetime</p>
 	</div>
 
@@ -43,16 +44,19 @@
 
 	.title {
 		position: absolute;
-		top: 20%;
+		top: 18.5%;
 		left: 50%;
 		transform: translateX(-50%);
 		text-align: center;
 	}
 
-	.title h1 {
-		font-size: 3rem;
-		font-weight: 700;
-		color: #fff;
+	/* Width-driven, capped against the viewport so the wordmark never crowds the edges
+	   on a phone or blow up past its 2172px source on a wide monitor. The source is
+	   3:1, so height follows from the aspect ratio. */
+	.logo {
+		display: block;
+		width: min(38rem, 72vw);
+		height: auto;
 	}
 
 	.subtitle {
