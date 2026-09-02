@@ -11,7 +11,7 @@
 
 	let { children }: Props = $props();
 
-	const { renderer } = useThrelte();
+	const { renderer, autoRenderTask } = useThrelte();
 
 	const SAMPLES = 40;
 
@@ -45,15 +45,33 @@
 		if (arr.length > SAMPLES) arr.shift();
 	}
 
+	// three zeroes info.render.* at the START of every frame — Animation.js runs
+	// info.reset() inside Threlte's setAnimationLoop callback, BEFORE the scheduler
+	// (and therefore before renderer.render). Reading the per-frame counters from a
+	// default-order task always saw those fresh zeros, which is why DC/TRI/PTS/LINE
+	// sat at 0 while GEO/TEX (memory, never reset) worked. Sampling AFTER the render
+	// task reads the frame's accumulated values instead.
+	//
+	// render.calls is a LIFETIME count of renderer.render() invocations and is not
+	// touched by reset() — it doubles as the on-demand skip detector: on frames where
+	// nothing invalidated, three still reset the counters but no render ran, so the
+	// panels hold their previous value instead of dipping to a bogus 0.
+	let lastRenderCalls = -1;
+
 	function updateCustomPanels() {
 		const info = renderer.info;
+		if (info.render.calls === lastRenderCalls) return; // no render since last sample
+		lastRenderCalls = info.render.calls;
 		const dc = info.render.drawCalls;
 		const tri = info.render.triangles;
 		const pts = info.render.points;
 		const ln = info.render.lines;
 		const geo = info.memory.geometries;
 		const tex = info.memory.textures;
-		const prg = info.programs?.length ?? 0;
+		// WebGPU's info has no `programs` array (that is WebGL's shape) — the count of
+		// active programs lives in memory.programs. `info.programs?.length` was always
+		// undefined, which is why PRG never moved off 0.
+		const prg = info.memory.programs;
 
 		pushHistory(drawCallsHistory, dc);
 		pushHistory(trianglesHistory, tri);
@@ -179,11 +197,16 @@
 		}
 	};
 
-	useTask(() => {
-		stats?.update();
-		updateCustomPanels();
-		resolveGpuTimestamps();
-	});
+	// AFTER the render task (see updateCustomPanels) and autoInvalidate OFF: a stats
+	// read must not itself defeat on-demand rendering.
+	useTask(
+		() => {
+			stats?.update();
+			updateCustomPanels();
+			resolveGpuTimestamps();
+		},
+		{ after: autoRenderTask, autoInvalidate: false }
+	);
 
 	onDestroy(() => {
 		stats?.dispose();

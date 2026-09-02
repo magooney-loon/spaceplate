@@ -18,7 +18,9 @@ Draw calls, triangles, points, lines, geometries, textures, programs — in a mu
 - Uses `stats-gl` with `trackGPU: true`, `trackCPT: true`, `trackHz: true`.
 - Creates 7 custom panels (DC, TRI, PTS, LINE, GEO, TEX, PRG) and appends to `document.body`.
 - Repositioned from default top-left to right-edge centered (avoids overlapping Studio toolbar).
-- `useTask()`: calls `stats.update()` and `updateCustomPanels()` each frame.
+- `useTask()` runs `{ after: autoRenderTask, autoInvalidate: false }`: the task MUST sample after the render — three zeroes `info.render.*` at frame START (`Animation.js` calls `info.reset()` inside Threlte's `setAnimationLoop` callback, before the scheduler runs), so a default-order task always read fresh zeros and DC/TRI/PTS/LINE sat at 0. `autoInvalidate` stays off so the stats read never itself defeats on-demand rendering.
+- On frames where on-demand rendering skipped the render, the panels HOLD their last value: `info.render.calls` (a lifetime count `reset()` doesn't touch) is compared against the previous sample, and unchanged means no render ran — pushing the just-reset zeros instead would make every panel dip to 0 between renders.
+- PRG reads `info.memory.programs` — WebGPU's `info` has no `programs` array (that's WebGL's shape); `info.programs?.length` was always `undefined`.
 - `resolveGpuTimestamps()`: calls `renderer.resolveTimestampsAsync(...)` for **both**
   `TimestampQuery.RENDER` and `TimestampQuery.COMPUTE` — fire-and-forget, non-blocking,
   tracked per queue. Required because stats-gl enables `renderer.backend.trackTimestamp`
