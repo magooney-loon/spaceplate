@@ -73,7 +73,8 @@ core/
     effects/*.ts           — 10 EffectDefs: ssaa, retro (base) · dof, motionBlur, bloom
                              (+ lensflare sub-toggle), afterimage, vignette (chain) ·
                              lut (grade) · smaa, fxaa (AA).
-                             vignette.ts is hand-written TSL. pixelation/ao/ssgi/ssr/traa
+                             vignette.ts is hand-written TSL, dof.ts hand-composed from
+                             boxBlur (basic DoF). pixelation/ao/ssgi/ssr/traa
                              were removed — see DOCS/post-processing.md before reviving one
 
 scenes/

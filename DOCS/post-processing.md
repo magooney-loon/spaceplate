@@ -278,11 +278,12 @@ Verified from source, this works nearly everywhere:
   handle and can mutate `.value`.
 - `GTAONode` — `radius`, `thickness`, `distanceExponent`, `distanceFallOff`, `scale`,
   `samples` are already `uniform()` instances on the node; write `.value` directly.
-- `dof`, `afterImage`, `lut3D`, `transition` — all take `nodeObject(...)` params, so a
+- `afterImage`, `lut3D`, `transition` — all take `nodeObject(...)` params, so a
   `uniform()` passes straight through.
-- `motionBlur`, our `vignette` (§5.1) — TSL `Fn`s whose params default to `float(...)`
-  / `int(...)` nodes. They accept a `uniform()` in the same position. With no node
-  instance to hold a handle on, the uniform bag is the *only* way to animate them.
+- `motionBlur`, `boxBlur`, our `vignette` (§5.1) and our basic `dof` — TSL `Fn`s whose
+  params default to `float(...)` / `int(...)` nodes. They accept a `uniform()` in the
+  same position. With no node instance to hold a handle on, the uniform bag is the
+  *only* way to animate them.
 
 It also sidesteps a typing trap. The addon `.d.ts` files are **inconsistently typed
 against their own JS default-parameter behaviour** — some exports demand values
@@ -335,8 +336,8 @@ starts from, and they cost nothing to keep here.
 | ❌ | **ssgi** | `ssgi(beauty, depth, normal, camera)` | chain | depth, normal, diffuse, velocity | Composite is `color.rgb * AO + diffuse.rgb * GI`, and the AO term is a float in a vec4 — §5.3 |
 | ❌ | **ssr** | `ssr(colorNode, depthNode, normalNode, options)` | chain | depth, normal, metalrough | Takes the RAW base-pass beauty: `SSRNode` derives its camera from `colorNode.passNode`, which a computed chain node does not have |
 | ❌ | **denoise** | `denoise(node, depth, normal, camera)` | chain | depth, normal | Never built; went with SSR |
-| ✅ | **dof** | `dof(node, viewZNode, focusDistance, focalLength, bokehScale)` | chain | viewZ | viewZ from `basePass.getViewZNode()` — no MRT attachment |
-| ✅ | **motion blur** | `motionBlur(inputNode, velocity, numSamples)` | chain | velocity | A TSL `Fn`, not a node class. **The only remaining MRT consumer** |
+| ✅ | **dof** | *ours* — `mix(color, boxBlur(color), smoothstep(min, max, abs(viewZ + focus)))` | chain | viewZ | The "basic" DoF (`webgpu_postprocessing_dof_basic`); the bokeh `DepthOfFieldNode` was dropped for performance — one box blur vs its multi-pass kernel. viewZ from `basePass.getViewZNode()` — no MRT attachment |
+| ✅ | **motion blur** | `motionBlur(inputNode, velocity, numSamples)` | chain | velocity | A TSL `Fn`, not a node class. **The only remaining MRT consumer**. The one sampler addon that does NOT `convertToTexture` its input — our wrapper does (an RTT when fed a computed node, e.g. anything after the basic DoF), otherwise it throws `inputNode.sample is not a function` |
 | ✅ | **bloom** | `bloom(node, strength, radius, threshold)` | chain | — | Additive |
 | ✅ | **lensflare** | `lensflare(bloomNode, params)` — sub-toggle inside `bloom` | chain | — | Ghosts are sampled FROM the bloom buffer, hence nested in bloom (no bloom, no flare). `gaussianBlur(flare, 8)` smooths the ¼-res ghosts. `lensflare` + `ghostSamples` are structural |
 | ⬜ | **bloom (emissive)** | same, fed an `emissive` MRT texture | chain | emissive | Not wired. Example sets `emissiveTexture.type = UnsignedByteType` to save bandwidth |
@@ -351,7 +352,8 @@ starts from, and they cost nothing to keep here.
 
 ### 5.1 Vignette — written, not imported
 
-Vignette is the one effect we implement ourselves. three's version
+Vignette was the first effect implemented in-repo (the basic DoF is the other
+hand-written one — see the inventory table). three's version
 (`vignette` in `CRT.js`, which calls `circle` from `Shape.js`) is about ten lines
 total:
 
