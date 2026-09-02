@@ -33,3 +33,13 @@ export type { SkyDescriptor, PhaseName, DayKeyframe, ClockKind } from './skybox/
 // utils/
 export { default as Loader } from './utils/Loader.svelte';
 export { default as Renderer } from './utils/Renderer.svelte';
+export { default as Telemetry } from './utils/Telemetry.svelte';
+export {
+	capabilityState,
+	probeCapabilities,
+	isBlocked,
+	WEBGPU_REPORT_URL
+} from './utils/capabilities.svelte';
+export type { RenderTier, AdapterSnapshot } from './utils/capabilities.svelte';
+export { telemetryState } from './utils/telemetry.svelte';
+export type { Backend } from './utils/telemetry.svelte';

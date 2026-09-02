@@ -4,14 +4,15 @@
 
 ```
 types.ts            — QualityLevel, Audio/Graphics/GeneralSettings, Extension types
-settings.svelte.ts  — $state, audioActions, graphicsActions, generalActions, BASE_URL
+settings.svelte.ts  — $state, audioActions, graphicsActions, generalActions, BASE_URL,
+                      seedGraphicsQuality() (boot-probe default, see State shape)
 index.ts            — barrel re-exports
 ```
 
 ## State shape
 
 - **audio**: `musicVolume` (0.7), `musicEnabled` (false), `ambienceVolume` (0.5, false), `sfxVolume` (0.9, false). All audio defaults are `false` per browser autoplay policy.
-- **graphics**: `quality: 'low' | 'high'` (default `'high'`). Drives DPR and renderer power preference.
+- **graphics**: `quality: 'low' | 'high'` (default `'high'`). Drives DPR and renderer power preference. On a device with no stored choice the default is replaced by `seedGraphicsQuality()` (called from `main.ts` after the boot probe): `'low'` on the WebGL2 fallback or a software adapter, `'high'` otherwise. Integrated GPUs are not downgraded — Apple Silicon reports as integrated. The seed is never persisted, so an explicit pick still wins and the recommendation re-derives each boot.
 - **general**: `uiVisible` (true, persisted via Ctrl+H), `mouseSensitivity` (0.5), `aimSensitivity` (0.3).
 - **overlayState**: `{ settingsOpen: false }`. Transient, never persisted.
 

@@ -6,14 +6,36 @@
 		generalActions,
 		type QualityLevel
 	} from '$extensions/settings';
-	import { soundActions } from '$core';
+	import { soundActions, capabilityState, telemetryState, WEBGPU_REPORT_URL } from '$core';
 	import { inputState, inputActions, type InputAction, type AnyBinding } from '$extensions/input';
 
 	type Props = { onBack: () => void };
 	let { onBack }: Props = $props();
 
-	type Tab = 'general' | 'audio' | 'controls';
+	type Tab = 'general' | 'audio' | 'controls' | 'system';
 	let activeTab = $state<Tab>('general');
+
+	// --- System tab data ---
+	// Static half from the boot probe (core/utils/capabilities.svelte.ts), live half
+	// from the in-canvas sampler (core/utils/telemetry.svelte.ts, ~2 Hz).
+
+	const backendLabel = $derived(
+		{ webgpu: 'WebGPU', webgl: 'WebGL 2', unknown: 'unknown' }[telemetryState.backend]
+	);
+
+	const gpuKind = $derived.by(() => {
+		if (capabilityState.tier !== 'webgpu') return 'unknown';
+		if (capabilityState.fallbackAdapter) return 'software (fallback adapter)';
+		if (capabilityState.discreteGpu === true) return 'discrete';
+		if (capabilityState.discreteGpu === false) return 'integrated';
+		return 'unknown';
+	});
+
+	/** Browsers legitimately report empty strings here — Chrome masks device/description. */
+	const shown = (value: string | number): string =>
+		value === '' || value === 0 ? '—' : `${value}`;
+
+	const mark = (ok: boolean): string => (ok ? '✓' : '✕');
 
 	// --- Controls tab data ---
 
@@ -189,12 +211,12 @@
 
 <div class="hud">
 	<div class="overlay">
-		<div class="panel" class:wide={activeTab === 'controls'}>
+		<div class="panel" class:wide={activeTab === 'controls' || activeTab === 'system'}>
 			<h2>Settings</h2>
 
 			<!-- Tab bar -->
 			<div class="tabs">
-				{#each [['general', 'General'], ['audio', 'Audio'], ['controls', 'Controls']] as const as [id, label] (id)}
+				{#each [['general', 'General'], ['audio', 'Audio'], ['controls', 'Controls'], ['system', 'System']] as const as [id, label] (id)}
 					<button onclick={() => switchTab(id)} class="tab" class:active={activeTab === id}>
 						{label}
 					</button>
@@ -367,6 +389,150 @@
 
 				<!-- Reset all -->
 				<button onclick={resetAllControls} class="reset-all"> Reset All Controls </button>
+
+				<!-- System tab -->
+			{:else if activeTab === 'system'}
+				<div class="system">
+					<div>
+						<p class="group-label">Support</p>
+						<div class="sys-list">
+							<div class="sys-row">
+								<span class="sys-key">WebGPU</span>
+								<span class="sys-value" class:off={capabilityState.tier !== 'webgpu'}>
+									{mark(capabilityState.tier === 'webgpu')}
+									{capabilityState.tier === 'webgpu' ? 'adapter available' : 'no adapter'}
+								</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">WebGL 2</span>
+								<span class="sys-value" class:off={!capabilityState.webgl2}>
+									{mark(capabilityState.webgl2)}
+									{capabilityState.webgl2 ? 'available' : 'unavailable'}
+								</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">WebAssembly</span>
+								<span class="sys-value" class:off={!capabilityState.wasm}>
+									{mark(capabilityState.wasm)}
+									{capabilityState.wasm ? 'available' : 'unavailable'}
+								</span>
+							</div>
+						</div>
+						{#if capabilityState.tier === 'webgl'}
+							<p class="sys-note">
+								Running on the WebGL 2 fallback — WebGPU features and performance are unavailable.
+							</p>
+						{/if}
+					</div>
+
+					<div>
+						<p class="group-label">GPU</p>
+						<div class="sys-list">
+							<div class="sys-row">
+								<span class="sys-key">Vendor</span>
+								<span class="sys-value">{shown(capabilityState.adapter?.vendor ?? '')}</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Architecture</span>
+								<span class="sys-value">{shown(capabilityState.adapter?.architecture ?? '')}</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Device</span>
+								<span class="sys-value">{shown(capabilityState.adapter?.device ?? '')}</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Description</span>
+								<span class="sys-value">{shown(capabilityState.adapter?.description ?? '')}</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Type</span>
+								<span class="sys-value">{gpuKind}</span>
+							</div>
+						</div>
+						<p class="sys-note">
+							Browsers mask most adapter fields unless developer flags are on, so blanks here are
+							normal.
+						</p>
+					</div>
+
+					<div>
+						<p class="group-label">Renderer</p>
+						<div class="sys-list">
+							<div class="sys-row">
+								<span class="sys-key">Backend</span>
+								<span class="sys-value">{backendLabel}</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Preset</span>
+								<span class="sys-value">{settingsState.graphics.quality}</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Backbuffer</span>
+								<span class="sys-value">
+									{telemetryState.bufferWidth} × {telemetryState.bufferHeight} @ {telemetryState.pixelRatio}x
+								</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">FPS</span>
+								<span class="sys-value">
+									{telemetryState.fps}
+									<span class="sys-dim">({telemetryState.frameMs} ms)</span>
+								</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Draw calls / triangles</span>
+								<span class="sys-value">
+									{telemetryState.drawCalls} / {telemetryState.triangles.toLocaleString()}
+								</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Geometries / textures / programs</span>
+								<span class="sys-value">
+									{telemetryState.geometries} / {telemetryState.textures} / {telemetryState.programs}
+								</span>
+							</div>
+						</div>
+						<p class="sys-note">
+							Rendering is on-demand: a still scene renders fewer frames on purpose, so FPS here is
+							not the display refresh rate.
+						</p>
+					</div>
+
+					<div>
+						<p class="group-label">Device</p>
+						<div class="sys-list">
+							<div class="sys-row">
+								<span class="sys-key">CPU threads</span>
+								<span class="sys-value">{shown(capabilityState.device.threads)}</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Memory</span>
+								<span class="sys-value">
+									{capabilityState.device.memoryGb ? `${capabilityState.device.memoryGb} GB+` : '—'}
+								</span>
+							</div>
+							<div class="sys-row">
+								<span class="sys-key">Platform</span>
+								<span class="sys-value">{shown(capabilityState.device.platform)}</span>
+							</div>
+						</div>
+					</div>
+
+					{#if capabilityState.features.length > 0}
+						<div>
+							<p class="group-label">WebGPU features ({capabilityState.features.length})</p>
+							<div class="feature-chips">
+								{#each capabilityState.features as feature (feature)}
+									<span class="feature-chip">{feature}</span>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
+					<a class="sys-link" href={WEBGPU_REPORT_URL} target="_blank" rel="noopener noreferrer">
+						Full browser report → webgpureport.org
+					</a>
+				</div>
 			{/if}
 
 			<!-- Back -->
@@ -734,6 +900,90 @@
 	.reset-all:hover {
 		background: rgba(255, 255, 255, 0.08);
 		color: rgba(255, 255, 255, 0.8);
+	}
+
+	/* System tab */
+	.system {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		max-height: 52vh;
+		overflow-y: auto;
+		padding-right: 0.25rem;
+	}
+
+	.sys-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.sys-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		font-size: 0.8125rem;
+	}
+
+	.sys-key {
+		opacity: 0.5;
+	}
+
+	.sys-value {
+		font-family:
+			ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+			monospace;
+		font-size: 0.75rem;
+		text-align: right;
+		word-break: break-word;
+		opacity: 0.85;
+	}
+
+	.sys-value.off {
+		opacity: 0.4;
+	}
+
+	.sys-dim {
+		opacity: 0.5;
+	}
+
+	.sys-note {
+		margin-top: 0.5rem;
+		font-size: 0.6875rem;
+		line-height: 1.5;
+		opacity: 0.35;
+	}
+
+	.feature-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+
+	.feature-chip {
+		padding: 0.125rem 0.375rem;
+		font-family:
+			ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+			monospace;
+		font-size: 0.625rem;
+		background: rgba(255, 255, 255, 0.08);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 0.25rem;
+		opacity: 0.6;
+	}
+
+	.sys-link {
+		align-self: flex-start;
+		font-size: 0.75rem;
+		color: #fff;
+		opacity: 0.5;
+		text-decoration: underline;
+		text-underline-offset: 0.25em;
+	}
+
+	.sys-link:hover {
+		opacity: 0.9;
 	}
 
 	.back-button {

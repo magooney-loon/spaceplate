@@ -1,4 +1,7 @@
 import { logSettings, logSound } from '$extensions/logger';
+// Deep path, not the '$core' barrel: the barrel re-exports Loader.svelte, which imports
+// this module — going through it would close a cycle.
+import { capabilityState } from '$core/utils/capabilities.svelte';
 import type {
 	QualityLevel,
 	ExtensionState,
@@ -43,6 +46,14 @@ const loadQuality = (): QualityLevel => {
 	return (['low', 'high'] as QualityLevel[]).includes(v as QualityLevel)
 		? (v as QualityLevel)
 		: 'high';
+};
+
+const hasStoredQuality = (): boolean => {
+	try {
+		return localStorage.getItem(GRAPHICS_KEY) !== null;
+	} catch {
+		return false;
+	}
 };
 
 const loadVolume = (key: string, fallback: number): number => {
@@ -106,6 +117,28 @@ export const audioActions: AudioActions = {
 		logSound.info('SFX volume:', v);
 	}
 };
+
+/**
+ * Pick the starting preset from the boot capability probe. Called once from main.ts,
+ * after probeCapabilities() and before mount — module init happens too early to read
+ * the probe (static imports are evaluated before main.ts runs its first line).
+ *
+ * Only 'low' when the device genuinely can't do better: the WebGL2 fallback path, or a
+ * software adapter. Integrated GPUs are NOT downgraded — Apple Silicon reports as
+ * integrated and runs 'high' comfortably. What this really spares those two paths is
+ * App.svelte's dpr, which is full device pixel ratio on 'high'.
+ *
+ * Never persisted and never applied over a stored choice: an explicit pick still wins,
+ * and on a machine that has never chosen, the recommendation follows the hardware
+ * rather than a value frozen at first boot.
+ */
+export function seedGraphicsQuality(): void {
+	if (hasStoredQuality()) return;
+	const capable = capabilityState.tier === 'webgpu' && !capabilityState.fallbackAdapter;
+	const seeded: QualityLevel = capable ? 'high' : 'low';
+	settingsState.graphics.quality = seeded;
+	logSettings.info(`Graphics quality seeded from device probe (${capabilityState.tier}):`, seeded);
+}
 
 export const graphicsActions: GraphicsActions = {
 	setQuality(quality: QualityLevel) {

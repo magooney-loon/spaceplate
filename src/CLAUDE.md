@@ -59,11 +59,21 @@ core/
 
   utils/
     Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock);
-                            after assets settle it runs the scene warmup sweep before arming the prompt
+                            after assets settle it runs the scene warmup sweep before arming the prompt.
+                            Also owns the two capability screens: the blocking unsupported screen and
+                            the dismissible WebGL-fallback badge
     Renderer.svelte       — RenderPipeline owner: structural rebuild + hot uniform effects + render task +
                             warm frames on bootState.warmVersion bumps
     boot.svelte.ts        — bootState: loader↔engine boot flags (warmVersion bumps → Renderer warm-renders;
                             scenesWarmed gates the sound prompt)
+    capabilities.svelte.ts — Boot probe (WebGPU adapter / WebGL2 / WASM) awaited in main.ts before mount,
+                            so the verdict is synchronous everywhere: capabilityState.tier
+                            'webgpu' | 'webgl' | 'none' (+ adapter info, features, dGPU guess,
+                            CPU/memory). Also seeds the graphics preset
+    Telemetry.svelte      — Draws nothing: samples renderer.info at 2 Hz into telemetryState
+                            (rendered FPS, draw calls, backbuffer). Mount right after <Renderer />
+    telemetry.svelte.ts   — telemetryState: the live half of Settings ▸ System (the static half is
+                            capabilityState)
 
   postprocessing/          — Effect registry + pipeline builder (→ DOCS/post-processing.md)
     types.ts               — PassRole/Requirement/EffectDef/BuildContext — the declaration shapes
@@ -79,7 +89,8 @@ core/
                              were removed — see DOCS/post-processing.md before reviving one
 
 scenes/
-  MainMenu/   MainMenu.svelte, MainMenuHud.svelte, SettingsHud.svelte
+  MainMenu/   MainMenu.svelte, MainMenuHud.svelte, SettingsHud.svelte (tabs: General, Audio,
+              Controls, System — System reads capabilityState + telemetryState)
   DemoScene/  DemoScene.svelte, DemoSceneHud.svelte, DemoPhysicsBodies.svelte
 
 extensions/   — extension system + per-extension docs (→ see extensions/CLAUDE.md)
@@ -116,6 +127,13 @@ would create a circular module graph.
 
 The renderer is `WebGPURenderer`, which auto-falls back to WebGL when WebGPU is unavailable.
 `App.svelte` builds it in `createRenderer` and passes `dpr` derived from `settingsState.graphics.quality`.
+
+- **Which backend you actually got is decided by the boot probe**, `core/utils/capabilities.svelte.ts`,
+  awaited in `main.ts` before `mount()` — `navigator.gpu` existing is not proof, only a successful
+  `requestAdapter()` is. `capabilityState.tier` is `'webgpu'` (adapter), `'webgl'` (the renderer's
+  own silent fallback — Loader shows a dismissible badge) or `'none'` (App.svelte never mounts the
+  `<Canvas>`; Loader blocks with a webgpureport.org link). WASM is in the same verdict, since
+  `Scene.svelte` lives inside `<World>`.
 
 - **`core/utils/Renderer.svelte` owns the post-processing `RenderPipeline`** (rebuilt per
   `DOCS/post-processing.md`): a structural effect swaps the graph when the enabled set /
