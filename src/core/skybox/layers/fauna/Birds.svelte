@@ -11,12 +11,13 @@
 	// and cohesion are O(n²) interactions between PERSISTENT neighbours, so each bird
 	// carries position, velocity and an attitude vec4 (flap phase, roll, previous
 	// heading) in `instancedArray` storage buffers that two compute passes integrate
-	// every frame. Three buffers exactly, which is the vertex-stage limit App.svelte
-	// requests -- anything else a bird needs to remember goes in the vec4, and anything
-	// that never changes goes in a plain vertex attribute. That is also why this is the one layer
-	// that cannot run on the WebGL2 fallback (three's own example is marked "TODO: Fix
-	// example with WebGL backend"): the task gates on the live backend and the flock
-	// simply never mounts work elsewhere.
+	// every frame. Three buffers exactly, which is what fits under the default
+	// `maxStorageBuffersInVertexStage` (App.svelte requests no `requiredLimits` — see the
+	// attitude-vec4 note below) -- anything else a bird needs to remember goes in the
+	// vec4, and anything that never changes goes in a plain vertex attribute. That is also
+	// why this is the one layer that cannot run on the WebGL2 fallback (three's own example
+	// is marked "TODO: Fix example with WebGL backend"): the task gates on the live backend
+	// and the flock simply never mounts work elsewhere.
 	//
 	// FEW FLOCKS AND STRAYS FROM ONE PASS. Every bird carries its own FLOCK ANCHOR in a
 	// read-only storage buffer, and the centre-pull targets that instead of a shared
@@ -103,12 +104,7 @@
 		vertexIndex
 	} from 'three/tsl';
 	import { descriptor, mulberry32, smooth01, windAxisX, windAxisZ } from '../../model';
-	import {
-		instancedFloat,
-		pinFarPlane,
-		SKY_LAYER_USERDATA,
-		skyLayerMaterial
-	} from '../skyLayer';
+	import { instancedFloat, pinFarPlane, SKY_LAYER_USERDATA, skyLayerMaterial } from '../skyLayer';
 
 	interface Props {
 		/**
@@ -304,11 +300,17 @@
 		 * prevHeadingZ).
 		 *
 		 * Widened from the reference's bare phase float rather than given buffers of its
-		 * own, and that is a hard constraint, not tidiness: the vertex stage may read
-		 * exactly THREE storage buffers (the limit App.svelte requests), and it already
-		 * spends them on position, velocity and this. Roll has to reach the vertex stage,
-		 * and the previous heading has to survive between position passes, so both ride
-		 * here. The anchor buffer stays compute-only for the same reason.
+		 * own, and that is a hard constraint, not tidiness: the vertex stage reads exactly
+		 * THREE storage buffers, and it already spends them on position, velocity and
+		 * this. Roll has to reach the vertex stage, and the previous heading has to
+		 * survive between position passes, so both ride here. The anchor buffer stays
+		 * compute-only for the same reason.
+		 *
+		 * Three is what fits under the DEFAULT `maxStorageBuffersInVertexStage`: App.svelte
+		 * deliberately requests no `requiredLimits`, since a limit the adapter cannot meet
+		 * fails device creation and drops the whole app to WebGL2. On an adapter that
+		 * reports 0 for it (compatibility mode) this material does not build, and that is
+		 * accepted — the flock is sky dressing. See layers/CLAUDE.md.
 		 */
 		const states = new Float32Array(count * 4);
 		const shades = new Float32Array(count);
@@ -317,11 +319,7 @@
 		const entries: { x: number; y: number; z: number; spread: number }[] = [];
 		for (const flock of FLOCKS) {
 			const az = (flock.az * Math.PI) / 180;
-			for (
-				let j = 0;
-				j < Math.round(count * flock.share) && entries.length < count;
-				j++
-			) {
+			for (let j = 0; j < Math.round(count * flock.share) && entries.length < count; j++) {
 				entries.push({
 					x: Math.sin(az) * flock.distance,
 					y: flock.altitude,
@@ -410,7 +408,9 @@
 
 			const zoneRadius = float(SEPARATION + ALIGNMENT + COHESION).toConst();
 			const separationThresh = float(SEPARATION).div(zoneRadius).toConst();
-			const alignmentThresh = float(SEPARATION + ALIGNMENT).div(zoneRadius).toConst();
+			const alignmentThresh = float(SEPARATION + ALIGNMENT)
+				.div(zoneRadius)
+				.toConst();
 			const zoneRadiusSq = zoneRadius.mul(zoneRadius).toConst();
 
 			const birdIndex = instanceIndex.toConst('birdIndex');
@@ -424,11 +424,7 @@
 			// this is what keeps the flocks from lapping one visible circuit.
 			const anchor = anchorStorage.element(birdIndex);
 			// Seed per flock from the anchor, so flocks wander out of phase.
-			const seed = anchor.x
-				.mul(0.37)
-				.add(anchor.z.mul(0.71))
-				.add(anchor.y.mul(0.11))
-				.toConst();
+			const seed = anchor.x.mul(0.37).add(anchor.z.mul(0.71)).add(anchor.y.mul(0.11)).toConst();
 
 			const target = anchor
 				.add(
@@ -446,11 +442,11 @@
 			// Per-bird drift: golden-angle phase off the bird's own index.
 			const driftPhase = float(birdIndex).mul(0.618);
 			target.addAssign(
-					vec3(
-						sin(uTime.mul(0.21).add(driftPhase)).mul(float(PER_BIRD_DRIFT)),
-						sin(uTime.mul(0.16).add(driftPhase.mul(1.9))).mul(float(PER_BIRD_DRIFT * 0.5)),
-						cos(uTime.mul(0.19).add(driftPhase.mul(1.3))).mul(float(PER_BIRD_DRIFT))
-					)
+				vec3(
+					sin(uTime.mul(0.21).add(driftPhase)).mul(float(PER_BIRD_DRIFT)),
+					sin(uTime.mul(0.16).add(driftPhase.mul(1.9))).mul(float(PER_BIRD_DRIFT * 0.5)),
+					cos(uTime.mul(0.19).add(driftPhase.mul(1.3))).mul(float(PER_BIRD_DRIFT))
+				)
 			);
 
 			// The pull: toward the wandering target, harder vertically (the slab). The
@@ -476,8 +472,8 @@
 					sin(uTime.mul(0.23).add(gustPhase.mul(1.7))).mul(0.4),
 					cos(uTime.mul(0.27).add(gustPhase.mul(1.3)))
 				)
-						.mul(uTurb)
-						.mul(deltaTime)
+					.mul(uTurb)
+					.mul(deltaTime)
 			);
 
 			// THE SOFT HALF OF THE BOUNDARIES (the hard half lives in the position pass):
@@ -486,10 +482,7 @@
 			// a retune or a freak gust decelerates a bird before the clamp has to catch
 			// it. Edges are given low-to-high: WGSL leaves reversed smoothstep undefined.
 			velocity.y.addAssign(
-				smoothstep(float(14), float(20), position.y)
-					.oneMinus()
-					.mul(deltaTime)
-					.mul(float(LIFT))
+				smoothstep(float(14), float(20), position.y).oneMinus().mul(deltaTime).mul(float(LIFT))
 			);
 			const originDist = length(position).max(1e-6);
 			velocity.addAssign(
@@ -527,27 +520,29 @@
 					// Separation -- move apart for comfort.
 					const velocityAdjust = separationThresh.div(percent).sub(1.0).mul(deltaTime);
 					velocity.subAssign(normalize(dirToBird).mul(velocityAdjust));
-				}).ElseIf(percent.lessThan(alignmentThresh), () => {
-					// Alignment -- fly the same direction.
-					const threshDelta = alignmentThresh.sub(separationThresh);
-					const adjustedPercent = percent.sub(separationThresh).div(threshDelta);
-					const birdVelocity = velocityStorage.element(i);
+				})
+					.ElseIf(percent.lessThan(alignmentThresh), () => {
+						// Alignment -- fly the same direction.
+						const threshDelta = alignmentThresh.sub(separationThresh);
+						const adjustedPercent = percent.sub(separationThresh).div(threshDelta);
+						const birdVelocity = velocityStorage.element(i);
 
-					const cosRange = cos(adjustedPercent.mul(PI_2));
-					const cosRangeAdjust = float(0.5).sub(cosRange.mul(0.5)).add(0.5);
-					const velocityAdjust = cosRangeAdjust.mul(deltaTime);
-					velocity.addAssign(normalize(birdVelocity).mul(velocityAdjust));
-				}).Else(() => {
-					// Cohesion -- move closer.
-					const threshDelta = alignmentThresh.oneMinus();
-					const adjustedPercent = threshDelta
-						.equal(0.0)
-						.select(1.0, percent.sub(alignmentThresh).div(threshDelta));
+						const cosRange = cos(adjustedPercent.mul(PI_2));
+						const cosRangeAdjust = float(0.5).sub(cosRange.mul(0.5)).add(0.5);
+						const velocityAdjust = cosRangeAdjust.mul(deltaTime);
+						velocity.addAssign(normalize(birdVelocity).mul(velocityAdjust));
+					})
+					.Else(() => {
+						// Cohesion -- move closer.
+						const threshDelta = alignmentThresh.oneMinus();
+						const adjustedPercent = threshDelta
+							.equal(0.0)
+							.select(1.0, percent.sub(alignmentThresh).div(threshDelta));
 
-					const cosRange = cos(adjustedPercent.mul(PI_2));
-					const velocityAdjust = float(0.5).sub(cosRange.mul(-0.5).add(0.5)).mul(deltaTime);
-					velocity.addAssign(normalize(dirToBird).mul(velocityAdjust));
-				});
+						const cosRange = cos(adjustedPercent.mul(PI_2));
+						const velocityAdjust = float(0.5).sub(cosRange.mul(-0.5).add(0.5)).mul(deltaTime);
+						velocity.addAssign(normalize(dirToBird).mul(velocityAdjust));
+					});
 			});
 
 			// The speed band: capped as in the reference, and floored because birds
@@ -555,12 +550,12 @@
 			// onto its anchor until it hangs there. Again divided rather than
 			// normalize()d, so a freak zero speed cannot smear NaNs into the buffers.
 			const speed = length(velocity).max(1e-6);
-			velocity.assign(
-				velocity.div(speed).mul(clamp(speed, float(MIN_SPEED), float(SPEED_LIMIT)))
-			);
+			velocity.assign(velocity.div(speed).mul(clamp(speed, float(MIN_SPEED), float(SPEED_LIMIT))));
 
 			velocityStorage.element(birdIndex).assign(velocity);
-		})().compute(count).setName('Sky birds velocity');
+		})()
+			.compute(count)
+			.setName('Sky birds velocity');
 
 		// ── The position pass ────────────────────────────────────────────────────────
 		// Integrate, advance the attitude state, and enforce THE HARD BOUNDARIES: never
@@ -624,7 +619,9 @@
 				.mod(62.83);
 
 			stateStorage.element(instanceIndex).assign(state);
-		})().compute(count).setName('Sky birds position');
+		})()
+			.compute(count)
+			.setName('Sky birds position');
 
 		// ── The material ─────────────────────────────────────────────────────────
 		// Tone-mapped like CloudDeck and Moon: a bird is an object in the dome's
@@ -755,10 +752,7 @@
 			const day = 1 - smooth01(0.15, 0.5, descriptor.sky.starVisibility);
 			// Weather: birds land before it arrives. The mixer already eases both
 			// channels over their blends, so this needs no easing of its own.
-			const grounded = Math.max(
-				smooth01(0.2, 0.5, w.precipitation),
-				smooth01(0.55, 0.85, w.fog)
-			);
+			const grounded = Math.max(smooth01(0.2, 0.5, w.precipitation), smooth01(0.55, 0.85, w.fog));
 			opacity.value = day * (1 - grounded);
 
 			const visible = opacity.value > 0.01;

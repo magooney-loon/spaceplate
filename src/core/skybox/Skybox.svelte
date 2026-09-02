@@ -38,6 +38,24 @@
 	const SHADOW_MAP_SIZE: Record<QualityLevel, number> = { high: 2048, low: 1024 };
 	const shadowMapSize = $derived(SHADOW_MAP_SIZE[settingsState.graphics.quality]);
 
+	// Precipitation budgets per preset. The count is the ONE knob that moves what rain and
+	// snow actually cost: their motion is closed-form in the vertex node and costs nothing
+	// per drop (layers/CLAUDE.md), so the bill is rasterising tens of thousands of
+	// transparent, blended quads. Splashes are counted separately because each one carries
+	// two more instanced layers (ring + burst).
+	//
+	// Both layers bake their instance buffers, per-particle randoms and materials ONCE at
+	// mount from these props, so a change has to remount them — hence the {#key} below.
+	// That is a rebuild plus a shader compile: fine for a settings click, never something
+	// to animate.
+	const PRECIPITATION: Record<QualityLevel, { rain: number; splashes: number; snow: number }> = {
+		high: { rain: 9000, splashes: 1500, snow: 11000 },
+		low: { rain: 4000, splashes: 600, snow: 5000 }
+	};
+	// Identity is stable per preset (it is a reference into the table above), which is what
+	// makes it safe to key on.
+	const precipitation = $derived(PRECIPITATION[settingsState.graphics.quality]);
+
 	// Shadow copies of everything the model can change, so the driver can tell a frame
 	// that moved from one that did not. Plain variables, never reactive -- see §14.1.
 	let lastT = Number.NaN;
@@ -159,8 +177,14 @@
 		<Birds />
 		<Lightning />
 		<CloudDeck radius={1000} />
-		<Rain />
-		<Snow />
+		<!-- Remounted when the graphics preset changes: the counts are baked at mount (see
+		     PRECIPITATION above). Both layers dispose their geometries and materials on
+		     unmount, and their accumulators restart — a visible reset of the curtain, on a
+		     settings click only. -->
+		{#key precipitation}
+			<Rain count={precipitation.rain} splashCount={precipitation.splashes} />
+			<Snow count={precipitation.snow} />
+		{/key}
 		<!-- Water on the lens. Mounted LAST in the group and drawn at renderOrder 10, which
 		     is load-bearing rather than tidy: it reads back the framebuffer, so every layer
 		     whose output it is supposed to refract has to have drawn already. Being inside

@@ -176,10 +176,18 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   neighbours, so each bird carries position/velocity plus an **attitude vec4** (flap
   phase, roll, previous heading xz) in `instancedArray` storage buffers integrated by
   two `renderer.compute()` passes from the layer's task. Storage-in-vertex is also what
-  escapes the 8-`maxVertexBuffers` cap — which is why the app's renderer requests
-  `maxStorageBuffersInVertexStage: 3` (App.svelte). **That 3 is the budget**: anything
-  else a bird must remember goes in the vec4, and anything that never changes (plumage
-  shade, per-bird scale) goes in a plain instanced attribute instead.
+  escapes the 8-`maxVertexBuffers` cap.
+  **The vertex stage reads exactly three storage buffers, and that is the budget**:
+  anything else a bird must remember goes in the vec4, and anything that never changes
+  (plumage shade, per-bird scale) goes in a plain instanced attribute instead. Three is
+  what fits under the DEFAULT `maxStorageBuffersInVertexStage` — the renderer requests no
+  `requiredLimits` at all (App.svelte builds `WebGPURenderer` with canvas / antialias /
+  powerPreference only), because a limit the adapter cannot meet fails device creation and
+  drops the whole app to the WebGL2 fallback. Core WebGPU defaults this limit high enough;
+  **compatibility-mode adapters can report 0, where the birds material fails to build.
+  That is accepted** — the flock is sky dressing, and every other layer is attribute-only.
+  On the WebGL2 fallback the layer already goes dormant by design (the `isComputeBackend`
+  guard), rather than erroring.
 - **A bird banks, glides and has a size** — the three things the reference example does
   not do, and between them most of what stops a flock reading as animated sprites. Roll
   comes off the yaw RATE (chased, not snapped) and is applied **first** in the rotation
