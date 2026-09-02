@@ -23,7 +23,7 @@
 
 	<!-- Demo Instructions -->
 	<div class="info">
-		<p>Physics running at {framerateLabel} | Objects update in physics stage</p>
+		<p>Physics running at {framerateLabel}</p>
 	</div>
 </div>
 

@@ -63,7 +63,6 @@ core/
                             warm frames on bootState.warmVersion bumps
     boot.svelte.ts        — bootState: loader↔engine boot flags (warmVersion bumps → Renderer warm-renders;
                             scenesWarmed gates the sound prompt)
-    tasks.ts              — Task pipeline: physicsStage, renderStage, uiStage, audioStage
 
   postprocessing/          — Effect registry + pipeline builder (→ DOCS/post-processing.md)
     types.ts               — PassRole/Requirement/EffectDef/BuildContext — the declaration shapes
@@ -172,14 +171,20 @@ input, settings, gltf-viewer, logger, sound, stats, skybox, postprocessing). The
   listeners live in `core/input/Keymapper.svelte`). Static asset paths always go through
   `BASE_URL` (`$extensions/settings`).
 
-### Task pipeline (`core/utils/tasks.ts`)
+### Frame tasks
 
-- Four ordered stages per frame: `physicsStage` (before render) → `renderStage` (default) →
-  `uiStage` (after) → `audioStage` (after ui).
-- `useGameTasks()` returns `{ stages, createPhysicsTask, createUiTask, createAudioTask }`.
-- `physicsStage` only runs in `demoScene` (pauses in menus); `uiStage` pauses during transitions;
-  `audioStage` always runs.
-- Use these instead of raw `useTask` so execution order is guaranteed.
+- No stage wrapper — components register plain `useTask`s from `@threlte/core/webgpu` with
+  explicit ordering constraints: `{ before: autoRenderTask }` for pre-render work (the sky
+  driver + layers in `core/skybox/`), `{ after: autoRenderTask }` for post-render work
+  (the draw task in `Renderer.svelte`, stats, the demo capture tasks).
+- Always pass `autoInvalidate: false` and call `invalidate()` only when the task actually
+  moved something — Threlte's `renderMode` is 'on-demand', and a task with the default
+  auto-invalidate forces a full-rate render loop forever (see `Skybox.svelte`).
+- Inside a `<World>`, use `usePhysicsTask` from `@threlte/rapier` (runs before each physics
+  step, respects fixed framerate). Physics is scene-gated by `Scene.svelte`'s
+  `pause()/resume()` on `useRapier()`, not by task stages.
+- Among tasks sharing a constraint the DAG falls back to registration (mount) order —
+  parents register before children (`DOCS/weather-system.md` §18).
 
 ### Mouse look & pointer lock (`core/input/mouseLook.svelte.ts` + `MouseLook.svelte`)
 

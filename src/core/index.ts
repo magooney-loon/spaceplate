@@ -33,5 +33,3 @@ export type { SkyDescriptor, PhaseName, DayKeyframe, ClockKind } from './skybox/
 // utils/
 export { default as Loader } from './utils/Loader.svelte';
 export { default as Renderer } from './utils/Renderer.svelte';
-export { useGameTasks } from './utils/tasks';
-export type { GameStages, GameTasks, TaskOptions, TaskReturn } from './utils/tasks';

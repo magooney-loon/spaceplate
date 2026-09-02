@@ -120,9 +120,15 @@
 	// the sky's plain state (descriptor + flashState), deliberately NOT in the render
 	// layers, which unmount with the environment mode. This component only registers
 	// the sound files and ticks the module; the full rationale is documented there.
-	useTask((delta) => {
-		tickWeatherAudio(delta);
-	});
+	useTask(
+		(delta) => {
+			tickWeatherAudio(delta);
+		},
+		// autoInvalidate OFF, as everywhere else: an audio tick must not itself force
+		// frames and defeat on-demand rendering. This task rides the main stage, which
+		// runs every rAF regardless of draws, so the tick itself is unaffected.
+		{ autoInvalidate: false }
+	);
 </script>
 
 <Audio

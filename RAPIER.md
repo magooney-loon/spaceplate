@@ -274,7 +274,7 @@ rigidBody?.applyImpulse({ x: 0, y: 5, z: 0 }, true)
 
 ### `usePhysicsTask`
 
-Runs a callback every physics step, **before** the world is stepped. Use this instead of `createPhysicsTask` from `tasks.ts` when inside a `<World>` — it automatically slots into the correct simulation stage.
+Runs a callback every physics step, **before** the world is stepped. Inside a `<World>` it automatically slots into the correct simulation stage.
 
 ```ts
 import { usePhysicsTask } from '@threlte/rapier'
@@ -287,7 +287,7 @@ usePhysicsTask((delta) => {
 })
 ```
 
-> **Note for Spaceplate:** `usePhysicsTask` replaces `createPhysicsTask` for logic that runs *inside* a `<World>`. Use `createPhysicsTask` (from `tasks.ts`) for game logic outside the physics world (AI, non-physics animations, etc.).
+> **Note for Spaceplate:** `usePhysicsTask` is for logic that runs *inside* a `<World>`. For game logic outside the physics world (AI, non-physics animations, etc.), use a plain `useTask` from `@threlte/core/webgpu` with explicit `before`/`after` constraints and `autoInvalidate: false` — the repo convention (see `Renderer.svelte` and the sky tasks).
 
 ---
 
@@ -503,15 +503,15 @@ With a fixed framerate Threlte runs the physics simulation ahead of rendering by
 | `trimesh` on dynamic bodies | `trimesh` is for static/fixed only — use `convexHull` on dynamic bodies |
 | `bind:rigidBody` with `$state()` | Use `$state.raw<RapierRigidBody>()` — avoids Svelte Proxy wrapping Rapier WASM object |
 | `<Debug>` in production | Gate with `import.meta.env.VITE_GAME_ENGINE === 'true'` |
-| One `<World>` for entire app | One `<World>` per scene that needs physics — unmount with scene |
+| Unmounting `<World>` on scene switch | Keep it mounted and pause via `useRapier().pause()` when the physics scene isn't current (`Scene.svelte`) — unmounting destroys bodies and evicts compiled pipelines |
 
 ---
 
-## physicsStage vs usePhysicsTask
+## useTask vs usePhysicsTask
 
-| | `createPhysicsTask` (tasks.ts) | `usePhysicsTask` (@threlte/rapier) |
+| | `useTask` (@threlte/core) | `usePhysicsTask` (@threlte/rapier) |
 |---|---|---|
 | Requires `<World>` | No | Yes |
-| Runs before physics step | No (runs before render) | Yes (guaranteed before world step) |
+| Runs before physics step | No (ordered vs `autoRenderTask`) | Yes (guaranteed before world step) |
 | Respects fixed framerate | No | Yes |
 | Use for | Non-physics game logic, AI, animations | Forces, impulses, kinematic control |

@@ -32,11 +32,9 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 ## What's included
 
 - **Scene Manager** — Application state machine (`mainMenu` / `demoScene`) with instant switching and per-scene HUD routing
-- **Task Scheduling** — Threlte-based render pipeline with ordered stages:
-  - `physicsStage` — Game logic (typically runs in `demoScene`, pauses in menus)
-  - `renderStage` — 3D rendering (default)
-  - `uiStage` — UI updates (after render)
-  - `audioStage` — Audio (always runs)
+- **Task Scheduling** — Threlte `useTask` frame tasks with explicit ordering constraints
+  (`before`/`after: autoRenderTask`) and on-demand invalidation (`autoInvalidate: false`);
+  the draw itself is the render task in `core/utils/Renderer.svelte`
 - **Input System** — Action-based keyboard/mouse/gamepad mapping with per-player bindings, rebinding UI, and localStorage persistence
 - **Studio Extensions** (`VITE_GAME_ENGINE=true`) — Threlte Studio toolbar panels:
   - `SceneExtension` — Scene switcher
@@ -56,35 +54,40 @@ A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Th
 
 ### Task Scheduling
 ```typescript
-import { useGameTasks } from '$core';
+import { useTask, useThrelte } from '@threlte/core/webgpu';
 
-const { createPhysicsTask, createUiTask } = useGameTasks();
+const { autoRenderTask } = useThrelte();
 
-// Physics only runs in demoScene
-createPhysicsTask((delta) => {
-  // Update game objects
-});
-
-// UI runs in all scenes
-createUiTask((delta) => {
-  // Animate UI
-});
+// Game logic — ordered before the render task, no auto-invalidation
+useTask(
+  (delta) => {
+    // Update game objects
+  },
+  { before: autoRenderTask, autoInvalidate: false }
+);
 ```
+
+Inside a `<World>`, use `usePhysicsTask` from `@threlte/rapier` instead — it slots into
+the physics simulation stage and runs before each step (see `RAPIER.md`).
 
 ### Input System
 Action-based input that works in production without any editor tooling.
 
 ```typescript
+import { useTask } from '@threlte/core/webgpu';
 import { inputQueries, advanceInputFrame } from '$extensions/input/input.svelte';
 
 // In a frame task
-createPhysicsTask((delta) => {
-  advanceInputFrame(); // advance wasPressed edge detection
+useTask(
+  () => {
+    advanceInputFrame(); // advance wasPressed edge detection
 
-  const { x, y } = inputQueries.getMoveVector('player1');
-  if (inputQueries.wasPressed('player1', 'jump')) { /* ... */ }
-  if (inputQueries.isPressed('player1', 'sprint')) { /* ... */ }
-});
+    const { x, y } = inputQueries.getMoveVector('player1');
+    if (inputQueries.wasPressed('player1', 'jump')) { /* ... */ }
+    if (inputQueries.isPressed('player1', 'sprint')) { /* ... */ }
+  },
+  { autoInvalidate: false }
+);
 ```
 
 Default player1 bindings out of the box:

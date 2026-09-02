@@ -1150,13 +1150,14 @@ get a separate document rather than growing this one.
 
 Non-blocking, but they need answers before the phase they belong to:
 
-1. **Where does the sky tick run?** `core/utils/tasks.ts` still defines its four ordered
-   stages, but the sky deliberately does not use them — a stage would tie the tick to
-   `useGameTasks()` callers. **Decided in phase 1:** a single driver task in
+1. **Where does the sky tick run?** **Decided in phase 1:** a single driver task in
    `core/skybox/Skybox.svelte`, constrained `before: autoRenderTask`
    together with the consumer tasks (Sky's env-bake task, SkyLight's light task).
    Among tasks sharing a constraint the DAG falls back to registration order, and
-   Skybox registers before its children, so the model ticks first.
+   Skybox registers before its children, so the model ticks first. (The old
+   `core/utils/tasks.ts` stage system — which the sky deliberately never used, since
+   a stage would tie the tick to `useGameTasks()` callers — was later deleted as
+   dead code; plain `useTask` with explicit constraints is the repo convention.)
 2. **What happens to `skyboxState`'s scalars during the transition?** Superseded:
    the extension was rewritten rather than left dormant. The preset layer was
    deleted outright (the panel was unregistered anyway, so nothing regressed),
