@@ -7,7 +7,8 @@ Everything sky / time / weather / environment. Full concept + plan of record:
 ```
 Skybox.svelte     — mount + THE driver task + env/cube mode switch
 Sky.svelte        — the dome (three's SkyMesh), descriptor consumer, env bake budget
-SkyLight.svelte   — the descriptor-driven key light (sun→moon crossover)
+SkyLight.svelte   — the descriptor-driven key light (sun→moon crossover); its shadow map
+                    size comes from Skybox.svelte, per graphics preset (2048 / 1024)
 SkyFog.svelte     — scene.fog from the day curve + fog channel
 model/            — the pure model + the sky façade (descriptor, skyActions, skyMeta)
 layers/           — every renderer that draws on/around the dome

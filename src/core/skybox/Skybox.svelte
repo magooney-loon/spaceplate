@@ -21,8 +21,22 @@
 	import { SKY_LAYER_USERDATA } from './layers/skyLayer';
 
 	import { environmentState, ENV_TEXTURES, CUBE_TEXTURES } from './environment';
+	import { settingsState, type QualityLevel } from '$extensions/settings';
 
 	const { autoRenderTask, invalidate } = useThrelte();
+
+	// Shadow map resolution per graphics preset. Engine-wide on purpose: this is the one
+	// key light and it mounts in every scene and every environment mode, so the preset
+	// has to reach it from here rather than from a scene.
+	//
+	// Halving the size is a 4x cut in shadow fill, and it is safe to change at runtime on
+	// this renderer: three's ShadowNode.renderShadow() re-applies shadow.mapSize with
+	// shadowMap.setSize() on EVERY shadow render, and the backend reallocates the depth
+	// attachment when the size differs. (The old "dispose the map and null it" dance is a
+	// WebGLRenderer-only caveat — that path never re-read mapSize.) SkyLight arms
+	// shadow.needsUpdate every frame, so the new size lands on the next rendered frame.
+	const SHADOW_MAP_SIZE: Record<QualityLevel, number> = { high: 2048, low: 1024 };
+	const shadowMapSize = $derived(SHADOW_MAP_SIZE[settingsState.graphics.quality]);
 
 	// Shadow copies of everything the model can change, so the driver can tell a frame
 	// that moved from one that did not. Plain variables, never reactive -- see §14.1.
@@ -96,8 +110,8 @@
 </script>
 
 <!-- The key light is descriptor-driven and mounts in every mode: an HDR or cubemap
-     environment still needs a sun. -->
-<SkyLight />
+     environment still needs a sun. Shadow resolution follows the graphics preset. -->
+<SkyLight {shadowMapSize} />
 
 <!-- Environment texture mode -->
 {#if environmentState.mode === 'environment' && activeEnvTexture}

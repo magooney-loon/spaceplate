@@ -93,7 +93,9 @@ scenes/
               Controls, System — System reads capabilityState + telemetryState)
   DemoScene/  DemoScene.svelte, DemoSceneHud.svelte, DemoPhysicsBodies.svelte,
               mirrorFloor.ts — shared floor handle; the cube captures swap the reflector
-              material out while they render (read it before touching either file)
+              material out while they render (read it before touching either file),
+              demoQuality.ts — the low/high preset table for this scene (reflection
+              resolution, cube capture size + rate, geometry segments, spawn shadows)
 
 extensions/   — extension system + per-extension docs (→ see extensions/CLAUDE.md)
   scene/ settings/ input/ logger/ sound/ skybox/ postprocessing/ physics/ gltf-viewer/ stats/

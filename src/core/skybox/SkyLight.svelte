@@ -17,6 +17,13 @@
 		distance?: number;
 		/** Half-extent of the orthographic shadow box, in world units. */
 		shadowRadius?: number;
+		/**
+		 * Shadow map resolution. Skybox.svelte passes this from the graphics preset, and
+		 * changing it at runtime works: ShadowNode.renderShadow() re-applies mapSize with
+		 * setSize() on every shadow render (the "dispose the map first" rule is
+		 * WebGLRenderer-only). The task below arms needsUpdate every frame, so a new size
+		 * lands on the next rendered frame.
+		 */
 		shadowMapSize?: number;
 		castShadow?: boolean;
 		/**

@@ -9,8 +9,10 @@
 	import { logPhysics } from '$extensions/logger';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
 	import { registerMirrorFloor, unregisterMirrorFloor } from './mirrorFloor';
+	import { DEMO_QUALITY } from './demoQuality';
+	import { settingsState } from '$extensions/settings';
 
-	const { scene } = useThrelte();
+	const { scene, invalidate } = useThrelte();
 
 	// Mirror floor (plain gray + reflection). The reflector's target is
 	// transform-only (rotated flat, it defines the mirror plane at y = 0 under the
@@ -24,11 +26,12 @@
 	// slot so the gray base keeps the sky system's lighting and shadows; clamped
 	// because the reflector RT holds RAW HDR dome radiance (render-target passes
 	// skip tone mapping) and the sunset sky peaks well past 1.
-	// resolutionScale 0.5: the reflector re-renders per render pass (see bounces
-	// above), so its pixel cost multiplies across ~7 renders/frame. 0.5 was chosen
-	// visually over the cheaper 0.25 (the example ships 0.2) — the reflection read
-	// too soft at quarter scale. If perf needs headroom, this is the first knob to
-	// trade back down.
+	// resolutionScale comes from the quality preset (demoQuality.ts) and is applied
+	// below — full canvas resolution on high, 0.3 on low. It used to be a fixed 0.5
+	// because the reflection re-rendered for every camera that drew the floor (~7
+	// renders/frame); now that the cube captures swap the reflector out (mirrorFloor.ts)
+	// it renders once per frame, which is what makes the full-resolution high setting
+	// affordable. The value here is just the starting one.
 	const reflection = reflector({ resolutionScale: 0.5 });
 	reflection.target.rotateX(-Math.PI / 2);
 	reflection.target.userData = { selectable: false, hideInTree: true };
@@ -52,10 +55,31 @@
 		return unregisterMirrorFloor;
 	});
 
+	// Quality preset — see demoQuality.ts for what each knob costs.
+	const quality = $derived(DEMO_QUALITY[settingsState.graphics.quality]);
+
+	// The reflector reads resolutionScale on its next update and resizes its target
+	// there (ReflectorBaseNode._updateResolution), so this is all the switch needs.
+	$effect(() => {
+		reflection.reflector.resolutionScale = quality.reflectionScale;
+		invalidate();
+	});
+
 	// One geometry per spawned-body shape instead of one per body: `<T.SphereGeometry>`
 	// inside the {#each} below built (and uploaded) a fresh buffer for every spawn.
 	// Materials stay per body — their colour is random per spawn.
-	const spawnBallGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+	// The ball is rebuilt when the preset changes; the box has no segment count worth
+	// scaling (12 triangles either way).
+	const spawnBallGeometry = $derived(
+		new THREE.SphereGeometry(0.4, quality.spawnBallSegments, quality.spawnBallSegments)
+	);
+	$effect(() => {
+		const geometry = spawnBallGeometry;
+		// Disposes the PREVIOUS geometry when the preset changes, and the last one on
+		// unmount. Threlte never disposes a geometry passed as a prop (its disposal is
+		// ref-counted over the objects it manages), so this is the only owner.
+		return () => geometry.dispose();
+	});
 	const spawnBoxGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
 
 	const sceneMountId = crypto.randomUUID().slice(0, 8);
@@ -91,7 +115,6 @@
 		reflection.target.removeFromParent();
 		floorMaterial.dispose();
 		floorCaptureMaterial.dispose();
-		spawnBallGeometry.dispose();
 		spawnBoxGeometry.dispose();
 	});
 </script>
@@ -161,7 +184,7 @@
 					restitution={body.restitution}
 					friction={body.friction}
 				/>
-				<T.Mesh castShadow geometry={spawnBallGeometry}>
+				<T.Mesh castShadow={quality.spawnShadows} geometry={spawnBallGeometry}>
 					<T.MeshStandardMaterial color={body.color} flatShading />
 				</T.Mesh>
 			{:else}
@@ -171,7 +194,7 @@
 					restitution={body.restitution}
 					friction={body.friction}
 				/>
-				<T.Mesh castShadow geometry={spawnBoxGeometry}>
+				<T.Mesh castShadow={quality.spawnShadows} geometry={spawnBoxGeometry}>
 					<T.MeshStandardMaterial color={body.color} flatShading />
 				</T.Mesh>
 			{/if}

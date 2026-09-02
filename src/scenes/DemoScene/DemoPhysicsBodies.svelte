@@ -16,12 +16,16 @@
 	import { useSound } from '$extensions/sound/useSound';
 	import { settingsState, BASE_URL } from '$extensions/settings';
 	import { withoutReflection } from './mirrorFloor';
+	import { DEMO_QUALITY } from './demoQuality';
 
 	const { state: soundState } = useSound();
 	const { world } = useRapier();
 	const { scene, renderer, invalidate, autoRenderTask } = useThrelte();
 	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 	const mountId = crypto.randomUUID().slice(0, 8);
+
+	// Quality preset — see demoQuality.ts for what each knob costs.
+	const quality = $derived(DEMO_QUALITY[settingsState.graphics.quality]);
 
 	// Mirror sphere choreography: a closed loop at constant speed — one full lap
 	// around each corner ball, then a Bézier chord through the floor's middle (where
@@ -113,7 +117,13 @@
 	flakes.wrapS = THREE.RepeatWrapping;
 	flakes.wrapT = THREE.RepeatWrapping;
 	flakes.repeat.set(10, 6);
-	flakes.anisotropy = 16;
+	$effect(() => {
+		// Anisotropic filtering on the flake normals — the one texture in this scene
+		// viewed at a grazing angle often enough for it to matter.
+		flakes.anisotropy = quality.flakeAnisotropy;
+		flakes.needsUpdate = true;
+		invalidate();
+	});
 
 	const carbonMap = loadTex('Carbon.png');
 	carbonMap.colorSpace = THREE.SRGBColorSpace;
@@ -169,7 +179,15 @@
 		clearcoatNormalScale: new THREE.Vector2(2.0, -2.0)
 	});
 
-	const ballGeometry = new THREE.SphereGeometry(0.8, 64, 32);
+	/** The four corner-ball materials, in one place — several effects walk them. */
+	const BALL_MATERIALS = [carPaint, fibers, golf, clearcoatNormal];
+
+	const ballGeometry = $derived(new THREE.SphereGeometry(0.8, ...quality.ballSegments));
+	$effect(() => {
+		const geometry = ballGeometry;
+		// Disposes the previous one when the preset changes, the last on unmount.
+		return () => geometry.dispose();
+	});
 
 	// Live reflections for the corner balls — one SHARED cube capture instead of four:
 	// a single CubeCamera parks at the floor's center at ball height (the old
@@ -185,29 +203,52 @@
 	// scene.environmentIntensity each tick because an explicit material.envMap
 	// switches the intensity source away from the scene value (MaterialProperties) —
 	// 0.25 under the procedural sky, 1.0 in HDR/cube modes, matching the old look.
-	// ~15 Hz at 96px: the balls are stationary, so only moving content (the mirror
-	// sphere, spawned bodies, weather) needs to refresh, and 6 scene renders per
-	// capture amortize cheaply.
-	const BALL_CAPTURE_HZ = 15;
-	const ballCapture = new CubeRenderTarget(96, { type: THREE.HalfFloatType });
-	const ballCamera = new CubeCamera(0.1, 50, ballCapture as never);
-	ballCamera.position.set(0, 0.8, 0);
-	for (const material of [carPaint, fibers, golf, clearcoatNormal]) {
-		material.envMap = ballCapture.texture;
-	}
+	// Size and rate come from the quality preset; on low the capture is dropped entirely
+	// and the balls fall back to scene.environment. The balls are stationary, so only
+	// moving content (the mirror sphere, spawned bodies, weather) needs the refresh.
+	//
+	// The target and camera are REBUILT when the size changes rather than resized:
+	// RenderTarget.setSize() writes width/height onto `texture.image`, which for a
+	// CubeTexture is the six-image ARRAY, so the faces themselves never change size.
+	// Preset changes come from a settings click, never per frame.
+	const ballCapture = $derived(
+		new CubeRenderTarget(quality.ballCaptureSize, { type: THREE.HalfFloatType })
+	);
+	const ballCamera = $derived.by(() => {
+		const camera = new CubeCamera(0.1, 50, ballCapture as never);
+		// Parks at the floor's center at ball height (the old icosahedron spot, safely
+		// inside the mirror sphere's orbit ring).
+		camera.position.set(0, 0.8, 0);
+		return camera;
+	});
+
+	// envMap null on low hands the intensity back to scene.environmentIntensity — an
+	// explicit envMap is what switches that source away from the scene value.
+	$effect(() => {
+		const texture = quality.ballCapture ? ballCapture.texture : null;
+		for (const material of BALL_MATERIALS) material.envMap = texture;
+		invalidate();
+	});
+	$effect(() => {
+		const target = ballCapture;
+		return () => target.dispose();
+	});
+
 	// Half a period out of phase with the mirror capture below, so the two never fall on
 	// the same frame — 30 and 15 Hz otherwise coincide every 1/15 s, putting twelve face
 	// renders in one frame and a visible hitch with them.
-	let ballClock = 1 / (BALL_CAPTURE_HZ * 2);
+	let ballClock = 1 / (DEMO_QUALITY.high.ballCaptureHz * 2);
 	useTask(
 		(delta) => {
 			// Keep-alive: this component stays mounted while other scenes are current —
 			// its captures must not run then (six scene renders each).
 			if (sceneState.currentScene !== 'demoScene') return;
+			if (!quality.ballCapture) return;
+			const period = 1 / quality.ballCaptureHz;
 			ballClock += delta;
-			if (ballClock < 1 / BALL_CAPTURE_HZ) return;
-			ballClock %= 1 / BALL_CAPTURE_HZ;
-			for (const material of [carPaint, fibers, golf, clearcoatNormal]) {
+			if (ballClock < period) return;
+			ballClock %= period;
+			for (const material of BALL_MATERIALS) {
 				material.envMapIntensity = scene.environmentIntensity;
 			}
 			// Reflection off for the six faces — see mirrorFloor.ts.
@@ -225,18 +266,27 @@
 	// renderer.render() call for the active camera, so rendering the main view first
 	// keeps the floor's reflection correct for the player's camera — the sphere then
 	// samples a one-frame-old map, which a perpetually moving mirror never shows.
-	// 128px/HalfFloat, sphere hidden during capture to avoid a fully self-occluded
-	// frame. Same CubeCamera-in-a-task pattern as Sky.svelte's bake.
+	// HalfFloat, sphere hidden during capture to avoid a fully self-occluded frame. Same
+	// CubeCamera-in-a-task pattern as Sky.svelte's bake. Face size and rate come from
+	// the quality preset (rebuilt on change, same CubeRenderTarget reason as the balls);
+	// unlike the ball capture this one is never switched off — the sphere IS the
+	// centrepiece, and without a capture it is a flat gray ball.
 	//
-	// PERF: each capture is six scene renders, so it is throttled to ~30 Hz — half the
-	// cost, and a 4 u/s mirror shows no visible stepping at that refresh. The floor's
-	// reflection is suspended for the duration (mirrorFloor.ts); it used to add a
-	// half-canvas full-scene render to every one of those six faces.
-	const MIRROR_CAPTURE_HZ = 30;
+	// PERF: each capture is six scene renders, hence the throttle — a 4 u/s mirror shows
+	// no visible stepping at 30 Hz. The floor's reflection is suspended for the duration
+	// (mirrorFloor.ts); it used to add a half-canvas full-scene render to every one of
+	// those six faces.
 	const mirrorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-	const mirrorCapture = new CubeRenderTarget(128, { type: THREE.HalfFloatType });
-	const mirrorCamera = new CubeCamera(0.1, 50, mirrorCapture as never);
-	mirrorMaterial.envMap = mirrorCapture.texture;
+	const mirrorCapture = $derived(
+		new CubeRenderTarget(quality.mirrorCaptureSize, { type: THREE.HalfFloatType })
+	);
+	const mirrorCamera = $derived(new CubeCamera(0.1, 50, mirrorCapture as never));
+	$effect(() => {
+		const target = mirrorCapture;
+		mirrorMaterial.envMap = target.texture;
+		invalidate();
+		return () => target.dispose();
+	});
 	let mirrorMesh = $state.raw<THREE.Mesh>();
 	const mirrorPos = new THREE.Vector3();
 	let captureClock = 0;
@@ -245,9 +295,10 @@
 			if (!mirrorMesh) return;
 			// Keep-alive: skip the six-face capture while another scene is current.
 			if (sceneState.currentScene !== 'demoScene') return;
+			const period = 1 / quality.mirrorCaptureHz;
 			captureClock += delta;
-			if (captureClock < 1 / MIRROR_CAPTURE_HZ) return;
-			captureClock %= 1 / MIRROR_CAPTURE_HZ;
+			if (captureClock < period) return;
+			captureClock %= period;
 			mirrorMesh.visible = false;
 			mirrorCamera.position.copy(mirrorMesh.getWorldPosition(mirrorPos));
 			// Reflection off for the six faces — see mirrorFloor.ts.
@@ -313,12 +364,12 @@
 			sphere: readTranslation(sphereRb)
 		});
 
-		// Manual THREE resources — T.* disposes its own, these are ours
+		// Manual THREE resources — T.* disposes its own, these are ours. The
+		// quality-derived ones (ballGeometry, ballCapture, mirrorCapture) are not here:
+		// they are owned by the $effects that rebuild them, whose cleanups also run on
+		// unmount.
 		for (const ball of EDGE_BALLS) ball.material.dispose();
-		ballGeometry.dispose();
-		ballCapture.dispose();
 		mirrorMaterial.dispose();
-		mirrorCapture.dispose();
 		flakes.dispose();
 		carbonMap.dispose();
 		carbonNormal.dispose();
