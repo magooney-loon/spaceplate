@@ -1,16 +1,7 @@
 <div align="center">
   <h1>🪐 Spaceplate</h1>
   <p>Svelte 5 + Threlte + SpacetimeDB boilerplate for real-time 3D web apps</p>
-  <p>Example Games:</p>
-  <p><a href="https://therite.magooney.org/">⚔️ TheRite</a></p>
-  <p><a href="https://github.com/magooney-loon/JustSurvive">⚔️ JustSurvive</a></p>
-  <p><a href="https://github.com/magooney-loon/mouse-hole">⚔️ MouseHole</a></p>
-
 </div>
-
-<img width="2507" height="1587" alt="engi1" src="https://github.com/user-attachments/assets/19b9ee92-866d-427c-a03a-a6618447d0ed" />
-<img width="2507" height="1587" alt="engi2" src="https://github.com/user-attachments/assets/428ac85b-3de4-4475-ae18-387fdd728717" />
-<img width="2507" height="1587" alt="engi3" src="https://github.com/user-attachments/assets/07682e13-e066-4e58-a55a-4d9b94fdc331" />
 
 <div align="center">
   <table>
@@ -29,108 +20,26 @@
 
 A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Threlte 3D scene, and a SpacetimeDB real-time backend — so you can skip the setup and start building.
 
-## What's included
+## Features
 
 - **Scene Manager** — Application state machine (`mainMenu` / `demoScene`) with instant switching and per-scene HUD routing
-- **Task Scheduling** — Threlte `useTask` frame tasks with explicit ordering constraints
-  (`before`/`after: autoRenderTask`) and on-demand invalidation (`autoInvalidate: false`);
-  the draw itself is the render task in `core/utils/Renderer.svelte`
-- **Input System** — Action-based keyboard/mouse/gamepad mapping with per-player bindings, rebinding UI, and localStorage persistence
-- **Studio Extensions** (`VITE_GAME_ENGINE=true`) — Threlte Studio toolbar panels:
-  - `SceneExtension` — Scene switcher
-  - `PostProcessingExtension` — Unregistered since the WebGPU migration (rebuild planned, `DOCS/post-processing.md`)
-  - `SkyboxExtension` — Time scrubber/clock controls, weather buttons + channel sliders, environment mode & texture pickers, ⚡ Strike Now (the sky itself is `core/skybox/`)
-  - `SoundExtension` — Volume controls + audio channel toggles
-  - `LoggerExtension` — Per-channel log toggles (`engine`, `settings`, `sound`, `postprocessing`, `skybox`, `cache`, `gltf`, `physics`, `input`)
-  - `GltfViewerExtension` — Load GLTF/GLB from file or path; inspect animations and colliders in `demoScene`
-  - `PhysicsExtension` — Rapier world controls, spawn defaults, attractor controls, and quick body spawning
-- **Sound system** — Polyphonic + one-shot audio, never unmounts, safe from race conditions
-- **Settings** — Tabbed settings HUD (General / Audio / Controls) — all persistent via localStorage
-- **Physics sandbox** — `@threlte/rapier` world wiring, debug collider toggle, attractor modes, and spawnable balls/boxes
-- **SpacetimeDB wiring** — Connection setup, generated bindings, example table subscription
-- **Debug logging** — Multi-channel styled logging with timestamp; channels auto-generate Studio UI checkboxes
+- **Rendering** — WebGPU renderer (WebGL fallback) with a node-based post-processing pipeline: SSAA, DOF, motion blur, bloom, afterimage, vignette, LUT grading, FXAA/SMAA — hot-swappable via an effect registry with quality tiers
+- **Procedural sky & weather** — Day/night curve, blendable weather channels (clouds, rain, snow, wind, fog, lightning), celestial layers (moon, stars, meteors), baked environment maps, and a weather-reactive audio bed
+- **Physics** — Rapier world wiring with spawnable balls/boxes, attractor modes (`static` / `linear` / `newtonian`), and debug collider toggle
+- **Task scheduling** — Threlte `useTask` frame tasks with explicit ordering constraints and on-demand rendering
+- **Input system** — Action-based keyboard/mouse/gamepad mapping with per-player bindings, rebinding UI, and localStorage persistence
+- **Audio** — Polyphonic + one-shot playback, positional audio, autoplay-policy safe; components never unmount, so no race conditions
+- **Settings** — Tabbed settings HUD (General / Audio / Controls), persistent via localStorage
+- **SpacetimeDB wiring** — Connection setup, generated client bindings, example table subscription
+- **Debug logging** — Multi-channel styled logging with timestamps
+- **Studio editor** (`VITE_GAME_ENGINE=true`) — Dev-only Threlte Studio toolbar: scene switcher, sky/time/weather controls, post-processing panel, physics controls, GLTF viewer, sound mixers, log toggles
 
----
+## Documentation
 
-### Task Scheduling
-```typescript
-import { useTask, useThrelte } from '@threlte/core/webgpu';
-
-const { autoRenderTask } = useThrelte();
-
-// Game logic — ordered before the render task, no auto-invalidation
-useTask(
-  (delta) => {
-    // Update game objects
-  },
-  { before: autoRenderTask, autoInvalidate: false }
-);
-```
-
-Inside a `<World>`, use `usePhysicsTask` from `@threlte/rapier` instead — it slots into
-the physics simulation stage and runs before each step (see `RAPIER.md`).
-
-### Input System
-Action-based input that works in production without any editor tooling.
-
-```typescript
-import { useTask } from '@threlte/core/webgpu';
-import { inputQueries, advanceInputFrame } from '$extensions/input/input.svelte';
-
-// In a frame task
-useTask(
-  () => {
-    advanceInputFrame(); // advance wasPressed edge detection
-
-    const { x, y } = inputQueries.getMoveVector('player1');
-    if (inputQueries.wasPressed('player1', 'jump')) { /* ... */ }
-    if (inputQueries.isPressed('player1', 'sprint')) { /* ... */ }
-  },
-  { autoInvalidate: false }
-);
-```
-
-Default player1 bindings out of the box:
-
-| Keys | Action |
-|---|---|
-| W A S D / Arrows | Move |
-| Space | Jump |
-| Shift | Sprint |
-| E | Interact |
-| LMB / Q | Primary / Secondary |
-| R F C X Z T | Reload / Use / Crouch / Drop / Prone / Emote |
-| 1 2 3 4 | Slots |
-| Esc | Settings |
-
-Players can rebind everything from the in-game **Settings → Controls** tab.
-
-### Extensions
-Each extension is self-contained: reactive state (`.svelte.ts`), actions, and an optional Studio UI panel (dev only).
-
-```
-extensions/
-├── scene/              # Scene state machine (SCENES router, transitions)
-├── settings/           # Persistent audio/graphics/general settings
-├── input/              # Action-based input mapping, bindings, queries
-├── postprocessing/     # Removed in the WebGPU migration — rebuild planned (DOCS/post-processing.md)
-├── skybox/             # Studio panel only (time/weather/env-mode); the sky itself lives in core/skybox
-├── sound/              # Positional audio state
-├── logger/             # Multi-channel styled logging
-├── gltf-viewer/        # GLTF/GLB loader, animation controls, collider toggles (dev only)
-└── physics/            # Rapier world state, attractor, debug controls, spawnable bodies
-```
-
-State always works in production — Studio panels are purely dev-time UI on top of the same state.
-
-### Physics
-The boilerplate includes a ready-to-tweak Rapier sandbox inside the demo scene.
-
-- World controls for gravity, framerate, and debug colliders
-- Spawn defaults for restitution, friction, damping, CCD, sleep, and random spawn positions
-- Attractor controls with `static`, `linear`, and `newtonian` gravity falloff
-- Quick body spawning via `physicsActions.spawnBall()` / `spawnBox()`
-- Leaving `demoScene` clears spawned physics bodies automatically
+- `CLAUDE.md` / `src/CLAUDE.md` — repo layout, commands, and architecture rules
+- `spacetimedb/CLAUDE.md` — SpacetimeDB SDK reference for the server module (tables, reducers, views)
+- `spacetimedb/CLI.md` — `spacetime` CLI reference (init, build, publish, queries, server management)
+- `DOCS/` — working notes: post-processing rebuild, weather system, scene environment, WebGPU gotchas, and `RAPIER.md` (physics integration guide)
 
 ---
 
@@ -179,3 +88,4 @@ Copy `.env.example` to `.env.local` and fill in your values.
 | `SPACETIMEDB_DB_NAME` | Same as above, used by the `spacetime` CLI |
 | `SPACETIMEDB_HOST` | Same as above, used by the `spacetime` CLI |
 | `VITE_GAME_ENGINE` | `true` to enable Threlte Studio + PerfMonitor + all Studio extensions |
+| `VITE_STDB_ENABLE` | Set to `false` to skip the SpacetimeDB connection entirely (client runs standalone); enabled by default |

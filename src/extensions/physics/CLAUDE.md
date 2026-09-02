@@ -26,4 +26,4 @@ index.ts                  — barrel re-exports
 - Leaving `demoScene` clears spawned bodies (`Scene.svelte` handles this).
 - `PhysicsController.svelte` syncs `physicsState.gravityX/Y/Z` to `world.gravity` via `$effect`.
 - No localStorage persistence — physics settings reset on page load.
-- Rapier specifics documented in `RAPIER.md`.
+- Rapier specifics documented in `DOCS/RAPIER.md`.

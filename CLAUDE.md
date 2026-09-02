@@ -18,8 +18,8 @@ DOCS/              — Working notes: post-processing.md (rebuild plan),
                      weather-system.md (sky/weather concept + impl plan),
                      scene-environment.md (per-scene look: PP + time + weather),
                      webgpu-notes.md (WebGPU/Studio gotchas — read before debugging),
+                     RAPIER.md (Rapier physics notes),
                      plus vendored three.js / threlte sources for reference
-RAPIER.md          — Rapier physics notes
 ```
 
 `DOCS/` is reference material, not app code — Vite denies serving it (`server.fs.deny`).
