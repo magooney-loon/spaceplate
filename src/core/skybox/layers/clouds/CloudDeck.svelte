@@ -10,6 +10,19 @@
 	// only above ~0.5 cover -- exactly where SkyMesh runs out -- plus a faint sheared
 	// cirrus band across the middle of the channel so `cloudy`/`overcast` gain streaks.
 	//
+	// IT IS A SLAB, NOT A PLANE. The deck marches `steps` slices between two apparent
+	// altitudes, compositing front to back with the alpha early-out from three's
+	// webgpu_volume_cloud. The reason is not detail -- more octaves buy detail, and the flat
+	// version had five of them. It is PARALLAX: a plane-projected field only responds to
+	// camera rotation, so under translation the whole deck slid along like a decal.
+	// Integrating through a thickness is the only fix for that, and self-shadowing (one tap
+	// toward the key light per slice) comes free once there are slices to shadow.
+	//
+	// What it does NOT do is what the example does: no 3D texture. A 128-cube costs 2 MB and
+	// 2.1M CPU noise calls at boot, and being a ball rather than a tiling volume it cannot
+	// scroll -- which would cost the wind accumulator below, a hard requirement. The noise
+	// stays analytic and the slices are sheared apart instead.
+	//
 	// WIND, AT LAST. SkyMesh cannot take the wind channel: its `cloudSpeed` uniform is
 	// multiplied by absolute elapsed time, so changing the speed teleports the pattern
 	// (DOCS/weather-system.md §15.7). A layer that owns its offset has no such problem --
@@ -32,14 +45,16 @@
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';
 	import {
+		Break,
 		Fn,
+		If,
 		Loop,
 		cameraPosition,
-		clamp,
 		dot,
 		float,
 		floor,
 		fract,
+		max,
 		mix,
 		positionWorld,
 		pow,
@@ -60,10 +75,31 @@
 		/** UV multiplier on the plane projection -- smaller is bigger clouds. */
 		scale?: number;
 		/**
-		 * Plane-projection divisor for the mass deck. Distinct from SkyMesh's storm value
-		 * (0.1) so the two layers sit at different apparent altitudes and parallax.
+		 * Plane-projection divisor for the BASE of the mass deck. Distinct from SkyMesh's
+		 * storm value (0.1) so the two layers sit at different apparent altitudes and
+		 * parallax.
 		 */
 		elevation?: number;
+		/**
+		 * How far the slab's top sits above its base, as a fraction of the base's apparent
+		 * altitude. This is the thickness the march integrates through, and the whole
+		 * reason the deck has an inside — 0 collapses it back to the old single plane.
+		 */
+		slabThickness?: number;
+		/**
+		 * March steps through the slab. BAKED INTO THE SHADER (a TSL `Loop` count), so it
+		 * is a mount-time constant, not a live knob: changing it rebuilds the material.
+		 * Cost is roughly linear in it, minus whatever the alpha early-out saves in dense
+		 * weather. A scene on a tight budget lowers this; below ~5 the slices stop reading
+		 * as one body and start banding.
+		 */
+		steps?: number;
+		/**
+		 * Total optical depth through a fully dense column. Per-step alpha is divided by
+		 * `steps`, so the deck looks the same at 6 steps as at 12 — raise this for a deck
+		 * that goes opaque sooner, not to make it brighter.
+		 */
+		opticalDepth?: number;
 		/** cloudCover range over which the mass deck fades in. Above SkyMesh's band. */
 		massFrom?: number;
 		massTo?: number;
@@ -77,6 +113,9 @@
 		radius = 1000,
 		scale = 0.3,
 		elevation = 0.38,
+		slabThickness = 0.55,
+		steps = 8,
+		opticalDepth = 5.5,
 		massFrom = 0.5,
 		massTo = 0.95,
 		wispFrom = 0.12,
@@ -146,9 +185,13 @@
 			return value;
 		});
 
-	const fbm5 = makeFbm(5);
-	const fbm4 = makeFbm(4);
-	const fbm3 = makeFbm(3);
+	// OCTAVES CAME DOWN WHEN THE MARCH WENT IN, deliberately. The old single plane needed
+	// five octaves because one sample was the entire cloud; a march composites `steps`
+	// slices of a sheared field, which manufactures detail the octaves used to buy — so
+	// per-slice cost drops and the total still lands around 3x the flat deck rather than 6x.
+	const fbm4 = makeFbm(4); // cirrus only — one sample, it can afford the octaves
+	const fbm3 = makeFbm(3); // slab density
+	const fbm2 = makeFbm(2); // ridge + the light tap, where shape matters more than detail
 
 	const buildMaterial = (): THREE.MeshBasicNodeMaterial => {
 		const material = skyLayerMaterial({
@@ -167,40 +210,112 @@
 		// clipped by the camera's far plane, and the deck must sort behind the scene.
 		material.vertexNode = domeVertexNode();
 
+		// Slab bounds as apparent altitudes. `elevation` is a projection DIVISOR, so the
+		// altitude it stands for is its reciprocal -- the base of the deck. Computed in JS
+		// because both are authored constants and the shader wants them folded.
+		const slabBase = 1 / elevation;
+		const slabTop = slabBase * (1 + slabThickness);
+		const seedOffset = vec2((seed % 97) * 0.37, (seed % 89) * 0.53);
+
+		// One slice of the slab: the same threshold-driven coverage the flat deck used,
+		// times a vertical profile. Coverage is threshold-driven like SkyMesh's, but the
+		// threshold TRAVELS with strength -- the headroom SkyMesh does not have.
+		//
+		// `hf` is the fraction through the slab. The profile is what gives the deck a
+		// silhouette instead of a slice sandwich: eroded at the base (flat-bottomed, as
+		// cumulus sit on their condensation level) and tapered off the top.
+		const sliceDensity = Fn(([uv, hf]: [any, any]) => {
+			const n = fbm3(uv.add(seedOffset));
+			const r = fbm2(uv.mul(1.9).add(vec2(19.3, 7.1)));
+			const ridge = r.mul(2).sub(1).abs().oneMinus();
+			const mass = n.mul(0.68).add(ridge.mul(ridge).mul(0.32));
+
+			const threshold = float(0.74).sub(uStrength.mul(0.34));
+			const profile = smoothstep(float(0), float(0.2), hf).mul(
+				smoothstep(float(1), float(0.5), hf)
+			);
+			return smoothstep(threshold, threshold.add(0.22), mass).mul(profile);
+		});
+
 		const deck = Fn(() => {
 			const dir = positionWorld.sub(cameraPosition).normalize();
-
-			// PLANE PROJECTION, as SkyMesh: where the view ray crosses a virtual cloud
-			// plane. Same construction, different constants, so the two decks sit at
-			// different apparent altitudes and never read as one layer doubled.
-			const uv = dir.xz.div(dir.y.mul(elevation)).mul(scale).add(uWind).toVar();
 
 			// Horizon fade: near the horizon the projection's UV runs to infinity and the
 			// noise degenerates. The fade also reads correctly -- a deck meets the haze.
 			const horizonFade = smoothstep(float(0.03), float(0.16), dir.y);
 
-			// ── Mass deck ────────────────────────────────────────────────────────────
-			// fbm for volume, plus a ridged term for tower/cell structure. Coverage is
-			// threshold-driven like SkyMesh's, but the threshold TRAVELS with strength --
-			// that is the headroom SkyMesh does not have.
-			const seedOffset = vec2((seed % 97) * 0.37, (seed % 89) * 0.53);
-			const n = fbm5(uv.add(seedOffset));
-			const r = fbm3(uv.mul(1.9).add(vec2(19.3, 7.1)));
-			const ridge = r.mul(2).sub(1).abs().oneMinus();
-			const mass = n.mul(0.68).add(ridge.mul(ridge).mul(0.32));
+			// PLANE PROJECTION, as SkyMesh: where the view ray crosses a virtual cloud
+			// plane at apparent altitude `h`, i.e. `dir.xz / dir.y * h`. Same construction,
+			// different constants, so the two decks never read as one layer doubled.
+			//
+			// The divisor is FLOORED here, unlike the flat deck's, because the march would
+			// otherwise evaluate `1/0` at the horizon on its way to being multiplied by a
+			// zero fade -- and a NaN survives that multiply.
+			const ray = dir.xz.div(max(dir.y, float(0.02))).mul(scale);
 
-			const threshold = float(0.74).sub(uStrength.mul(0.34));
-			const mask = smoothstep(threshold, threshold.add(0.22), mass);
-
-			// SELF-SHADING: sample the field again, offset toward the key light. The
-			// difference is a cheap normal proxy -- positive where the surface rises
-			// toward the light -- and turns the deck from texture into lit form.
-			const nLight = fbm4(uv.add(uLightDir.mul(0.13)).add(seedOffset));
-			const gradient = clamp(n.sub(nLight).mul(3), float(0), float(1));
-
+			// ── Mass deck: the slab march ────────────────────────────────────────────
+			// Front to back, low slice first (low = near, since the camera is under the
+			// deck looking up), compositing `over` and stopping once the column is opaque.
+			// This is the one thing the flat deck could not do: a projected plane has no
+			// parallax under camera TRANSLATION, only rotation, so it slid with the camera
+			// like a decal. Integrating through a thickness is what fixes that, and the
+			// self-shadowing below comes free with it.
 			const lit = uLightColor.mul(uLightAmount);
-			const massColor = lit.mul(mix(float(0.55), float(1.35), gradient));
-			const massAlpha = mask.mul(uStrength).mul(horizonFade);
+			// Premultiplied while accumulating -- the composite below divides back out.
+			const massColorAcc = vec3(0).toVar();
+			const massAlphaAcc = float(0).toVar();
+
+			Loop(steps, ({ i }: any) => {
+				const hf = float(i).add(0.5).div(float(steps));
+				const h = mix(float(slabBase), float(slabTop), hf);
+				// The slice offset is a SHEAR, not just the projection's own scaling with
+				// height: without it every slice samples a zoom of one pattern and the slab
+				// reads as a tunnel rather than as cloud.
+				const uv = ray
+					.mul(h)
+					.add(uWind)
+					.add(vec2(hf.mul(3.1), hf.mul(-1.7)));
+
+				// Per-step alpha scales as 1/steps, so the look is step-count independent
+				// (raise `opticalDepth`, not the step count, for a denser deck).
+				//
+				// `uStrength` is DELIBERATELY NOT IN HERE. It scaled the flat deck's alpha
+				// linearly; inside the march it would sit in the exponent instead, and a
+				// half-strength deck would come out nearly as opaque as a full one --
+				// silently retuning every weather that rides massFrom/massTo. It is applied
+				// to the accumulated alpha below, exactly where the old `mask * uStrength`
+				// applied it. Coverage still grows with strength through the threshold.
+				const density = sliceDensity(uv, hf).mul(opticalDepth / steps);
+
+				If(density.greaterThan(0.001), () => {
+					// SELF-SHADOWING, replacing the flat deck's gradient proxy: one tap
+					// toward the key light and half a slab upward. Cloud there means this
+					// slice is in shadow; nothing there means it is a lit edge. Gated, so
+					// empty sky never pays for it.
+					const occluder = sliceDensity(uv.add(uLightDir.mul(0.13)), hf.add(0.25).clamp(0, 1));
+					const shade = mix(float(1.35), float(0.45), occluder);
+					const w = massAlphaAcc.oneMinus().mul(density.min(1));
+					massColorAcc.addAssign(lit.mul(shade).mul(w));
+					massAlphaAcc.addAssign(w);
+				});
+
+				// The early-out from the volume-cloud example: once the column is opaque no
+				// slice behind it can contribute. Storms hit this within a few steps.
+				If(massAlphaAcc.greaterThanEqual(0.95), () => {
+					Break();
+				});
+			});
+
+			// The march's own coverage, reused below as the lightning term's structure
+			// weight -- the flat deck's `mask` under a new name.
+			const mask = massAlphaAcc;
+			const massWeight = uStrength.mul(horizonFade);
+			const massAlpha = massAlphaAcc.mul(massWeight);
+			// Stays PREMULTIPLIED (colour x alpha, which is what the accumulator holds) so
+			// it drops straight into the weighted mean below, where the wisp term is
+			// premultiplied by hand. Both terms take the same weight, so the divide leaves
+			// the colour itself untouched.
+			const massPremul = massColorAcc.mul(massWeight);
 
 			// ── Cirrus band ──────────────────────────────────────────────────────────
 			// Sheared UV (stretched 1:3.2) reads as wind-smears; scrolls faster and sits
@@ -222,10 +337,7 @@
 			// the colors, clamped sum of the alphas. The epsilon keeps the divide honest
 			// when both layers are empty (alpha 0 -- color is then never read).
 			const totalAlpha = massAlpha.add(wispAlpha).min(1);
-			const color = massColor
-				.mul(massAlpha)
-				.add(wispColor.mul(wispAlpha))
-				.div(totalAlpha.max(1e-4));
+			const color = massPremul.add(wispColor.mul(wispAlpha)).div(totalAlpha.max(1e-4));
 
 			// LIGHTNING. The strike lights the deck from the inside: a sharp angular falloff
 			// around the strike direction, weighted by the local mask so dense cells catch it

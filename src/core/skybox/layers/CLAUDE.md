@@ -89,6 +89,22 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   coverage. `NormalBlending` + `BackSide` + **tone-mapped**: a storm deck must be able
   to DARKEN the sky behind it (additive can only add light) and must live in the dome's
   exposure space or it survives exposure changes as a stuck-on decal.
+- **The mass deck is a marched SLAB, not a projected plane** (`steps` slices between two
+  apparent altitudes, front to back, alpha early-out at 0.95 — the loop shape from
+  three's `webgpu_volume_cloud`). The motive is parallax, not detail: a plane-projected
+  field only answers to camera *rotation*, so it slid with translation like a decal.
+  Octaves per slice came DOWN to pay for it (fbm3 + fbm2 ridge; the flat version used
+  fbm5) — the slices manufacture the detail the octaves used to.
+  - **No 3D texture, on purpose.** The example's 128³ volume is 2 MB and 2.1M CPU noise
+    calls at boot, and it is a ball rather than a tiling field, so it cannot scroll —
+    which would cost the wind accumulator, a hard requirement. The noise stays analytic
+    and the slices are sheared apart to decorrelate them.
+  - **`uStrength` multiplies the accumulated alpha, never the per-step density.** In the
+    density it lands in the exponent, and a half-strength deck comes out nearly as
+    opaque as a full one — silently retuning every weather that rides `massFrom`/`massTo`.
+  - `steps` is baked into the shader (a TSL `Loop` count), so it is a mount-time
+    constant; `opticalDepth` is what makes the deck denser, and it is divided by `steps`
+    so the look is step-count independent.
 - **Wind scroll is a self-accumulated UV offset. Never drive `SkyMesh.cloudSpeed` with
   `wind`** — that uniform is multiplied by absolute elapsed time inside SkyMesh, so
   changing it teleports the whole cloud pattern. The deck accumulates its own offset in
