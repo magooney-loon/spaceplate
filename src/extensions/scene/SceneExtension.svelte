@@ -29,7 +29,7 @@
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiMap" title="Scenes — {currentScene?.label ?? ''}">
-		{#each SCENES as scene}
+		{#each SCENES as scene (scene.id)}
 			<Folder title={scene.label} expanded={sceneState.currentScene === scene.id}>
 				<Button
 					title={sceneState.currentScene === scene.id ? '✓ Current scene' : '→ Go to scene'}

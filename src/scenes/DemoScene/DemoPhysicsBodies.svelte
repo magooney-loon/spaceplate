@@ -356,7 +356,7 @@
 </script>
 
 <!-- Corner balls — fixed bodies, spawned bodies bounce off them -->
-{#each EDGE_BALLS as ball, i}
+{#each EDGE_BALLS as ball, i (i)}
 	<T.Group position={ball.position} userData={{ selectable: false, hideInTree: true }}>
 		<RigidBody
 			type="fixed"

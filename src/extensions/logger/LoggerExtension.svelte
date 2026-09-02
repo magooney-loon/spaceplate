@@ -27,7 +27,7 @@
 <ToolbarItem position="right">
 	<DropDownPane icon="mdiConsole" title="Logger">
 		<Folder title="Channels" expanded={true}>
-			{#each channels as [channel, style]}
+			{#each channels as [channel, style] (channel)}
 				<Checkbox
 					label="{style.text} {style.label}"
 					value={loggerState[channel]}

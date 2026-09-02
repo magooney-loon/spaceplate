@@ -9,7 +9,6 @@ node_modules
 /build
 /dist
 /DOCS/three.js-dev
-/DOCS/threlte-main
 
 # OS
 .DS_Store
