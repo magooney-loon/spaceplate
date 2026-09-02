@@ -3,7 +3,7 @@
 	import { useGltf, useGltfAnimations, useDraco, useMeshopt, useKtx2 } from '@threlte/extras';
 	import { AutoColliders } from '@threlte/rapier';
 	import { LoopRepeat, LoopOnce } from 'three';
-	import { SkeletonHelper, REVISION, type Mesh } from 'three/webgpu';
+	  import { SkeletonHelper, REVISION, BufferAttribute, type Mesh, type Material, type BufferGeometry, type Object3D } from 'three/webgpu';
 	import { untrack } from 'svelte';
 	import { gltfViewerActions } from './gltfViewer.svelte';
 	import { logGltf } from '$extensions/logger';
@@ -35,29 +35,84 @@
 	// Track which clips were active on the previous effect run so we can diff for fade in/out
 	let prevActive = new Set<string>();
 
-	// Log when GLTF scene finishes loading
-	$effect(() => {
-		const scene = $gltf?.scene;
-		if (scene) {
-			logGltf.info(
-				'Loaded:',
-				untrack(() => model.name),
-				'— meshes:',
-				scene.children.length
-			);
-		}
-	});
+	    // Log when GLTF scene finishes loading
+	    $effect(() => {
+	        const scene = $gltf?.scene;
+	        if (scene) {
+	            logGltf.info(
+	                'Loaded:',
+	                untrack(() => model.name),
+	                '— meshes:',
+	                scene.children.length
+	            );
+	        }
+	    });
 
-	// Populate clip names into state once GLTF loads
-	$effect(() => {
-		const clips = $gltf?.animations;
-		if (clips && clips.length > 0 && model.animationClips.length === 0) {
-			gltfViewerActions.setModelClips(
-				untrack(() => model.id),
-				clips.map((c) => c.name)
-			);
-		}
-	});
+	    // Fill in UVs where a material references them but the geometry has none. Common
+	    // with meshopt/DRACO-optimized or generated models: the material carries textures,
+	    // the primitive lost its TEXCOORD_0. Three's AttributeNode then warns
+	    // 'Vertex attribute "uv" not found on geometry' on every compile — rendering falls
+	    // back to sampling one texel, which is exactly what a zeroed UV does, minus the
+	    // console spam. Runs once per loaded scene, before the first render sees it.
+	    const uvDependentMaps = [
+	        'map',
+	        'normalMap',
+	        'roughnessMap',
+	        'metalnessMap',
+	        'aoMap',
+	        'emissiveMap',
+	        'alphaMap',
+	        'bumpMap',
+	        'displacementMap',
+	        'clearcoatMap',
+	        'clearcoatNormalMap',
+	        'clearcoatRoughnessMap',
+	        'sheenColorMap',
+	        'sheenRoughnessMap',
+	        'specularMap',
+	        'specularColorMap',
+	        'specularIntensityMap',
+	        'iridescenceMap',
+	        'iridescenceThicknessMap',
+	        'transmissionMap',
+	        'thicknessMap',
+	        'lightMap'
+	    ] as const;
+	    const materialWantsUv = (material: Material | Material[]): boolean => {
+	        const materials = Array.isArray(material) ? material : [material];
+	        return materials.some((mat) =>
+	            uvDependentMaps.some((slot) => (mat as unknown as Record<string, unknown>)[slot] != null)
+	        );
+	    };
+	    const fillMissingUvs = (root: Object3D) => {
+	        root.traverse((obj) => {
+	            const mesh = obj as Mesh;
+	            if (!mesh.isMesh || !mesh.geometry) return;
+	            const geometry = mesh.geometry as BufferGeometry;
+	            if (geometry.getAttribute('uv') || !materialWantsUv(mesh.material)) return;
+	            geometry.setAttribute(
+	                'uv',
+	                new BufferAttribute(
+	                    new Float32Array(geometry.getAttribute('position').count * 2),
+	                    2
+	                )
+	            );
+	        });
+	    };
+
+	    // Populate clip names into state once GLTF loads
+	    $effect(() => {
+	        const gltfScene = $gltf?.scene;
+	        if (gltfScene) fillMissingUvs(gltfScene);
+
+	        const clips = $gltf?.animations;
+	        if (clips && clips.length > 0 && model.animationClips.length === 0) {
+	            gltfViewerActions.setModelClips(
+	                untrack(() => model.id),
+	                clips.map((c) => c.name)
+	            );
+	        }
+	    });
 
 	// Rig (skeleton) overlay. Parented to the root scene and gated on model.visible —
 	// when the mesh is hidden the GLTF scene detaches from the graph, bones stop
