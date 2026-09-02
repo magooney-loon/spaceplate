@@ -26,7 +26,10 @@ Three buttons: Procedural Sky, HDR/EXR Environment, Cube Map. Calls `environment
 
 ### Weather (sky mode only)
 - Blend duration slider (0–60s, default 20).
-- Named weather buttons from `WEATHERS` keys. Calls `skyActions.setWeather(name, { over: blendSeconds * 1000 })`.
+- Named weather `ButtonGrid`, 2 columns, from `WEATHERS` keys — labelled with the exact
+  string `setWeather` takes. Calls `skyActions.setWeather(name, { over: blendSeconds * 1000 })`.
+  No ✓ on the active one: the "Active" monitor covers that, and reactive labels would
+  rebuild the blade every time a channel slider turned the name into `custom`.
 - Raw channel sliders: Cloud, Cloud Type, Fog, Precipitation, Precip Type, Wind, Wind Bearing, Lightning. Each snaps (over: 0).
 - "Strike Now" button: `requestStrike()` from flashState.
 

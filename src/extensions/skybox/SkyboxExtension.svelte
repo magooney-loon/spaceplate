@@ -222,12 +222,16 @@
 			<Folder title="Weather" expanded={true}>
 				<Monitor label="Active" value={weatherReadout} />
 				<Slider label="Blend (s)" bind:value={blendSeconds} min={0} max={60} step={1} />
-				{#each WEATHER_NAMES as name (name)}
-					<Button
-						title={skyMeta.weather === name ? `✓ ${name}` : name}
-						on:click={() => applyWeather(name)}
-					/>
-				{/each}
+				<!-- Every named weather, two per row, labelled with the exact string
+				     `setWeather` takes — the panel is just another caller, so the button says
+				     what the call says. Which one is live is the "Active" monitor's job above:
+				     a ✓ in the labels would mean rebuilding the blade on every channel drag,
+				     since a raw slider turns the name into 'custom'. -->
+				<ButtonGrid
+					buttons={WEATHER_NAMES}
+					columns={2}
+					on:click={(e) => applyWeather(WEATHER_NAMES[e.detail.index])}
+				/>
 				<Separator />
 				<!-- Raw channel targets. The sliders track the live mixer values, so they
 				     also read as a progress display while a named weather blends in. All six

@@ -192,6 +192,39 @@ export const WEATHERS: Record<string, WeatherDefinition> = {
 			lightning: 0
 		},
 		stagger: { fog: 0.25, precipitation: 0.4 }
+	},
+	blizzard: {
+		// The snow side's extreme, which the library was missing: `storm` was the only
+		// weather that closed the deck completely, so the worst winter weather available
+		// was a gentle `snow`. Sits above `snow` on every channel it shares with it.
+		//
+		// `fog` is the defining one, not `precipitation`. A blizzard is a WHITEOUT -- what
+		// makes it dangerous is that you cannot see, and the fog channel is what pulls
+		// SkyFog's band in toward the camera. At 0.8 it is second only to the dedicated
+		// `fog` (0.85) -- and that one is ground mist under a mostly clear sky, where this
+		// is near-identical visibility with a closed deck over it and snow inside it.
+		//
+		// `lightning` stays 0. Thundersnow is real and rare; a caller who wants it can ask
+		// for `setWeather({ lightning: 0.5 })` on top, which is exactly what raw partials
+		// are for.
+		target: {
+			cloudCover: 1,
+			cloudType: 0.9,
+			fog: 0.8,
+			precipitation: 1,
+			// 0 = snow. The one channel that MUST be explicit here: a blizzard arriving from
+			// `rain` crosses the sleet band on the way (both ends are wet, so this one
+			// genuinely blends), and a blizzard arriving from anything dry snaps to snow.
+			precipitationType: 0,
+			// The highest wind in the library -- `storm` is 0.85. Snow driven sideways is the
+			// whole look; Snow.svelte and CloudDeck.svelte both read it.
+			wind: 0.95,
+			windDirection: 0.5,
+			lightning: 0
+		},
+		// It arrives as weather does: the wind gets up first, then the snow starts, and the
+		// whiteout closes in last. Everything still lands together at the end of the blend.
+		stagger: { wind: 0.05, cloudCover: 0.1, precipitation: 0.3, fog: 0.5 }
 	}
 };
 

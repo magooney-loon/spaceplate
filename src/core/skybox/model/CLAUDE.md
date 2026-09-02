@@ -87,9 +87,11 @@ intensities (0 = none); two are **positions**:
   `windAxisX/Z` hand the vector to renderers; bearing 0 = +Z (the pre-channel default
   look). `wind` itself is an intensity: 0 = still, 1 = storm. Never remap it bipolar.
 
-- Named weathers (`clear` `cloudy` `overcast` `fog` `rain` `storm` `snow`) are **target
-  vectors** in `WEATHERS`, kept in code like the day curve; a raw partial is a
-  first-class call, not an escape hatch.
+- Named weathers (`clear` `cloudy` `overcast` `fog` `rain` `storm` `snow` `blizzard`)
+  are **target vectors** in `WEATHERS`, kept in code like the day curve; a raw partial is
+  a first-class call, not an escape hatch. `storm` and `blizzard` are the two extremes —
+  rain and snow respectively; `blizzard` leads on `fog` (0.8, a whiteout) rather than on
+  precipitation.
 - Blends run on **wall-clock ms** (`over`), default 20 s. `over: 0` snaps and counts as
   a discontinuity (immediate env re-bake).
 - Per-weather `stagger` delays a channel's *onset* as a fraction of the blend; all
@@ -99,7 +101,8 @@ intensities (0 = none); two are **positions**:
 
 SkyMesh's cloud mask is `smoothstep(1 - coverage, 1 - coverage + 0.3, fbm)`, so by ~0.5
 the dome reads as a flat sheet. `overcast` is therefore **0.35** and ordering is
-cloudy 0.25 (also the boot weather) < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.0.
+cloudy 0.25 (also the boot weather) < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.0 =
+blizzard 1.0.
 
 ### The key light reads `deckFactor`, never raw cover
 
