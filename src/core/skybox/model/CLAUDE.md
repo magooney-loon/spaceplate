@@ -33,7 +33,9 @@ on('sunrise', () => ...);                              // sunrise|sunset|phaseCh
   name, blending, all channels), epsilon-gated. Never a data path for renderers.
 
 **Clocks** (`clock.ts`): `realtime` (wall clock, optional fixed UTC offset),
-`external` (server-driven, phase 3), `manual`. Boot default: manual, frozen at sunset.
+`external` (server-driven, phase 3), `manual`. Boot default: manual, frozen at the
+`sunrise` keyframe (t 0.25) under the named `cloudy` weather — both are reproducible
+from the panel, unlike the bespoke boot vector they replaced.
 `t` is normalized `[0,1)` = midnight→midnight, **solar time** — 0.25 sunrise, 0.5 noon.
 Timezones are the `realtime` clock's concern, never the model's.
 
@@ -58,6 +60,12 @@ Authoring notes that cost real debugging time:
   lives at `sunrise`/`sunset` (0°).
 - **`exposure` is renderer-global.** Never compensate a lighting change with it — it
   blows out the dome. It belongs to the dome's look only.
+- **A blown-out daytime frame is usually bloom, not this curve.** Bloom runs on linear
+  values *before* exposure is applied, so dimming here scales halo and scene together
+  and never changes the ratio. The sun disc is 60800 linear (`SkyMesh.js`) and the
+  bloom mips smear it over the whole frame — bloom's `inputClamp` is what fences that
+  off. The daylight keyframes still came down ~0.1 from their originals (0.58–0.66),
+  but that part was a look choice.
 
 ## Weather (`weatherMixer.ts`)
 
@@ -91,7 +99,7 @@ intensities (0 = none); two are **positions**:
 
 SkyMesh's cloud mask is `smoothstep(1 - coverage, 1 - coverage + 0.3, fbm)`, so by ~0.5
 the dome reads as a flat sheet. `overcast` is therefore **0.35** and ordering is
-boot 0.2 < cloudy 0.25 < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.0.
+cloudy 0.25 (also the boot weather) < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.0.
 
 ### The key light reads `deckFactor`, never raw cover
 

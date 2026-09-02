@@ -14,7 +14,10 @@ export { createClock, createRealtimeClock, createExternalClock, createManualCloc
 export type { Clock, ClockOptions } from './clock';
 export { elevationAt, azimuthAt, sunAt, moonAt } from './sunPath';
 export type { PathOptions } from './sunPath';
-export { sampleDayCurve, createBaseline } from './dayCurve';
+// DEFAULT_DAY_CURVE is exported for READING (the Studio panel builds its time-jump grid
+// from it, so the two cannot drift). Keyframe authoring is still phase 5 — nothing
+// outside this folder mutates it.
+export { sampleDayCurve, createBaseline, DEFAULT_DAY_CURVE } from './dayCurve';
 export { phaseFor, isRising, isDaytime } from './phases';
 export {
 	createWeatherMixer,

@@ -1,9 +1,18 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Folder, Slider, Checkbox, Button, Separator, List, Monitor } from 'svelte-tweakpane-ui';
+	import {
+		Folder,
+		Slider,
+		Checkbox,
+		Button,
+		ButtonGrid,
+		Separator,
+		List,
+		Monitor
+	} from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { environmentState, environmentActions, ENV_TEXTURES, CUBE_TEXTURES } from '$core/skybox/environment';
-	import { skyActions, skyMeta, sunAt, WEATHERS } from '$core/skybox/model';
+	import { skyActions, skyMeta, sunAt, WEATHERS, DEFAULT_DAY_CURVE } from '$core/skybox/model';
 	import type { ChannelName, ClockKind } from '$core/skybox/model';
 	import { requestStrike } from '$core/skybox/layers/lightning/flashState';
 
@@ -35,7 +44,7 @@
 	// clock getters (§8) -- the panel is the only clock writer in dev, so it can trust
 	// its own bookkeeping. A game taking over the clock (external, phase 3) owns it
 	// then, not this pane.
-	// Initial values mirror the engine default (manual at sunset, frozen).
+	// Initial values mirror the engine default (manual at sunrise, frozen).
 	let clockKind: ClockKind = 'manual';
 	let speed = $state('frozen');
 
@@ -75,6 +84,33 @@
 		}
 		speed = 'frozen';
 	};
+
+	// Time jumps, built FROM the day curve rather than from four hand-picked constants:
+	// every keyframe is a place worth standing, and the panel cannot drift from the curve
+	// when one is retimed or added. Chronological, so the 2-column grid reads left to
+	// right, top to bottom, midnight to midnight.
+	const PHASE_LABELS: Record<string, string> = {
+		night: 'Midnight',
+		astronomicalDawn: 'Astro Dawn',
+		dawn: 'Dawn',
+		sunrise: 'Sunrise',
+		goldenMorning: 'Golden AM',
+		morning: 'Morning',
+		noon: 'Noon',
+		afternoon: 'Afternoon',
+		goldenHour: 'Golden PM',
+		sunset: 'Sunset',
+		dusk: 'Dusk',
+		astronomicalDusk: 'Astro Dusk'
+	};
+
+	// Not $derived: DEFAULT_DAY_CURVE is a plain module constant, and rebuilding the
+	// `buttons` array would rebuild the tweakpane blade.
+	const phaseJumps = DEFAULT_DAY_CURVE.map((keyframe) => ({
+		label: PHASE_LABELS[keyframe.name] ?? keyframe.name,
+		t: keyframe.t
+	}));
+	const phaseButtons = phaseJumps.map((jump) => jump.label);
 
 	const setSpeed = (value: string) => {
 		speed = value;
@@ -172,10 +208,13 @@
 						if (e.detail.origin === 'internal') setSpeed(e.detail.value as string);
 					}}
 				/>
-				<Button title="Midnight" on:click={() => scrubTime(0)} />
-				<Button title="Sunrise" on:click={() => scrubTime(0.25)} />
-				<Button title="Noon" on:click={() => scrubTime(0.5)} />
-				<Button title="Sunset" on:click={() => scrubTime(0.75)} />
+				<!-- Every day-curve keyframe, two per row. The click event carries the index
+				     into the same array the labels came from, so no label parsing. -->
+				<ButtonGrid
+					buttons={phaseButtons}
+					columns={2}
+					on:click={(e) => scrubTime(phaseJumps[e.detail.index].t)}
+				/>
 			</Folder>
 
 			<!-- Weather modulates the day curve; like time, it only means anything while

@@ -229,10 +229,16 @@ export type WeatherMixer = {
 /**
  * @param channels the object the mixer will own and mutate. `sky.svelte.ts` passes
  * `descriptor.weather` directly, so the descriptor never needs a per-frame copy.
+ * @param initialName what `channels` already holds. The mixer cannot infer it -- it is
+ * handed a vector, not a name -- and reporting `'default'` for a caller that seeded the
+ * channels from a named weather would mislabel the first frame in every readout.
  */
-export const createWeatherMixer = (channels: WeatherChannels): WeatherMixer => {
+export const createWeatherMixer = (
+	channels: WeatherChannels,
+	initialName = 'default'
+): WeatherMixer => {
 	const blends = new Map<ChannelName, Blend>();
-	let name = 'default';
+	let name = initialName;
 	let blending = false;
 
 	const resolve = (target: WeatherTarget): Partial<WeatherChannels> => {

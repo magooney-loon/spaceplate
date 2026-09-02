@@ -11,12 +11,23 @@
 // exposure is applied by Sky.svelte as renderer.toneMappingExposure (SkyMesh has no
 // exposure uniform). These values are a look, not physics.
 //
-// The whole ramp sits below 1 -- peaking at 0.78 at noon -- on purpose. Under AgX,
+// The whole ramp sits below 1 -- peaking at 0.66 in daylight -- on purpose. Under AgX,
 // pulling exposure down moves the daylight highlights into the filmic shoulder instead
 // of clipping them flat, which is most of what reads as "cinematic". It also keeps the
-// curve deliberately FLAT (0.60 to 0.78 across the whole day), so scene brightness
+// curve deliberately FLAT (0.58 to 0.68 across the whole day), so scene brightness
 // varies because the light varies, not because a virtual camera is riding its own
-// exposure knob. Exposure below the twilight cutoff is doing a different job: the dome
+// exposure knob.
+//
+// DO NOT REACH FOR THIS KNOB WHEN THE DAYTIME FRAME LOOKS BLOWN OUT. The daylight
+// keyframes ran at 0.76-0.78 until global bloom went into the pipeline and washed the
+// whole day out; dimming here barely helped, because bloom runs on linear values BEFORE
+// this exposure is applied -- it scales halo and scene together and never changes the
+// ratio between them. The actual cause was the sun disc (60800 linear, SkyMesh.js) being
+// smeared over the frame by the bloom mips, and the actual fix is bloom's `inputClamp`
+// (effects/bloom.ts). These five daylight keyframes then came back up to a ~0.1 dim
+// against their originals, which is the part that was genuinely a look choice.
+//
+// Exposure below the twilight cutoff is doing a different job: the dome
 // is black down there (see the SkyLight fill), so it is the only lever that decides
 // whether moonlit geometry reads at all.
 //
@@ -125,13 +136,17 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		// a flat blue-white sheet with no gradient in it. The values below take that to four,
 		// which is where the curve flattens out; pushing exposure lower buys nothing more and
 		// only costs the scene (0.62 keeps the ground at 0.9x, 0.48 drops it to 0.7x).
+		//
+		// It has since come down a little anyway -- 0.62 -> 0.58 -- alongside the rest of
+		// the daylight half (header note). That is the cheap end of the range measured
+		// above; the sun's own glare was never this keyframe's problem to solve.
 		t: 0.2627,
 		name: 'goldenMorning',
 		turbidity: 5,
 		rayleigh: 4,
 		mieCoefficient: 0.0045,
 		mieDirectionalG: 0.82,
-		exposure: 0.62,
+		exposure: 0.58,
 		starVisibility: 0,
 		fogColor: [0.62, 0.5, 0.4],
 		fogDensity: 0.03
@@ -144,20 +159,21 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		rayleigh: 1.3,
 		mieCoefficient: 0.0035,
 		mieDirectionalG: 0.8,
-		exposure: 0.76,
+		exposure: 0.66,
 		starVisibility: 0,
 		fogColor: [0.62, 0.7, 0.82],
 		fogDensity: 0.02
 	},
 	{
-		// +75 deg. Arc peak.
+		// +75 deg. Arc peak. Sits a notch under `morning`/`afternoon` rather than above them:
+		// it is the brightest light of the day, so it is where the camera stops down.
 		t: 0.5,
 		name: 'noon',
 		turbidity: 2,
 		rayleigh: 1,
 		mieCoefficient: 0.003,
 		mieDirectionalG: 0.8,
-		exposure: 0.78,
+		exposure: 0.65,
 		starVisibility: 0,
 		fogColor: [0.7, 0.78, 0.9],
 		fogDensity: 0.015
@@ -170,7 +186,7 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		rayleigh: 1.2,
 		mieCoefficient: 0.0035,
 		mieDirectionalG: 0.8,
-		exposure: 0.76,
+		exposure: 0.66,
 		starVisibility: 0,
 		fogColor: [0.68, 0.72, 0.84],
 		fogDensity: 0.018
@@ -184,7 +200,7 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 		rayleigh: 4,
 		mieCoefficient: 0.0045,
 		mieDirectionalG: 0.85,
-		exposure: 0.62,
+		exposure: 0.58,
 		starVisibility: 0,
 		fogColor: [0.72, 0.55, 0.38],
 		fogDensity: 0.028
@@ -294,7 +310,7 @@ export const createBaseline = (): SkyBaseline => ({
 	rayleigh: 1,
 	mieCoefficient: 0.003,
 	mieDirectionalG: 0.8,
-	exposure: 0.78,
+	exposure: 0.65,
 	starVisibility: 0,
 	fogColor: [0.7, 0.78, 0.9],
 	fogDensity: 0.015

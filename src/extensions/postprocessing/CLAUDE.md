@@ -43,7 +43,11 @@ MRT rows and the matching `BuildContext` fields).
   carries a **lensflare sub-toggle** (a param, not a sibling effect — `LensflareNode`
   samples the bloom buffer, so no bloom means no flare). The flare runs through
   `gaussianBlur` to smooth the ¼-res ghosts; its intermediate nodes are registered
-  via `ctx.track()` so a rebuild disposes their render targets. Switching the mode
+  via `ctx.track()` so a rebuild disposes their render targets. `inputClamp` caps the
+  linear value bloom is allowed to *sample* (not the image) — without it the sky's sun
+  disc, 60800 linear in `SkyMesh.js`, gets mipped across the entire frame and washes out
+  every daylit scene; `threshold` cannot fence that off, since the disc clears any
+  threshold. Switching the mode
   re-seeds strength/radius/threshold from bloom's `MODE_DEFAULTS` (Global 0.1/1/0.22,
   Material 0.35/0.6/0) — the two modes read different inputs, so neither mode's tuning
   means anything in the other.

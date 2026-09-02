@@ -17,7 +17,10 @@ Three buttons: Procedural Sky, HDR/EXR Environment, Cube Map. Calls `environment
 - Clock readout (HH:MM + day number), sky readout (phase + sun elevation).
 - Scrub slider (0..1, step 1/1440 = per-minute granularity). Uses `e.detail.origin === 'internal'` guard to prevent feedback loops.
 - Speed list: Frozen, Realtime, 60x, 240x, 720x.
-- Quick buttons: Midnight, Sunrise, Noon, Sunset.
+- Time-jump `ButtonGrid`, 2 columns, built from `DEFAULT_DAY_CURVE` — one button per
+  keyframe (Midnight → Astro Dusk), so retiming or adding a keyframe updates the panel
+  for free. `PHASE_LABELS` only supplies display names; an unlisted keyframe falls back
+  to its raw name.
 - `scrubTime(t)` always switches to manual clock first.
 - `setSpeed(value)` creates a realtime clock or sets time scale.
 

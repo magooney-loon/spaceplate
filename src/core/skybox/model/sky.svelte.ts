@@ -135,35 +135,37 @@ const TWILIGHT_AMBIENT = Math.PI / 14;
 const KEY_MIN_ELEVATION = 3;
 
 /**
- * The channel vector the sky boots on.
+ * The weather the sky boots on -- a NAMED one, not a bespoke vector.
  *
- * Note this is the *default*, not the named `clear` weather -- that one targets
- * `cloudCover: 0` and stays a true empty sky. This is simply the look the template opens
- * with, and a partly-clouded sky is a better first frame than an empty one.
- *
- * Held below `overcast`'s 0.35, or the app would boot cloudier than its own overcast
- * weather. It was 0.37 through phase 1, when `cloudCover` fed nothing but SkyMesh's
- * coverage uniform and the ordering did not matter.
+ * There used to be a hand-authored boot vector sitting between `clear` and `cloudy`,
+ * which meant the app opened on a look no button in the panel could get back to and
+ * `skyMeta.weather` reported `'default'` for a sky that was really a weak `cloudy`.
+ * Booting on the named weather costs nothing and makes the first frame reproducible:
+ * whatever `cloudy` is authored to be is what the app opens with.
  */
-const defaultWeather = (): WeatherChannels => ({
-	cloudCover: 0.2,
+const BOOT_WEATHER = 'cloudy';
+
+// A named target is a `Partial<WeatherChannels>` by type, so it is spread over a full
+// vector rather than cast to one -- an authored weather that omits a channel still boots
+// to something valid. The base is all-zero except `precipitationType`, which is a POSITION
+// (0 = snow, 1 = rain), so its neutral value is rain -- see the note in WEATHERS.
+const bootWeather = (): WeatherChannels => ({
+	cloudCover: 0,
 	cloudType: 0,
 	fog: 0,
 	precipitation: 0,
-	// Rain, not snow -- see the note on `precipitationType` in WEATHERS. Nothing is
-	// falling at boot, so this only decides what a raw `setWeather({ precipitation })`
-	// gets if it never says which kind it wanted.
 	precipitationType: 1,
-	wind: 0.1,
-	windDirection: 0.12,
-	lightning: 0
+	wind: 0,
+	windDirection: 0,
+	lightning: 0,
+	...WEATHERS[BOOT_WEATHER].target
 });
 
 export const descriptor: SkyDescriptor = {
 	sun: createBody(),
 	moon: createBody(),
 	sky: createBaseline(),
-	weather: defaultWeather(),
+	weather: bootWeather(),
 	light: {
 		direction: { x: 0, y: 1, z: 0 },
 		color: [...SUN_ZENITH] as RGB,
@@ -179,7 +181,7 @@ export const descriptor: SkyDescriptor = {
  * It owns and mutates that exact object, so the descriptor never needs a per-frame copy
  * and consumers that cached `descriptor.weather` keep seeing live values.
  */
-const mixer = createWeatherMixer(descriptor.weather);
+const mixer = createWeatherMixer(descriptor.weather, BOOT_WEATHER);
 
 /**
  * The reactive surface -- deliberately tiny.
@@ -200,7 +202,7 @@ export const skyMeta = $state({
 	phase: 'night' as PhaseName,
 	isDaytime: false,
 	/** Last named weather set, or `'custom'` after a raw target. */
-	weather: 'default',
+	weather: BOOT_WEATHER,
 	blending: false,
 	cloudCover: descriptor.weather.cloudCover,
 	cloudType: descriptor.weather.cloudType,
@@ -212,10 +214,11 @@ export const skyMeta = $state({
 	lightning: descriptor.weather.lightning
 });
 
-// Manual clock as the template default: the app boots on a curated sunset rather
+// Manual clock as the template default: the app boots on a curated sunrise rather
 // than the player's wall clock, so the first frame is a known good look and a demo
-// never opens on 3am black. Games pick their own clock on boot (§3.2).
-let clock: Clock = createClock('manual', { t: 0.75 });
+// never opens on 3am black. 0.25 is the `sunrise` keyframe exactly -- boot times are
+// keyframe times, not round numbers near them. Games pick their own clock on boot (§3.2).
+let clock: Clock = createClock('manual', { t: 0.25 });
 let pathOptions: PathOptions = {};
 let curve: DayKeyframe[] = DEFAULT_DAY_CURVE;
 let frozen = false;
@@ -383,7 +386,7 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	// crossfade intact underneath -- overcast midnight stays blue-ish, just flatter.
 	//
 	// Gated on `deck`, not raw cover, exactly like the intensity below: scattered cloud
-	// must not grey out a sunset the app boots into. See DECK_THRESHOLD.
+	// must not grey out the sunrise the app boots into. See DECK_THRESHOLD.
 	const deck = deckFactor(weather.cloudCover);
 	const desaturate = 0.7 * deck;
 	if (desaturate > 0) {

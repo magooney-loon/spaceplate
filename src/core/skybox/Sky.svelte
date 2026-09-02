@@ -48,7 +48,8 @@
 		 * daylit scene; the sun constant was raised to absorb exactly what this removes.
 		 * Move them together or re-measure. Do NOT compensate with the day curve's exposure
 		 * -- that is renderer-global, so it drags the dome up with the scene and the sky
-		 * blows out (noon horizon already tone-maps past white at the current 0.78).
+		 * blows out (the noon horizon tone-mapped past white even at the old 0.78, which is
+		 * why the daylight keyframes now sit around 0.65).
 		 */
 		environmentIntensity?: number;
 		/**
