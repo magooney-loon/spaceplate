@@ -52,8 +52,19 @@ core/
 
   utils/
     Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock)
-    Renderer.svelte       — STUB: post-processing removed in the WebGPU migration (see below)
+    Renderer.svelte       — RenderPipeline owner: structural rebuild + hot uniform effects + render task
     tasks.ts              — Task pipeline: physicsStage, renderStage, uiStage, audioStage
+
+  postprocessing/          — Effect registry + pipeline builder (→ DOCS/post-processing.md)
+    types.ts               — PassRole/Requirement/EffectDef/BuildContext — the declaration shapes
+    registry.ts            — EFFECTS list + resolveEnabledSet policy + structuralKeyOf
+    build.ts               — The builder: base pass, MRT union, chain fold, grade, resolve, fallback
+    uniforms.ts            — createUniformBag/writeUniformBag — the hot-update path
+    luts.svelte.ts         — LUT catalogue + async load cache; three's 9 example LUTs in public/luts/
+    effects/*.ts           — 10 EffectDefs: ssaa, retro (base) · dof, motionBlur, bloom,
+                             afterimage, vignette (chain) · lut (grade) · smaa, fxaa (AA).
+                             vignette.ts is hand-written TSL. pixelation/ao/ssgi/ssr/traa
+                             were removed — see DOCS/post-processing.md before reviving one
 
 scenes/
   MainMenu/   MainMenu.svelte, MainMenuHud.svelte, SettingsHud.svelte
@@ -94,18 +105,19 @@ would create a circular module graph.
 The renderer is `WebGPURenderer`, which auto-falls back to WebGL when WebGPU is unavailable.
 `App.svelte` builds it in `createRenderer` and passes `dpr` derived from `settingsState.graphics.quality`.
 
-Two things are currently torn out — don't assume they work:
-
-- **`core/utils/Renderer.svelte` is a stub.** The ~300-line TSL RenderPipeline covering 25 effects was
-  removed because it rebuilt itself continuously. Rendering is plain: Threlte's `autoRenderTask`
-  draws the scene, no composer in between. `autoRender` is therefore left at its default (`true`);
-  if a pipeline returns, set `autoRender={false}` as a Canvas _option_, never from an `$effect`.
-- **`PostProcessingExtension` is unregistered** in `App.svelte` — its Studio panel broke post-migration;
-  the rebuild is planned in `DOCS/post-processing.md`. `SkyboxExtension` is registered again as the
-  time + environment panel for the descriptor-driven sky (`DOCS/weather-system.md`).
+- **`core/utils/Renderer.svelte` owns the post-processing `RenderPipeline`** (rebuilt per
+  `DOCS/post-processing.md`): a structural effect swaps the graph when the enabled set /
+  quality / structural params change; a uniform effect writes param drags in place (no
+  rebuild). `<Canvas autoRender={false}>` is a Canvas **option** — never toggled from an
+  `$effect` (`webgpu-notes.md` §3.1) — and the pipeline renders from a task registered
+  `{ after: autoRenderTask, autoInvalidate: false }` (`webgpu-notes.md` §2). Renderer.svelte
+  must stay the **first** child inside `<Canvas>` so it draws before the Gizmo.
+- **`PostProcessingExtension` is registered** again — its Studio panel renders from the
+  `$core/postprocessing` registry (roles, conflicts, MRT set).
 - **Tone mapping is owned by Threlte's renderer context** (default AgX), driven by the `<Canvas>`
   `toneMapping` option. Never also write `renderer.toneMapping` from a component — two owners for
-  one property caused several of the earlier bugs.
+  one property caused several of the earlier bugs. (The FXAA effect only *reads* it, when it
+  takes over the output colour transform.)
 
 Background: `DOCS/webgpu-notes.md` — WebGPU gotchas, the Studio task-ordering rules any new
 pipeline must follow, and the reactivity rules. Read it before debugging anything renderer-shaped.

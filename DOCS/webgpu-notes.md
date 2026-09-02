@@ -97,6 +97,34 @@ three's renderer dispatches on `isMesh`/`isLight`-style boolean flags, not
 Still unported: `src/lib/PlanetDemo/Planet.svelte`'s hand-written simplex/fractal
 terrain `ShaderMaterial`. It needs a TSL rewrite and is the largest remaining port.
 
+### 1.4 A material's compiled shader is cached across render targets and MRT states
+
+three compiles a material lazily, on its first *draw*, reading `renderer.getMRT()` and
+the current render target at that moment — then caches the result in
+`NodeManager.nodeBuilderCache` under a key (`RenderObject.initialCacheKey`) that
+records **neither**. Render objects are keyed per render context; the compiled shader
+they share is not.
+
+So whenever the same scene is rendered in two places with different attachment
+counts — a post-processing MRT pass alongside Studio's viewport, `Sky.svelte`'s
+`CubeCamera` environment bake, or `HeightField`'s ortho pass — one of them can be
+handed the other's shader, and WebGPU rejects the draw:
+
+```
+Attachment state of [RenderPipeline "renderPipeline_NodeMaterial_22"] is not compatible
+with [RenderPassEncoder]. Expects colorTargets [0, 1]; pipeline has [0].
+```
+
+The cure is to give the pass a private cache namespace via `PassNode.contextNode`
+(`renderer.contextNode.id` *is* in the key). Full write-up, including why the
+alternatives are wrong: `post-processing.md` §8.7.
+
+> **Two debugging notes that generalise.** Pipeline labels are
+> `material.name || material.type`, so an unnamed material shows up as
+> `NodeMaterial_22` and tells you almost nothing — **name your custom materials.** And
+> the command encoder aborts at the *first* invalid pipeline, so the error names one
+> culprit even when many materials share the fault.
+
 ---
 
 ## 2. Studio task ordering
@@ -294,9 +322,14 @@ it isn't applying.
 readlink -f node_modules/@threlte/studio   # resolve first, then grep
 ```
 
-Current patches live in `patches/` and cover `@threlte/studio` and `@threlte/extras`.
-Compat belongs there, not in the repo — an earlier `src/extensions/studio-webgpu/`
+Current patches live in `patches/` and cover `@threlte/studio`, `@threlte/extras` and
+`three`. Compat belongs there, not in the repo — an earlier `src/extensions/studio-webgpu/`
 shim directory was deleted once the underlying faults were patched at source.
+
+Note the `three` entry is registered **unversioned** in `pnpm-workspace.yaml`
+(`three: patches/three.patch`), unlike its two pinned neighbours. That is deliberate: on
+a three upgrade an unversioned patch that no longer applies is a hard install failure,
+whereas a pinned one simply stops being applied and the bug returns silently.
 
 Notable upstream fixes carried in the patches:
 
@@ -310,6 +343,11 @@ Notable upstream fixes carried in the patches:
   infinite with two — and there are always two here (Threlte's internal default camera
   plus the app's `makeDefault` one). Fixed by gating the restore on actually being on
   an editor camera.
+- `RetroPassNode.js` built its reflection term as `CubeMapNode( texture( envMap ) )` —
+  a 2D texture node. `CubeMapNode` only converts *equirectangular* sources and returns
+  anything already cubic verbatim, so a cube `scene.environment` (which is what
+  `Sky.svelte`'s bake produces) got bound to a `texture_2d` declaration. Now picks
+  `cubeTexture()` for cube sources. See `post-processing.md` §5.2.
 
 ---
 

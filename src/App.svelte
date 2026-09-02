@@ -45,12 +45,11 @@
 
 <Loader />
 
-<!-- autoRender is back on (the default): with post-processing removed there is no
-     RenderPipeline to drive, so Threlte's autoRenderTask does the rendering.
-     If a pipeline returns, set autoRender={false} here as a Canvas option -- never
-     by toggling it from an $effect, which self-invalidates
+<!-- autoRender is OFF: the RenderPipeline in core/utils/Renderer.svelte drives
+     rendering via its own task ({ after: autoRenderTask }, webgpu-notes.md §2).
+     It is a Canvas option on purpose — toggling it from an $effect self-invalidates
      (DOCS/webgpu-notes.md §3.1). -->
-<Canvas {createRenderer} {dpr}>
+<Canvas createRenderer={createRenderer} dpr={dpr} autoRender={false}>
 	<Renderer />
 	<World
 		gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]}
@@ -58,11 +57,9 @@
 	>
 		<PhysicsWorldLogger />
 		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-			<!-- PostProcessingExtension stays unregistered: its panel was broken by the
-			     WebGPU migration and awaits the DOCS/post-processing.md rebuild.
-			     SkyboxExtension is registered again -- rewritten as the time + environment
-			     panel for the descriptor-driven sky (DOCS/weather-system.md §10). -->
-			{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }, { default: SkyboxExtension }]}
+			<!-- PostProcessingExtension is registered again — rebuilt against the
+			     $core/postprocessing effect registry (DOCS/post-processing.md). -->
+			{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }, { default: SkyboxExtension }, { default: PostProcessingExtension }]}
 				<Studio
 					extensions={[
 						SceneExtension,
@@ -71,7 +68,8 @@
 						GltfViewerExtension,
 						PhysicsExtension,
 						StatsExtension,
-						SkyboxExtension
+						SkyboxExtension,
+						PostProcessingExtension
 					]}
 				>
 					<Scene />

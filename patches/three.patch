@@ -1,0 +1,33 @@
+diff --git a/examples/jsm/tsl/display/RetroPassNode.js b/examples/jsm/tsl/display/RetroPassNode.js
+index bcf42e8b9de77d01e495d5777085cb93c560c6a5..b91f94a1f4ada5b86be924e93ad02fbc07dff10d 100644
+--- a/examples/jsm/tsl/display/RetroPassNode.js
++++ b/examples/jsm/tsl/display/RetroPassNode.js
+@@ -1,5 +1,5 @@
+ import { MeshBasicNodeMaterial, PassNode, UnsignedByteType, NearestFilter, CubeMapNode, MeshPhongNodeMaterial } from 'three/webgpu';
+-import { float, vec2, vec4, Fn, uv, varying, cameraProjectionMatrix, cameraViewMatrix, positionWorld, screenSize, materialColor, uint, texture, uniform, context, reflectVector } from 'three/tsl';
++import { float, vec2, vec4, Fn, uv, varying, cameraProjectionMatrix, cameraViewMatrix, positionWorld, screenSize, materialColor, uint, texture, cubeTexture, uniform, context, reflectVector } from 'three/tsl';
+ 
+ const _affineUv = varying( vec2() );
+ const _w = varying( float() );
+@@ -118,7 +118,20 @@ class RetroPassNode extends PassNode {
+ 
+ 					if ( envMap ) {
+ 
+-						const reflection = new CubeMapNode( texture( envMap ) );
++						// PATCH (spaceplate): `texture()` builds a 2D TextureNode. CubeMapNode
++						// only converts EQUIRECTANGULAR sources; when the env map is already a
++						// cube its updateBefore() takes the `envNode already refers to a cube
++						// map` branch and returns this node verbatim. The shader then declares
++						// a texture_2d binding while the bind group supplies a cube view:
++						//   "Dimension (TextureViewDimension::Cube) of [TextureView ...]
++						//    doesn't match the expected dimension (TextureViewDimension::e2D)"
++						// Every other CubeMapNode caller in three passes a correctly typed node;
++						// this is the only one that hard-codes texture(). A raw CubeTexture as
++						// scene.environment is normal here — Sky.svelte bakes the procedural
++						// dome into a CubeRenderTarget rather than a PMREM'd 2D map.
++						const reflection = new CubeMapNode(
++							envMap.isCubeTexture === true ? cubeTexture( envMap ) : texture( envMap )
++						);
+ 
+ 						let metalness;
+ 

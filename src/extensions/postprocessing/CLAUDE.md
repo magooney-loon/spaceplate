@@ -1,36 +1,52 @@
-# Post-Processing Effects (`postprocessing/`)
+# Post-Processing (`postprocessing/`)
 
 ## Files
 
 ```
-types.ts                    — 25+ effect state types, PostProcessingState, PostProcessingPreset
-postprocessing.svelte.ts    — $state, postprocessingPresetsState, postprocessingActions
-usePostProcessing.ts        — Studio-aware hook (path import)
-bundledPresets.ts           — BUNDLED_PP_PRESETS (currently empty placeholder)
-PostProcessingExtension.svelte — Studio toolbar panel (571 lines)
+types.ts                    — EffectId + PostProcessingState, assembled from the effect modules' param types
+postprocessing.svelte.ts    — postprocessingState ($state) + postprocessingActions (setEnabled/resetEffect/resetAll)
+PostProcessingExtension.svelte — Studio toolbar panel, rendered FROM the registry
 index.ts                    — barrel re-exports
 ```
 
-**Currently unused at runtime.** Kept as the starting point for a rebuild planned in `DOCS/post-processing.md`. Its Studio panel is unregistered in `App.svelte`.
+The engine side lives in **`src/core/postprocessing/`** (registry, builder, uniform
+bag, one module per effect) — see `DOCS/post-processing.md`. This extension is only
+the state + Studio panel; the pipeline itself never imports from here except the
+state (via Renderer.svelte).
 
-## Effects (25+)
+## Effects (registry-driven)
 
-Bloom, SMAA, FXAA, Vignette, Pixelation, Glitch, Noise, Chromatic Aberration, Brightness/Contrast, Hue/Saturation, Sepia, Dot Screen, Scanline, Shockwave, ASCII, Tone Mapping, Grid, Tilt Shift, Lens Distortion, Color Depth, Depth of Field, God Rays, SSAO, Outline, Depth Effect.
+Ten effects. Base passes (mutually exclusive): `ssaa`, `retro` — else the default
+`pass()`. Chain: `dof`, `motionBlur`, `bloom`, `afterimage`, `vignette`. Grade
+(**not** exclusive): `lut`. Anti-aliasing (mutually exclusive): `smaa`, `fxaa`.
 
-Each effect has `enabled: boolean` plus its own parameters.
+`pixelation`, `ao`, `ssgi`, `ssr` and `traa` were **removed** — files deleted, not
+disabled. Don't re-add one by half-measures: `DOCS/post-processing.md` records what
+each needed and what the removal took out with it (the `normal`/`metalrough`/`diffuse`
+MRT rows and the matching `BuildContext` fields).
 
-## Preset system
-
-- `postprocessingPresetsState`: merged bundled + localStorage presets.
-- Actions: `savePreset(name)`, `loadPreset(presetId)`, `deletePreset(presetId)`, `renamePreset(presetId, newName)`, `updatePreset(presetId)`.
-- Bundled presets cannot be deleted or updated.
-- localStorage key: `spaceplate-postprocessing-presets`.
+- Every effect: `{ enabled: boolean } & params` — defaults come from the registry
+  (`def.params()`), so state, builder and panel cannot drift.
+- Quality `low` drops everything (bare pass). `minQuality` still exists on `EffectDef`
+  but no effect uses it now — `ssgi`/`ssr` were its only consumers.
+- Geometry consumers (`dof`, `motionBlur`) are auto-dropped under a non-default base
+  pass — the panel shows the reason.
+- `motionBlur` is the **only** MRT consumer left (`velocity`). That keeps the
+  shader-cache isolation in `build.ts` load-bearing — see `post-processing.md` §8.7
+  before touching it.
+- Param drags are **hot** (uniform writes, no rebuild) except structural params
+  (`motionBlur.numSamples`, `lut.lut`) which rebuild the graph.
+- `lut` and `fxaa` declare `displayColor`: the **builder** turns off
+  `outputColorTransform` and folds in one `renderOutput()` for whoever asks. An effect
+  must never do this itself — with two of them you would tone-map twice.
+- Params with `def.options` (currently only the LUT choice) render as a `List`, not a
+  `Slider`.
 
 ## Key behavior
 
-- `loadPresets()` merges bundled first, then localStorage (localStorage wins on id conflict).
-- `savePresets()` filters out bundled presets before writing to localStorage.
-- `deletePreset` disables all effects if the deleted preset was the current one.
-- `foldersKey` forces full remount of all effect folders when a preset is loaded (to reset `bind:value` state).
-- Effects marked "not yet wired" in UI: Glitch, Shockwave, ASCII, TiltShift.
-- `resetAll()` resets all 25 effects to defaults; `resetEffect(effectName)` resets one but preserves `enabled`.
+- `setEnabled(id, on)` implements radio behaviour for base/resolve roles (enabling
+  one disables siblings). `resolveEnabledSet` (registry) is still the authority —
+  the builder drops illegal survivors with a logged reason.
+- No presets, no localStorage — removed with the pmndrs-era panel.
+- The panel shows the live pipeline summary (quality · base · MRT set) and greys
+  suppressed effects with an explanation.

@@ -1,0 +1,127 @@
+// Post-processing effect registry types — the single source of truth for what an
+// effect IS (role, requirements, conflicts, params). The builder (build.ts) and the
+// Studio panel both consume these definitions; neither hand-wires anything.
+//
+// Plan of record: DOCS/post-processing.md §3.
+
+import type { Camera, Scene, WebGPURenderer, RenderPipeline } from 'three/webgpu';
+// Deep type-only import: UniformNode is a default export of its module and is not
+// re-exported by 'three/tsl' or 'three/webgpu'. Never imported at runtime.
+import type UniformNode from 'three/src/nodes/core/UniformNode.js';
+import type { QualityLevel } from '$extensions/settings/types';
+
+/**
+ * `grade` sits between the chain and the resolve stage and is deliberately NOT
+ * mutually exclusive the way `base`/`resolve` are: colour grading and anti-aliasing
+ * are orthogonal, and the plan's "resolve owns the colour transform" rule (§2.4) only
+ * needed one owner, not one effect. See `displayColor` for who that owner is now.
+ */
+export type PassRole = 'base' | 'chain' | 'grade' | 'resolve';
+
+/**
+ * Buffers an effect needs from the scene pass. `depth` and `viewZ` come free with
+ * every PassNode; the rest are provisioned as MRT attachments by the builder
+ * (union of all enabled effects' requirements).
+ *
+ * `normal`, `metalrough` and `diffuse` went with the ao/ssgi/ssr/traa removal — the
+ * union machinery is untouched, so re-adding one is additive (build.ts MRT_LAYOUT).
+ */
+export type Requirement = 'depth' | 'viewZ' | 'velocity';
+
+/** MRT-attachable requirements — `depth`/`viewZ` are PassNode builtins, never attachments. */
+export type MrtRequirement = Exclude<Requirement, 'depth' | 'viewZ'>;
+
+export type EffectParams = Record<string, number>;
+
+/** Per-effect bag of `uniform()` nodes owned by the pipeline — the only hot-update path. */
+export type UniformBag<P extends EffectParams = EffectParams> = {
+	[K in keyof P]: UniformNode<'float', number>;
+};
+
+export type ParamRange = { min: number; max: number; step: number };
+
+/** Values per effect id, keyed as the builder and Renderer pass them around. */
+export type EffectValues = Record<string, EffectParams>;
+
+export interface BuildContext {
+	scene: Scene;
+	camera: Camera;
+	renderer: WebGPURenderer;
+	pipeline: RenderPipeline;
+	/** The active scene pass — `pass()` or a base-role effect (ssaa/retro). */
+	basePass: any;
+	/** The running chain value (vec4) — reassigned as chain effects fold in. */
+	color: any;
+	/** Depth texture node — free on every PassNode. */
+	depth: any;
+	/** viewZ node (`basePass.getViewZNode()`) — free, no MRT attachment. */
+	viewZ: any;
+	/** Velocity texture node — only set when some effect requires `velocity`. */
+	velocity: any;
+	/** Viewport aspect (w/h), owned by the builder, written by the frame task. */
+	aspect: UniformNode<'float', number>;
+}
+
+/**
+ * One effect definition. Node-graph plumbing is deliberately `any`-typed — the
+ * addon `.d.ts`s are looser than their runtime behaviour and fighting them buys
+ * nothing (see DOCS/post-processing.md §4 on the typing trap).
+ */
+export interface EffectDef<P extends EffectParams = EffectParams> {
+	id: string;
+	label: string;
+	role: PassRole;
+	/** Sort key within the role. Chain folds low→high; base/resolve pick lowest on conflict. */
+	order: number;
+	/** Buffers this effect needs — drives MRT provisioning and base-pass eligibility. */
+	requires: Requirement[];
+	/** Ids that cannot be co-enabled (in addition to the role rules). */
+	conflicts?: string[];
+	/** Effect is only offered at this quality tier or above. */
+	minQuality?: QualityLevel;
+	/**
+	 * Base role only: this base pass produces usable MRT outputs. When false (or when
+	 * the base is not the default `pass()`), geometry consumers are dropped with a
+	 * warning — verified combinations only (DOCS/post-processing.md §8.1).
+	 */
+	supportsMRT?: boolean;
+	/**
+	 * This effect consumes DISPLAY-referred colour — tone-mapped and encoded to the
+	 * output colour space — rather than the linear working values the chain carries.
+	 * True for FXAA (luma edge detection is defined on sRGB) and for 3D LUTs (`.cube`
+	 * files are authored against a display image).
+	 *
+	 * The builder, not the effect, acts on this: if ANY active effect asks for it, the
+	 * pipeline's automatic output transform is switched off and a single explicit
+	 * `renderOutput()` is folded in before the first such effect. Two effects both
+	 * calling `renderOutput()` themselves would tone-map twice.
+	 */
+	displayColor?: boolean;
+	/** Default parameter values — also seeds the extension state and the panel. */
+	params: () => P;
+	/**
+	 * Param keys that are baked into the compiled graph (loop counts, texture sizes)
+	 * and therefore need a rebuild rather than a uniform write. Everything else is
+	 * hot through the uniform bag.
+	 */
+	structural?: (keyof P & string)[];
+	/** UI ranges per param key. */
+	ranges?: Partial<Record<keyof P & string, ParamRange>>;
+	/** Params that are a choice, not a magnitude — the panel renders a list, not a slider. */
+	options?: Partial<Record<keyof P & string, { value: number; text: string }[]>>;
+	/**
+	 * Extra structural key material an effect can only know at runtime — appended to
+	 * `structuralKeyOf`. Read reactive state here to force a rebuild when a resource
+	 * this effect's graph is built AROUND (rather than a uniform it merely reads)
+	 * changes: the LUT effect returns its loaded texture's id, so a LUT finishing its
+	 * async load, or a different one being picked, recompiles the graph.
+	 */
+	structuralTag?: () => string | number;
+	/** Shown in the panel under the effect's controls. */
+	note?: string;
+	/**
+	 * Base role: returns the scene pass itself (ctx.color etc. are not set yet).
+	 * Chain/resolve: returns the new ctx.color.
+	 */
+	build: (ctx: BuildContext, u: UniformBag<P>) => any;
+}

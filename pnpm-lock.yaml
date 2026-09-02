@@ -7,6 +7,7 @@ settings:
 patchedDependencies:
   '@threlte/extras@9.21.1': 9fd2063c939185636fbad004346374b29cd124dbae3a0f8aa64325db96869ead
   '@threlte/studio@0.4.3': 731936a2d73df0d447c25ad0568897288091ae2358901fe3d95a4ea669f0ed03
+  three: dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b
 
 importers:
 
@@ -17,16 +18,16 @@ importers:
         version: 0.20.0
       '@threlte/core':
         specifier: ^8.6.0
-        version: 8.6.0(svelte@5.56.10)(three@0.185.1)
+        version: 8.6.0(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
       '@threlte/extras':
         specifier: ^9.21.1
-        version: 9.21.1(patch_hash=9fd2063c939185636fbad004346374b29cd124dbae3a0f8aa64325db96869ead)(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1)
+        version: 9.21.1(patch_hash=9fd2063c939185636fbad004346374b29cd124dbae3a0f8aa64325db96869ead)(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
       '@threlte/rapier':
         specifier: ^3.5.0
-        version: 3.5.0(@dimforge/rapier3d-compat@0.20.0)(svelte@5.56.10)(three@0.185.1)
+        version: 3.5.0(@dimforge/rapier3d-compat@0.20.0)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
       '@threlte/studio':
         specifier: ^0.4.3
-        version: 0.4.3(patch_hash=731936a2d73df0d447c25ad0568897288091ae2358901fe3d95a4ea669f0ed03)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
+        version: 0.4.3(patch_hash=731936a2d73df0d447c25ad0568897288091ae2358901fe3d95a4ea669f0ed03)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
       '@types/three':
         specifier: ^0.185.4
         version: 0.185.4
@@ -35,13 +36,13 @@ importers:
         version: 2.8.3(svelte@5.56.10)
       stats-gl:
         specifier: ^4.2.3
-        version: 4.2.3(three@0.185.1)
+        version: 4.2.3(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
       svelte-tweakpane-ui:
         specifier: ^1.5.20
         version: 1.5.20(svelte@5.56.10)
       three:
         specifier: ^0.185.1
-        version: 0.185.1
+        version: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^7.3.0
@@ -1256,47 +1257,47 @@ snapshots:
       vite: 8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1)
       vitefu: 1.1.3(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
 
-  '@threejs-kit/instanced-sprite-mesh@2.5.1(@types/three@0.185.4)(three@0.185.1)':
+  '@threejs-kit/instanced-sprite-mesh@2.5.1(@types/three@0.185.4)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))':
     dependencies:
       diet-sprite: 0.0.1
       earcut: 2.2.4
-      maath: 0.10.8(@types/three@0.185.4)(three@0.185.1)
-      three: 0.185.1
-      three-instanced-uniforms-mesh: 0.52.5(three@0.185.1)
-      troika-three-utils: 0.52.5(three@0.185.1)
+      maath: 0.10.8(@types/three@0.185.4)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
+      three-instanced-uniforms-mesh: 0.52.5(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
+      troika-three-utils: 0.52.5(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
     transitivePeerDependencies:
       - '@types/three'
 
-  '@threlte/core@8.6.0(svelte@5.56.10)(three@0.185.1)':
+  '@threlte/core@8.6.0(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))':
     dependencies:
       svelte: 5.56.10
-      three: 0.185.1
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
 
-  '@threlte/extras@9.21.1(patch_hash=9fd2063c939185636fbad004346374b29cd124dbae3a0f8aa64325db96869ead)(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1)':
+  '@threlte/extras@9.21.1(patch_hash=9fd2063c939185636fbad004346374b29cd124dbae3a0f8aa64325db96869ead)(@types/three@0.185.4)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))':
     dependencies:
-      '@threejs-kit/instanced-sprite-mesh': 2.5.1(@types/three@0.185.4)(three@0.185.1)
-      camera-controls: 3.1.2(three@0.185.1)
+      '@threejs-kit/instanced-sprite-mesh': 2.5.1(@types/three@0.185.4)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
+      camera-controls: 3.1.2(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
       svelte: 5.56.10
-      three: 0.185.1
-      three-mesh-bvh: 0.9.14(three@0.185.1)
-      three-perf: 1.0.11(three@0.185.1)
-      three-viewport-gizmo: 2.2.0(three@0.185.1)
-      troika-three-text: 0.52.5(three@0.185.1)
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
+      three-mesh-bvh: 0.9.14(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
+      three-perf: 1.0.11(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
+      three-viewport-gizmo: 2.2.0(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
+      troika-three-text: 0.52.5(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
     transitivePeerDependencies:
       - '@types/three'
 
-  '@threlte/rapier@3.5.0(@dimforge/rapier3d-compat@0.20.0)(svelte@5.56.10)(three@0.185.1)':
+  '@threlte/rapier@3.5.0(@dimforge/rapier3d-compat@0.20.0)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))':
     dependencies:
       '@dimforge/rapier3d-compat': 0.20.0
       svelte: 5.56.10
-      three: 0.185.1
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
 
-  '@threlte/studio@0.4.3(patch_hash=731936a2d73df0d447c25ad0568897288091ae2358901fe3d95a4ea669f0ed03)(svelte@5.56.10)(three@0.185.1)(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))':
+  '@threlte/studio@0.4.3(patch_hash=731936a2d73df0d447c25ad0568897288091ae2358901fe3d95a4ea669f0ed03)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))':
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@mdi/js': 7.4.47
       '@tweakpane/plugin-camerakit': 0.3.0(tweakpane@4.0.5)
-      camera-controls: 3.1.2(three@0.185.1)
+      camera-controls: 3.1.2(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
       estree-walker: 3.0.3
       flexible-tree: 0.1.6
       index-to-position: 1.2.0
@@ -1305,7 +1306,7 @@ snapshots:
       magic-string: 0.30.21
       svelte: 5.56.10
       svelte-tweakpane-ui: 1.5.20(svelte@5.56.10)
-      three: 0.185.1
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
       vite: 8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1)
       vite-dev-rpc: 1.1.0(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
     transitivePeerDependencies:
@@ -1362,9 +1363,9 @@ snapshots:
     dependencies:
       run-applescript: 7.1.0
 
-  camera-controls@3.1.2(three@0.185.1):
+  camera-controls@3.1.2(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)):
     dependencies:
-      three: 0.185.1
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
 
   chokidar@4.0.3:
     dependencies:
@@ -1524,10 +1525,10 @@ snapshots:
 
   locate-character@3.0.0: {}
 
-  maath@0.10.8(@types/three@0.185.4)(three@0.185.1):
+  maath@0.10.8(@types/three@0.185.4)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)):
     dependencies:
       '@types/three': 0.185.4
-      three: 0.185.1
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
 
   magic-string@0.30.21:
     dependencies:
@@ -1653,9 +1654,9 @@ snapshots:
     optionalDependencies:
       svelte: 5.56.10
 
-  stats-gl@4.2.3(three@0.185.1):
+  stats-gl@4.2.3(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)):
     optionalDependencies:
-      three: 0.185.1
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
 
   statuses@2.0.2: {}
 
@@ -1732,43 +1733,43 @@ snapshots:
     transitivePeerDependencies:
       - '@typescript-eslint/types'
 
-  three-instanced-uniforms-mesh@0.52.5(three@0.185.1):
+  three-instanced-uniforms-mesh@0.52.5(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)):
     dependencies:
-      three: 0.185.1
-      troika-three-utils: 0.52.5(three@0.185.1)
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
+      troika-three-utils: 0.52.5(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
 
-  three-mesh-bvh@0.9.14(three@0.185.1):
+  three-mesh-bvh@0.9.14(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)):
     dependencies:
-      three: 0.185.1
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
 
-  three-perf@1.0.11(three@0.185.1):
+  three-perf@1.0.11(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)):
     dependencies:
-      three: 0.185.1
-      troika-three-text: 0.52.5(three@0.185.1)
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
+      troika-three-text: 0.52.5(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
       tweakpane: 3.1.10
 
-  three-viewport-gizmo@2.2.0(three@0.185.1):
+  three-viewport-gizmo@2.2.0(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)):
     dependencies:
-      three: 0.185.1
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
 
-  three@0.185.1: {}
+  three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b): {}
 
   tinyglobby@0.2.17:
     dependencies:
       fdir: 6.5.0(picomatch@4.0.7)
       picomatch: 4.0.7
 
-  troika-three-text@0.52.5(three@0.185.1):
+  troika-three-text@0.52.5(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)):
     dependencies:
       bidi-js: 1.0.3
-      three: 0.185.1
-      troika-three-utils: 0.52.5(three@0.185.1)
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
+      troika-three-utils: 0.52.5(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
       troika-worker-utils: 0.52.0
       webgl-sdf-generator: 1.1.1
 
-  troika-three-utils@0.52.5(three@0.185.1):
+  troika-three-utils@0.52.5(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)):
     dependencies:
-      three: 0.185.1
+      three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
 
   troika-worker-utils@0.52.0: {}
 
