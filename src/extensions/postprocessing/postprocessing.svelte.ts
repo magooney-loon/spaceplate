@@ -38,6 +38,24 @@ export const postprocessingActions = {
 		logPostprocessing.info(`${def.label} ${on ? 'enabled' : 'disabled'}`);
 	},
 
+	/**
+	 * Write one param, plus whatever the def wants re-seeded alongside it — a mode
+	 * change carries its own sensible values (bloom Global → Material). Only choice
+	 * params go through here; slider drags stay bound straight to the state.
+	 */
+	setParam(id: EffectId, key: string, value: number) {
+		const def = EFFECTS_BY_ID.get(id);
+		if (!def) return;
+		const settings = (postprocessingState as any)[id];
+		settings[key] = value;
+		const patch = def.paramDefaults?.(key, value);
+		if (!patch) return;
+		for (const [k, v] of Object.entries(patch)) settings[k] = v;
+		logPostprocessing.info(
+			`${def.label} ${key}=${value} — re-seeded ${Object.keys(patch).join(', ')}`
+		);
+	},
+
 	/** Reset one effect's params to registry defaults, keeping its enabled flag. */
 	resetEffect(id: EffectId) {
 		const def = EFFECTS_BY_ID.get(id);

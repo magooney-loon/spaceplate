@@ -3,7 +3,7 @@
 // no UI hard-codes an effect list. Plan of record: DOCS/post-processing.md §3.
 
 import type { QualityLevel } from '$extensions/settings/types';
-import type { EffectDef, EffectValues, MrtRequirement } from './types';
+import type { EffectDef, EffectValues, MrtRequirement, Requirement } from './types';
 import { afterimageEffect } from './effects/afterimage';
 import { bloomEffect } from './effects/bloom';
 import { dofEffect } from './effects/dof';
@@ -62,14 +62,17 @@ export interface EnabledSetResolution {
  *  - explicit `conflicts` are enforced the same way;
  *  - geometry consumers are dropped under a non-default base pass (unverified
  *    combos — §8.1);
- *  - the MRT set is the union of the survivors' requirements.
+ *  - the MRT set is the union of the survivors' requirements (`requiresValues`
+ *    overrides `requires` when an effect's needs are param-dependent).
  *
  * Pure on purpose: the panel calls it to grey things out, the builder calls it to
- * build, neither mutates state.
+ * build, neither mutates state. `values` is optional so callers without params at
+ * hand still get the static-requirements answer.
  */
 export const resolveEnabledSet = (
 	enabled: string[],
-	quality: QualityLevel
+	quality: QualityLevel,
+	values?: EffectValues
 ): EnabledSetResolution => {
 	const dropped: { id: string; reason: string }[] = [];
 	const drop = (id: string, reason: string) => dropped.push({ id, reason });
@@ -88,6 +91,11 @@ export const resolveEnabledSet = (
 			drop(id, 'unknown effect');
 		}
 	}
+
+	// Resolve each effect's effective requirements — static unless the def computes
+	// them from its params (bloom's material mode).
+	const requirementsOf = (def: EffectDef<any>): Requirement[] =>
+		def.requiresValues ? def.requiresValues(values?.[def.id] ?? def.params()) : def.requires;
 
 	// Quality gates.
 	const qualityOk: EffectDef<any>[] = [];
@@ -124,7 +132,7 @@ export const resolveEnabledSet = (
 	const baseIsDefault = !baseDef;
 	const eligible: EffectDef<any>[] = [];
 	for (const def of survivors) {
-		if (!baseIsDefault && def !== baseDef && def.requires.length > 0) {
+		if (!baseIsDefault && def !== baseDef && requirementsOf(def).length > 0) {
 			drop(def.id, `${baseDef!.label} base pass feeds no geometry buffers`);
 		} else {
 			eligible.push(def);
@@ -134,7 +142,7 @@ export const resolveEnabledSet = (
 	// MRT union from the survivors (depth/viewZ are PassNode builtins, not attachments).
 	const mrtSet = new Set<MrtRequirement>();
 	for (const def of eligible) {
-		for (const req of def.requires) {
+		for (const req of requirementsOf(def)) {
 			if (req !== 'depth' && req !== 'viewZ') mrtSet.add(req);
 		}
 	}

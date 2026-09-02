@@ -4,7 +4,7 @@
 
 ```
 types.ts                    — EffectId + PostProcessingState, assembled from the effect modules' param types
-postprocessing.svelte.ts    — postprocessingState ($state) + postprocessingActions (setEnabled/resetEffect/resetAll)
+postprocessing.svelte.ts    — postprocessingState ($state) + postprocessingActions (setEnabled/setParam/resetEffect/resetAll)
 PostProcessingExtension.svelte — Studio toolbar panel, rendered FROM the registry
 index.ts                    — barrel re-exports
 ```
@@ -29,23 +29,31 @@ MRT rows and the matching `BuildContext` fields).
   (`def.params()`), so state, builder and panel cannot drift.
 - Quality `low` drops everything (bare pass). `minQuality` still exists on `EffectDef`
   but no effect uses it now — `ssgi`/`ssr` were its only consumers.
-- Geometry consumers (`dof`, `motionBlur`) are auto-dropped under a non-default base
-  pass — the panel shows the reason.
-- `motionBlur` is the **only** MRT consumer left (`velocity`). That keeps the
-  shader-cache isolation in `build.ts` load-bearing — see `post-processing.md` §8.7
-  before touching it.
+- Geometry consumers (`dof`, `motionBlur`, and `bloom` in Material mode) are
+  auto-dropped under a non-default base pass — the panel shows the reason.
+- `motionBlur` (`velocity`) and `bloom` Material mode (`emissive`) are the MRT
+  consumers. That keeps the shader-cache isolation in `build.ts` load-bearing — see
+  `post-processing.md` §8.7 before touching it.
 - Param drags are **hot** (uniform writes, no rebuild) except structural params
-  (`motionBlur.numSamples`, `lut.lut`, `bloom.lensflare`, `bloom.ghostSamples`)
-  which rebuild the graph.
-- `bloom` carries a **lensflare sub-toggle** (a param, not a sibling effect —
-  `LensflareNode` samples the bloom buffer, so no bloom means no flare). The flare
-  runs through `gaussianBlur` to smooth the ¼-res ghosts; its intermediate nodes
-  are registered via `ctx.track()` so a rebuild disposes their render targets.
+  (`motionBlur.numSamples`, `lut.lut`, `bloom.mode`, `bloom.lensflare`,
+  `bloom.ghostSamples`) which rebuild the graph — `bloom.mode` because it changes
+  the MRT set, not just the graph.
+- `bloom` has a **mode** toggle: Global (colour buffer) vs Material (`emissive`
+  attachment — selective emissive bloom, `requiresValues` on the def). It also
+  carries a **lensflare sub-toggle** (a param, not a sibling effect — `LensflareNode`
+  samples the bloom buffer, so no bloom means no flare). The flare runs through
+  `gaussianBlur` to smooth the ¼-res ghosts; its intermediate nodes are registered
+  via `ctx.track()` so a rebuild disposes their render targets. Switching the mode
+  re-seeds strength/radius/threshold from bloom's `MODE_DEFAULTS` (Global 0.1/1/0.22,
+  Material 0.35/0.6/0) — the two modes read different inputs, so neither mode's tuning
+  means anything in the other.
 - `lut` and `fxaa` declare `displayColor`: the **builder** turns off
   `outputColorTransform` and folds in one `renderOutput()` for whoever asks. An effect
   must never do this itself — with two of them you would tone-map twice.
-- Params with `def.options` (the LUT choice, the bloom lensflare on/off) render as a
-  `List`, not a `Slider`.
+- Params with `def.options` (the LUT choice, the bloom mode/lensflare) render as a
+  `List`, not a `Slider`, and are written through `setParam` rather than `bind:` — that
+  is the hook `def.paramDefaults` uses to re-seed siblings on a choice change. Sliders
+  stay bound straight to the state (drags must not go through an action per frame).
 
 ## Key behavior
 

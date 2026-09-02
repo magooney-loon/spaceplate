@@ -6,7 +6,8 @@
 // from the bag built here, never a raw number — param drags write `.value`, only
 // the structural key rebuilds.
 
-import { pass, mrt, output, velocity, uniform, context, renderOutput } from 'three/tsl';
+import { pass, mrt, output, velocity, emissive, vec4, uniform, context, renderOutput } from 'three/tsl';
+import { BlendMode, NormalBlending, UnsignedByteType } from 'three/webgpu';
 import type { RenderPipeline, Scene, Camera, WebGPURenderer } from 'three/webgpu';
 import type { QualityLevel } from '$extensions/settings/types';
 import { EFFECTS_BY_ID, resolveEnabledSet } from './registry';
@@ -48,24 +49,38 @@ export interface PipelineBuild {
 /**
  * MRT attachment name → the TSL node that writes it.
  *
- * Only `velocity` survives: it is what motion blur needs, and every other consumer
- * (ao/ssgi/ssr/traa) was removed. The union algorithm below is unchanged and still
- * general — re-adding a normals consumer means one row here
+ * `velocity` feeds motion blur. `emissive` feeds bloom's material mode — packed as
+ * `vec4(emissive, output.a)` and blended like the output attachment (NormalBlending),
+ * mirroring webgpu_postprocessing_bloom_emissive. The union algorithm below is
+ * unchanged and still general — re-adding a normals consumer means one row here
  * (`normal: () => packNormalToRGB(normalView)`), one in MRT_TEXTURE_NAME, one member
  * on `Requirement`, and the unpacked `sample(uv => unpackRGBToNormal(...))` node on
  * BuildContext. See DOCS/post-processing.md §2.2 for the full attachment table.
  */
 const MRT_LAYOUT: Record<MrtRequirement, (ctx: any) => any> = {
-	velocity: () => velocity
+	velocity: () => velocity,
+	emissive: () => vec4(emissive, output.a)
 };
 
 const MRT_TEXTURE_NAME: Record<MrtRequirement, string> = {
-	velocity: 'velocity'
+	velocity: 'velocity',
+	emissive: 'emissive'
+};
+
+/** Per-attachment fixups the union can't express — run after setMRT. */
+const MRT_FINALIZE: Record<MrtRequirement, (basePass: any, mrtNode: any) => void> = {
+	velocity: () => {},
+	// UnsignedByte emissive saves bandwidth (example does the same); NormalBlending so
+	// transparent surfaces write emissive like they write color (default is no blend).
+	emissive: (basePass, mrtNode) => {
+		mrtNode.setBlendMode('emissive', new BlendMode(NormalBlending));
+		basePass.getTexture('emissive').type = UnsignedByteType;
+	}
 };
 
 export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 	const { pipeline, scene, camera, renderer, enabled, values, quality } = opts;
-	const resolution = resolveEnabledSet(enabled, quality);
+	const resolution = resolveEnabledSet(enabled, quality, values);
 
 	const uniforms = new Map<string, UniformBag<any>>();
 	const disposables: { dispose?: () => void }[] = [];
@@ -134,7 +149,11 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			for (const req of resolution.mrt) {
 				entries[MRT_TEXTURE_NAME[req]] = MRT_LAYOUT[req](baseCtx);
 			}
-			basePass.setMRT(mrt(entries));
+			const mrtNode = mrt(entries);
+			basePass.setMRT(mrtNode);
+			for (const req of resolution.mrt) {
+				MRT_FINALIZE[req](basePass, mrtNode);
+			}
 		}
 
 		// 2b. Shader-cache isolation for the MRT pass. THIS IS LOAD-BEARING, not a
@@ -171,9 +190,11 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			depth: basePass.getTextureNode('depth'),
 			viewZ: basePass.getViewZNode(),
 			velocity: null as any,
+			emissive: null as any,
 			aspect
 		};
 		if (resolution.mrt.includes('velocity')) ctx.velocity = basePass.getTextureNode('velocity');
+		if (resolution.mrt.includes('emissive')) ctx.emissive = basePass.getTextureNode('emissive');
 
 		// 4. Fold chain effects in order, threading ctx.color.
 		const chain = resolution.active

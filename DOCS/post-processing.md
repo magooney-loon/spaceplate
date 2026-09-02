@@ -127,8 +127,8 @@ live** — the rest is the table a revival restores, and the reason `MRT_LAYOUT`
 | ❌ | `ssgi` | depth, normal, velocity (temporal), diffuseColor |
 | ❌ | `ssr` | depth, normal, metalrough |
 | ❌ | `denoise` | depth, normal |
-| ⬜ | bloom (emissive) | emissive |
 | ⬜ | bloom (selective) | bloomIntensity |
+| ✅ | bloom (material mode) | emissive — `vec4(emissive, output.a)`, NormalBlending, UnsignedByte texture. Provisioned only when the mode param asks for it (`requiresValues` on the def) |
 
 The MRT set is therefore a **function of which effects are enabled**, not a fixed
 choice. From the examples:
@@ -338,9 +338,9 @@ starts from, and they cost nothing to keep here.
 | ❌ | **denoise** | `denoise(node, depth, normal, camera)` | chain | depth, normal | Never built; went with SSR |
 | ✅ | **dof** | *ours* — `mix(color, boxBlur(color), smoothstep(min, max, abs(viewZ + focus)))` | chain | viewZ | The "basic" DoF (`webgpu_postprocessing_dof_basic`); the bokeh `DepthOfFieldNode` was dropped for performance — one box blur vs its multi-pass kernel. viewZ from `basePass.getViewZNode()` — no MRT attachment |
 | ✅ | **motion blur** | `motionBlur(inputNode, velocity, numSamples)` | chain | velocity | A TSL `Fn`, not a node class. **The only remaining MRT consumer**. The one sampler addon that does NOT `convertToTexture` its input — our wrapper does (an RTT when fed a computed node, e.g. anything after the basic DoF), otherwise it throws `inputNode.sample is not a function` |
-| ✅ | **bloom** | `bloom(node, strength, radius, threshold)` | chain | — | Additive |
-| ✅ | **lensflare** | `lensflare(bloomNode, params)` — sub-toggle inside `bloom` | chain | — | Ghosts are sampled FROM the bloom buffer, hence nested in bloom (no bloom, no flare). `gaussianBlur(flare, 8)` smooths the ¼-res ghosts. `lensflare` + `ghostSamples` are structural |
-| ⬜ | **bloom (emissive)** | same, fed an `emissive` MRT texture | chain | emissive | Not wired. Example sets `emissiveTexture.type = UnsignedByteType` to save bandwidth |
+| ✅ | **bloom** | `bloom(input, strength, radius, threshold)` | chain | emissive (material mode only, via `requiresValues`) | Additive. `mode` param: **Global** blooms the colour buffer; **Material** blooms the `emissive` MRT attachment (selective, `webgpu_postprocessing_bloom_emissive`) |
+| ✅ | **lensflare** | `lensflare(bloomNode, params)` — sub-toggle inside `bloom` | chain | — | Ghosts are sampled FROM the bloom buffer, hence nested in bloom (no bloom, no flare). Works in either bloom mode — in material mode the flare traces emitted lights. `gaussianBlur(flare, 8)` smooths the ¼-res ghosts. `lensflare` + `ghostSamples` are structural |
+| ⬜ | **bloom (emissive)** | ~~same, fed an `emissive` MRT texture~~ | chain | emissive | **Wired** — shipped as bloom's Material mode toggle (see bloom row) |
 | ⬜ | **anamorphic** | *composed* | chain | — | **No shipped node.** The example builds a custom high-pass `Fn`, runs `bloom()` on it, tints, and adds. Budget it as real work |
 | ✅ | **afterimage** | `afterImage(node, damp)` | chain | — | Feedback buffer. The "interacts badly with temporal AA" caveat is moot now that TRAA is gone |
 | ✅ | **vignette** | *ours* — hand-written `Fn` (§5.1) | chain | — | Applied late, after grading, before AA |

@@ -25,8 +25,9 @@ export type PassRole = 'base' | 'chain' | 'grade' | 'resolve';
  *
  * `normal`, `metalrough` and `diffuse` went with the ao/ssgi/ssr/traa removal — the
  * union machinery is untouched, so re-adding one is additive (build.ts MRT_LAYOUT).
+ * `emissive` feeds bloom's material mode (selective emissive bloom).
  */
-export type Requirement = 'depth' | 'viewZ' | 'velocity';
+export type Requirement = 'depth' | 'viewZ' | 'velocity' | 'emissive';
 
 /** MRT-attachable requirements — `depth`/`viewZ` are PassNode builtins, never attachments. */
 export type MrtRequirement = Exclude<Requirement, 'depth' | 'viewZ'>;
@@ -58,6 +59,8 @@ export interface BuildContext {
 	viewZ: any;
 	/** Velocity texture node — only set when some effect requires `velocity`. */
 	velocity: any;
+	/** Emissive texture node — only set when some effect requires `emissive`. */
+	emissive: any;
 	/** Viewport aspect (w/h), owned by the builder, written by the frame task. */
 	aspect: UniformNode<'float', number>;
 	/**
@@ -82,6 +85,13 @@ export interface EffectDef<P extends EffectParams = EffectParams> {
 	order: number;
 	/** Buffers this effect needs — drives MRT provisioning and base-pass eligibility. */
 	requires: Requirement[];
+	/**
+	 * Same as `requires`, but computed from the effect's current param values — for
+	 * effects whose needs are mode-dependent (bloom only needs `emissive` in material
+	 * mode). Takes precedence over the static array when present; `values` is the
+	 * effect's own param record (registry fills in `params()` defaults if absent).
+	 */
+	requiresValues?: (values: EffectParams) => Requirement[];
 	/** Ids that cannot be co-enabled (in addition to the role rules). */
 	conflicts?: string[];
 	/** Effect is only offered at this quality tier or above. */
@@ -118,6 +128,13 @@ export interface EffectDef<P extends EffectParams = EffectParams> {
 	ranges?: Partial<Record<keyof P & string, ParamRange>>;
 	/** Params that are a choice, not a magnitude — the panel renders a list, not a slider. */
 	options?: Partial<Record<keyof P & string, { value: number; text: string }[]>>;
+	/**
+	 * Sibling params to re-seed when a choice param changes — for modes whose sensible
+	 * values are nothing like the other mode's (bloom's material mode blooms emissive
+	 * values, not scene luminance, so it wants a far higher strength than global).
+	 * Returns a patch applied on top of the change; `undefined` leaves params alone.
+	 */
+	paramDefaults?: (key: keyof P & string, value: number) => Partial<P> | undefined;
 	/**
 	 * Extra structural key material an effect can only know at runtime — appended to
 	 * `structuralKeyOf`. Read reactive state here to force a rebuild when a resource

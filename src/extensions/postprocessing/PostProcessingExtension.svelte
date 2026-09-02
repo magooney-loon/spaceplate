@@ -27,7 +27,9 @@
 	const enabledIds = $derived(
 		EFFECTS.filter((def) => (s as any)[def.id]?.enabled).map((def) => def.id)
 	);
-	const resolution = $derived(resolveEnabledSet(enabledIds, quality));
+	// State doubles as the values record ({enabled, ...params} per id) so param-driven
+	// requirements (bloom's material mode → emissive MRT) are reflected here too.
+	const resolution = $derived(resolveEnabledSet(enabledIds, quality, s as any));
 
 	const SECTIONS: { title: string; role: PassRole }[] = [
 		{ title: 'Base Pass', role: 'base' },
@@ -43,7 +45,8 @@
 	const suppression = (id: string): string | null =>
 		resolution.dropped.find((d) => d.id === id)?.reason ?? null;
 
-	const noteStyle = 'font-size: 10px; color: rgba(255,255,255,0.45); display: block; margin: 2px 0 4px;';
+	const noteStyle =
+		'font-size: 10px; color: rgba(255,255,255,0.45); display: block; margin: 2px 0 4px;';
 </script>
 
 <ToolbarItem position="left">
@@ -72,8 +75,19 @@
 							{#each params as key (key)}
 								{#if def.options?.[key]}
 									<!-- A choice, not a magnitude (the LUT selection) — a slider over
-									     catalogue indices would be unreadable. -->
-									<List bind:value={settings[key]} label={key} options={def.options[key]} />
+									     catalogue indices would be unreadable. Routed through setParam
+									     so a mode swap can re-seed its siblings (bloom Global/Material). -->
+									<List
+										value={settings[key]}
+										label={key}
+										options={def.options[key]}
+										on:change={(e) =>
+											postprocessingActions.setParam(
+												def.id as EffectId,
+												key,
+												Number(e.detail.value)
+											)}
+									/>
 								{:else}
 									<Slider
 										bind:value={settings[key]}
