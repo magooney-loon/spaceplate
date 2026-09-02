@@ -2,7 +2,7 @@
 	import { Canvas } from '@threlte/core/webgpu';
 	import Scene from './Scene.svelte';
 	import SceneHud from './SceneHud.svelte';
-	import { Renderer, Loader, Keymapper } from '$core';
+	import { Renderer, Loader, Keymapper, Camera, Skybox, GlobalAudio } from '$core';
 	import { World } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
@@ -48,14 +48,15 @@
      (DOCS/webgpu-notes.md §3.1). -->
 <Canvas {createRenderer} {dpr} autoRender={false}>
 	<Renderer />
+	<Camera />
+	<GlobalAudio />
+	<Skybox />
 	<World
 		gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]}
 		framerate={physicsState.framerate}
 	>
 		<PhysicsWorldLogger />
 		{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-			<!-- PostProcessingExtension is registered again — rebuilt against the
-			     $core/postprocessing effect registry (DOCS/post-processing.md). -->
 			{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }, { default: SkyboxExtension }, { default: PostProcessingExtension }]}
 				<Studio
 					extensions={[
