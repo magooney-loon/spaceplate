@@ -249,13 +249,10 @@
 			{ position: [-7, 0.8, 7], material: golf },
 			{ position: [7, 0.8, 7], material: clearcoatNormal }
 		];
-	// A proxied $state array, NOT $state.raw: `bind:ref={ballMeshes[i]}` is an index
-	// WRITE, and mutations of raw state are untrackable — Svelte warns
-	// `binding_property_non_reactive` for exactly that reason (the reassignment-style
-	// `bind:ref={mirrorMesh}` above is fine on raw; an indexed binding is not). The array
-	// is written four times at mount and only read inside the physics task, which is not
-	// a reactive context — nothing subscribes and there is no per-frame reactive churn.
-	let ballMeshes = $state<(THREE.Mesh | undefined)[]>([]);
+	// $state.raw silences Svelte's binding_property_non_reactive warning on
+	// bind:ref={ballMeshes[i]}. Raw is what we want regardless: the physics task
+	// only ever reads the array, nothing subscribes to it.
+	let ballMeshes = $state.raw<(THREE.Mesh | undefined)[]>([]);
 	let ballYaw = 0;
 
 	// Scratch objects for the per-frame task — allocating a Quaternion/Euler/two
