@@ -28,6 +28,32 @@
 		`${BASE_URL}sounds/skybox/thunder-4.opus`
 	];
 
+	// One summary line once every file has settled — same shape as the engine's
+	// 'Assets loaded', plus the count. onload/onerror (not oncreate) are the hooks,
+	// so this counts decoded buffers, not mounted components. A failure logs
+	// per-file immediately and downgrades the summary to an error with an x/y count.
+	const AUDIO_TOTAL = 5 + THUNDER_URLS.length;
+	let settled = 0;
+	let failed = 0;
+	const summarize = () => {
+		if (settled < AUDIO_TOTAL) return;
+		if (failed > 0) {
+			logSound.error(`Audio files loaded (${AUDIO_TOTAL - failed}/${AUDIO_TOTAL})`);
+		} else {
+			logSound.info(`All audio files loaded (${AUDIO_TOTAL})`);
+		}
+	};
+	const trackAudioLoad = () => {
+		settled++;
+		summarize();
+	};
+	const trackAudioError = (label: string) => {
+		settled++;
+		failed++;
+		logSound.error(`Audio failed to load: ${label}`);
+		summarize();
+	};
+
 	let ostAudio = $state.raw<ThreeAudio>();
 	let ambienceAudio = $state.raw<ThreeAudio>();
 	let clickAudio = $state.raw<ThreeAudio>();
@@ -104,8 +130,9 @@
 	loop
 	oncreate={(a: ThreeAudio) => {
 		ostAudio = a;
-		logSound.info('Audio loaded: OST');
 	}}
+	onload={() => trackAudioLoad()}
+	onerror={() => trackAudioError('OST')}
 	userData={{ hideInTree: true, selectable: false }}
 />
 
@@ -114,8 +141,9 @@
 	loop
 	oncreate={(a: ThreeAudio) => {
 		ambienceAudio = a;
-		logSound.info('Audio loaded: Ambience');
 	}}
+	onload={() => trackAudioLoad()}
+	onerror={() => trackAudioError('Ambience')}
 	userData={{ hideInTree: true, selectable: false }}
 />
 
@@ -123,8 +151,9 @@
 	src={CLICK_URL}
 	oncreate={(a: ThreeAudio) => {
 		clickAudio = a;
-		logSound.info('Audio loaded: Click');
 	}}
+	onload={() => trackAudioLoad()}
+	onerror={() => trackAudioError('Click')}
 	userData={{ hideInTree: true, selectable: false }}
 />
 
@@ -132,8 +161,9 @@
 	src={SWOOSH_URL}
 	oncreate={(a: ThreeAudio) => {
 		swooshAudio = a;
-		logSound.info('Audio loaded: Swoosh');
 	}}
+	onload={() => trackAudioLoad()}
+	onerror={() => trackAudioError('Swoosh')}
 	userData={{ hideInTree: true, selectable: false }}
 />
 
@@ -148,8 +178,9 @@
 	volume={0}
 	oncreate={(a: ThreeAudio) => {
 		attachRainAudio(a);
-		logSound.info('Audio loaded: Rain');
 	}}
+	onload={() => trackAudioLoad()}
+	onerror={() => trackAudioError('Rain')}
 	userData={{ hideInTree: true, selectable: false }}
 />
 
@@ -159,8 +190,9 @@
 		autoplay={false}
 		oncreate={(a: ThreeAudio) => {
 			attachThunderAudio(a);
-			logSound.info(`Audio loaded: Thunder take ${i + 1}/${THUNDER_URLS.length}`);
 		}}
+		onload={() => trackAudioLoad()}
+		onerror={() => trackAudioError(`Thunder take ${i + 1}`)}
 		userData={{ hideInTree: true, selectable: false }}
 	/>
 {/each}

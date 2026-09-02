@@ -5,9 +5,22 @@
 	import { logEngine } from '$extensions/logger';
 	import { audioActions } from '$extensions/settings';
 
-	const { progress, finishedOnce, active, item, loaded, total } = useProgress();
+	const { progress, active, item, loaded, total, errors } = useProgress();
 
-	const isFinished = $derived($finishedOnce || ($total === 0 && !$active));
+	// 'Done' here is a quiet period, not finishedOnce: three's manager has no 'queue
+	// drained' event — items queue as they are discovered, so loaded catches up with
+	// total transiently BETWEEN items and finishedOnce latches true on the first
+	// catch-up. Keying the UI off it made the bar hit 100% and the prompt arm while
+	// assets were still streaming in. settled = quiet for a grace period (covers the
+	// nothing-to-load case too, which starts quiet); any new item restarts the wait.
+	let settled = $state(false);
+	$effect(() => {
+		if (settled || $active) return;
+		const timeout = setTimeout(() => {
+			settled = true;
+		}, 500);
+		return () => clearTimeout(timeout);
+	});
 
 	let readyToHide = $state(false);
 	let showPrompt = $state(false);
@@ -18,12 +31,25 @@
 	});
 
 	$effect(() => {
-		if (isFinished) {
-			logEngine.info('Assets loaded');
+		if (settled) {
 			const timeout = setTimeout(() => {
 				showPrompt = true;
 			}, 1200);
 			return () => clearTimeout(timeout);
+		}
+	});
+
+	// One line, once, when the load cycle has settled. Counts are read via .current
+	// on purpose — $-reads here would re-trigger the effect per item (that was the
+	// every-line spam).
+	$effect(() => {
+		if (!settled) return;
+		logEngine.info(`Assets loaded (${loaded.current})`);
+		if (errors.current.length > 0) {
+			logEngine.error(
+				`Assets failed to load (${errors.current.length}/${total.current}):`,
+				...errors.current.map(truncatePath)
+			);
 		}
 	});
 
@@ -65,7 +91,7 @@
 			</div>
 		{:else}
 			<!-- Loading screen -->
-			<p class="label">{isFinished ? 'Preparing the game...' : 'Loading'}</p>
+			<p class="label">{settled ? 'Preparing the game...' : 'Loading'}</p>
 
 			<!-- Progress bar -->
 			<div class="track">
@@ -77,7 +103,7 @@
 			</p>
 
 			<div class="status">
-				{#if isFinished}
+				{#if settled}
 					<p class="done">All assets loaded</p>
 				{:else if $active}
 					<p class="item">
