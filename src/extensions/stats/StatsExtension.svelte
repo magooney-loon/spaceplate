@@ -26,16 +26,16 @@
 
 	let drawCallsPanel: InfoPanel | undefined;
 	let trianglesPanel: InfoPanel | undefined;
-	let pointsPanel: InfoPanel | undefined;
-	let linesPanel: InfoPanel | undefined;
+	let computePanel: InfoPanel | undefined;
+	let rtPanel: InfoPanel | undefined;
 	let geometriesPanel: InfoPanel | undefined;
 	let texturesPanel: InfoPanel | undefined;
 	let programsPanel: InfoPanel | undefined;
 
 	const drawCallsHistory: number[] = [];
 	const trianglesHistory: number[] = [];
-	const pointsHistory: number[] = [];
-	const linesHistory: number[] = [];
+	const computeHistory: number[] = [];
+	const rtHistory: number[] = [];
 	const geometriesHistory: number[] = [];
 	const texturesHistory: number[] = [];
 	const programsHistory: number[] = [];
@@ -52,20 +52,31 @@
 	// sat at 0 while GEO/TEX (memory, never reset) worked. Sampling AFTER the render
 	// task reads the frame's accumulated values instead.
 	//
-	// render.calls is a LIFETIME count of renderer.render() invocations and is not
-	// touched by reset() — it doubles as the on-demand skip detector: on frames where
-	// nothing invalidated, three still reset the counters but no render ran, so the
-	// panels hold their previous value instead of dipping to a bogus 0.
+	// render.calls and compute.calls are LIFETIME counts (of renderer.render() and
+	// renderer.compute() invocations) that reset() never touches — they double as the
+	// on-demand skip detectors: on frames where neither changed, nothing ran, so the
+	// panels hold their previous value instead of dipping to a bogus 0. Compute gets
+	// its own detector because a compute pass (Birds.svelte) can run on a frame whose
+	// render was skipped.
 	let lastRenderCalls = -1;
+	let lastComputeCalls = -1;
 
 	function updateCustomPanels() {
 		const info = renderer.info;
-		if (info.render.calls === lastRenderCalls) return; // no render since last sample
+		const rendered = info.render.calls !== lastRenderCalls;
+		const computed = info.compute.calls !== lastComputeCalls;
+		if (!rendered && !computed) return; // no render and no compute since last sample
 		lastRenderCalls = info.render.calls;
+		lastComputeCalls = info.compute.calls;
 		const dc = info.render.drawCalls;
 		const tri = info.render.triangles;
-		const pts = info.render.points;
-		const ln = info.render.lines;
+		// CMP: this frame's compute passes (Birds.svelte runs two while the flock is
+		// airborne). frameCalls is zeroed with the render counters at frame start.
+		const cmp = info.compute.frameCalls;
+		// RT: active render targets — env bake, cube captures, the floor reflector, the
+		// height-field target, the lens layers' framebuffer copies. Lifetime memory
+		// accounting, like GEO/TEX.
+		const rt = info.memory.renderTargets;
 		const geo = info.memory.geometries;
 		const tex = info.memory.textures;
 		// WebGPU's info has no `programs` array (that is WebGL's shape) — the count of
@@ -75,16 +86,16 @@
 
 		pushHistory(drawCallsHistory, dc);
 		pushHistory(trianglesHistory, tri);
-		pushHistory(pointsHistory, pts);
-		pushHistory(linesHistory, ln);
+		pushHistory(computeHistory, cmp);
+		pushHistory(rtHistory, rt);
 		pushHistory(geometriesHistory, geo);
 		pushHistory(texturesHistory, tex);
 		pushHistory(programsHistory, prg);
 
 		const maxDc = Math.max(...drawCallsHistory);
 		const maxTri = Math.max(...trianglesHistory);
-		const maxPts = Math.max(...pointsHistory);
-		const maxLn = Math.max(...linesHistory);
+		const maxCmp = Math.max(...computeHistory);
+		const maxRt = Math.max(...rtHistory);
 		const maxGeo = Math.max(...geometriesHistory);
 		const maxTex = Math.max(...texturesHistory);
 		const maxPrg = Math.max(...programsHistory);
@@ -95,11 +106,11 @@
 		trianglesPanel?.update(tri, maxTri || 1, 0);
 		trianglesPanel?.updateGraph(tri, maxTri || 1);
 
-		pointsPanel?.update(pts, maxPts || 1, 0);
-		pointsPanel?.updateGraph(pts, maxPts || 1);
+		computePanel?.update(cmp, maxCmp || 1, 0);
+		computePanel?.updateGraph(cmp, maxCmp || 1);
 
-		linesPanel?.update(ln, maxLn || 1, 0);
-		linesPanel?.updateGraph(ln, maxLn || 1);
+		rtPanel?.update(rt, maxRt || 1, 0);
+		rtPanel?.updateGraph(rt, maxRt || 1);
 
 		geometriesPanel?.update(geo, maxGeo || 1, 0);
 		geometriesPanel?.updateGraph(geo, maxGeo || 1);
@@ -124,8 +135,8 @@
 
 		drawCallsPanel = stats.addPanel(new PanelCtor('DC', '#f80', '#320') as any);
 		trianglesPanel = stats.addPanel(new PanelCtor('TRI', '#88f', '#223') as any);
-		pointsPanel = stats.addPanel(new PanelCtor('PTS', '#ff8', '#332') as any);
-		linesPanel = stats.addPanel(new PanelCtor('LINE', '#8ff', '#233') as any);
+		computePanel = stats.addPanel(new PanelCtor('CMP', '#ff8', '#332') as any);
+		rtPanel = stats.addPanel(new PanelCtor('RT', '#8ff', '#233') as any);
 		geometriesPanel = stats.addPanel(new PanelCtor('GEO', '#f0f', '#303') as any);
 		texturesPanel = stats.addPanel(new PanelCtor('TEX', '#0f8', '#032') as any);
 		programsPanel = stats.addPanel(new PanelCtor('PRG', '#fa0', '#320') as any);

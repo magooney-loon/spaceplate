@@ -11,7 +11,7 @@ Dev-only. Panel-only extension with no state module.
 
 ## What it displays
 
-Draw calls, triangles, points, lines, geometries, textures, programs — in a multi-panel graph overlay. Also resolves GPU timestamp queries for accurate GPU timing.
+Draw calls, triangles, compute passes, render targets, geometries, textures, programs — in a multi-panel graph overlay. Also resolves GPU timestamp queries for accurate GPU timing. (There are no PTS/LINE panels: this app renders zero point and zero line primitives — every layer is billboarded quads, see `Stars.svelte` / `Rain.svelte` headers — so those counters are permanently 0 and the panel slots are spent on CMP and RT instead.)
 
 ## Key behavior
 
