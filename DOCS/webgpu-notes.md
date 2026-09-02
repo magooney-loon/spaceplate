@@ -119,11 +119,49 @@ The cure is to give the pass a private cache namespace via `PassNode.contextNode
 (`renderer.contextNode.id` *is* in the key). Full write-up, including why the
 alternatives are wrong: `post-processing.md` §8.7.
 
+**That error text has two causes, and this is only one of them.** See §1.5 before
+concluding it is the cache — the fix above is in place and working, and the same message
+kept appearing anyway.
+
 > **Two debugging notes that generalise.** Pipeline labels are
 > `material.name || material.type`, so an unnamed material shows up as
 > `NodeMaterial_22` and tells you almost nothing — **name your custom materials.** And
 > the command encoder aborts at the *first* invalid pipeline, so the error names one
 > culprit even when many materials share the fault.
+
+### 1.5 `fragmentNode` opts a material out of MRT — silently
+
+`NodeMaterial.setup()` folds the renderer's MRT into the output only on its
+`this.fragmentNode === null` branch. Set `fragmentNode` and the other branch runs
+`setupOutput()` alone: the material emits a single `@location( 0 )` regardless of how
+many attachments the pass has, and you get the §1.4 error from a material whose shader
+was compiled correctly, in the right context, moments earlier.
+
+- **`outputNode` is safe** — it still folds. Only `fragmentNode` bypasses.
+- **An `isOutputStructNode` is safe** — the else-branch passes it through.
+- Nothing catches the mismatch, because the WGSL is identical with and without MRT: it
+  dedupes onto one `ProgrammableStage` (keyed on the shader *string*), and
+  `WebGPUBackend.getRenderCacheKey()` includes attachment 0's format but never the
+  attachment *count*. One GPU pipeline ends up shared across both passes.
+
+So: **do not use `fragmentNode` on anything that renders inside the scene.** Reach for
+`colorNode` plus `lights = false`, which is unlit in exactly the same way — with no
+`lightsNode`, backdrop or emissive, `setupLighting()` returns `diffuseColor.rgb`
+untouched, and `setupOutput()` (hence fog) runs on both branches either way.
+
+### 1.6 Only the `output` MRT attachment blends
+
+`MRTNode`'s constructor seeds `blendModes = { output: _materialBlending }`. Every other
+attachment resolves to `_noBlending`, which `WebGPUPipelineUtils` turns into
+`blend: undefined` — a straight overwrite, alpha ignored. Blending is per-*pass* too
+(`WebGPUPipelineUtils` reads `renderObject.context.mrt`), so a material cannot opt out of
+it.
+
+**A fullscreen quad inside the scene pass therefore wipes every non-`output`
+attachment**, no matter how transparent it is: invisible in colour, destructive in
+velocity/normals. That is how Studio's selection outline turned motion blur into an
+identity transform (`post-processing.md` §8.9). Overlays belong after post-processing,
+not in the base pass.
 
 ---
 
@@ -308,6 +346,25 @@ rather than on the WebGPU work.
 To reproduce Studio state headlessly, set localStorage before the app module loads.
 Key format is `` `${namespace}/${scope}:${path}` `` with namespace `default` — e.g.
 `localStorage['default/editor-camera:enabled'] = 'true'`.
+
+### 5.6 `src/__debug/` — keep the probes
+
+Probes that earned their keep live in `src/__debug/`, armed by uncommenting the single
+`import './__debug'` in `main.ts`. Currently:
+
+- **`mrtProbe.ts`** — compares the `@location` outputs a compiled fragment shader
+  declares against the attachment count of the context it is drawn into, and names the
+  offending material, its nodes, flags and ancestry. This is what identified §1.5 after
+  static analysis had produced two confident wrong answers.
+- **`ppBridge.ts`** — `pp.on('motionBlur')` / `pp.set(id, key, value)` on the console.
+  The only UI for `postprocessingState` is the Studio panel, and Studio is regularly the
+  thing you need to run *without* (§1.6).
+
+Two habits worth keeping. **Measure the invariant the API actually enforces, not your
+theory of why it broke** — the first version of `mrtProbe` tracked shader-cache reuse,
+matched the §8.7 diagnosis, and stayed silent through a live failure. And **prefer
+patching a three/Threlte prototype to editing an engine file**, so removing a probe
+cannot leave a plausible-looking hook behind in real code.
 
 ---
 

@@ -130,7 +130,7 @@ index e9452c8c2029b8e9dbfc0fefea70d2bc179b9bfc..994d7e621731ff48ab2f919b6607b360
        vertexColors: true,
        transparent: opacity < 1,
 diff --git a/dist/extensions/object-selection/RenderSelectedObjects.svelte b/dist/extensions/object-selection/RenderSelectedObjects.svelte
-index 0cf31db85f00eaf03a99752717d276aa2e797fad..60ff5cc1ecca2e976874544118a4ab3dd5a72973 100644
+index 0cf31db85f00eaf03a99752717d276aa2e797fad..ad03aa3aff17800e8d729df59519997e81260e17 100644
 --- a/dist/extensions/object-selection/RenderSelectedObjects.svelte
 +++ b/dist/extensions/object-selection/RenderSelectedObjects.svelte
 @@ -6,16 +6,35 @@
@@ -171,7 +171,41 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..60ff5cc1ecca2e976874544118a4ab3d
    const { invalidate } = useThrelte()
    const objectSelection = useObjectSelection()
    const { addObject, removeObject } = useStudioObjectsRegistry()
-@@ -109,7 +128,88 @@
+@@ -65,8 +84,31 @@
+ 
+   useTask(
+     () => {
+-      // TODO: Make perf optimizations in terms of not rendering when no objects
+-      // are selected
++      // PATCH (spaceplate): upstream's own TODO -- "not rendering when no objects are
++      // selected" -- promoted from a perf nicety to load-bearing, because this overlay
++      // is destructive under an MRT pass.
++      //
++      // `selectionMesh` is a full-screen quad with `depthTest = false` and
++      // `renderOrder = 9999`, so it draws last over every pixel. `MRTNode` seeds
++      // material blending for the `output` attachment ONLY (its constructor sets
++      // `blendModes = { output: _materialBlending }`); every other attachment falls
++      // through `getBlendMode()` to `_noBlending` and `WebGPUPipelineUtils` then builds
++      // that colour target with `blend: undefined` -- a straight overwrite, alpha
++      // ignored. So the quad's ~0 alpha keeps it invisible in `output`, while it stamps
++      // its own velocity across the entire `velocity` attachment -- and being parented
++      // to the camera, that velocity is zero. Motion blur silently became a no-op.
++      //
++      // Skipping this entirely when the selection is empty keeps velocity intact for the
++      // common case (and saves a whole extra scene render per frame besides). With
++      // something selected the overlay still flattens velocity; fixing THAT means
++      // compositing studio overlays after post-processing instead of inside the scene
++      // pass, which is a much larger change.
++      if (objectSelection.selectedObjects.length === 0) {
++        selectionMesh.visible = false
++        return
++      }
++      selectionMesh.visible = true
++
+       const originalMaterials = new Map()
+       const originalRenderTarget = renderer.getRenderTarget()
+       const currentCameraMask = camera.current.layers.mask
+@@ -109,7 +151,109 @@
      }
    )
  
@@ -229,9 +263,30 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..60ff5cc1ecca2e976874544118a4ab3d
 +      )
 +    }
 +
-+    // fragmentNode (not colorNode) mirrors the original gl_FragColor write: the
-+    // outline is a flat unlit overlay and must not pick up material lighting.
-+    outlineMaterial.fragmentNode = vec4(outlineColor, smoothstep(0.1, 3, edgeDetectValue))
++    // PATCH (spaceplate): `colorNode`, NOT `fragmentNode`. This is load-bearing for MRT.
++    //
++    // `NodeMaterial.setup()` folds the renderer's MRT into the fragment output only on
++    // its `this.fragmentNode === null` branch; the `fragmentNode` branch just calls
++    // `setupOutput()` and emits a single `@location( 0 )` no matter what. So with an
++    // MRT pass active -- motion blur provisions `mrt({ output, velocity })` -- this one
++    // overlay compiled a 1-output shader while every other material in the scene
++    // compiled 2, and Chromium/Dawn rejected the draw:
++    //
++    //   Attachment state of [RenderPipeline "renderPipeline_NodeMaterial_22"] is not
++    //   compatible with [RenderPassEncoder]. Expects colorTargets [0, 1]; pipeline has [0].
++    //
++    // Nothing upstream catches it: the WGSL is byte-identical with and without MRT, so
++    // it dedupes onto one ProgrammableStage (`Pipelines.programs.fragment` is keyed on
++    // the shader string), and `WebGPUBackend.getRenderCacheKey()` records only
++    // attachment 0's format, never the attachment COUNT -- so the pipeline built for the
++    // 1-attachment pass is silently reused in the 2-attachment one.
++    //
++    // The original comment here said `fragmentNode` was needed so the flat overlay would
++    // not pick up material lighting. It is not: `outlineMaterial.lights` is already
++    // `false` (set above), and with no `lightsNode`, backdrop or emissive,
++    // `setupLighting()` returns the unlit `diffuseColor.rgb` unchanged. `setupOutput()`
++    // -- and therefore fog -- runs on both branches, so the visual result is identical.
++    outlineMaterial.colorNode = vec4(outlineColor, smoothstep(0.1, 3, edgeDetectValue))
 +  }
 +
 +  // PATCH (spaceplate): give the mesh its geometry AND material up front, rather than
@@ -261,7 +316,7 @@ index 0cf31db85f00eaf03a99752717d276aa2e797fad..60ff5cc1ecca2e976874544118a4ab3d
    selectionMesh.raycast = () => {}
    selectionMesh.position.z = -5
    selectionMesh.frustumCulled = false
-@@ -146,34 +246,32 @@
+@@ -146,34 +290,32 @@
      addObject(selectionMesh)
      return () => {
        removeObject(selectionMesh)

@@ -17,6 +17,9 @@ SceneHud.svelte     — HTML overlay router (sibling to Canvas) + global setting
 app.css             — Global styles
 module_bindings/    — Generated SpacetimeDB bindings — DO NOT EDIT
 lib/                — Empty by convention; app-specific shared code goes here
+__debug/            — Dev-only probes, NOT app code. Armed by uncommenting the single
+                      `import './__debug'` in main.ts; commented, none of it is bundled.
+                      One module per probe (→ see its index.ts before adding one)
 
 core/
   index.ts              — Barrel — import engine parts from '$core'

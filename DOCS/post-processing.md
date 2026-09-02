@@ -533,7 +533,8 @@ redesign: it is the same node with a real pass in slot B.
 
 ## 8. Risks and things to verify in a browser
 
-§8.7 is settled and is the most important entry here. Items 1, 2, 4 and 5 were
+§§8.7-8.9 are settled and are the most important entries here — read all three, they
+share one error message and only the first is about caching. Items 1, 2, 4 and 5 were
 **closed by the removal** rather than answered — they were all questions about
 ao/ssgi/ssr/traa/pixelation. They are kept for a revival, struck where dead.
 
@@ -560,7 +561,9 @@ ao/ssgi/ssr/traa/pixelation. They are kept for a revival, struck where dead.
 6. **Studio task ordering.** The new pipeline must re-apply the rules in
    `webgpu-notes.md` §2 — they were written for the deleted `EffectComposer` but the
    DAG constraints are unchanged.
-7. **SETTLED — the MRT shader-cache trap.** Read this before changing the builder.
+7. **SETTLED — the MRT traps.** Read this before changing the builder. §8.7 is the
+   shader-cache trap; §8.8 is the second, independent one that §8.7 does *not* cover and
+   that produces the identical error message.
 
 ### 8.7 The MRT shader-cache trap
 
@@ -621,6 +624,97 @@ Two consequences worth remembering:
 - **Do not "fix" this by giving the sky its own dome, or by disabling the env bake.**
   That treats one racer rather than the race, and the next auxiliary pass reintroduces
   it.
+
+**Necessary but not sufficient.** The `contextNode` line is doing its job and must stay —
+verified in a browser: with motion blur on, every material in the pass recompiles under
+the pass's private context and emits two outputs. But it is not the whole story. The
+sentence "the effects were never the problem" above is true; "so it must be the shader
+cache" is not. §8.8 is a second failure mode with the *same* error text that this fix
+cannot reach, and it is the one that was actually still firing.
+
+### 8.8 A material can bypass MRT entirely — `fragmentNode`
+
+`NodeMaterial.setup()` folds the renderer's MRT into the fragment output on **one** of
+its two branches:
+
+```js
+if ( this.fragmentNode === null ) {
+    ...
+    if ( renderTarget !== null ) {
+        const mrt = renderer.getMRT();   // ← the fold lives here
+        ...
+    }
+} else {
+    // custom fragmentNode: setupOutput() only. MRT never enters.
+    resultNode = this.setupOutput( builder, this.fragmentNode );
+}
+```
+
+So a material with a custom `fragmentNode` emits a single `@location( 0 )` **no matter
+what the pass is doing** (unless the node is already an `isOutputStructNode`). Note
+`outputNode` is fine — it still folds; only `fragmentNode` bypasses.
+
+Drawn inside a two-attachment pass that is fatal on Chromium/Dawn, and it is the *same*
+message §8.7 produces, which is why this hid behind that diagnosis for so long:
+
+```
+Attachment state of [RenderPipeline "renderPipeline_NodeMaterial_22"] is not compatible
+with [RenderPassEncoder]. Expects colorTargets [0, 1]; pipeline has [0].
+```
+
+**Why nothing upstream catches it.** The material's WGSL is byte-identical with and
+without MRT, so it collapses onto one `ProgrammableStage` (`Pipelines.programs.fragment`
+is a `Map` keyed on the shader *string*), and `WebGPUBackend.getRenderCacheKey()` records
+`getCurrentColorFormat( renderContext )` — the format of attachment **0** — and never the
+attachment *count*, even though `getCurrentColorFormats()` (plural) sits unused beside it
+in `WebGPUUtils.js`. Identical stage ids plus an identical backend key means one GPU
+pipeline shared across both contexts, so the pipeline built for the one-attachment pass
+is handed to the two-attachment one. A wrong shader becomes a wrong *pipeline* instead of
+a recompile. That is a genuine upstream three bug and is worth reporting; we have not
+patched it.
+
+**The culprit here was Threlte Studio's selection outline** (`RenderSelectedObjects`),
+which set `outlineMaterial.fragmentNode` with a comment claiming it was needed so a flat
+overlay would not pick up material lighting. It is not: the material already has
+`lights = false`, and with no `lightsNode`, backdrop or emissive, `setupLighting()`
+returns the unlit `diffuseColor.rgb` unchanged, while `setupOutput()` — and therefore fog
+— runs on both branches. `patches/@threlte__studio@0.4.3.patch` switches it to
+`colorNode`, which is visually identical and folds MRT correctly.
+
+**This is dev-only.** Studio is dynamically imported behind `VITE_GAME_ENGINE=true`, so
+production was never affected.
+
+### 8.9 MRT attachments other than `output` do not blend
+
+Fixing §8.8 traded the crash for a silent no-op, and the reason generalises to any future
+MRT attachment. `MRTNode`'s constructor seeds blending for exactly one output:
+
+```js
+this.blendModes = { output: _materialBlending };
+```
+
+Every other attachment falls through `getBlendMode()` to `_noBlending`, and
+`WebGPUPipelineUtils` then builds that colour target with `blend: undefined` — a straight
+overwrite with alpha ignored. Blending is also per-*pass*, not per-material:
+`WebGPUPipelineUtils` reads `renderObject.context.mrt`, so a material cannot opt out.
+(`MRTNode.merge()` looks like it could override per material, but it assigns
+`mrtTarget.blendings` while `getBlendMode()` reads `this.blendModes`, so merged modes are
+dropped — another upstream typo.)
+
+Consequence: **a full-screen quad inside the scene pass wipes every non-`output`
+attachment**, however transparent it looks. Studio's selection outline is exactly that —
+`depthTest = false`, `renderOrder = 9999` — so once §8.8 let it write velocity at all, it
+stamped its own (zero, being camera-parented) velocity over the whole buffer and motion
+blur became an identity transform. The patch skips it when the selection is empty, which
+was upstream's own TODO; with something selected the overlay still flattens velocity.
+
+The real cure — compositing Studio's overlays *after* post-processing rather than inside
+the base pass — is unbuilt and is the open item here. The same trap waits for any
+in-scene fullscreen overlay we add ourselves.
+
+**Diagnosing any of §8.7-8.9:** `src/__debug/mrtProbe.ts` compares declared shader
+outputs against context attachments per draw and names the offending material, its nodes
+and its ancestry. It is what found §8.8 after static analysis had failed twice.
 
 ---
 

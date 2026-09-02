@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@threlte/extras@9.21.1': 9fd2063c939185636fbad004346374b29cd124dbae3a0f8aa64325db96869ead
-  '@threlte/studio@0.4.3': 731936a2d73df0d447c25ad0568897288091ae2358901fe3d95a4ea669f0ed03
+  '@threlte/studio@0.4.3': 655000e01da92d1155be8eafbe63368d81ebf1ff94126be048e6b25b2099e950
   three: dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b
 
 importers:
@@ -27,7 +27,7 @@ importers:
         version: 3.5.0(@dimforge/rapier3d-compat@0.20.0)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
       '@threlte/studio':
         specifier: ^0.4.3
-        version: 0.4.3(patch_hash=731936a2d73df0d447c25ad0568897288091ae2358901fe3d95a4ea669f0ed03)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
+        version: 0.4.3(patch_hash=655000e01da92d1155be8eafbe63368d81ebf1ff94126be048e6b25b2099e950)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))
       '@types/three':
         specifier: ^0.185.4
         version: 0.185.4
@@ -1292,7 +1292,7 @@ snapshots:
       svelte: 5.56.10
       three: 0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b)
 
-  '@threlte/studio@0.4.3(patch_hash=731936a2d73df0d447c25ad0568897288091ae2358901fe3d95a4ea669f0ed03)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))':
+  '@threlte/studio@0.4.3(patch_hash=655000e01da92d1155be8eafbe63368d81ebf1ff94126be048e6b25b2099e950)(svelte@5.56.10)(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))(tweakpane@4.0.5)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(sass@1.103.1))':
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@mdi/js': 7.4.47
