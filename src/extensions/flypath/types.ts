@@ -78,7 +78,11 @@ export type FlyPathActions = {
  * shape as the capture extension's driver and scenes/DemoScene/mirrorFloor.ts.
  */
 export type FlyPathDriver = {
-	captureWaypoint(): { position: [number, number, number]; quaternion: [number, number, number, number]; fov: number } | null;
+	captureWaypoint(): {
+		position: [number, number, number];
+		quaternion: [number, number, number, number];
+		fov: number;
+	} | null;
 	cameraPosition(): [number, number, number] | null;
 	play(): void;
 	pause(): void;

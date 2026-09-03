@@ -20,7 +20,7 @@
 
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
-	import { captureActions, captureState } from '$extensions/capture';
+	import { captureActions, captureRuntime, captureState } from '$extensions/capture';
 	import { logEngine } from '$extensions/logger';
 	import {
 		EASINGS,
@@ -41,8 +41,15 @@
 	const curve = $derived.by(() => {
 		const waypoints = flyPathState.waypoints;
 		if (waypoints.length < 2) return null;
-		const points = waypoints.map((w) => new THREE.Vector3(w.position[0], w.position[1], w.position[2]));
-		return new THREE.CatmullRomCurve3(points, flyPathState.loop, 'catmullrom', flyPathState.tension);
+		const points = waypoints.map(
+			(w) => new THREE.Vector3(w.position[0], w.position[1], w.position[2])
+		);
+		return new THREE.CatmullRomCurve3(
+			points,
+			flyPathState.loop,
+			'catmullrom',
+			flyPathState.tension
+		);
 	});
 
 	// Rebuilt whenever the curve changes — including per frame while a marker is dragged,
@@ -101,6 +108,16 @@
 	 *  frame still gets rendered and blitted into a recording before it is torn down. */
 	let finishing = false;
 	let recording = false;
+	/** Pre-roll cursor: -1 when idle, else the sweep frame about to be posed. */
+	let prerollFrame = -1;
+	/**
+	 * Set by armTake(), which already posed the path at 0. The first offline tick must
+	 * therefore encode where it is rather than advance — otherwise frame 0 of the video is
+	 * the path at 1/fps and the whole take is one frame short at the head.
+	 */
+	let takeAtHead = false;
+	/** True from the moment 🎬 is pressed until the take is torn down — pre-roll included. */
+	const takeInFlight = () => recording || prerollFrame >= 0;
 
 	const savedPosition = new THREE.Vector3();
 	const savedQuaternion = new THREE.Quaternion();
@@ -197,7 +214,13 @@
 		}
 
 		// $state write — epsilon-gated so a 60Hz playback does not wake the panel 60x/s.
-		if (Math.abs(flyPathState.progress - clamped) > 0.002 || clamped === 0 || clamped === 1) {
+		// 0.002 is still ~every other frame on a 10s path, and every one of those writes
+		// re-renders the panel's Scrub slider (FlyPathExtension.svelte). That is tweakpane
+		// laying out a widget inside the very frame a take is trying to blit and encode,
+		// so the gate widens 25x while recording. The exact endpoints always land, so the
+		// slider still reads 0 at the start and 1 at the end either way.
+		const epsilon = recording ? 0.05 : 0.002;
+		if (Math.abs(flyPathState.progress - clamped) > epsilon || clamped === 0 || clamped === 1) {
 			flyPathState.progress = clamped;
 		}
 		invalidate();
@@ -255,6 +278,8 @@
 	const stop = () => {
 		flyPathState.isPlaying = false;
 		finishing = false;
+		prerollFrame = -1;
+		takeAtHead = false;
 		elapsed = 0;
 		flyPathState.progress = 0;
 		if (recording) {
@@ -276,7 +301,7 @@
 		// tweakpane's programmatic 'external' change events (which is what made playback
 		// stop one frame in), but a real mis-drag during a recording should not ruin it
 		// either — Stop is the deliberate way out.
-		if (recording) {
+		if (takeInFlight()) {
 			logEngine.warn('FlyPath: scrub ignored while recording — press Stop first');
 			return;
 		}
@@ -302,21 +327,53 @@
 			);
 		}
 
-		// Rewind and pose BEFORE arming the recorder, so frame 0 of the video is frame 0
-		// of the path rather than wherever the camera happened to be.
 		saveCamera();
 		engaged = true;
 		finishing = false;
 		elapsed = 0;
+
+		// isPlaying goes true HERE, not in armTake(): it is what suppresses the authoring
+		// overlay, and tearing down the tube plus every marker mesh is itself a frame of
+		// work. Better spent during the pre-roll than on frame 0 of the take.
+		flyPathState.isPlaying = true;
+		prerollFrame = 0;
+		flyPathState.status = 'Warming up…';
 		applyPose(0);
+	};
+
+	// --- pre-roll ---------------------------------------------------------------------
+	//
+	// On-demand rendering means the scene is only ever compiled for the angles it has
+	// actually been drawn from. A flythrough that flies somewhere new therefore compiles
+	// pipelines MID-TAKE — the one-off 150-300ms stall that no amount of per-frame
+	// trimming can prevent, because the work is not per-frame. Sweeping the whole path
+	// once first draws every pose through the real pipeline, so those compiles land
+	// before frame 0 instead of inside the shot.
+	//
+	// It runs through the normal render loop, one pose per rendered frame (applyPose
+	// invalidates, which pins it), rather than through bootState.warmVersion: that
+	// $effect drops any bump arriving while it is still warming, so a burst of them
+	// would silently warm one pose and skip the rest.
+
+	const PREROLL_FRAMES = 12;
+
+	const armTake = () => {
+		// Rewind and pose BEFORE arming the recorder, so frame 0 of the video is frame 0
+		// of the path rather than the end of the pre-roll sweep.
+		elapsed = 0;
+		applyPose(0);
+		takeAtHead = true;
+		// Claim the offline clock before arming, so the very first capture tick already
+		// knows to obey the latch rather than pacing itself off the queue.
+		captureRuntime.driven = true;
 
 		captureActions.startRecording();
 		if (!captureState.isRecording) {
+			flyPathState.isPlaying = false;
 			flyPathState.status = 'Recording failed — see the Capture panel';
 			return;
 		}
 		recording = true;
-		flyPathState.isPlaying = true;
 		flyPathState.status = 'Recording flythrough…';
 	};
 
@@ -370,6 +427,20 @@
 
 	useTask(
 		(delta) => {
+			// Pre-roll owns the loop until it has swept the path: poses 0 → 1 inclusive
+			// across PREROLL_FRAMES rendered frames, then arms on the frame after the last
+			// pose, so the far end of the path is warmed too.
+			if (prerollFrame >= 0) {
+				if (prerollFrame < PREROLL_FRAMES) {
+					applyPose(prerollFrame / (PREROLL_FRAMES - 1));
+					prerollFrame += 1;
+					return;
+				}
+				prerollFrame = -1;
+				armTake();
+				return;
+			}
+
 			// One tick after reaching the end — the final frame has rendered (and been
 			// blitted, if recording), so it is safe to tear the take down now.
 			if (finishing) {
@@ -388,11 +459,13 @@
 			}
 
 			if (flyPathState.isPlaying) {
-				// The capture cap can stop the recorder out from under a looping path.
+				// The capture cap can stop the recorder out from under a looping path, and an
+				// offline take can fail asynchronously while building its encoder. Neutral
+				// wording covers both — the Capture panel's status says which it was.
 				if (recording && !captureState.isRecording) {
 					recording = false;
 					flyPathState.isPlaying = false;
-					flyPathState.status = 'Stopped at the capture cap';
+					flyPathState.status = 'Recording stopped — see the Capture panel';
 					restoreCamera();
 					engaged = false;
 					return;
@@ -401,7 +474,27 @@
 				const total = totalDuration(flyPathState);
 				if (total <= 0) return;
 
-				elapsed += delta;
+				// THE OFFLINE CLOCK. An offline take encodes frame N at exactly N/fps, so the
+				// camera has to move on that same counter — advancing by the real delta would
+				// put the pose and the timestamp on different clocks and reintroduce, in the
+				// motion itself, the judder the offline path exists to remove.
+				//
+				// The decision to advance is LATCHED into captureRuntime.posed for the capture
+				// task to read after the render. It must not re-derive it from the encoder's
+				// state, which can change in between — see capture.svelte.ts.
+				if (captureRuntime.offline) {
+					// Held: the encode queue is full. Leave the latch clear so the capture task
+					// knows this rendered frame is not part of the take, whatever the encoder's
+					// state has become by the time it runs.
+					if (captureRuntime.saturated) return;
+					// The head frame is already posed; every frame after it advances by exactly
+					// one encoded frame.
+					if (takeAtHead) takeAtHead = false;
+					else elapsed += captureRuntime.frameStep;
+					captureRuntime.posed = true;
+				} else {
+					elapsed += delta;
+				}
 				if (elapsed >= total) {
 					if (flyPathState.loop) elapsed %= total;
 					else {

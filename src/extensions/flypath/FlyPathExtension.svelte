@@ -81,8 +81,14 @@
 							step={1}
 							on:change={(e) => flyPathActions.setWaypointFov(waypoint.id, e.detail.value)}
 						/>
-						<Button title="▲ Move Earlier" on:click={() => flyPathActions.moveWaypoint(waypoint.id, -1)} />
-						<Button title="▼ Move Later" on:click={() => flyPathActions.moveWaypoint(waypoint.id, 1)} />
+						<Button
+							title="▲ Move Earlier"
+							on:click={() => flyPathActions.moveWaypoint(waypoint.id, -1)}
+						/>
+						<Button
+							title="▼ Move Later"
+							on:click={() => flyPathActions.moveWaypoint(waypoint.id, 1)}
+						/>
 						<Button title="🗑 Remove" on:click={() => flyPathActions.removeWaypoint(waypoint.id)} />
 					</Folder>
 				{/each}
@@ -169,8 +175,8 @@
 			<span
 				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-top:4px; line-height:1.6; white-space:normal;"
 			>
-				⚠️ Turn the <strong>editor camera off</strong> before playing — otherwise Studio's controls
-				fight the path for the same camera. Recording uses the Capture panel's settings and cap.
+				⚠️ Turn the <strong>editor camera off</strong> before playing — otherwise Studio's controls fight
+				the path for the same camera. Recording uses the Capture panel's settings and cap.
 			</span>
 		</Folder>
 	</DropDownPane>

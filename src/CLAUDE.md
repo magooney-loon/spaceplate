@@ -100,9 +100,13 @@ scenes/
 extensions/   — extension system + per-extension docs (→ see extensions/CLAUDE.md)
   scene/ settings/ input/ logger/ sound/ skybox/ postprocessing/ physics/ gltf-viewer/ stats/
   capture/            — screenshots + video recording; Capture.svelte mounts before <Studio>
-                        in App.svelte so the grab beats the Gizmo (task ordering is load-bearing)
+                        in App.svelte so the grab beats the Gizmo (task ordering is load-bearing).
+                        Two video modes: realtime (MediaRecorder) and offline (WebCodecs via
+                        mediabunny, encoder.ts) whose frame timestamps come from a counter, not
+                        the wall clock — the only mode that is smooth by construction
   flypath/            — authored camera paths for cinematic capture; drives camera.current
                         before the render, brackets a Capture recording around one pass
+                        (pre-rolling the path first so pipelines compile before frame 0)
 ```
 
 ### Barrels

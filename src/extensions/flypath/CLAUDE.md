@@ -17,7 +17,7 @@ Dev-only (`VITE_GAME_ENGINE=true`). Paths persist to `localStorage` under `flypa
 ## The workflow
 
 1. Editor camera **on**. Fly to a shot with the mouse, hit **➕ Add Waypoint Here** — it snapshots position, orientation and FOV from `camera.current`.
-2. Adjust: drag/rotate a waypoint's cone marker with Studio's transform gizmo, or **🎯 Re-snapshot** it from a new camera position. Per-waypoint *hold → next* sets pacing.
+2. Adjust: drag/rotate a waypoint's cone marker with Studio's transform gizmo, or **🎯 Re-snapshot** it from a new camera position. Per-waypoint _hold → next_ sets pacing.
 3. Editor camera **off**, so `camera.current` is the app's own `makeDefault` camera.
 4. **▶ Play** to preview, or **🎬 Record Flythrough** to bracket a capture recording around one pass.
 
@@ -38,3 +38,8 @@ Dev-only (`VITE_GAME_ENGINE=true`). Paths persist to `localStorage` under `flypa
 ## Cross-extension
 
 `recordFlythrough()` calls `captureActions.startRecording()` / `stopRecording()` — the explicit forms exist on `captureActions` for exactly this. It rewinds and poses the camera **before** arming the recorder so frame 0 of the video is frame 0 of the path, warns when the path is longer than the capture cap (or is looping, which only the cap will end), and bails cleanly if `captureState.isRecording` never went true.
+
+- **A take pre-rolls before it arms.** On-demand rendering means the scene is only ever compiled for angles it has actually been drawn from, so a flythrough that flies somewhere new compiles pipelines _mid-take_ — the one-off 150-300ms stall that no per-frame trimming can prevent, because the work is not per-frame. `recordFlythrough()` therefore sweeps the whole path once (`PREROLL_FRAMES`, one pose per rendered frame, 0 → 1 inclusive) and arms on the frame after the last pose, so those compiles land before frame 0 and the far end of the path is warmed too. It runs through the normal loop rather than through `bootState.warmVersion`, whose `$effect` drops any bump arriving while it is still warming — a burst would silently warm one pose and skip the rest. `isPlaying` goes true at pre-roll start, not at arm, so tearing down the authoring overlay is also paid before the take.
+- **Offline takes drive the camera on the capture frame counter.** When `captureRuntime.offline` is set, playback advances by `captureRuntime.frameStep` (= 1/fps) instead of the real delta — the encoder timestamps frame N at N/fps, and advancing the pose by wall-clock delta would put motion and timestamps on different clocks, reintroducing in the motion the judder offline mode exists to remove. While `captureRuntime.saturated` is set (the encode queue is full) the task holds its pose. **The advance decision is then latched into `captureRuntime.posed` for the capture task to read after the render** — it must not re-derive it from the encoder's state, which can flip between the two tasks within one frame. That race is what made early offline takes twitchy; see `capture/CLAUDE.md`.
+- **`flyPathState.progress` is gated 25x coarser while recording** (0.05 vs 0.002). At 0.002 a 10s path writes roughly every other frame, and each write re-renders the panel's Scrub slider — tweakpane laying out a widget inside the frame being encoded. The exact 0 and 1 endpoints always land either way.
+- `scrub()` refuses for the whole take, pre-roll included (`takeInFlight()`), not just once the recorder is live.

@@ -4,6 +4,7 @@
 	import { TimestampQuery } from 'three/webgpu';
 	import { onMount, onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import { captureState } from '$extensions/capture';
 
 	interface Props {
 		children?: Snippet;
@@ -208,10 +209,45 @@
 		}
 	};
 
+	// --- pause while capture is recording ------------------------------------------
+	//
+	// Measuring the frame is not free, and all of it lands on the main thread inside the
+	// same frame a recording is trying to blit and hand to the encoder:
+	//
+	//   - `trackGPU`/`trackCPT` make stats-gl set `backend.trackTimestamp`, which writes a
+	//     timestamp query around EVERY render and compute pass.
+	//   - `resolveGpuTimestamps()` issues two async resolves per frame.
+	//   - `stats.update()` redraws stats-gl's own three panels, and `updateCustomPanels()`
+	//     redraws seven more — ten small 2D canvas repaints per rendered frame.
+	//
+	// None of it is visible in the output anyway (the panels are HTML siblings of the
+	// canvas, never composited into it), so a take is exactly when it is worth nothing.
+	// trackTimestamp is cleared too rather than just skipping the task: the per-pass query
+	// writes happen inside the renderer, well upstream of anything this task does.
+	//
+	// The DOM is left alone — hiding it would reflow, and it is not in the capture.
+	let trackTimestampBefore: boolean | undefined;
+
+	$effect(() => {
+		if (!captureState.isRecording) return;
+		const backend = renderer.backend;
+		if (!backend) return;
+		trackTimestampBefore = backend.trackTimestamp;
+		backend.trackTimestamp = false;
+		return () => {
+			backend.trackTimestamp = trackTimestampBefore ?? false;
+			// The panels held their last value for the whole take; the lifetime counters
+			// moved on regardless, so re-arm the detectors instead of reporting a jump.
+			lastRenderCalls = -1;
+			lastComputeCalls = -1;
+		};
+	});
+
 	// AFTER the render task (see updateCustomPanels) and autoInvalidate OFF: a stats
 	// read must not itself defeat on-demand rendering.
 	useTask(
 		() => {
+			if (captureState.isRecording) return;
 			stats?.update();
 			updateCustomPanels();
 			resolveGpuTimestamps();

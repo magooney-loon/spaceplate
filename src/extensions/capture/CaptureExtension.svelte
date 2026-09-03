@@ -3,7 +3,12 @@
 	import { Folder, Slider, Button, Separator, List } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { captureState, captureActions } from './capture.svelte';
-	import { extensionScope, type CaptureImageFormat } from './types';
+	import {
+		extensionScope,
+		type CaptureContainer,
+		type CaptureImageFormat,
+		type CaptureVideoMode
+	} from './types';
 
 	interface Props {
 		children?: Snippet;
@@ -19,10 +24,24 @@
 		{ value: 'webp', text: 'WebP' }
 	];
 
+	const modeOptions = [
+		{ value: 'realtime', text: 'Realtime (live)' },
+		{ value: 'offline', text: 'Offline (exact)' }
+	];
+
+	const containerOptions = [
+		{ value: 'webm', text: 'WebM (VP9)' },
+		{ value: 'mp4', text: 'MP4 (H.264)' }
+	];
+
+	const offline = $derived(captureState.videoMode === 'offline');
+
 	const recordTitle = $derived(
 		captureState.isRecording
 			? `⏹ Stop (${captureState.elapsedSec}s / ${captureState.maxDurationSec}s)`
-			: '⏺ Start Recording'
+			: offline
+				? '⏺ Start Offline Render'
+				: '⏺ Start Recording'
 	);
 </script>
 
@@ -57,6 +76,18 @@
 		<Separator />
 
 		<Folder title="Video" expanded={true}>
+			<List
+				label="Mode"
+				value={captureState.videoMode}
+				options={modeOptions}
+				on:change={(e) => captureActions.setVideoMode(e.detail.value as CaptureVideoMode)}
+			/>
+			<List
+				label="Container"
+				value={captureState.container}
+				options={containerOptions}
+				on:change={(e) => captureActions.setContainer(e.detail.value as CaptureContainer)}
+			/>
 			<Slider
 				label="FPS"
 				value={captureState.fps}
@@ -85,7 +116,16 @@
 			<span
 				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-top:4px; line-height:1.6; white-space:normal;"
 			>
-				⚠️ Recording renders every frame (on-demand is suspended) and auto-stops at the cap.
+				{#if offline}
+					⚠️ Offline renders frame-by-frame at exactly {captureState.fps}fps — perfectly smooth
+					however slowly it draws, but the viewport is not realtime and the length shown is encoded
+					time. Drive it with 🎬 Record Flythrough; other animation (sky, physics) still runs on the
+					wall clock.
+				{:else}
+					⚠️ Recording renders every frame (on-demand is suspended) and auto-stops at the cap. A
+					frame the browser delivers late is encoded late — switch to Offline if a take must be
+					perfectly smooth.
+				{/if}
 			</span>
 		</Folder>
 	</DropDownPane>

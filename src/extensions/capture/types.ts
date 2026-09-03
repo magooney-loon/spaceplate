@@ -3,20 +3,39 @@ export const extensionScope = 'capture';
 /** Encodings `HTMLCanvasElement.toBlob` accepts across the browsers this app targets. */
 export type CaptureImageFormat = 'png' | 'jpeg' | 'webp';
 
+/** Output container. Steers the realtime mime probe and the offline codec probe alike. */
+export type CaptureContainer = 'webm' | 'mp4';
+
+/**
+ * How a recording is timed.
+ *
+ * - `realtime` — MediaRecorder off a canvas stream. The take runs at wall-clock speed and
+ *   the viewport stays live, but frame timestamps ARE the wall clock, so a hitch is encoded
+ *   into the file.
+ * - `offline` — WebCodecs, timestamps derived from a frame counter (see `encoder.ts`). The
+ *   output is exactly-spaced no matter how slowly it renders; the take is not realtime.
+ */
+export type CaptureVideoMode = 'realtime' | 'offline';
+
 export type CaptureState = {
 	imageFormat: CaptureImageFormat;
 	/** Encoder quality for the lossy formats, 0..1. Ignored for png. */
 	imageQuality: number;
+	videoMode: CaptureVideoMode;
+	container: CaptureContainer;
 	/** Output framerate of a recording. The render loop may run faster; frames are throttled to this. */
 	fps: number;
-	/** MediaRecorder target bitrate, megabits/s. */
+	/** Target bitrate, megabits/s. Used by both video modes. */
 	bitrateMbps: number;
 	/** Hard cap in seconds — a recording auto-stops here so a forgotten one cannot pin the loop forever. */
 	maxDurationSec: number;
 
 	// --- driver-written, read-only from the panel's point of view ---
 	isRecording: boolean;
-	/** Whole seconds elapsed in the current recording; only written when it changes. */
+	/**
+	 * Whole seconds of OUTPUT recorded so far; only written when it changes. In offline mode
+	 * this is encoded scene time, not time spent waiting for it.
+	 */
 	elapsedSec: number;
 	/** Last outcome or error, shown in the panel. */
 	status: string;
@@ -25,6 +44,8 @@ export type CaptureState = {
 export type CaptureActions = {
 	setImageFormat(format: CaptureImageFormat): void;
 	setImageQuality(quality: number): void;
+	setVideoMode(mode: CaptureVideoMode): void;
+	setContainer(container: CaptureContainer): void;
 	setFps(fps: number): void;
 	setBitrateMbps(bitrate: number): void;
 	setMaxDurationSec(seconds: number): void;
