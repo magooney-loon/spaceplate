@@ -3,6 +3,7 @@
 	import Scene from './Scene.svelte';
 	import SceneHud from './SceneHud.svelte';
 	import {
+		EngineClock,
 		Renderer,
 		Loader,
 		Keymapper,
@@ -61,6 +62,10 @@
      (DOCS/webgpu-notes.md §3.1). -->
 {#if capabilityState.tier !== 'none'}
 	<Canvas {createRenderer} {dpr} autoRender={false}>
+		<!-- The engine clock: one source of scene time for every task, stage and TSL `time` in
+		     the app (core/utils/engineClock.ts). Registers no task — it wraps scheduler.run,
+		     upstream of all of them — so it does not disturb the render-task order below. -->
+		<EngineClock />
 		<Renderer />
 		<!-- Samples renderer.info after the pipeline draws — feeds the Settings ▸ System tab. -->
 		<Telemetry />

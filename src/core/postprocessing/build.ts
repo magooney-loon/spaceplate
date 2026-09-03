@@ -6,7 +6,17 @@
 // from the bag built here, never a raw number — param drags write `.value`, only
 // the structural key rebuilds.
 
-import { pass, mrt, output, velocity, emissive, vec4, uniform, context, renderOutput } from 'three/tsl';
+import {
+	pass,
+	mrt,
+	output,
+	velocity,
+	emissive,
+	vec4,
+	uniform,
+	context,
+	renderOutput
+} from 'three/tsl';
 import { BlendMode, NormalBlending, UnsignedByteType } from 'three/webgpu';
 import type { RenderPipeline, Scene, Camera, WebGPURenderer } from 'three/webgpu';
 import type { QualityLevel } from '$extensions/settings/types';

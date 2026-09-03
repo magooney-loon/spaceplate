@@ -11,7 +11,12 @@
 		Monitor
 	} from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
-	import { environmentState, environmentActions, ENV_TEXTURES, CUBE_TEXTURES } from '$core/skybox/environment';
+	import {
+		environmentState,
+		environmentActions,
+		ENV_TEXTURES,
+		CUBE_TEXTURES
+	} from '$core/skybox/environment';
 	import { skyActions, skyMeta, sunAt, WEATHERS, DEFAULT_DAY_CURVE } from '$core/skybox/model';
 	import type { ChannelName, ClockKind } from '$core/skybox/model';
 	import { requestStrike } from '$core/skybox/layers/lightning/flashState';

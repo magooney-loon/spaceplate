@@ -44,7 +44,7 @@ MRT rows and the matching `BuildContext` fields).
   samples the bloom buffer, so no bloom means no flare). The flare runs through
   `gaussianBlur` to smooth the ¼-res ghosts; its intermediate nodes are registered
   via `ctx.track()` so a rebuild disposes their render targets. `inputClamp` caps the
-  linear value bloom is allowed to *sample* (not the image) — without it the sky's sun
+  linear value bloom is allowed to _sample_ (not the image) — without it the sky's sun
   disc, 60800 linear in `SkyMesh.js`, gets mipped across the entire frame and washes out
   every daylit scene; `threshold` cannot fence that off, since the disc clears any
   threshold. Switching the mode

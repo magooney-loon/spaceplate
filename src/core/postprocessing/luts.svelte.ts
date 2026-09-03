@@ -86,16 +86,18 @@ export const ensureLutLoaded = (index: number): void => {
 	// Encoded because three's filenames carry spaces and an ampersand ('Bourbon 64.CUBE',
 	// 'B&WLUT.png'), kept as-is so this set stays diffable against the example.
 	const url = `${BASE_URL}luts/${encodeURIComponent(entry.file)}`;
-	loaderFor(entry.file).loadAsync(url).then(
-		(result: { texture3D: unknown }) => {
-			textures.set(index, result.texture3D as Data3DTexture);
-			states.set(index, 'ready');
-			lutState.version++;
-			logPostprocessing.info(`LUT loaded: ${entry.text}`);
-		},
-		(error: unknown) => {
-			states.set(index, 'failed');
-			logPostprocessing.error(`LUT failed to load (${entry.file}):`, error);
-		}
-	);
+	loaderFor(entry.file)
+		.loadAsync(url)
+		.then(
+			(result: { texture3D: unknown }) => {
+				textures.set(index, result.texture3D as Data3DTexture);
+				states.set(index, 'ready');
+				lutState.version++;
+				logPostprocessing.info(`LUT loaded: ${entry.text}`);
+			},
+			(error: unknown) => {
+				states.set(index, 'failed');
+				logPostprocessing.error(`LUT failed to load (${entry.file}):`, error);
+			}
+		);
 };

@@ -25,9 +25,9 @@ index.ts            — barrel re-exports
 ## Cross-extension access
 
 ```ts
-import { settingsState } from '$extensions/settings'
+import { settingsState } from '$extensions/settings';
 // Runes are reactive across modules
-settingsState.audio.musicVolume
+settingsState.audio.musicVolume;
 ```
 
 State-only extension — no Studio panel. Many other extensions read this state directly (e.g., `physicsState`, sound system).

@@ -58,6 +58,12 @@ core/
       lightning/            — Lightning + flashState.ts (shared strike state)
 
   utils/
+    EngineClock.svelte    — Installs the engine clock. Renders nothing, registers NO task
+    engineClock.ts        — THE engine clock: wraps scheduler.run so one fixed step can replace
+                            the frame's real delta for every stage, task, Rapier accumulator
+                            and TSL `time` at once. Pass-through unless a fixed-step source is
+                            installed — only capture ever does. Read its header before touching
+                            anything that integrates a delta
     Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay unlock);
                             after assets settle it runs the scene warmup sweep before arming the prompt.
                             Also owns the two capability screens: the blocking unsupported screen and
@@ -103,7 +109,9 @@ extensions/   — extension system + per-extension docs (→ see extensions/CLAU
                         in App.svelte so the grab beats the Gizmo (task ordering is load-bearing).
                         Two video modes: realtime (MediaRecorder) and offline (WebCodecs via
                         mediabunny, encoder.ts) whose frame timestamps come from a counter, not
-                        the wall clock — the only mode that is smooth by construction
+                        the wall clock — the only mode that is smooth by construction. An
+                        offline take owns the engine clock for its duration, so the whole scene
+                        advances one frame per encoded frame, not just the camera
   flypath/            — authored camera paths for cinematic capture; drives camera.current
                         before the render, brackets a Capture recording around one pass
                         (pre-rolling the path first so pipelines compile before frame 0)
@@ -158,7 +166,7 @@ The renderer is `WebGPURenderer`, which auto-falls back to WebGL when WebGPU is 
   `$core/postprocessing` registry (roles, conflicts, MRT set).
 - **Tone mapping is owned by Threlte's renderer context** (default AgX), driven by the `<Canvas>`
   `toneMapping` option. Never also write `renderer.toneMapping` from a component — two owners for
-  one property caused several of the earlier bugs. (The FXAA effect only *reads* it, when it
+  one property caused several of the earlier bugs. (The FXAA effect only _reads_ it, when it
   takes over the output colour transform.)
 
 Background: `DOCS/webgpu-notes.md` — WebGPU gotchas, the Studio task-ordering rules any new
@@ -206,6 +214,15 @@ input, settings, gltf-viewer, logger, sound, stats, skybox, postprocessing). The
 
 ### Frame tasks
 
+- **A task's `delta` is SCENE time, not wall-clock time** — integrate it and nothing else, and
+  new code is capture-correct for free. `core/utils/engineClock.ts` wraps `Scheduler.run`, so a
+  fixed-step source (an offline capture take, and nothing else today) can substitute one step
+  for the frame's real delta upstream of every stage, task and Rapier accumulator in the app.
+  It also pins TSL `time`, which the scheduler cannot reach. Two rules follow: **do not read
+  `performance.now()` / `Date.now()` to animate anything** (it bypasses the clock and will drift
+  slow in a below-realtime take — `core/audio/weatherAudio.ts` does, deliberately, because audio
+  is never captured), and **a `delta` of 0 is legal** — it means a held frame, so no divisions by
+  it. `engineClock.elapsed` / `.delta` / `.fixed` are readable from outside a task.
 - No stage wrapper — components register plain `useTask`s from `@threlte/core/webgpu` with
   explicit ordering constraints: `{ before: autoRenderTask }` for pre-render work (the sky
   driver + layers in `core/skybox/`), `{ after: autoRenderTask }` for post-render work

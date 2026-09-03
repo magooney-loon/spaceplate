@@ -473,11 +473,7 @@
 				// nowhere. Holding at the live fall in that case leaves the second sample on
 				// the same empty column, so `below` stays 0 and nothing draws -- the module's
 				// standing fail-safe (heightField.ts), not a new failure mode.
-				const fallSinceImpact = mix(
-					float(0),
-					live.uImpact.sub(u).mul(boxHeight),
-					live.valid
-				);
+				const fallSinceImpact = mix(float(0), live.uImpact.sub(u).mul(boxHeight), live.valid);
 				x = driftX(fallSinceImpact);
 				z = driftZ(fallSinceImpact);
 				// Re-sampled at the impact column, so a ring's HEIGHT belongs to the place it

@@ -17,6 +17,7 @@ index.ts              — barrel re-exports
 ## Studio panel
 
 Two sections:
+
 1. **Buses** — SFX/Music/Ambient folders with Checkbox (enabled) + Slider (volume). These delegate to `settingsState.audio` (cross-extension writes).
 2. **Positional Audio** — Panning model list, ref/max distance sliders, rolloff factor slider, reset button.
 

@@ -165,11 +165,7 @@
 			const p3 = fract(vec3(p).mul(vec3(0.1031, 0.11369, 0.13787))).toVar();
 			p3.addAssign(dot(p3, p3.yzx.add(19.19)));
 			return fract(
-				vec3(
-					p3.x.add(p3.y).mul(p3.z),
-					p3.x.add(p3.z).mul(p3.y),
-					p3.y.add(p3.z).mul(p3.x)
-				)
+				vec3(p3.x.add(p3.y).mul(p3.z), p3.x.add(p3.z).mul(p3.y), p3.y.add(p3.z).mul(p3.x))
 			);
 		});
 
@@ -187,7 +183,9 @@
 			const p = n.xy.sub(0.5).mul(0.7);
 			const d = uv.sub(p).length();
 			const fade = Saw(float(0.025), fract(t.add(n.z)));
-			return S(float(0.3), float(0), d).mul(fract(n.z.mul(10))).mul(fade);
+			return S(float(0.3), float(0), d)
+				.mul(fract(n.z.mul(10)))
+				.mul(fade);
 		});
 
 		/**
@@ -231,10 +229,7 @@
 			const r = sqrt(S(float(1), y, st.y));
 			const cd = st.x.sub(x).abs();
 			const trailFront = S(float(-0.02), float(0.02), st.y.sub(y));
-			const trail = S(r.mul(0.23), r.mul(r).mul(0.15), cd)
-				.mul(trailFront)
-				.mul(r)
-				.mul(r);
+			const trail = S(r.mul(0.23), r.mul(r).mul(0.15), cd).mul(trailFront).mul(r).mul(r);
 
 			// Droplets strung along the trail, on a grid pinned to the glass.
 			// (The original computes a first `droplets` from a `trail2` term and then

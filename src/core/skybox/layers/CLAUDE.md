@@ -44,7 +44,7 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 - **`skyLayerMaterial(opts)`** — transparent, `depthWrite = false`, and
   **`fog = false` is non-negotiable**: sky layers sit at radius ~1000 against fog tuned
   for a 144-unit far plane; any density resolves the whole sky to flat fog colour (and
-  additive layers would fog *toward* a colour instead of dimming). `toneMapped: true`
+  additive layers would fog _toward_ a colour instead of dimming). `toneMapped: true`
   only for layers compositing into the dome's exposure space (CloudDeck, Moon);
   emissive layers (stars, meteors, nebula, lightning) stay untone-mapped or night's
   0.62 exposure dims the one bright thing in a dark frame.
@@ -92,7 +92,7 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 - **The mass deck is a marched SLAB, not a projected plane** (`steps` slices between two
   apparent altitudes, front to back, alpha early-out at 0.95 — the loop shape from
   three's `webgpu_volume_cloud`). The motive is parallax, not detail: a plane-projected
-  field only answers to camera *rotation*, so it slid with translation like a decal.
+  field only answers to camera _rotation_, so it slid with translation like a decal.
   Octaves per slice came DOWN to pay for it (fbm3 + fbm2 ridge; the flat version used
   fbm5) — the slices manufacture the detail the octaves used to.
   - **No 3D texture, on purpose.** The example's 128³ volume is 2 MB and 2.1M CPU noise
@@ -134,7 +134,7 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   uniform that moves displaces the whole field by `elapsed × Δrate`. Rain's fall
   (`uFallTime`) and horizontal drift (`uWindTravel`), and Snow's `uFallTime` /
   `uWindDrift`, all accumulate. The wind axis was the one that got missed: `fall ×
-  uWindSlant` swept the entire drop field sideways for the duration of any weather
+uWindSlant` swept the entire drop field sideways for the duration of any weather
   blend, faster the longer the session had run, then stopped dead when the blend
   finished. A drift that must be re-evaluated at a past time (Rain's splashes) takes a
   **rollback distance**, not an absolute one.

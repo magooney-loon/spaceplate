@@ -91,10 +91,7 @@ export const gltfViewerActions = {
 		// addressable anyway. Dedupe, preserving first-seen order.
 		const unique = [...new Set(clips)];
 		if (unique.length < clips.length) {
-			logGltf.warn(
-				`Ignoring ${clips.length - unique.length} duplicate clip name(s) in`,
-				m.name
-			);
+			logGltf.warn(`Ignoring ${clips.length - unique.length} duplicate clip name(s) in`, m.name);
 		}
 		m.animationClips = unique;
 		logGltf.info(

@@ -20,7 +20,7 @@
 
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
-	import { captureActions, captureRuntime, captureState } from '$extensions/capture';
+	import { captureActions, captureState } from '$extensions/capture';
 	import { logEngine } from '$extensions/logger';
 	import {
 		EASINGS,
@@ -110,12 +110,6 @@
 	let recording = false;
 	/** Pre-roll cursor: -1 when idle, else the sweep frame about to be posed. */
 	let prerollFrame = -1;
-	/**
-	 * Set by armTake(), which already posed the path at 0. The first offline tick must
-	 * therefore encode where it is rather than advance — otherwise frame 0 of the video is
-	 * the path at 1/fps and the whole take is one frame short at the head.
-	 */
-	let takeAtHead = false;
 	/** True from the moment 🎬 is pressed until the take is torn down — pre-roll included. */
 	const takeInFlight = () => recording || prerollFrame >= 0;
 
@@ -279,7 +273,6 @@
 		flyPathState.isPlaying = false;
 		finishing = false;
 		prerollFrame = -1;
-		takeAtHead = false;
 		elapsed = 0;
 		flyPathState.progress = 0;
 		if (recording) {
@@ -368,13 +361,11 @@
 
 	const armTake = () => {
 		// Rewind and pose BEFORE arming the recorder, so frame 0 of the video is frame 0
-		// of the path rather than the end of the pre-roll sweep.
+		// of the path rather than the end of the pre-roll sweep. Capture's clock source
+		// releases that head frame with a step of 0, so the take encodes the path exactly
+		// where this leaves it.
 		elapsed = 0;
 		applyPose(0);
-		takeAtHead = true;
-		// Claim the offline clock before arming, so the very first capture tick already
-		// knows to obey the latch rather than pacing itself off the queue.
-		captureRuntime.driven = true;
 
 		captureActions.startRecording();
 		if (!captureState.isRecording) {
@@ -486,27 +477,18 @@
 				const total = totalDuration(flyPathState);
 				if (total <= 0) return;
 
-				// THE OFFLINE CLOCK. An offline take encodes frame N at exactly N/fps, so the
-				// camera has to move on that same counter — advancing by the real delta would
-				// put the pose and the timestamp on different clocks and reintroduce, in the
-				// motion itself, the judder the offline path exists to remove.
+				// `delta` IS the offline clock. An offline take encodes frame N at exactly
+				// N/fps, so the camera has to move on that same counter — and it does, without
+				// a word about capture here, because an offline take takes over the engine
+				// clock and `delta` is whatever that clock says the frame is worth
+				// (core/utils/engineClock.ts): 1/fps on a frame of the take, 0 on a frame the
+				// encoder made it hold, the wall-clock delta the rest of the time.
 				//
-				// The decision to advance is LATCHED into captureRuntime.posed for the capture
-				// task to read after the render. It must not re-derive it from the encoder's
-				// state, which can change in between — see capture.svelte.ts.
-				if (captureRuntime.offline) {
-					// Held: the encode queue is full. Leave the latch clear so the capture task
-					// knows this rendered frame is not part of the take, whatever the encoder's
-					// state has become by the time it runs.
-					if (captureRuntime.saturated) return;
-					// The head frame is already posed; every frame after it advances by exactly
-					// one encoded frame.
-					if (takeAtHead) takeAtHead = false;
-					else elapsed += captureRuntime.frameStep;
-					captureRuntime.posed = true;
-				} else {
-					elapsed += delta;
-				}
+				// This used to be an explicit branch on captureRuntime, and the camera was the
+				// only thing in the app that got it right; everything else — sky, physics, TSL
+				// `time` — still ran on the wall clock and drifted slow against it in a heavy
+				// take.
+				elapsed += delta;
 				if (elapsed >= total) {
 					if (flyPathState.loop) elapsed %= total;
 					else {

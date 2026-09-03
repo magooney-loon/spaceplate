@@ -25,11 +25,14 @@
 	const ktx2Loader = useKtx2(`${threeCdn}/examples/jsm/libs/basis/`);
 
 	// untrack: URL is intentionally fixed per instance (keyed by model.id in parent {#each})
-	const gltf = useGltf(untrack(() => model.url), {
-		dracoLoader,
-		meshoptDecoder,
-		ktx2Loader
-	});
+	const gltf = useGltf(
+		untrack(() => model.url),
+		{
+			dracoLoader,
+			meshoptDecoder,
+			ktx2Loader
+		}
+	);
 	const { actions } = useGltfAnimations(gltf);
 	const { scene, invalidate } = useThrelte();
 

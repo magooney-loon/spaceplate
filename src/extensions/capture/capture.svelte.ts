@@ -34,28 +34,29 @@ export const captureState = $state<CaptureState>({
 
 // --- the offline handshake ----------------------------------------------------
 //
-// An offline take needs whatever drives the camera to advance on the SAME frame counter
-// the encoder timestamps with, and to stall when the encoder is behind. That is a
-// per-frame conversation between two tasks in different extensions, so it is a plain
-// object and deliberately NOT `$state`: both sides touch it every frame, and a reactive
+// An offline take needs everything that animates to advance on the SAME frame counter the
+// encoder timestamps with, and to stall when the encoder is behind. The advancing is not
+// arranged here — an offline take takes over the ENGINE CLOCK (core/utils/engineClock.ts),
+// which substitutes a fixed step for the frame's real delta upstream of every task in the
+// app, so the camera, the sky, the TSL layers and physics all move by one encoded frame per
+// encoded frame without knowing anything about capture.
+//
+// What is left here is the frame's verdict, shared between the clock source (which decides,
+// before anything runs) and the capture task (which encodes, after the render). It is a
+// plain object and deliberately NOT `$state`: both are touched every frame, and a reactive
 // write there would wake the Studio panel at frame rate for no reason. Same reasoning as
 // the sky descriptor (core/skybox/CLAUDE.md §14.1) — one writer per field, everyone reads
 // from their own task.
 //
-// Order within a frame: the pose driver runs `{ before: autoRenderTask }`, decides whether
-// to advance, and LATCHES that decision in `posed`; the render happens; `Capture.svelte`
-// runs `{ after: autoRenderTask }` and encodes iff the latch is set.
-//
 // THE LATCH IS THE WHOLE POINT, and getting it wrong is what made early offline takes
 // twitchy. `saturated` is asynchronous — the encoder's promise can resolve at any moment,
-// including *between* the pose driver's task and the capture task within a single frame. An
+// including *between* the clock's decision and the capture task within a single frame. An
 // earlier version had both sides read `saturated` directly, so a resolution landing in that
-// window meant the pose driver held its pose while the capture task went ahead and encoded
-// anyway: the same pose encoded twice. With motion blur on (it is enabled by default) the
-// first copy carries a full frame of velocity and the duplicate carries none, so the output
-// alternates blurred and sharp frames. Whether it happened at all came down to promise
-// timing, which is why it was intermittent and worst at the start of a take, when the
-// encoder is cold.
+// window meant the scene held still while the capture task went ahead and encoded anyway:
+// the same pose encoded twice. With motion blur on (it is enabled by default) the first copy
+// carries a full frame of velocity and the duplicate carries none, so the output alternates
+// blurred and sharp frames. Whether it happened at all came down to promise timing, which is
+// why it was intermittent and worst at the start of a take, when the encoder is cold.
 //
 // One decision, made once per frame, by one side. Capture never second-guesses it.
 
@@ -63,25 +64,20 @@ export const captureRuntime = {
 	/** True only while an offline take is in flight. Realtime takes leave this alone. */
 	offline: false,
 	/**
-	 * A pose driver owns the clock for this take (flypath's 🎬). When false the take is
-	 * undriven — a bare offline Record — and capture paces itself off the queue instead.
-	 */
-	driven: false,
-	/**
-	 * THE LATCH. Set by the pose driver on frames it actually advanced and posed; consumed
-	 * (and cleared) by the capture task after the render. A frame the driver held is a frame
-	 * that must not be encoded, whatever the encoder's state has become in the meantime.
+	 * THE LATCH. Set by the clock source (`Capture.svelte`'s `offlineStep`) on frames it let
+	 * scene time advance on; consumed (and cleared) by the capture task after the render. A
+	 * frame the clock held is a frame that must not be encoded, whatever the encoder's state
+	 * has become in the meantime.
 	 */
 	posed: false,
 	/**
-	 * The encode queue is at its depth limit — the pose driver must hold this frame. NOT a
-	 * simple "encoder busy": frames are queued several deep on purpose, because holding is
-	 * itself mildly destructive (the sky keeps animating on the wall clock, and the
-	 * afterimage feedback buffer keeps accumulating, on a frame the take will not use).
-	 * Holds should be rare, and at this depth they are.
+	 * The encode queue is at its depth limit — the clock must hold this frame. NOT a simple
+	 * "encoder busy": frames are queued several deep on purpose, because a hold costs the
+	 * take a frame of wall-clock time for nothing. Holds should be rare, and at this depth
+	 * they are.
 	 */
 	saturated: false,
-	/** Scene seconds one encoded frame represents. The pose driver advances by exactly this. */
+	/** Scene seconds one encoded frame represents. The engine clock advances by exactly this. */
 	frameStep: 1 / 30
 };
 

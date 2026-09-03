@@ -173,7 +173,12 @@
 					min={-20}
 					max={20}
 					step={0.1}
-					on:change={(e) => physicsActions.setAttractorPosition(e.detail.value, physicsState.attractorY, physicsState.attractorZ)}
+					on:change={(e) =>
+						physicsActions.setAttractorPosition(
+							e.detail.value,
+							physicsState.attractorY,
+							physicsState.attractorZ
+						)}
 				/>
 				<Slider
 					label="Pos Y"
@@ -181,7 +186,12 @@
 					min={-10}
 					max={20}
 					step={0.1}
-					on:change={(e) => physicsActions.setAttractorPosition(physicsState.attractorX, e.detail.value, physicsState.attractorZ)}
+					on:change={(e) =>
+						physicsActions.setAttractorPosition(
+							physicsState.attractorX,
+							e.detail.value,
+							physicsState.attractorZ
+						)}
 				/>
 				<Slider
 					label="Pos Z"
@@ -189,7 +199,12 @@
 					min={-20}
 					max={20}
 					step={0.1}
-					on:change={(e) => physicsActions.setAttractorPosition(physicsState.attractorX, physicsState.attractorY, e.detail.value)}
+					on:change={(e) =>
+						physicsActions.setAttractorPosition(
+							physicsState.attractorX,
+							physicsState.attractorY,
+							e.detail.value
+						)}
 				/>
 			{/if}
 			<Button title="Reset Attractor" on:click={() => physicsActions.resetAttractor()} />

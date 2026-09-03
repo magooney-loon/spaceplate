@@ -34,6 +34,7 @@
 	// has to pin the loop itself: see the invalidate() in the task.
 
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
+	import { setFixedStepSource } from '$core';
 	import { sceneState } from '$extensions/scene';
 	import { logEngine } from '$extensions/logger';
 	import {
@@ -163,7 +164,8 @@
 	let recorder: MediaRecorder | null = null;
 	let videoTrack: CanvasCaptureMediaStreamTrack | null = null;
 	let chunks: Blob[] = [];
-	let frameClock = 0;
+	/** Realtime only: seconds since the last frame was pushed to the stream. */
+	let frameAccumulator = 0;
 	let elapsed = 0;
 
 	/** No clear first: the context is opaque and drawImage covers every pixel. */
@@ -235,7 +237,7 @@
 			}
 		};
 
-		frameClock = 0;
+		frameAccumulator = 0;
 		elapsed = 0;
 		captureState.elapsedSec = 0;
 		captureState.isRecording = true;
@@ -274,22 +276,52 @@
 	let offlineTake: OfflineTake | null = null;
 	/** True between arming a take and the encoder actually existing — creation is async. */
 	let offlinePending = false;
+	/** Frames the clock has released to this take. Only frame 0 is special (see below). */
+	let takeFrames = 0;
+
+	// THE FIXED-STEP SOURCE (core/utils/engineClock.ts). An offline take owns the engine
+	// clock for its duration, and this is the one decision that gives it away, made once per
+	// frame, before any stage runs. Everything downstream — the flypath camera, the sky
+	// model, every TSL layer, Rapier's accumulator — advances by whatever this returns,
+	// because the clock substitutes it for the frame's real delta at the scheduler.
+	//
+	// THE LATCH IS STILL THE POINT (see capture.svelte.ts). `saturated` is asynchronous: the
+	// encoder's promise can resolve at any moment, including between this call and the
+	// capture task at the end of the same frame. So the decision is LATCHED into
+	// `captureRuntime.posed` here and the capture task only ever reads the latch. It moved
+	// out of the pose driver and into the clock source because the clock is now the single
+	// side that decides anything about a frame — and the frames that are part of the take are
+	// exactly the frames scene time advanced on.
+	const offlineStep = (): number | null => {
+		// Not ready, or the queue is full: hold. The clock does not advance and the frame is
+		// not even rendered — nothing about this frame reaches the take, whatever the
+		// encoder's state has become by the time the capture task runs.
+		if (!offlineTake || captureRuntime.saturated) {
+			captureRuntime.posed = false;
+			return null;
+		}
+		captureRuntime.posed = true;
+		// Frame 0 is encoded where it already is. A pose driver rewinds and poses before
+		// arming (flypath's armTake), so advancing before the first encode would make frame 0
+		// of the video the scene at 1/fps and leave the take a frame short at the head.
+		return takeFrames++ === 0 ? 0 : captureRuntime.frameStep;
+	};
 
 	const teardownOffline = () => {
+		setFixedStepSource(null);
 		offlineTake = null;
 		offlinePending = false;
+		takeFrames = 0;
 		captureRuntime.offline = false;
-		captureRuntime.driven = false;
 		captureRuntime.posed = false;
 		captureRuntime.saturated = false;
 		captureState.isRecording = false;
 	};
 
 	/**
-	 * A queued frame finished encoding. Clears the stall once the queue has drained below
-	 * its limit, and re-arms the loop for the undriven case — a driven take is kept alive
-	 * by the pose driver's own invalidate (and, in this scene, by the sky layers, which
-	 * invalidate every frame regardless).
+	 * A queued frame finished encoding. Clears the stall once the queue has drained below its
+	 * limit and wakes the loop, which is load-bearing: a held frame is not rendered at all,
+	 * so this is the only thing that can end a hold.
 	 */
 	const onEncoderReady = () => {
 		const take = offlineTake;
@@ -302,8 +334,9 @@
 		// isRecording flips optimistically: `CaptureDriver.startRecording` is synchronous
 		// and callers (flypath) check the flag on the next line, but building an encoder
 		// means probing codecs and starting a muxer. Held saturated until it exists, so the
-		// pose driver cannot advance into a take that has not begun.
+		// clock cannot advance into a take that has not begun.
 		offlinePending = true;
+		takeFrames = 0;
 		captureState.isRecording = true;
 		captureState.elapsedSec = 0;
 		captureRuntime.offline = true;
@@ -311,6 +344,10 @@
 		captureRuntime.saturated = true;
 		captureRuntime.frameStep = 1 / captureState.fps;
 		captureState.status = 'Preparing encoder…';
+		// Claim the clock now, not on the frame the encoder lands: from here every frame is
+		// either a frame of the take or a deliberate hold, and nothing animates on the wall
+		// clock in between.
+		setFixedStepSource(offlineStep);
 
 		void createOfflineTake({
 			canvas: videoCanvas,
@@ -419,10 +456,10 @@
 		// $state write, so it is gated on the integer changing rather than run at 60Hz.
 		if (whole !== captureState.elapsedSec) captureState.elapsedSec = whole;
 
-		frameClock += delta;
+		frameAccumulator += delta;
 		const period = 1 / captureState.fps;
-		if (frameClock >= period) {
-			frameClock %= period;
+		if (frameAccumulator >= period) {
+			frameAccumulator %= period;
 			if (blitVideo()) videoTrack?.requestFrame();
 		}
 
@@ -441,8 +478,8 @@
 
 	const tickOffline = () => {
 		const take = offlineTake;
-		// Still building the encoder. captureRuntime.saturated is already held, so the pose
-		// driver is parked and nothing is being missed.
+		// Still building the encoder. The clock source is holding every frame until it
+		// exists, so nothing is being missed.
 		if (!take) return;
 
 		if (take.failure) {
@@ -454,18 +491,13 @@
 			return;
 		}
 
-		// THE LATCH (captureRuntime.posed, see capture.svelte.ts). On a driven take this is
-		// the ONLY thing consulted: the pose driver already decided, before the render,
-		// whether this frame is part of the take. Re-deriving that from `take.saturated`
-		// here is the bug that made takes twitchy — the encoder can resolve between the two
-		// tasks, and then a frame the driver held gets encoded anyway as a duplicate pose.
-		if (captureRuntime.driven) {
-			if (!captureRuntime.posed) return;
-			captureRuntime.posed = false;
-		} else if (take.saturated) {
-			// Undriven take: nothing else is pacing it, so the queue is the only brake.
-			return;
-		}
+		// THE LATCH (captureRuntime.posed, see capture.svelte.ts). The ONLY thing consulted:
+		// the clock source already decided, before this frame rendered, whether it is part of
+		// the take. Re-deriving that from `take.saturated` here is the bug that made takes
+		// twitchy — the encoder can resolve between the two, and then a frame the clock held
+		// gets encoded anyway, as a duplicate of the previous pose.
+		if (!captureRuntime.posed) return;
+		captureRuntime.posed = false;
 
 		// The cap is checked BEFORE pushing, not after, so a take never finalizes in the
 		// same tick it queued a frame.
@@ -482,8 +514,9 @@
 
 		const whole = Math.floor(take.encodedSec);
 		if (whole !== captureState.elapsedSec) captureState.elapsedSec = whole;
-		// No invalidate() on a driven take: the pose driver invalidates from applyPose, and
-		// in this scene the sky layers keep the loop alive anyway.
+		// No invalidate() here: the engine clock invalidates every non-held frame of a take
+		// (core/utils/engineClock.ts), which is what makes the take's pace its own rather
+		// than a side effect of the sky layers happening to invalidate every frame.
 	};
 
 	useTask(

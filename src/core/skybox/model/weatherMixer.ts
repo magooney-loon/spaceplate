@@ -508,8 +508,7 @@ const SLEET_TO = 0.65;
 export const rainShare = (w: WeatherChannels): number =>
 	smooth01(SLEET_FROM, SLEET_TO, clamp01(w.precipitationType));
 
-export const rainAmount = (w: WeatherChannels): number =>
-	clamp01(w.precipitation) * rainShare(w);
+export const rainAmount = (w: WeatherChannels): number => clamp01(w.precipitation) * rainShare(w);
 
 export const snowAmount = (w: WeatherChannels): number =>
 	clamp01(w.precipitation) * (1 - rainShare(w));

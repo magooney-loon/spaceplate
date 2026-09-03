@@ -54,14 +54,14 @@ Authoring notes that cost real debugging time:
 
 - **Rayleigh is the sunrise/sunset colour knob, not turbidity.** Turbidity feeds mie,
   which is wavelength-flat — raising it grows a grey halo. The red comes from rayleigh
-  *extinction* along the horizon path.
+  _extinction_ along the horizon path.
 - **`goldenMorning` / `goldenHour` (+6°) cannot be made golden** — Preetham's warm
   window is only ~0–2° of elevation. They are tuned merely to stop clipping; the colour
   lives at `sunrise`/`sunset` (0°).
 - **`exposure` is renderer-global.** Never compensate a lighting change with it — it
   blows out the dome. It belongs to the dome's look only.
 - **A blown-out daytime frame is usually bloom, not this curve.** Bloom runs on linear
-  values *before* exposure is applied, so dimming here scales halo and scene together
+  values _before_ exposure is applied, so dimming here scales halo and scene together
   and never changes the ratio. The sun disc is 60800 linear (`SkyMesh.js`) and the
   bloom mips smear it over the whole frame — bloom's `inputClamp` is what fences that
   off. The daylight keyframes still came down ~0.1 from their originals (0.58–0.66),
@@ -94,8 +94,8 @@ intensities (0 = none); two are **positions**:
   precipitation.
 - Blends run on **wall-clock ms** (`over`), default 20 s. `over: 0` snaps and counts as
   a discontinuity (immediate env re-bake).
-- Per-weather `stagger` delays a channel's *onset* as a fraction of the blend; all
-  channels still finish together. That is what makes a storm *arrive* rather than appear.
+- Per-weather `stagger` delays a channel's _onset_ as a fraction of the blend; all
+  channels still finish together. That is what makes a storm _arrive_ rather than appear.
 
 ### cloudCover is authored against SkyMesh's look, not physics
 
@@ -138,5 +138,5 @@ never re-derive the split in a layer.
 - Ambient fills: `DAY_AMBIENT` 0 (env map genuinely carries day), `MOON_AMBIENT` π/32,
   `TWILIGHT_AMBIENT` π/14 (dawn would otherwise measure darker than midnight — moon
   sets as sun rises).
-- `KEY_MIN_ELEVATION` (3°) floors the light's *aim* so civil twilight does not light
+- `KEY_MIN_ELEVATION` (3°) floors the light's _aim_ so civil twilight does not light
   undersides and throw shadows upward.

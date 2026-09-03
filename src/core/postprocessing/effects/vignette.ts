@@ -43,6 +43,5 @@ export const vignetteEffect: EffectDef<VignetteParams> = {
 		smoothness: { min: 0.01, max: 1.4, step: 0.01 },
 		roundness: { min: 0, max: 1, step: 0.01 }
 	},
-	build: (ctx, u) =>
-		vignetteFn(ctx.color, u.intensity, u.smoothness, u.roundness, ctx.aspect)
+	build: (ctx, u) => vignetteFn(ctx.color, u.intensity, u.smoothness, u.roundness, ctx.aspect)
 };

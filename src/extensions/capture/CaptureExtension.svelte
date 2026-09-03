@@ -130,8 +130,8 @@
 				{#if offline}
 					⚠️ Offline renders frame-by-frame at exactly {captureState.fps}fps — perfectly smooth
 					however slowly it draws, but the viewport is not realtime and the length shown is encoded
-					time. Drive it with 🎬 Record Flythrough; other animation (sky, physics) still runs on the
-					wall clock.
+					time. A take owns the engine clock, so the sky, physics and every shader advance one frame
+					per encoded frame too. Drive the camera with 🎬 Record Flythrough.
 				{:else}
 					⚠️ Recording renders every frame (on-demand is suspended) and auto-stops at the cap. A
 					frame the browser delivers late is encoded late — switch to Offline if a take must be

@@ -114,20 +114,20 @@ production. Add the import to the `Promise.all([...])` and the component to `ext
 
 ### Extension inventory
 
-| Extension        | State                                               | Actions                                             | Studio UI                                                    | Docs                                           |
-| ---------------- | --------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------- |
-| `scene`          | `sceneState`                                        | `sceneActions`                                      | `SceneExtension.svelte` ✅                                   | [scene/](scene/CLAUDE.md)                      |
-| `settings`       | `settingsState`, `overlayState`                     | `audioActions`, `graphicsActions`, `generalActions` | none (state-only)                                            | [settings/](settings/CLAUDE.md)                |
-| `input`          | `inputState`                                        | `inputActions`, `inputQueries`, `advanceInputFrame` | none (runtime only)                                          | [input/](input/CLAUDE.md)                      |
-| `logger`         | `loggerState`                                       | `loggerActions.toggleChannel(ch)`                   | `LoggerExtension.svelte` ✅                                  | [logger/](logger/CLAUDE.md)                    |
-| `sound`          | `soundState`                                        | (via `settingsState.audio`)                         | `SoundExtension.svelte` ✅                                   | [sound/](sound/CLAUDE.md)                      |
-| `physics`        | `physicsState`                                      | `physicsActions`                                    | `PhysicsExtension.svelte` ✅                                 | [physics/](physics/CLAUDE.md)                  |
-| `gltf-viewer`    | `gltfViewerState`                                   | `gltfViewerActions`                                 | `GltfViewerExtension.svelte` ✅ (dev only)                   | [gltf-viewer/](gltf-viewer/CLAUDE.md)          |
-| `stats`          | —                                                   | —                                                   | `StatsExtension.svelte` ✅ (stats-gl)                        | [stats/](stats/CLAUDE.md)                      |
-| `skybox`         | — (env-mode state lives in `core/skybox/environment/`) | — (drive `environmentActions` there) | `SkyboxExtension.svelte` ✅ time + weather + env             | [skybox/](skybox/CLAUDE.md)                    |
+| Extension        | State                                                                     | Actions                                                            | Studio UI                                           | Docs                                        |
+| ---------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------- | ------------------------------------------- |
+| `scene`          | `sceneState`                                                              | `sceneActions`                                                     | `SceneExtension.svelte` ✅                          | [scene/](scene/CLAUDE.md)                   |
+| `settings`       | `settingsState`, `overlayState`                                           | `audioActions`, `graphicsActions`, `generalActions`                | none (state-only)                                   | [settings/](settings/CLAUDE.md)             |
+| `input`          | `inputState`                                                              | `inputActions`, `inputQueries`, `advanceInputFrame`                | none (runtime only)                                 | [input/](input/CLAUDE.md)                   |
+| `logger`         | `loggerState`                                                             | `loggerActions.toggleChannel(ch)`                                  | `LoggerExtension.svelte` ✅                         | [logger/](logger/CLAUDE.md)                 |
+| `sound`          | `soundState`                                                              | (via `settingsState.audio`)                                        | `SoundExtension.svelte` ✅                          | [sound/](sound/CLAUDE.md)                   |
+| `physics`        | `physicsState`                                                            | `physicsActions`                                                   | `PhysicsExtension.svelte` ✅                        | [physics/](physics/CLAUDE.md)               |
+| `gltf-viewer`    | `gltfViewerState`                                                         | `gltfViewerActions`                                                | `GltfViewerExtension.svelte` ✅ (dev only)          | [gltf-viewer/](gltf-viewer/CLAUDE.md)       |
+| `stats`          | —                                                                         | —                                                                  | `StatsExtension.svelte` ✅ (stats-gl)               | [stats/](stats/CLAUDE.md)                   |
+| `skybox`         | — (env-mode state lives in `core/skybox/environment/`)                    | — (drive `environmentActions` there)                               | `SkyboxExtension.svelte` ✅ time + weather + env    | [skybox/](skybox/CLAUDE.md)                 |
 | `postprocessing` | `postprocessingState` (defaults from the `$core/postprocessing` registry) | `postprocessingActions` (setEnabled/setParam/resetEffect/resetAll) | `PostProcessingExtension.svelte` ✅ registry-driven | [postprocessing/](postprocessing/CLAUDE.md) |
-| `capture`        | `captureState`                                      | `captureActions`                                    | `CaptureExtension.svelte` ✅ (dev only)                      | [capture/](capture/CLAUDE.md)                  |
-| `flypath`        | `flyPathState`                                      | `flyPathActions`                                    | `FlyPathExtension.svelte` ✅ (dev only)                      | [flypath/](flypath/CLAUDE.md)                  |
+| `capture`        | `captureState`                                                            | `captureActions`                                                   | `CaptureExtension.svelte` ✅ (dev only)             | [capture/](capture/CLAUDE.md)               |
+| `flypath`        | `flyPathState`                                                            | `flyPathActions`                                                   | `FlyPathExtension.svelte` ✅ (dev only)             | [flypath/](flypath/CLAUDE.md)               |
 
 ### Common patterns
 
@@ -165,7 +165,7 @@ skybox preset crash. Depend on primitives (`$derived(state.quality)`), not whole
 ```
 
 **Guard `on:change` with `e.detail.origin` whenever the bound value is also written by code.**
-svelte-tweakpane-ui dispatches `change` for *programmatic* value updates too, tagged
+svelte-tweakpane-ui dispatches `change` for _programmatic_ value updates too, tagged
 `origin: 'external'` (its `core/Binding.svelte` fires on any bound-value change, not just
 widget interaction). So a control whose `value` a driver task writes every frame re-enters
 its own handler every frame:
@@ -196,5 +196,3 @@ which paused the path one frame after Play and left recordings running to the ca
 | `DropDownPane` | Main extension panel in the toolbar    |
 | `List`         | Select — `options={[{ value, text }]}` |
 | `Separator`    | Divider                                |
-
-

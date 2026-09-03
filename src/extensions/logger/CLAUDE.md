@@ -11,25 +11,25 @@ index.ts            — barrel re-exports
 
 ## Channels
 
-| Channel | Default | Emoji |
-|---------|---------|-------|
-| `engine` | on | ⚙ |
-| `settings` | on | 🎛 |
-| `sound` | on | 🔊 |
-| `postprocessing` | on | 🖼 |
-| `skybox` | on | 🌤 |
-| `cache` | on | 💾 |
-| `gltf` | on | 📦 |
-| `physics` | off | 🧊 |
-| `input` | off | 🎮 |
+| Channel          | Default | Emoji |
+| ---------------- | ------- | ----- |
+| `engine`         | on      | ⚙     |
+| `settings`       | on      | 🎛     |
+| `sound`          | on      | 🔊    |
+| `postprocessing` | on      | 🖼     |
+| `skybox`         | on      | 🌤     |
+| `cache`          | on      | 💾    |
+| `gltf`           | on      | 📦    |
+| `physics`        | off     | 🧊    |
+| `input`          | off     | 🎮    |
 
 ## Pre-built loggers
 
 `logEngine`, `logSettings`, `logSound`, `logPostprocessing`, `logSkybox`, `logCache`, `logGltf`, `logPhysics`, `logInput` — each has `.info()`, `.warn()`, `.error()`.
 
 ```ts
-import { logEngine } from '$extensions/logger'
-logEngine.info('World started')
+import { logEngine } from '$extensions/logger';
+logEngine.info('World started');
 ```
 
 ## Key behavior
