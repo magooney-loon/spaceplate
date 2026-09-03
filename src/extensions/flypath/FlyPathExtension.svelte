@@ -188,12 +188,6 @@
 				disabled={!runnable || finalizing}
 				on:click={() => flyPathActions.recordFlythrough()}
 			/>
-			<span
-				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-top:4px; line-height:1.6; white-space:normal;"
-			>
-				⚠️ Turn the <strong>editor camera off</strong> before playing — otherwise Studio's controls fight
-				the path for the same camera. Recording uses the Capture panel's settings and cap.
-			</span>
 		</Folder>
 	</DropDownPane>
 </ToolbarItem>

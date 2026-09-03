@@ -75,14 +75,14 @@
 			<span
 				style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
 			>
-				The scene is re-rendered at this exact size, so it does not depend on the window — but the
-				viewport is stretched to it while a capture runs, and 4K costs what 4K costs.
+				The scene is rendered at this size, but the
+				viewport is stretched while capturing.
 			</span>
 		{:else}
 			<span
 				style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
 			>
-				Output is the canvas as it is: window size × device pixel ratio.
+				Output is the canvas as it is: window size × device pixel ratio. May cause stutters.
 			</span>
 		{/if}
 
@@ -152,20 +152,6 @@
 				disabled={captureState.isFinalizing}
 				on:click={() => captureActions.toggleRecording()}
 			/>
-			<span
-				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-top:4px; line-height:1.6; white-space:normal;"
-			>
-				{#if offline}
-					⚠️ Offline renders frame-by-frame at exactly {captureState.fps}fps — perfectly smooth
-					however slowly it draws, but the viewport is not realtime and the length shown is encoded
-					time. A take owns the engine clock, so the sky, physics and every shader advance one frame
-					per encoded frame too. Drive the camera with 🎬 Record Flythrough.
-				{:else}
-					⚠️ Recording renders every frame (on-demand is suspended) and auto-stops at the cap. A
-					frame the browser delivers late is encoded late — switch to Offline if a take must be
-					perfectly smooth.
-				{/if}
-			</span>
 		</Folder>
 	</DropDownPane>
 </ToolbarItem>
