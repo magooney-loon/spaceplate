@@ -30,6 +30,7 @@
 	// what keeps the pre-roll's "one pose per RENDERED frame" guarantee intact.
 
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
+	import { HTML } from '@threlte/extras';
 	import { useStudio } from '@threlte/studio/extend';
 	import * as THREE from 'three/webgpu';
 	import { captureActions, captureState } from '$extensions/capture';
@@ -775,6 +776,18 @@
 				return () => markers.delete(waypoint.id);
 			}}
 		/>
+		<HTML
+			position={[
+				waypoint.position[0],
+				waypoint.position[1] + 0.7,
+				waypoint.position[2]
+			]}
+			userData={{ selectable: false, hideInTree: true }}
+		>
+			<span
+				style="color: #fff; font: bold 14px monospace; text-shadow: 0 0 4px #000, 0 0 8px #000; pointer-events: none; user-select: none; white-space: nowrap;"
+			>{index + 1}</span>
+		</HTML>
 	{/each}
 
 	<!-- Where the camera is actually aiming in `lookAt` mode. Selectable like the waypoints,
