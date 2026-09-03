@@ -88,15 +88,44 @@
 	markerMaterial.color.set('#4ec9b0');
 	markerMaterial.fog = false;
 
-	const selectedMaterial = new THREE.MeshBasicNodeMaterial();
-	selectedMaterial.color.set('#ffd93d');
-	selectedMaterial.fog = false;
+	// The first waypoint is ALWAYS green and the last ALWAYS red, so which end of the path a
+	// shot flies from reads at a glance — the tube itself is symmetrical and says nothing
+	// about direction. Selection therefore cannot be a colour any more (it would mask an
+	// endpoint); it is a scale bump instead, which stacks with the endpoint colours.
+	const startMaterial = new THREE.MeshBasicNodeMaterial();
+	startMaterial.color.set('#3ddc84');
+	startMaterial.fog = false;
+
+	const endMaterial = new THREE.MeshBasicNodeMaterial();
+	endMaterial.color.set('#ff4d4d');
+	endMaterial.fog = false;
+
+	const SELECTED_SCALE = 1.4;
+
+	// A single waypoint is the start, not the end. On a looping path the two are neighbours,
+	// which is exactly what you want to see: green and red touching is the wrap point.
+	const materialFor = (index: number, count: number) => {
+		if (index === 0) return startMaterial;
+		if (index === count - 1) return endMaterial;
+		return markerMaterial;
+	};
+
+	// The look-at target, drawn only in `lookAt` mode. An octahedron rather than a cone
+	// because it has no facing — the target is a point the camera aims AT, not a pose.
+	const targetGeometry = new THREE.OctahedronGeometry(0.35);
+
+	const targetMaterial = new THREE.MeshBasicNodeMaterial();
+	targetMaterial.color.set('#ff5fd2');
+	targetMaterial.fog = false;
 
 	$effect(() => () => {
 		tubeMaterial.dispose();
 		markerGeometry.dispose();
 		markerMaterial.dispose();
-		selectedMaterial.dispose();
+		startMaterial.dispose();
+		endMaterial.dispose();
+		targetGeometry.dispose();
+		targetMaterial.dispose();
 	});
 
 	// --- playback state --------------------------------------------------------------
@@ -383,10 +412,28 @@
 	// settles rather than run at 60Hz.
 
 	const markers = new Map<string, THREE.Object3D>();
+	/** The look-at target marker, when one is mounted (`lookAt` mode only). */
+	let targetMarker: THREE.Object3D | null = null;
 	let dirtySince = 0;
 
 	const syncMarkers = (delta: number) => {
 		let changed = false;
+
+		// Same deal for the look-at target: dragging its marker IS how you aim the path.
+		// Only the position matters — the marker's rotation means nothing.
+		if (targetMarker) {
+			const p = targetMarker.position;
+			const target = flyPathState.lookAtTarget;
+			if (
+				Math.abs(p.x - target[0]) > 1e-4 ||
+				Math.abs(p.y - target[1]) > 1e-4 ||
+				Math.abs(p.z - target[2]) > 1e-4
+			) {
+				flyPathState.lookAtTarget = [p.x, p.y, p.z];
+				changed = true;
+			}
+		}
+
 		for (const waypoint of flyPathState.waypoints) {
 			const marker = markers.get(waypoint.id);
 			if (!marker) continue;
@@ -536,19 +583,37 @@
 		/>
 	{/if}
 
-	{#each flyPathState.waypoints as waypoint (waypoint.id)}
+	{#each flyPathState.waypoints as waypoint, index (waypoint.id)}
 		<!-- Deliberately selectable and visible in the tree: that is what lets Studio's
 		     transform gizmo move and rotate a shot after it was snapshotted. -->
 		<T.Mesh
 			name={waypoint.name}
 			geometry={markerGeometry}
-			material={flyPathState.selectedId === waypoint.id ? selectedMaterial : markerMaterial}
+			material={materialFor(index, flyPathState.waypoints.length)}
 			position={waypoint.position}
 			quaternion={waypoint.quaternion}
+			scale={flyPathState.selectedId === waypoint.id ? SELECTED_SCALE : 1}
 			oncreate={(ref) => {
 				markers.set(waypoint.id, ref);
 				return () => markers.delete(waypoint.id);
 			}}
 		/>
 	{/each}
+
+	<!-- Where the camera is actually aiming in `lookAt` mode. Selectable like the waypoints,
+	     so the gizmo can drag the aim point around; syncMarkers writes it back. -->
+	{#if flyPathState.orientationMode === 'lookAt'}
+		<T.Mesh
+			name="Look-at Target"
+			geometry={targetGeometry}
+			material={targetMaterial}
+			position={flyPathState.lookAtTarget}
+			oncreate={(ref) => {
+				targetMarker = ref;
+				return () => {
+					targetMarker = null;
+				};
+			}}
+		/>
+	{/if}
 {/if}

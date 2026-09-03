@@ -58,6 +58,11 @@
 
 		{#if flyPathState.waypoints.length > 0}
 			<Folder title="Waypoints ({flyPathState.waypoints.length})" expanded={true}>
+				<span
+					style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
+				>
+					🟢 start · 🔴 end · larger = selected
+				</span>
 				{#each flyPathState.waypoints as waypoint, index (waypoint.id)}
 					<Folder
 						title="{index + 1}. {waypoint.name}"
@@ -121,7 +126,8 @@
 				<span
 					style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
 				>
-					Target: {flyPathState.lookAtTarget.map((v) => v.toFixed(1)).join(', ')}
+					Target: {flyPathState.lookAtTarget.map((v) => v.toFixed(1)).join(', ')} — or drag the
+					pink marker in the scene.
 				</span>
 			{/if}
 			<List
