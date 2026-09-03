@@ -1,7 +1,6 @@
 <script lang="ts">
 	// The scene's single key light, driven by the sky descriptor's `light` slice.
-	// Replaces the hardcoded <T.DirectionalLight> that used to live in Camera.svelte,
-	// where it never belonged. See DOCS/weather-system.md §15.3.
+	// Replaces the hardcoded <T.DirectionalLight> that used to live in Camera.svelte.
 	//
 	// One light, not two: it follows the sun by day and the moon by night, crossfading
 	// colour and intensity across the horizon band. The model publishes hints; this

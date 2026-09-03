@@ -1,5 +1,5 @@
 // LUT assets for the `lut` effect — the only effect on the list with an asset
-// dependency (DOCS/post-processing.md §7).
+// dependency (see the "LUTs" section of CLAUDE.md).
 //
 // The set is three's own: the nine LUTs from `webgpu_postprocessing_3dlut`, copied
 // verbatim from `DOCS/three.js-dev/examples/luts/` into `public/luts/`. Credits per

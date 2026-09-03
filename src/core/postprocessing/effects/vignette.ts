@@ -1,5 +1,5 @@
 // The one effect implemented by hand — the template for any future custom TSL
-// effect (DOCS/post-processing.md §5.1). Written rather than imported because the
+// effect. Written rather than imported because the
 // addon version (CRT.js) measures distance in raw uv space: always a viewport
 // ellipse, never a true circle, with no way to ask for one.
 //

@@ -1,4 +1,4 @@
-// Weather (§5). Phase 2.
+// Weather.
 //
 // Weather is NOT a preset of the sky. It is a modulation layer applied on top of the
 // day-curve baseline: a storm at noon is still noon under clouds. The sun still drives
@@ -50,7 +50,7 @@ const WRAPPED_CHANNELS = new Set<ChannelName>(['windDirection']);
 const DRY = 1e-3;
 
 /**
- * A named weather is a **target vector**, not a script (§5.3).
+ * A named weather is a **target vector**, not a script.
  *
  * `stagger` is the fraction of the blend duration a channel waits before it starts
  * moving; every channel still finishes together. That is what makes a storm *arrive*
@@ -67,10 +67,10 @@ export type WeatherDefinition = {
  * The named weather library.
  *
  * Kept in code, exactly as `DEFAULT_DAY_CURVE` is: these are the shipped defaults, and
- * they move to the authored `weather.json` when the config plumbing lands (§16). Values
- * are the whole definition -- there is no hidden per-weather colour or light data, so
- * anything a weather does to the look is reachable from `setWeather({ ... })` with raw
- * channels too.
+ * they move to the authored `weather.json` when the config plumbing lands (see
+ * Planned: authored sky data in ../CLAUDE.md). Values are the whole definition --
+ * there is no hidden per-weather colour or light data, so anything a weather does
+ * to the look is reachable from `setWeather({ ... })` with raw channels too.
  *
  * `lightning` drives `Lightning.svelte`'s strike scheduler and `wind` drives
  * `CloudDeck.svelte`'s scroll offset (plus `Rain.svelte`'s slant) -- every channel has a
@@ -517,8 +517,9 @@ export const snowAmount = (w: WeatherChannels): number =>
  * The wind's horizontal axis, as two scalars rather than a vector.
  *
  * Split in two on purpose: every caller reads these once per frame from a task, and
- * returning an object would allocate 60 times a second per consumer for two numbers. The
- * §14.1 rule about per-frame values applies to garbage as much as to reactivity.
+ * returning an object would allocate 60 times a second per consumer for two numbers.
+ * The descriptor-contract rule about per-frame values applies to garbage as much as
+ * to reactivity.
  *
  * `windDirection` is one full turn over [0,1). Bearing 0 points along +Z, which is the
  * axis `CloudDeck` and `Rain` were both hardcoded to before this channel existed, so a

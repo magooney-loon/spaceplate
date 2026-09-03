@@ -1,6 +1,6 @@
-// Post-processing state — the new effect set per DOCS/post-processing.md. The
-// pmndrs-era catalogue and the preset/localStorage layer are gone; defaults come
-// from the registry so state, builder and panel can never drift apart.
+// Post-processing state — defaults come from the registry so state, builder and panel
+// can never drift apart. The pmndrs-era catalogue and the preset/localStorage layer
+// are gone.
 
 import { logPostprocessing } from '$extensions/logger';
 import { EFFECTS, EFFECTS_BY_ID } from '$core/postprocessing/registry';

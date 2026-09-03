@@ -1,6 +1,6 @@
 // The effect registry — one place that declares what every effect is. The builder
 // (build.ts) and the Studio panel both read this; nothing hand-wires a graph and
-// no UI hard-codes an effect list. Plan of record: DOCS/post-processing.md §3.
+// no UI hard-codes an effect list. See CLAUDE.md in this directory.
 
 import type { QualityLevel } from '$extensions/settings/types';
 import type { EffectDef, EffectValues, MrtRequirement, Requirement } from './types';
@@ -56,12 +56,12 @@ export interface EnabledSetResolution {
 
 /**
  * Pure policy: given the enabled set and the quality tier, decide what actually
- * runs. Rules (DOCS/post-processing.md §3.3):
+ * runs. Rules:
  *  - quality 'low' drops everything (bare pass, matching the old low path);
  *  - at most one base pass and one AA — lowest `order` wins, losers are reported;
  *  - explicit `conflicts` are enforced the same way;
- *  - geometry consumers are dropped under a non-default base pass (unverified
- *    combos — §8.1);
+ *  - geometry consumers are dropped under a non-default base pass (verified
+ *    combinations only);
  *  - the MRT set is the union of the survivors' requirements (`requiresValues`
  *    overrides `requires` when an effect's needs are param-dependent).
  *

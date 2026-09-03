@@ -1,4 +1,4 @@
-// The sky façade (§8). The only stateful module here; everything it imports is pure.
+// The sky façade. The only stateful module here; everything it imports is pure.
 //
 // Data flows one way: clock -> model -> renderers. Renderers never write back.
 //
@@ -91,8 +91,8 @@ const MOON_INTENSITY = Math.PI / 12;
 /**
  * Ambient fill published to the key-light consumer. In the same units as `intensity`.
  *
- * This exists because of a hard limit in the sky model, not as a nicety. §7 says the
- * baked `scene.environment` is "the ambient half" -- and by day it is. At night it
+ * This exists because of a hard limit in the sky model, not as a nicety. The design
+ * says the baked `scene.environment` is "the ambient half" -- and by day it is. At night it
  * cannot be: SkyMesh zeroes its sun term entirely once the sun passes 2.31 degrees
  * below the horizon (`cutoffAngle = pi / 1.95`, then `max(0, ...)`), which collapses the
  * whole dome to `0.1 * Fex * 0.04 + vec3(0, 0.0003, 0.00075)` -- a ceiling of about
@@ -217,7 +217,7 @@ export const skyMeta = $state({
 // Manual clock as the template default: the app boots on a curated sunrise rather
 // than the player's wall clock, so the first frame is a known good look and a demo
 // never opens on 3am black. 0.25 is the `sunrise` keyframe exactly -- boot times are
-// keyframe times, not round numbers near them. Games pick their own clock on boot (§3.2).
+// keyframe times, not round numbers near them. Games pick their own clock on boot.
 let clock: Clock = createClock('manual', { t: 0.25 });
 let pathOptions: PathOptions = {};
 let curve: DayKeyframe[] = DEFAULT_DAY_CURVE;
@@ -323,7 +323,7 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	moonAt(t, pathOptions, descriptor.moon);
 	sampleDayCurve(t, descriptor.sky, curve);
 
-	// Weather goes ON TOP of the sampled baseline, never instead of it (§5.1). The
+	// Weather goes ON TOP of the sampled baseline, never instead of it. The
 	// ordering is the whole design: the curve decides what time it is, the mixer decides
 	// what the weather is doing to that, and an overcast sunset still reads as evening.
 	if (deltaMs > 0) mixer.tick(deltaMs);
@@ -424,7 +424,7 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	// the sun is on the horizon and the shadows should be at their longest.
 	//
 	// -6 is the right peak because that is the blind spot this fill exists for: SkyMesh
-	// zeroes its sun term below -2.31 degrees (§15.2), so the env map is black through all
+	// zeroes its sun term below -2.31 degrees, so the env map is black through all
 	// of civil twilight and the blue hour the day curve authors lights nothing. Above the
 	// horizon that is simply not true any more -- the dome renders, the env map carries the
 	// ambient, and adding a second flat term on top double-counts it.
@@ -463,13 +463,13 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 };
 
 /**
- * Point the weather mixer at a named weather or a raw channel target (§5.3).
+ * Point the weather mixer at a named weather or a raw channel target.
  *
  * Fire-and-forget and idempotent: calling it twice blends to the same place. There is
  * no transition state machine for callers to trip over -- the mixer has internal state,
  * this API does not expose it. Whether the call came from game code, a Studio button or
  * a server subscription, it converges on the same mixer, which is what makes the
- * multiplayer path in §6 one code path rather than two.
+ * multiplayer path one code path rather than two.
  *
  * A free function rather than a method so `clearWeather` can delegate to it: a method
  * referencing `skyActions` from inside its own initializer makes the object's inferred
@@ -541,7 +541,7 @@ export const skyActions = {
 	},
 
 	/**
-	 * Point the weather mixer at a named weather or a raw channel target (§5.3).
+	 * Point the weather mixer at a named weather or a raw channel target.
 	 *
 	 * Fire-and-forget and idempotent: calling it twice blends to the same place. There
 	 * is no transition state machine for callers to trip over -- the mixer has internal

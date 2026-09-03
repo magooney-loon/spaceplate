@@ -248,7 +248,7 @@
 	// ── Uniforms (one set, shared by the computes and the material) ───────────────
 	const deltaTime = uniform(0);
 	/** The flock's own clock, accumulated in the task -- not the TSL `time` node, for
-	 *  the same §15.7 reason every layer keeps its own: it only advances while the
+	 *  the same elapsed-x-rate reason every layer keeps its own: it only advances while the
 	 *  flocks are ungrounded, so nothing jumps when weather clears. Drives the target
 	 *  wander, the pull breathing and the gust turbulence. */
 	const uTime = uniform(0);

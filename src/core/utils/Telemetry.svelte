@@ -2,7 +2,7 @@
 	// Samples renderer.info into telemetryState for the Settings ▸ System tab. Draws
 	// nothing. Mount it right after <Renderer /> so its sampling task registers after
 	// the draw task and therefore runs after it (same constraint, registration order
-	// decides — DOCS/weather-system.md §18).
+	// decides).
 	//
 	// TWO TASKS, because Threlte's two stages answer two different questions.
 	// `{ after: autoRenderTask }` puts a task in the RENDER stage, whose callback only

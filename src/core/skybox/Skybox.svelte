@@ -57,7 +57,7 @@
 	const precipitation = $derived(PRECIPITATION[settingsState.graphics.quality]);
 
 	// Shadow copies of everything the model can change, so the driver can tell a frame
-	// that moved from one that did not. Plain variables, never reactive -- see §14.1.
+	// that moved from one that did not. Plain variables, never reactive.
 	let lastT = Number.NaN;
 	const lastChannels = CHANNEL_NAMES.map(() => Number.NaN);
 
@@ -67,7 +67,7 @@
 	// constraint Threlte's DAG falls back to registration order -- this component
 	// registers before its own children, so the ordering holds by construction.
 	// Worst case if that ever changed: a consumer reads a one-frame-stale descriptor,
-	// which is invisible. See DOCS/weather-system.md §18 q1.
+	// which is invisible.
 	//
 	// IT ALSO OWNS THE INVALIDATION FOR EVERY DESCRIPTOR-ONLY CONSUMER. Threlte's
 	// `renderMode` defaults to 'on-demand' and the <Canvas> in App.svelte does not
@@ -106,8 +106,7 @@
 	// The old skybox preset layer (skyboxState scalars, stars, transitions) is deleted;
 	// those values are derived outputs of the day curve now. The extension keeps only
 	// the environment-mode state still read below, and its Studio panel drives time
-	// through skyActions -- the same engine API a game would use (§8). See
-	// DOCS/weather-system.md §10.
+	// through skyActions -- the same engine API a game would use.
 
 	const activeEnvTexture = $derived(
 		environmentState.envTextureId

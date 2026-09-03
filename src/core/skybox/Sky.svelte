@@ -6,8 +6,8 @@
 	// the same Preetham model. See DOCS/webgpu-notes.md §1.
 	//
 	// This component is now a pure CONSUMER of the sky descriptor's `sky` + `sun`
-	// slices (DOCS/weather-system.md §15.1). It reads a plain object in a task -- there
-	// is no reactive prop plumbing and no $effect, so no cycle can form.
+	// slices. It reads a plain object in a task -- there is no reactive prop
+	// plumbing and no $effect, so no cycle can form.
 	import { T, useThrelte, useTask } from '@threlte/core/webgpu';
 	import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 	import * as THREE from 'three/webgpu';
@@ -124,7 +124,7 @@
 	let lastBakeAzimuth = 0;
 	let lastBakeCloudCover = 0;
 
-	// THE TRAP (DOCS/weather-system.md §15.2): the old code re-baked the env cube
+	// THE TRAP (the env bake budget in core/skybox/CLAUDE.md): the old code re-baked the env cube
 	// whenever a sky parameter changed. That was correct for a static sky and ruinous
 	// for a moving one -- at 60x time scale it is a full cube bake every frame. The
 	// bake is now on a budget: at most one per envIntervalMs, or earlier if the sun has
@@ -217,7 +217,7 @@
 			// hitch a few seconds in, a total scramble of the sky an hour into a session.
 			// There is no offset uniform to compensate with. Driving cloud motion from wind
 			// needs a cloud layer that accumulates its own offset, which is phase 4's
-			// problem (DOCS/weather-system.md §17).
+			// problem.
 
 			// The curve's exposure drives the renderer's tone-mapping exposure -- the
 			// classic three.js sky pattern (SkyMesh has no exposure uniform of its own).

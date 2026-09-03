@@ -1,15 +1,8 @@
 // Environment-mode state for the skybox: procedural sky vs HDR/EXR vs cubemap.
-//
-// WHY THIS LIVES IN CORE, NOT THE EXTENSION: `Skybox.svelte` switches on this state in
-// every build, which makes it engine state -- extensions are dev-mode add-ons. It used
-// to sit in extensions/skybox as `skybox.svelte.ts` (the 888-line preset machine's last
-// surviving piece); the Studio panel now drives it through `environmentActions`, the
-// same "panel is just another caller" doctrine as skyActions (DOCS/weather-system.md
-// §8, §10).
-//
-// What this owns is orthogonal to time and weather: WHICH environment lights the
-// scene. The mode choice and last-picked textures persist to localStorage as a dev
-// convenience -- authored sky data is a different story entirely (§16).
+// Orthogonal to time and weather: WHICH environment lights the scene. Core, not an
+// extension -- Skybox.svelte consumes it in every build, so it is engine state and
+// the Studio panel is just another caller (see ./CLAUDE.md). Mode + last-picked
+// textures persist to localStorage as a dev convenience.
 
 import { logSkybox } from '$extensions/logger';
 import { ENV_TEXTURES, CUBE_TEXTURES } from './environmentTextures';

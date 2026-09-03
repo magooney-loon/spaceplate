@@ -34,8 +34,9 @@
 // Everything goes through `console.log`, never `console.error`: Chromium attaches a full
 // stack to every error and the render loop buries the finding under hundreds of frames.
 //
-// See DOCS/post-processing.md §§8.7-8.9 and DOCS/webgpu-notes.md §§1.4-1.6 for the two
-// failure modes this distinguishes and the blending trap that follows fixing them.
+// The MRT traps are written up in src/core/postprocessing/CLAUDE.md (Gotchas) and
+// DOCS/webgpu-notes.md §§1.4-1.6 for the two failure modes this distinguishes and the
+// blending trap that follows fixing them.
 
 import * as THREE from 'three/webgpu';
 

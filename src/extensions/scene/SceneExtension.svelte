@@ -11,7 +11,8 @@
 	//
 	// Its replacement is a declarative `environment` block on each SCENES entry, edited
 	// here and written straight to the committed config by the dev-server endpoint --
-	// no copy-paste step. See DOCS/scene-environment.md §6.
+	// no copy-paste step. See the per-scene `environment` plan in
+	// src/extensions/scene/CLAUDE.md.
 	const { createExtension } = useStudio();
 
 	let { children }: { children?: Snippet } = $props();

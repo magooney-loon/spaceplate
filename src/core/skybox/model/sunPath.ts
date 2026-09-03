@@ -1,4 +1,4 @@
-// Sun and moon positions (§3.3, §3.4). Fixed arc -- predictable, gamey, trivially
+// Sun and moon positions. Fixed arc -- predictable, gamey, trivially
 // authorable. A real solar model (latitude + day-of-year) can arrive later as an
 // alternative module, because everything downstream reads only the derived direction.
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Lightning: the `lightning` channel's renderer (DOCS/weather-system.md §17).
+	// Lightning: the `lightning` channel's renderer.
 	//
 	// A strike is the bolt, plus a flash published to `flashState` for the other sky
 	// layers. CloudDeck.svelte is the flash's main consumer -- the deck lights up from

@@ -1,4 +1,4 @@
-// Types for the sky/weather model. See DOCS/weather-system.md.
+// Types for the sky/weather model. See model/CLAUDE.md.
 //
 // Nothing in src/core/skybox/model/ imports three.js or Threlte. The model is pure so it can
 // be unit-tested, logged and scrubbed with no renderer in the room -- and, more
@@ -30,7 +30,7 @@ export type RGB = [number, number, number];
 /** World-space vector, Y up. Kept structural so the model never imports three.js. */
 export type Vec3 = { x: number; y: number; z: number };
 
-/** One keyframe on the day curve (§4). Holds the *baseline* sky, never weather. */
+/** One keyframe on the day curve. Holds the *baseline* sky, never weather. */
 export type DayKeyframe = {
 	t: number;
 	name: string;
@@ -39,7 +39,7 @@ export type DayKeyframe = {
 	mieCoefficient: number;
 	mieDirectionalG: number;
 	exposure: number;
-	/** 0..1 -- consumed by a future star renderer (§15.4). */
+	/** 0..1 -- consumed by a future star renderer. */
 	starVisibility: number;
 	fogColor: RGB;
 	fogDensity: number;
@@ -58,7 +58,7 @@ export type CelestialBody = {
 };
 
 /**
- * Weather channel values (§5.2). Every channel is independent and lives in [0,1] -- fog
+ * Weather channel values. Every channel is independent and lives in [0,1] -- fog
  * without rain, wind without clouds. A weather *state* is just a named target vector over
  * these, which is why `WeatherTarget` accepts either.
  *
@@ -125,7 +125,7 @@ export type LightHints = {
 };
 
 /**
- * The single output contract of the model (§7).
+ * The single output contract of the model.
  *
  * This is a PLAIN MUTABLE OBJECT, deliberately not `$state`. One task writes it in
  * place each frame; consumers read it from their own tasks. Nothing is tracked, so no

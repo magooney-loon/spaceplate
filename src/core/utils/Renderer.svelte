@@ -1,5 +1,5 @@
 <script lang="ts">
-	// The post-processing pipeline — rebuilt per DOCS/post-processing.md.
+	// The post-processing pipeline — rebuilt per src/core/postprocessing/CLAUDE.md.
 	//
 	// Owns exactly one THREE.RenderPipeline for its lifetime and swaps its
 	// outputNode as the *structural key* changes (enabled set + quality + structural
@@ -190,8 +190,9 @@
 	//
 	// renderer.compileAsync(scene, camera) is deliberately NOT used: it compiles under
 	// the renderer's default context with no MRT — the wrong variants for this graph,
-	// whose scene pass lives in a private contextNode namespace (build.ts and
-	// DOCS/post-processing.md §8.7). Warming must go through the pipeline itself.
+	// whose scene pass lives in a private contextNode namespace (build.ts; see
+	// the MRT shader-cache trap in src/core/postprocessing/CLAUDE.md). Warming
+	// must go through the pipeline itself.
 	let warming = false;
 	$effect(() => {
 		const version = bootState.warmVersion;

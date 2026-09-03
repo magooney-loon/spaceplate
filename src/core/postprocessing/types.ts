@@ -2,7 +2,7 @@
 // effect IS (role, requirements, conflicts, params). The builder (build.ts) and the
 // Studio panel both consume these definitions; neither hand-wires anything.
 //
-// Plan of record: DOCS/post-processing.md §3.
+// See CLAUDE.md in this directory.
 
 import type { Camera, Scene, WebGPURenderer, RenderPipeline } from 'three/webgpu';
 // Deep type-only import: UniformNode is a default export of its module and is not
@@ -13,7 +13,7 @@ import type { QualityLevel } from '$extensions/settings/types';
 /**
  * `grade` sits between the chain and the resolve stage and is deliberately NOT
  * mutually exclusive the way `base`/`resolve` are: colour grading and anti-aliasing
- * are orthogonal, and the plan's "resolve owns the colour transform" rule (§2.4) only
+ * are orthogonal, and the plan's "resolve owns the colour transform" rule only
  * needed one owner, not one effect. See `displayColor` for who that owner is now.
  */
 export type PassRole = 'base' | 'chain' | 'grade' | 'resolve';
@@ -75,7 +75,7 @@ export interface BuildContext {
 /**
  * One effect definition. Node-graph plumbing is deliberately `any`-typed — the
  * addon `.d.ts`s are looser than their runtime behaviour and fighting them buys
- * nothing (see DOCS/post-processing.md §4 on the typing trap).
+ * nothing (see the rebuild-discipline note in CLAUDE.md).
  */
 export interface EffectDef<P extends EffectParams = EffectParams> {
 	id: string;
@@ -99,7 +99,7 @@ export interface EffectDef<P extends EffectParams = EffectParams> {
 	/**
 	 * Base role only: this base pass produces usable MRT outputs. When false (or when
 	 * the base is not the default `pass()`), geometry consumers are dropped with a
-	 * warning — verified combinations only (DOCS/post-processing.md §8.1).
+	 * warning — verified combinations only.
 	 */
 	supportsMRT?: boolean;
 	/**

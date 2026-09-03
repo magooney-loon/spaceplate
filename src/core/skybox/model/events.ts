@@ -1,4 +1,4 @@
-// A plain callback registry (§8). Deliberately not stores and not runes: events fire
+// A plain callback registry. Deliberately not stores and not runes: events fire
 // from the model tick, which is pure and must stay outside Svelte's reactive graph.
 
 import type { SkyEvent } from './types';

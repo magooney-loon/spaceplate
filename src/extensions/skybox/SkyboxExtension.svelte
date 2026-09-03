@@ -23,7 +23,7 @@
 
 	// The preset machine this panel used to drive (sky scalars, stars, transition
 	// lerps, localStorage presets) is gone -- the sky is time-driven and lives in
-	// $core/skybox/model. Per weather-system.md §8, Studio is just another caller: this
+	// $core/skybox/model. Studio is just another caller: this
 	// panel reads skyMeta and calls skyActions. It never writes sky parameters directly.
 	// The environment-mode state likewise moved to core (`$core/skybox/environment`) —
 	// Skybox.svelte consumes it in every build — and this panel drives it through
@@ -46,7 +46,7 @@
 	});
 
 	// Panel-local mirror of the clock kind. The engine deliberately does not expose
-	// clock getters (§8) -- the panel is the only clock writer in dev, so it can trust
+	// clock getters -- the panel is the only clock writer in dev, so it can trust
 	// its own bookkeeping. A game taking over the clock (external, phase 3) owns it
 	// then, not this pane.
 	// Initial values mirror the engine default (manual at sunrise, frozen).
@@ -131,7 +131,7 @@
 	};
 
 	// ── Weather ────────────────────────────────────────────────────────────────
-	// Studio is just another caller (§8): these buttons run the same setWeather a game
+	// Studio is just another caller: these buttons run the same setWeather a game
 	// or a server subscription would, and the sliders send raw channel targets, which
 	// the API treats as equally valid. There is no privileged panel path, so nothing
 	// here can drift away from the real behaviour.

@@ -36,8 +36,8 @@ the take still being written.
 `captureRuntime` is a separate **plain** (not `$state`) object — the per-frame verdict shared
 between the clock source and the capture task. Both sides touch it every frame, and a reactive
 write there would wake the Studio panel at frame rate; same reasoning as the sky descriptor
-(`core/skybox/CLAUDE.md` §14.1). Fields: `offline`, `posed`, `saturated`, `frameStep` — one
-writer per field, everyone reads from their own task.
+(`core/skybox/CLAUDE.md`, the descriptor contract). Fields: `offline`, `posed`, `saturated`,
+`frameStep` — one writer per field, everyone reads from their own task.
 
 ## The two video modes
 

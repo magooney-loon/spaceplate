@@ -18,7 +18,7 @@
 //
 // Same sharing pattern as flashState.ts: a plain module with one writer (HeightField's
 // task) and any number of readers, none of them reactive. Per-frame values can never be
-// props (DOCS/weather-system.md §14.1).
+// props.
 
 import * as THREE from 'three/webgpu';
 import { float, step, textureLevel, uniform, vec2 } from 'three/tsl';

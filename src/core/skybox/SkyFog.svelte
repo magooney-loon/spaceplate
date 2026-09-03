@@ -112,8 +112,9 @@
 
 	// @types/three declares these looser than they run: `reference()` comes back without
 	// `setGroup`, and the fog factors as a bare `Node` with no chaining. Same trap as the
-	// post-processing registry (DOCS/post-processing.md §4) -- node plumbing is `any` on
-	// purpose rather than fought.
+	// post-processing registry (see the rebuild-discipline note in
+	// src/core/postprocessing/CLAUDE.md) -- node plumbing is `any` on purpose rather
+	// than fought.
 	const node = (value: unknown): any => value;
 
 	// Built once, at mount. `reference` binds by property name, so these track the Fog
@@ -167,7 +168,7 @@
 			if (scene.fog !== fog) scene.fog = fog;
 			// `fogNode` is not in @types/three's Scene (the runtime reads it in
 			// NodeManager.getFogNode); the repo's node plumbing is `any` for exactly this
-			// class of gap. See DOCS/post-processing.md §4 on the typing trap.
+			// class of gap.
 			if ((scene as any).fogNode !== fogNode) (scene as any).fogNode = fogNode;
 
 			// No invalidate(): the fog is a pure function of the descriptor and the active

@@ -18,7 +18,8 @@ export const SCENES: SceneConfig[] = [
 // preset IDs, localStorage overrides, and two resolvers -- was deleted: it resolved to
 // null for every input and served zero presets. Its replacement is a declarative
 // `environment` block on each SCENES entry, applied imperatively from setScene() and
-// never from an $effect. See DOCS/scene-environment.md.
+// never from an $effect. See the per-scene `environment` plan in
+// src/extensions/scene/CLAUDE.md.
 
 // --- State & actions ---
 

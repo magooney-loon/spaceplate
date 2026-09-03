@@ -5,10 +5,10 @@
 	// `descriptor.sun` in a task and writes the three object directly. No $effect, no
 	// reactive props, so no cycle can form (DOCS/webgpu-notes.md §3).
 	//
-	// §17 sketched this as a billboard with "phase from the sun-moon angle". A sphere is
+	// The original sketch was a billboard with "phase from the sun-moon angle". A sphere is
 	// barely more work and strictly better: the phase falls out of the surface normal for
 	// free, and the equirectangular map wraps it properly instead of being cropped. The
-	// terminator therefore tracks `moonLag` (§3.4) with no extra plumbing -- set the lag
+	// terminator therefore tracks `moonLag` with no extra plumbing -- set the lag
 	// away from opposition and you get a crescent.
 	import { untrack } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';

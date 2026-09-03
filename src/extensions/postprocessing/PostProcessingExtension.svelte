@@ -2,7 +2,7 @@
 	// Studio panel — rendered FROM the registry, not hand-written. Roles group the
 	// folders, `ranges` drive the sliders, and resolveEnabledSet supplies the
 	// conflict/quality verdicts, so an illegal combination is explained rather than
-	// merely broken (DOCS/post-processing.md §3.4). UI only — no logic here.
+	// merely broken. UI only — no logic here.
 
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
 	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';

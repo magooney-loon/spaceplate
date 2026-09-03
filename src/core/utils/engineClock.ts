@@ -94,8 +94,8 @@ let source: FixedStepSource | null = null;
  * clock left it and three's `nodeFrame.time` resumes from wherever the take left it. That
  * is not cosmetic: every TSL layer's motion is a function of absolute elapsed time, so a
  * jump either way teleports the cloud deck, re-phases every star and relocates the rain
- * (`DOCS/weather-system.md` §15.7) — on frame 0 of a take, which is the one frame that must
- * not do that.
+ * (the self-accumulated offset rule) — on frame 0 of a take, which is the one frame
+ * that must not do that.
  */
 export const setFixedStepSource = (next: FixedStepSource | null): void => {
 	source = next;

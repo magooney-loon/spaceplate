@@ -276,7 +276,7 @@
 	const { geometry, material } = build();
 
 	// Plain variables, written and read only by the task -- a per-frame value can never be
-	// reactive state (DOCS/weather-system.md §14.1).
+	// reactive state.
 	let growth = 0;
 	let wasVisible = false;
 	let lastPosition: THREE.Vector3 | null = null;

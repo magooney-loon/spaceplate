@@ -1,4 +1,4 @@
-// The day curve (§4). One continuous day instead of ten discrete presets.
+// The day curve. One continuous day instead of ten discrete presets.
 //
 // The old SKY_PRESETS were these keyframes wearing a disguise: sunrise/day/sunset/
 // night are four points on one timeline. The rest (cloudy, storm, fog) are not here at
@@ -6,7 +6,8 @@
 //
 // These defaults are seeded from the values the old presets shipped with, so the look
 // is recognisable. They are the fallback; authored keyframes will come from
-// weather.json (§16) once the config plumbing exists.
+// weather.json (see Planned: authored sky data in ../CLAUDE.md) once the config
+// plumbing exists.
 //
 // exposure is applied by Sky.svelte as renderer.toneMappingExposure (SkyMesh has no
 // exposure uniform). These values are a look, not physics.

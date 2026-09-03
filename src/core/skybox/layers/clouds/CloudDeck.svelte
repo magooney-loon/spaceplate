@@ -24,8 +24,8 @@
 	// stays analytic and the slices are sheared apart instead.
 	//
 	// WIND, AT LAST. SkyMesh cannot take the wind channel: its `cloudSpeed` uniform is
-	// multiplied by absolute elapsed time, so changing the speed teleports the pattern
-	// (DOCS/weather-system.md §15.7). A layer that owns its offset has no such problem --
+	// multiplied by absolute elapsed time, so changing the speed teleports the pattern.
+	// A layer that owns its offset has no such problem --
 	// this component accumulates a UV offset on the CPU every frame and scrolls both of
 	// its decks with it. That makes it the wind channel's first scroll consumer; Rain
 	// already reads wind for slant.
@@ -368,7 +368,7 @@
 	const material = buildMaterial();
 
 	// ── Wind scroll ────────────────────────────────────────────────────────────────
-	// THE ACCUMULATOR (§15.7). The offset only ever advances -- by a rate derived from the
+	// THE ACCUMULATOR. The offset only ever advances -- by a rate derived from the
 	// wind channel -- so the pattern is continuous by construction. There is no speed
 	// uniform for a time multiplication to scramble; changing wind changes only how fast
 	// the deck drifts from here on, never where it currently sits.
@@ -392,7 +392,7 @@
 			// now -- this is the spot the old comment said a direction channel would plug
 			// into, and it replaces a hardcoded 1 : 0.38 diagonal that made every weather
 			// blow the same way. Still an accumulator, so a change of bearing bends the
-			// drift from here on instead of teleporting the pattern (§15.7).
+			// drift from here on instead of teleporting the pattern.
 			const rate = (0.0025 + clamp01(w.wind) * 0.02) * delta;
 			windX += windAxisX(w) * rate;
 			windZ += windAxisZ(w) * rate;

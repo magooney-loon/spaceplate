@@ -3,10 +3,8 @@
 	import { AudioListener } from '@threlte/extras';
 </script>
 
-<!-- The key light used to live here, hardcoded at [0, 10, 0]. It is now
-     core/skybox/SkyLight.svelte, driven by the sky descriptor and mounted by
-     Skybox.svelte, so it tracks the sun by day and the moon by night. A light never
-     belonged in the camera component. See DOCS/weather-system.md §15.3. -->
+<!-- The key light lives in core/skybox/SkyLight.svelte, driven by the sky descriptor
+     (sun by day, moon by night) — it never belonged in the camera component. -->
 <!-- Boot framing: the model's default clock is manual, frozen at t = 0.75 (sunset) —
      the sun sits on the horizon due west, direction (-1, 0, 0). The camera hangs back
      east and high, tilted down ~24 degrees so the sun rides the top of the frame and

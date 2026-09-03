@@ -110,7 +110,7 @@
 	const opacity = uniform(0);
 	/**
 	 * Accumulated wind travel, in world units -- NOT `time * wind`. Snow falls slowly
-	 * enough to track a flake, so the §15.7 teleport matters here: a time-multiplied
+	 * enough to track a flake, so the elapsed-x-rate teleport matters here: a time-multiplied
 	 * wind term kicks the whole field sideways by `elapsed x delta_wind` the moment the
 	 * channel blends, and the kick grows the longer the session runs. Rain tolerates
 	 * that (its streaks reshuffle constantly anyway); this layer accumulates the offset
@@ -334,7 +334,7 @@
 		// rate and reads its phase from the one it already carries, so the field scintillates
 		// instead of pulsing together. Off the raw `time` node deliberately -- unlike the
 		// fall and the drift, the rate here is a per-flake CONSTANT, so there is no
-		// multiplier that can change under absolute elapsed time and no §15.7 teleport to
+		// multiplier that can change under absolute elapsed time and no teleport to
 		// design around.
 		const twinkle = sin(time.mul(aTwinkleRate).add(aPhase.mul(6.283)))
 			.mul(0.17)
@@ -395,7 +395,7 @@
 
 			// Advance the accumulated wind travel, now ALONG THE BEARING. Still an
 			// accumulator rather than `time * wind`, for the reason in the uniform's note:
-			// snow is slow enough to follow one flake, so the §15.7 teleport would be
+			// snow is slow enough to follow one flake, so the teleport would be
 			// plainly visible here. Accumulating means a change of strength OR of direction
 			// only bends the path from here on, which is what a shifting wind does.
 			//

@@ -1,4 +1,4 @@
-// Named phases (§3.5). Derived thresholds on *sun* elevation, not separate presets --
+// Named phases. Derived thresholds on *sun* elevation, not separate presets --
 // moonlight illuminates the night, it does not redefine it.
 //
 // Phases exist for gameplay queries and events (torches, enemy spawns, vampires), and

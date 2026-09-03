@@ -3,15 +3,15 @@
 // WHY THIS EXISTS: the flash has two consumers that must agree frame-for-frame --
 // Lightning.svelte (bolt, scene light, the slight sky wash) and CloudDeck.svelte (the
 // deck lighting up from the inside, around the strike's azimuth). Neither may reach into
-// the other, and a prop is not an option: per-frame numbers must never be reactive
-// (DOCS/weather-system.md §14.1), or the component tree invalidates at flash rates --
-// literally the worst possible place for it.
+// the other, and a prop is not an option: per-frame numbers must never be reactive,
+// or the component tree invalidates at flash rates -- literally the worst possible
+// place for it.
 //
 // So this is a mini-descriptor: a PLAIN MUTABLE OBJECT with exactly one writer
 // (Lightning's task, which owns the strike scheduler) and any number of readers, all in
 // tasks, none tracked. Same contract as `descriptor` in the model, one effect smaller.
 //
-// If lightning ever needs to be multiplayer-synced (§6, server-authoritative sky), this
+// If lightning ever needs to be multiplayer-synced (server-authoritative sky), this
 // is the seam to fold in: the scheduler moves into the model and publishes here or into
 // the descriptor proper, and the renderers keep reading unchanged.
 

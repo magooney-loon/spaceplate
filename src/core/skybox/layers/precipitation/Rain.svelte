@@ -198,7 +198,7 @@
 	 */
 	const uSheet = uniform(0);
 	/**
-	 * Phase of the sheet waves, accumulated -- the §15.7 trap again. The rate depends on
+	 * Phase of the sheet waves, accumulated. The rate depends on
 	 * wind, and a rate multiplied into absolute elapsed time relocates every band the
 	 * instant the weather blends.
 	 */
@@ -226,7 +226,7 @@
 	 * Accumulated fall distance in SECONDS-equivalent, replacing the raw `time` node.
 	 *
 	 * Needed the moment fall speed stopped being constant. `time * speed` with a speed that
-	 * changes teleports the whole field by `elapsed x speed-change` -- the §15.7 trap, and
+	 * changes teleports the whole field by `elapsed x speed-change`, and
 	 * after an hour of play `elapsed` is large enough to make that a total reshuffle.
 	 * Accumulating instead means a speed change alters only the rate from here on, exactly
 	 * as CloudDeck's scroll and Snow's `uWindDrift` already do.
@@ -239,7 +239,7 @@
 	 *
 	 * The drift used to be `fall * uWindSlant` evaluated live. `fall` is unbounded (it is
 	 * `uFallTime * aSpeed`), so multiplying it by a uniform that MOVES is `elapsed x
-	 * slant-change` -- the same §15.7 teleport, on the other axis. It never showed as a
+	 * slant-change` -- the same teleport, on the other axis. It never showed as a
 	 * teleport because `uWindSlant` only ever changes during a weather blend, and a blend
 	 * changes it smoothly; what it produced instead was a continuous sideways SWEEP of the
 	 * whole drop field for as long as the blend ran, at a speed proportional to how long
@@ -791,7 +791,7 @@
 	} = build();
 
 	// Camera-velocity tracking. Plain variables, written and read only by the task below --
-	// a per-frame value can never be a prop or reactive state (DOCS/weather-system.md §14.1).
+	// a per-frame value can never be a prop or reactive state.
 	let lastCameraPosition: THREE.Vector3 | null = null;
 	const stepVector = new THREE.Vector3();
 

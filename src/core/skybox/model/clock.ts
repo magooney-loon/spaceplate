@@ -1,4 +1,4 @@
-// Time sources (§3.2). The engine never owns time -- it reads it from a clock.
+// Time sources. The engine never owns time -- it reads it from a clock.
 //
 // Pure: no Svelte, no three.js. A clock holds `t` and `day` and advances them by
 // elapsed * scale. Swapping clocks is a state swap, not a rewire.

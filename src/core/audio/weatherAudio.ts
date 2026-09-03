@@ -1,11 +1,12 @@
 // Weather audio: the rain bed and the thunder claps, driven from the sky.
 //
 // THE CONTRACT. This is the audio consumer of the same plain-state contract the render
-// layers use (DOCS/weather-system.md §14.1): the descriptor is a plain mutable object
-// written by one model task, and lightning publishes strikes to `flashState`. Nothing
-// here may be an `$effect` -- it would run once at mount and never again. GlobalAudio
-// mounts the `<Audio>` objects (it registers the sound files) and hands them over via
-// the attach functions; its task calls `tickWeatherAudio(delta)`.
+// layers use (the descriptor contract, core/skybox/CLAUDE.md): the descriptor is a
+// plain mutable object written by one model task, and lightning publishes strikes to
+// `flashState`. Nothing here may be an `$effect` -- it would run once at mount and
+// never again. GlobalAudio mounts the `<Audio>` objects (it registers the sound
+// files) and hands them over via the attach functions; its task calls
+// `tickWeatherAudio(delta)`.
 //
 // WHY THE TRIGGERS DO NOT LIVE IN THE LAYERS (Rain.svelte / Lightning.svelte): the
 // layers unmount whenever the environment mode is not the procedural sky, and a

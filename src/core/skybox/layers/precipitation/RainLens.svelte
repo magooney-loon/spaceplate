@@ -118,7 +118,7 @@
 	 *
 	 * The rate depends on how fast the camera is moving, and a rate multiplied into absolute
 	 * elapsed time teleports the whole pattern by `elapsed x rate-change` the instant it
-	 * changes -- the §15.7 trap that CloudDeck and Snow's `uWindDrift` already work around,
+	 * changes -- the trap that CloudDeck and Snow's `uWindDrift` already work around,
 	 * and it would be far more visible here than in either of those.
 	 */
 	const uDropTime = uniform(0);
@@ -316,7 +316,7 @@
 	const { geometry, material } = build();
 
 	// Plain variables, written and read only by the task -- a per-frame value can never be
-	// reactive state (DOCS/weather-system.md §14.1).
+	// reactive state.
 	let wetness = 0;
 	let dropTime = 0;
 	let lastPosition: THREE.Vector3 | null = null;

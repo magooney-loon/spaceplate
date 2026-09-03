@@ -1,4 +1,4 @@
-// The uniform bag — DOCS/post-processing.md §4. Every numeric param becomes a
+// The uniform bag — see "Rebuild discipline" in CLAUDE.md. Every numeric param becomes a
 // `uniform()` owned by the pipeline, never a raw number handed to a node factory.
 // That keeps a handle for in-place animation and sidesteps the addon .d.ts
 // inconsistency about which arguments accept nodes.

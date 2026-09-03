@@ -4,7 +4,7 @@
 // clock / sunPath / dayCurve / phases / events are pure: no Svelte, no three.js.
 // sky.svelte.ts is the only stateful module. The consumers live around it: Sky /
 // SkyLight / SkyFog / Skybox one directory up, the render layers under ../layers,
-// the env-mode state in ../environment. See DOCS/weather-system.md §14.
+// the env-mode state in ../environment. See model/CLAUDE.md.
 
 export * from './sky.svelte';
 // Shared scalar helpers. The layer components pull clamp01 / smooth01 / mulberry32 from

@@ -1,10 +1,10 @@
-// The pipeline builder — DOCS/post-processing.md §3.3. Reads the registry plus the
+// The pipeline builder. Reads the registry plus the
 // enabled set, provisions the MRT attachments, folds the chain, applies the
 // resolve stage, and owns every node it creates (disposal on rebuild).
 //
-// Discipline (§4): every numeric param reaches a node factory as a `uniform()`
-// from the bag built here, never a raw number — param drags write `.value`, only
-// the structural key rebuilds.
+// Discipline (see "Rebuild discipline" in CLAUDE.md): every numeric param reaches a
+// node factory as a `uniform()` from the bag built here, never a raw number — param
+// drags write `.value`, only the structural key rebuilds.
 
 import {
 	pass,
@@ -65,7 +65,8 @@ export interface PipelineBuild {
  * unchanged and still general — re-adding a normals consumer means one row here
  * (`normal: () => packNormalToRGB(normalView)`), one in MRT_TEXTURE_NAME, one member
  * on `Requirement`, and the unpacked `sample(uv => unpackRGBToNormal(...))` node on
- * BuildContext. See DOCS/post-processing.md §2.2 for the full attachment table.
+ * BuildContext. See the "Removed effects" section of CLAUDE.md for the full
+ * attachment table.
  */
 const MRT_LAYOUT: Record<MrtRequirement, (ctx: any) => any> = {
 	velocity: () => velocity,
@@ -120,7 +121,7 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 	};
 
 	// The fallback installs a bare pass — a broken graph must not take the render
-	// loop down with it (§3.3 step 6, worth keeping from the old implementation).
+	// loop down with it (worth keeping from the old implementation).
 	const installFallback = (error: unknown) => {
 		disposeAll();
 		uniforms.clear();

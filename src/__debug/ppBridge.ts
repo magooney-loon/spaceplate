@@ -3,9 +3,9 @@
 // The only UI that drives `postprocessingState` is the Studio panel, and Studio is
 // frequently the thing you need to run WITHOUT — its selection overlay is a full-screen
 // quad inside the scene pass, and MRT attachments other than `output` do not blend, so
-// it overwrites the velocity buffer and silently kills motion blur (see
-// DOCS/post-processing.md §8.7). The state is plain `$state` with no persistence, so
-// without the panel there is nothing holding an effect on.
+// it overwrites the velocity buffer and silently kills motion blur (the MRT
+// shader-cache trap, src/core/postprocessing/CLAUDE.md). The state is plain `$state`
+// with no persistence, so without the panel there is nothing holding an effect on.
 //
 // This goes through `postprocessingActions`, the same entry point the panel calls — it
 // is the real path, not a shortcut around it. Being able to toggle live in one session

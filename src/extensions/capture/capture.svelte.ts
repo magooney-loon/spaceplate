@@ -49,8 +49,8 @@ export const captureState = $state<CaptureState>({
 // before anything runs) and the capture task (which encodes, after the render). It is a
 // plain object and deliberately NOT `$state`: both are touched every frame, and a reactive
 // write there would wake the Studio panel at frame rate for no reason. Same reasoning as
-// the sky descriptor (core/skybox/CLAUDE.md §14.1) — one writer per field, everyone reads
-// from their own task.
+// the sky descriptor (the descriptor contract, core/skybox/CLAUDE.md) — one writer per
+// field, everyone reads from their own task.
 //
 // THE LATCH IS THE WHOLE POINT, and getting it wrong is what made early offline takes
 // twitchy. `saturated` is asynchronous — the encoder's promise can resolve at any moment,

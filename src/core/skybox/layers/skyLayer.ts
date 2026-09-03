@@ -14,7 +14,7 @@
 //      to avoid TSL's assignment-outside-Fn trap.
 //   3. MATERIAL FLAGS. `fog = false` on every sky layer is not a style choice.
 //
-// See DOCS/weather-system.md §15.4 and §17.
+// See layers/CLAUDE.md.
 
 import * as THREE from 'three/webgpu';
 import {
