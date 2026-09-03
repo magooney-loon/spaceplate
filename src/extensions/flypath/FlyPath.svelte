@@ -161,6 +161,49 @@
 		return () => geometry?.dispose();
 	});
 
+	// --- direction arrows -----------------------------------------------------------
+
+	const ARROW_SPACING = 4.5;
+
+	const arrowGeometry = new THREE.ConeGeometry(0.10, 0.4, 12);
+	arrowGeometry.rotateX(-Math.PI / 2);
+
+	const arrowMaterial = new THREE.MeshBasicNodeMaterial();
+	arrowMaterial.color.set('#ffffff');
+	arrowMaterial.transparent = true;
+	arrowMaterial.opacity = 0.85;
+	arrowMaterial.depthWrite = false;
+	arrowMaterial.fog = false;
+
+	const arrows = $derived.by(() => {
+		const source = curve;
+		if (!source) return [];
+		const len = source.getLength();
+		const count = Math.max(1, Math.floor(len / ARROW_SPACING));
+		const result: {
+			position: [number, number, number];
+			quaternion: [number, number, number, number];
+		}[] = [];
+		for (let i = 1; i <= count; i++) {
+			const t = i / (count + 1);
+			const point = source.getPoint(t);
+			const tangent = source.getTangent(t).normalize();
+			const arrowLen = 0.4;
+			const offset = point.clone().sub(tangent.clone().multiplyScalar(arrowLen / 2));
+			const m = new THREE.Matrix4().lookAt(
+				new THREE.Vector3(0, 0, 0),
+				tangent,
+				new THREE.Vector3(0, 1, 0)
+			);
+			const q = new THREE.Quaternion().setFromRotationMatrix(m);
+			result.push({
+				position: [offset.x, offset.y, offset.z],
+				quaternion: [q.x, q.y, q.z, q.w]
+			});
+		}
+		return result;
+	});
+
 	// --- overlay assets (script-owned, see DemoScene for the same pattern) -----------
 
 	const tubeMaterial = new THREE.MeshBasicNodeMaterial();
@@ -213,6 +256,8 @@
 
 	$effect(() => () => {
 		tubeMaterial.dispose();
+		arrowGeometry.dispose();
+		arrowMaterial.dispose();
 		markerGeometry.dispose();
 		markerMaterial.dispose();
 		startMaterial.dispose();
@@ -703,6 +748,17 @@
 			userData={{ selectable: false, hideInTree: true }}
 		/>
 	{/if}
+
+	{#each arrows as arrow, i (i)}
+		<T.Mesh
+			geometry={arrowGeometry}
+			material={arrowMaterial}
+			position={arrow.position}
+			quaternion={arrow.quaternion}
+			frustumCulled={false}
+			userData={{ selectable: false, hideInTree: true }}
+		/>
+	{/each}
 
 	{#each flyPathState.waypoints as waypoint, index (waypoint.id)}
 		<!-- Deliberately selectable and visible in the tree: that is what lets Studio's
