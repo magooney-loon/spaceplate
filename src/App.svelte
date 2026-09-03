@@ -73,7 +73,14 @@
 		>
 			<PhysicsWorldLogger />
 			{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-				{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }, { default: SkyboxExtension }, { default: PostProcessingExtension }]}
+				{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/capture/CaptureExtension.svelte'), import('./extensions/capture/Capture.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }, { default: SkyboxExtension }, { default: PostProcessingExtension }, { default: CaptureExtension }, { default: Capture }]}
+					<!-- Renders nothing. Sits OUTSIDE <Studio> and before it on purpose: its
+					     render task must register ahead of Studio's Gizmo so a capture grabs the
+					     frame before the Gizmo composites on top (DOCS/webgpu-notes.md §2 — among
+					     `after: autoRenderTask` tasks, registration order wins). Same await block
+					     as <Studio>, so "before it in the fragment" is the whole guarantee: both
+					     mount in one tick, in document order. -->
+					<Capture />
 					<Studio
 						extensions={[
 							SceneExtension,
@@ -83,7 +90,8 @@
 							PhysicsExtension,
 							StatsExtension,
 							SkyboxExtension,
-							PostProcessingExtension
+							PostProcessingExtension,
+							CaptureExtension
 						]}
 					>
 						<Scene />

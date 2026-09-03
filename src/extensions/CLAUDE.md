@@ -126,6 +126,7 @@ production. Add the import to the `Promise.all([...])` and the component to `ext
 | `stats`          | —                                                   | —                                                   | `StatsExtension.svelte` ✅ (stats-gl)                        | [stats/](stats/CLAUDE.md)                      |
 | `skybox`         | — (env-mode state lives in `core/skybox/environment/`) | — (drive `environmentActions` there) | `SkyboxExtension.svelte` ✅ time + weather + env             | [skybox/](skybox/CLAUDE.md)                    |
 | `postprocessing` | `postprocessingState` (defaults from the `$core/postprocessing` registry) | `postprocessingActions` (setEnabled/setParam/resetEffect/resetAll) | `PostProcessingExtension.svelte` ✅ registry-driven | [postprocessing/](postprocessing/CLAUDE.md) |
+| `capture`        | `captureState`                                      | `captureActions`                                    | `CaptureExtension.svelte` ✅ (dev only)                      | [capture/](capture/CLAUDE.md)                  |
 
 ### Common patterns
 
