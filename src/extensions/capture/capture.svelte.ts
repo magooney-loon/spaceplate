@@ -68,5 +68,13 @@ export const captureActions: CaptureActions = {
 		if (!active) return;
 		if (captureState.isRecording) active.stopRecording();
 		else active.startRecording();
+	},
+	startRecording() {
+		if (captureState.isRecording) return;
+		requireDriver('startRecording')?.startRecording();
+	},
+	stopRecording() {
+		if (!captureState.isRecording) return;
+		requireDriver('stopRecording')?.stopRecording();
 	}
 };

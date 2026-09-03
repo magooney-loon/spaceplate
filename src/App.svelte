@@ -73,7 +73,7 @@
 		>
 			<PhysicsWorldLogger />
 			{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-				{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/capture/CaptureExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/capture/Capture.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: CaptureExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }, { default: SkyboxExtension }, { default: PostProcessingExtension }, { default: Capture }]}
+				{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/capture/CaptureExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/flypath/FlyPathExtension.svelte'), import('./extensions/capture/Capture.svelte'), import('./extensions/flypath/FlyPath.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: CaptureExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }, { default: SkyboxExtension }, { default: PostProcessingExtension }, { default: FlyPathExtension }, { default: Capture }, { default: FlyPath }]}
 					<!-- Renders nothing. Sits OUTSIDE <Studio> and before it on purpose: its
 					     render task must register ahead of Studio's Gizmo so a capture grabs the
 					     frame before the Gizmo composites on top (DOCS/webgpu-notes.md §2 — among
@@ -81,9 +81,15 @@
 					     as <Studio>, so "before it in the fragment" is the whole guarantee: both
 					     mount in one tick, in document order. -->
 					<Capture />
+					<!-- Drives camera.current along the authored path from a
+					     `{ before: autoRenderTask }` task, so within a frame the order is
+					     move camera → render → Capture's grab. Outside <Studio> only because
+					     it shares this await block; its own task order is constraint-based. -->
+					<FlyPath />
 					<Studio
 						extensions={[
 							SceneExtension,
+							FlyPathExtension,
 							CaptureExtension,
 							SoundExtension,
 							LoggerExtension,

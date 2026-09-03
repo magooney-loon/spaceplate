@@ -127,6 +127,7 @@ production. Add the import to the `Promise.all([...])` and the component to `ext
 | `skybox`         | — (env-mode state lives in `core/skybox/environment/`) | — (drive `environmentActions` there) | `SkyboxExtension.svelte` ✅ time + weather + env             | [skybox/](skybox/CLAUDE.md)                    |
 | `postprocessing` | `postprocessingState` (defaults from the `$core/postprocessing` registry) | `postprocessingActions` (setEnabled/setParam/resetEffect/resetAll) | `PostProcessingExtension.svelte` ✅ registry-driven | [postprocessing/](postprocessing/CLAUDE.md) |
 | `capture`        | `captureState`                                      | `captureActions`                                    | `CaptureExtension.svelte` ✅ (dev only)                      | [capture/](capture/CLAUDE.md)                  |
+| `flypath`        | `flyPathState`                                      | `flyPathActions`                                    | `FlyPathExtension.svelte` ✅ (dev only)                      | [flypath/](flypath/CLAUDE.md)                  |
 
 ### Common patterns
 
@@ -162,6 +163,23 @@ skybox preset crash. Depend on primitives (`$derived(state.quality)`), not whole
 <Checkbox value={state.enabled} on:change={() => actions.toggleEnabled()} />
 <!-- ✅ -->
 ```
+
+**Guard `on:change` with `e.detail.origin` whenever the bound value is also written by code.**
+svelte-tweakpane-ui dispatches `change` for *programmatic* value updates too, tagged
+`origin: 'external'` (its `core/Binding.svelte` fires on any bound-value change, not just
+widget interaction). So a control whose `value` a driver task writes every frame re-enters
+its own handler every frame:
+
+```svelte
+<Slider value={skyMeta.t} on:change={(e) => {
+  if (e.detail.origin === 'internal') scrubTime(e.detail.value as number);  // ✅
+}} />
+```
+
+This has bitten twice: the skybox time scrub re-froze the clock every frame
+(`SkyboxExtension.svelte`), and the flypath scrub slider called `scrub()` back mid-playback,
+which paused the path one frame after Play and left recordings running to the cap
+(`FlyPathExtension.svelte`). Controls whose value is only ever user-driven don't need it.
 
 **`ToolbarButton` uses the `onclick` prop (Svelte 5), NOT `on:click`** — `on:click` silently does nothing.
 

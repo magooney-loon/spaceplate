@@ -31,6 +31,9 @@ export type CaptureActions = {
 	/** Arms a screenshot; the frame is grabbed on the next rendered frame. */
 	screenshot(): void;
 	toggleRecording(): void;
+	/** Explicit forms, so other extensions can bracket a recording around their own playback. */
+	startRecording(): void;
+	stopRecording(): void;
 };
 
 /**

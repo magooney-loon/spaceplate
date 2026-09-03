@@ -101,6 +101,8 @@ extensions/   — extension system + per-extension docs (→ see extensions/CLAU
   scene/ settings/ input/ logger/ sound/ skybox/ postprocessing/ physics/ gltf-viewer/ stats/
   capture/            — screenshots + video recording; Capture.svelte mounts before <Studio>
                         in App.svelte so the grab beats the Gizmo (task ordering is load-bearing)
+  flypath/            — authored camera paths for cinematic capture; drives camera.current
+                        before the render, brackets a Capture recording around one pass
 ```
 
 ### Barrels
