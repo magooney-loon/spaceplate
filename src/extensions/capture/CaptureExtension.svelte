@@ -26,7 +26,7 @@
 	);
 </script>
 
-<ToolbarItem position="left">
+<ToolbarItem position="right">
 	<DropDownPane icon="mdiCamera" title="Capture">
 		<span
 			style="display:block; font-size:11px; color:#9aa5b1; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12); border-radius:4px; padding:6px 8px; margin-bottom:4px; line-height:1.6; white-space:normal;"
