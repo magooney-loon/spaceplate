@@ -1,14 +1,8 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
+	import { Folder, Slider, Button, Separator, List } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
-	import type { Object3D } from 'three/webgpu';
-	import {
-		captureState,
-		captureActions,
-		registerStudioObjects,
-		unregisterStudioObjects
-	} from './capture.svelte';
+	import { captureState, captureActions } from './capture.svelte';
 	import { extensionScope, type CaptureImageFormat } from './types';
 
 	interface Props {
@@ -16,20 +10,8 @@
 	}
 	let { children }: Props = $props();
 
-	const { createExtension, useExtension } = useStudio();
+	const { createExtension } = useStudio();
 	createExtension({ scope: extensionScope, state: () => ({}), actions: {} });
-
-	// NOT logic, wiring — and it can only happen here. `useStudio()` resolves only inside
-	// <Studio>, while the capture driver (Capture.svelte) is deliberately mounted outside
-	// it to win the render-task ordering race against the Gizmo. So this panel is the one
-	// place that can hand Studio's own object registry to the driver.
-	const registry = useExtension<{ objects: Set<Object3D> }, Record<string, never>>(
-		'studio-objects-registry'
-	);
-	$effect(() => {
-		registerStudioObjects(() => registry.state.objects ?? []);
-		return unregisterStudioObjects;
-	});
 
 	const formatOptions = [
 		{ value: 'png', text: 'PNG (lossless)' },
@@ -106,14 +88,6 @@
 				⚠️ Recording renders every frame (on-demand is suspended) and auto-stops at the cap.
 			</span>
 		</Folder>
-
-		<Separator />
-
-		<Checkbox
-			label="Hide Studio Objects"
-			value={captureState.hideStudioObjects}
-			on:change={() => captureActions.setHideStudioObjects(!captureState.hideStudioObjects)}
-		/>
 	</DropDownPane>
 </ToolbarItem>
 

@@ -13,12 +13,6 @@ export type CaptureState = {
 	bitrateMbps: number;
 	/** Hard cap in seconds — a recording auto-stops here so a forgotten one cannot pin the loop forever. */
 	maxDurationSec: number;
-	/**
-	 * Hide Studio's in-scene objects (grid, helpers, transform controls, selection
-	 * outline) for the duration of a capture. On by default — that is the whole point of
-	 * the extension. Exposed as a toggle so a capture can be used to debug those objects.
-	 */
-	hideStudioObjects: boolean;
 
 	// --- driver-written, read-only from the panel's point of view ---
 	isRecording: boolean;
@@ -34,7 +28,6 @@ export type CaptureActions = {
 	setFps(fps: number): void;
 	setBitrateMbps(bitrate: number): void;
 	setMaxDurationSec(seconds: number): void;
-	setHideStudioObjects(hide: boolean): void;
 	/** Arms a screenshot; the frame is grabbed on the next rendered frame. */
 	screenshot(): void;
 	toggleRecording(): void;

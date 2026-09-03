@@ -1,22 +1,23 @@
 <script lang="ts">
-	// The capture driver — stills and video, without any of Studio's UI in the output.
+	// The capture driver — stills and video.
 	//
-	// TWO KINDS OF "STUDIO UI", TWO DIFFERENT ANSWERS:
+	// WHAT ENDS UP IN THE OUTPUT:
 	//
 	// 1. The toolbar, its panes and the scene HUD are plain HTML siblings of the canvas
 	//    (App.svelte / SceneHud.svelte). Nothing HTML is ever composited into the canvas,
 	//    so reading the canvas back excludes all of it for free.
-	// 2. Studio's 3D content IS in the canvas: the grid, axes/light/group helpers,
-	//    transform controls and the selection-outline quad. Every one of them registers
-	//    itself in Studio's `studio-objects-registry` extension, so hiding that set for
-	//    the duration of a capture removes exactly Studio's contribution and nothing of
-	//    the app's. CaptureExtension.svelte publishes the set (capture.svelte.ts).
-	// 3. The one exception is the corner navigation Gizmo, which is a @threlte/extras
-	//    component mounted by Studio's CameraControls and is NOT in that registry. It
-	//    renders from its own task registered `{ after: autoRenderTask }`, and among
-	//    tasks sharing a constraint the DAG falls back to registration order
-	//    (DOCS/webgpu-notes.md §2). So the grab below happens after the pipeline has
-	//    drawn the frame but BEFORE the Gizmo composites on top of it.
+	// 2. Studio's 3D content — the grid, axes/light/group helpers, transform controls and
+	//    the selection outline — IS in the canvas, and is captured. That is deliberate:
+	//    each of those has its own toggle in Studio's toolbar (and deselecting clears the
+	//    outline), so hiding them is the user's call shot by shot. Sometimes the grid is
+	//    exactly what you want in the frame.
+	// 3. The corner navigation Gizmo is the one thing with no useful toggle — it is a
+	//    viewport widget, never wanted in an image, and turning it off means turning off
+	//    the editor camera. It is a @threlte/extras component mounted by Studio's
+	//    CameraControls, rendering from its own task registered `{ after: autoRenderTask }`,
+	//    and among tasks sharing a constraint the DAG falls back to registration order
+	//    (DOCS/webgpu-notes.md §2). So the grab below runs after the pipeline has drawn the
+	//    frame but BEFORE the Gizmo composites on top of it.
 	//
 	// THAT ORDERING IS WHY App.svelte MOUNTS THIS IN THE SAME `{#await}` AS <Studio>, and
 	// immediately before it. Two dynamic imports racing for render-task order would not be
@@ -33,44 +34,11 @@
 	// has to pin the loop itself: see the invalidate() in the task.
 
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
-	import type { Object3D } from 'three/webgpu';
 	import { sceneState } from '$extensions/scene';
 	import { logEngine } from '$extensions/logger';
-	import {
-		captureState,
-		getStudioObjects,
-		registerCaptureDriver,
-		unregisterCaptureDriver
-	} from './capture.svelte';
+	import { captureState, registerCaptureDriver, unregisterCaptureDriver } from './capture.svelte';
 
 	const { renderer, invalidate, autoRenderTask } = useThrelte();
-
-	// --- hiding Studio's in-scene objects ----------------------------------------
-	// Refcounted: a screenshot taken during a recording must not un-hide them on its way
-	// out. `visible` is restored per object from what it was, never assumed to be true —
-	// Studio hides its own helpers in plenty of states.
-
-	let hidden: Map<Object3D, boolean> | null = null;
-	let hideHolders = 0;
-
-	const acquireHidden = () => {
-		hideHolders += 1;
-		if (hidden || !captureState.hideStudioObjects) return;
-		hidden = new Map();
-		for (const object of getStudioObjects()) {
-			hidden.set(object, object.visible);
-			object.visible = false;
-		}
-		invalidate();
-	};
-
-	const releaseHidden = () => {
-		hideHolders = Math.max(0, hideHolders - 1);
-		if (hideHolders > 0 || !hidden) return;
-		for (const [object, visible] of hidden) object.visible = visible;
-		hidden = null;
-		invalidate();
-	};
 
 	// --- shared helpers ------------------------------------------------------------
 
@@ -105,8 +73,9 @@
 	};
 
 	// --- stills ---------------------------------------------------------------------
-	// Two phases, because the hide has to happen BEFORE the render it applies to and this
-	// task runs after it: arm (hide + invalidate) now, grab on the next rendered frame.
+	// Armed here, grabbed in the task: the canvas outside the render loop holds the last
+	// frame's FINAL composite, Gizmo included. Only a grab from inside the task, on a
+	// frame that actually rendered, lands in the pre-Gizmo window.
 
 	const stillCanvas = document.createElement('canvas');
 	let stillPending = false;
@@ -115,7 +84,6 @@
 		if (stillPending) return;
 		stillPending = true;
 		captureState.status = 'Capturing…';
-		acquireHidden();
 		invalidate();
 	};
 
@@ -125,10 +93,7 @@
 		stillCanvas.height = source.height;
 
 		const format = captureState.imageFormat;
-		const ok = blit(stillCanvas, format === 'jpeg');
-		releaseHidden();
-
-		if (!ok) {
+		if (!blit(stillCanvas, format === 'jpeg')) {
 			captureState.status = 'Screenshot failed: no 2D context';
 			logEngine.error('Capture: could not acquire a 2D context for the still');
 			return;
@@ -233,7 +198,6 @@
 				captureState.status = 'Recording produced no data';
 				logEngine.warn('Capture: recording produced no data');
 			}
-			releaseHidden();
 		};
 
 		frameClock = 0;
@@ -241,7 +205,6 @@
 		captureState.elapsedSec = 0;
 		captureState.isRecording = true;
 		captureState.status = 'Recording…';
-		acquireHidden();
 		recorder.start();
 		logEngine.info(
 			`Capture: recording ${videoCanvas.width}×${videoCanvas.height} @ ${captureState.fps}fps, ` +
@@ -256,9 +219,8 @@
 		recorder = null;
 		videoTrack = null;
 		captureState.isRecording = false;
-		// The onstop handler above downloads and calls releaseHidden().
+		// The onstop handler above downloads the result.
 		if (active.state !== 'inactive') active.stop();
-		else releaseHidden();
 	};
 
 	// --- the task ---------------------------------------------------------------------
@@ -304,12 +266,7 @@
 	$effect(() => {
 		registerCaptureDriver({ screenshot, startRecording, stopRecording });
 		return () => {
-			// Unmounting mid-recording must not leave Studio's objects hidden.
 			stopRecording();
-			if (stillPending) {
-				stillPending = false;
-				releaseHidden();
-			}
 			unregisterCaptureDriver();
 		};
 	});

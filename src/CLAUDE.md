@@ -99,8 +99,8 @@ scenes/
 
 extensions/   — extension system + per-extension docs (→ see extensions/CLAUDE.md)
   scene/ settings/ input/ logger/ sound/ skybox/ postprocessing/ physics/ gltf-viewer/ stats/
-  capture/            — screenshots + video recording with Studio's UI kept out of the frame;
-                        Capture.svelte mounts before <Studio> in App.svelte for task ordering
+  capture/            — screenshots + video recording; Capture.svelte mounts before <Studio>
+                        in App.svelte so the grab beats the Gizmo (task ordering is load-bearing)
 ```
 
 ### Barrels
