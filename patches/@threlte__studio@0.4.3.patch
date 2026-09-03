@@ -1,8 +1,53 @@
 diff --git a/dist/extensions/editor-camera/CameraControls.svelte b/dist/extensions/editor-camera/CameraControls.svelte
-index 58651b111f72f3143b1a465e1f35ec36d3124115..6024faef69a114cd38b4c0589d0c7290193feda9 100644
+index 58651b111f72f3143b1a465e1f35ec36d3124115..bd72e7b5d4709c1a3292c1fb7f9a876aba3f82d4 100644
 --- a/dist/extensions/editor-camera/CameraControls.svelte
 +++ b/dist/extensions/editor-camera/CameraControls.svelte
-@@ -109,6 +109,14 @@
+@@ -52,9 +52,21 @@
+     initialTarget: Vector3
+     cc: (cc: CameraControls) => void
+     rest: (rest: { position: Vector3; target: Vector3 }) => void
++    /**
++     * PATCH (spaceplate): while true, `update()` is not called and the controls leave the
++     * camera alone. See the task below.
++     */
++    suspended?: boolean
+   }
+ 
+-  const { camera, initialPosition, initialTarget, cc, rest }: Props = $props()
++  const {
++    camera,
++    initialPosition,
++    initialTarget,
++    cc,
++    rest,
++    suspended = false
++  }: Props = $props()
+ 
+   const { dom, invalidate } = useThrelte()
+ 
+@@ -72,6 +84,21 @@
+ 
+   useTask(
+     (delta) => {
++      // PATCH (spaceplate): let another driver own the editor camera for a while.
++      //
++      // `CameraControls.update()` writes `camera.position` and `camera.lookAt(target)` on
++      // EVERY call, outside any `_needsUpdate` check (camera-controls 3.1.2, ~line 2241),
++      // so it is not a matter of who writes last within a frame: anything else driving
++      // this camera is overwritten every frame it does not happen to run after this task.
++      // Ordering cannot be relied on either, since this component remounts (and its task
++      // re-registers, moving to the back) whenever the editor camera is toggled.
++      //
++      // extensions/flypath drives the editor camera along an authored path and needs it
++      // held still afterwards, so it raises `controlsSuspended` on the editor-camera
++      // extension for the duration. Skipping update() leaves the controls' own internal
++      // state untouched, so releasing the flag snaps the camera back to wherever the user
++      // had it — the restore comes free.
++      if (suspended) return
+       cameraControls.update(delta)
+     },
+     {
+@@ -109,6 +136,14 @@
    $effect(() => {
      cameraControls.enabled = !anyInUse
    })
@@ -47,10 +92,33 @@ index 52248d1d951c4296a996afb75f46f172c7da8448..b14242590c0ed2815781025d9728d397
          height * dpr,
          0,
 diff --git a/dist/extensions/editor-camera/EditorCamera.svelte b/dist/extensions/editor-camera/EditorCamera.svelte
-index 826504d4b1c6caeefd219d7818dd489531c63160..a84bf6ab5060c9f809c9681cf4440ae0e99d5cc8 100644
+index 826504d4b1c6caeefd219d7818dd489531c63160..4fabd088da3c4b9842470ae117398c80183cadce 100644
 --- a/dist/extensions/editor-camera/EditorCamera.svelte
 +++ b/dist/extensions/editor-camera/EditorCamera.svelte
-@@ -130,12 +130,29 @@
+@@ -52,7 +52,10 @@
+           enabled: persist(true),
+           height: persist(240),
+           width: persist(400)
+-        }
++        },
++        // PATCH (spaceplate): see CameraControls.svelte's task. Deliberately NOT
++        // persisted — a suspended editor camera must never survive a reload.
++        controlsSuspended: false
+       }
+     },
+     actions: {
+@@ -84,6 +87,10 @@
+       setDefaultCameraEnabled({ state }, enabled) {
+         state.defaultCamera.enabled = enabled
+       },
++      // PATCH (spaceplate): see CameraControls.svelte's task.
++      setControlsSuspended({ state }, suspended) {
++        state.controlsSuspended = suspended
++      },
+       setDefaultCameraObject({ state }, object) {
+         state.defaultCamera.object = object
+       },
+@@ -130,12 +137,29 @@
      }
    })
  
@@ -81,6 +149,43 @@ index 826504d4b1c6caeefd219d7818dd489531c63160..a84bf6ab5060c9f809c9681cf4440ae0
          camera.set(defaultCameraObject)
        }
      }
+@@ -203,6 +227,7 @@
+         cc={(cc) => {
+           cameraControls = cc
+         }}
++        suspended={extension.state.controlsSuspended}
+       />
+     </T>
+   {:else if mode === 'Orthographic'}
+@@ -220,6 +245,7 @@
+         cc={(cc) => {
+           cameraControls = cc
+         }}
++        suspended={extension.state.controlsSuspended}
+       />
+     </T>
+   {/if}
+diff --git a/dist/extensions/editor-camera/types.d.ts b/dist/extensions/editor-camera/types.d.ts
+index ec5f87d5482c4be67e45ac74cf9fe5f677f6db41..45898c9447a4f73fa442debe4612fba9b98bc86f 100644
+--- a/dist/extensions/editor-camera/types.d.ts
++++ b/dist/extensions/editor-camera/types.d.ts
+@@ -11,6 +11,8 @@ export type EditorCameraState = {
+         width: number;
+         height: number;
+     };
++    /** PATCH (spaceplate): while true, CameraControls does not write the camera. */
++    controlsSuspended: boolean;
+ };
+ export type EditorCameraActions = {
+     toggleEnabled: () => void;
+@@ -23,5 +25,7 @@ export type EditorCameraActions = {
+     toggleDefaultCameraEnabled: () => void;
+     setDefaultCameraEnabled: (enabled: boolean) => void;
+     setDefaultCameraObject: (object: Camera | undefined) => void;
++    /** PATCH (spaceplate): hand the editor camera to another driver. */
++    setControlsSuspended: (suspended: boolean) => void;
+     focusSelectedObjects: () => void;
+ };
 diff --git a/dist/extensions/helpers/AxesHelper.svelte b/dist/extensions/helpers/AxesHelper.svelte
 index e9452c8c2029b8e9dbfc0fefea70d2bc179b9bfc..994d7e621731ff48ab2f919b6607b360102082f2 100644
 --- a/dist/extensions/helpers/AxesHelper.svelte

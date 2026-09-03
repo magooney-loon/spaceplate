@@ -4,10 +4,10 @@
 	// WHICH CAMERA. Waypoints snapshot `camera.current` and playback drives
 	// `camera.current` — the same object either way, never swapped: `Renderer.svelte`'s
 	// structural effect tracks `$camera` and rebuilds the entire post-processing
-	// pipeline when it changes, so a swap mid-recording would hitch the take. Studio's
-	// editor camera writes that same object, so every action that drives the path
-	// switches it off first — see "the editor camera" below. The transform is saved on
-	// first engage and restored on stop; see flypath/CLAUDE.md for the workflow.
+	// pipeline when it changes, so a swap mid-recording would hitch the take. Which camera
+	// `camera.current` IS, though, is chosen: the path switches Studio's editor camera on
+	// and drives that, so the app's own camera is never touched — see "the editor camera"
+	// below, and flypath/CLAUDE.md for the workflow.
 	//
 	// TASK ORDER: THE MAIN STAGE, and the absence of a constraint here is the whole point.
 	// The pose must be written before the frame is drawn — but also before every task that
@@ -50,18 +50,27 @@
 
 	// --- the editor camera ------------------------------------------------------------
 	//
-	// A flythrough and Studio's editor camera write the SAME object (`camera.current` is
-	// never swapped — see WHICH CAMERA above), and Studio's `CameraControls` calls
-	// `cameraControls.update(delta)` from a main-stage task of its own, so with the editor
-	// camera on the two fight for every frame and the path visibly does not follow its
-	// waypoints. It was never a shot anyone wanted anyway: the editor camera is for
-	// authoring, and the whole point of moving along the path is to see what the SCENE
-	// camera sees — which is as true of a scrub as it is of playback, so all three of
-	// play(), recordFlythrough() and scrub() release it.
+	// THE PATH OWNS THE EDITOR CAMERA, never the scene camera. Waypoints are authored by
+	// flying the editor camera, so replaying them on the same camera is the symmetric
+	// thing — and it means a flythrough NEVER touches the app's own camera, which is the
+	// game's framing and not a dev tool's to move. Driving the scene camera parked it at
+	// the last scrub/waypoint pose, and only an explicit Stop put it back.
 	//
-	// So it is switched OFF rather than warned about. `useStudio()` is a plain
-	// `getContext`, undefined when Studio is toggled off (shift+alt+S) — hence the
-	// optional call rather than the try/catch the `useX.ts` hooks use.
+	// It also deletes a whole mechanism: there is nothing to save or restore. Studio's
+	// `CameraControls` holds the editor camera's own home, so releasing it at the end
+	// snaps the camera back to wherever the user had it, for free.
+	//
+	// What it costs is one patch. `CameraControls.update()` writes `position` and
+	// `lookAt(target)` on EVERY call, outside any dirty check (camera-controls 3.1.2), so
+	// two writers cannot share the camera — and running after it is not a guarantee,
+	// because that component remounts (task re-registered, moving to the back) whenever
+	// the editor camera is toggled. `patches/@threlte__studio` therefore adds
+	// `controlsSuspended` to the editor-camera extension, which its task honours by not
+	// calling `update()` at all.
+	//
+	// `useStudio()` is a plain `getContext`, undefined when Studio is toggled off
+	// (shift+alt+S) — hence the optional calls rather than the try/catch the `useX.ts`
+	// hooks use. With no Studio there is no editor camera and the path cannot run.
 	const studio = useStudio();
 
 	/**
@@ -70,17 +79,55 @@
 	 * `editorCameraScope`, which the package does not re-export.
 	 */
 	const editorCameraExtension = () =>
-		studio?.useExtension<{ enabled: boolean }, { setEnabled: (enabled: boolean) => void }>(
-			'editor-camera'
-		);
+		studio?.useExtension<
+			{ enabled: boolean; controlsSuspended: boolean },
+			{ setEnabled: (enabled: boolean) => void; setControlsSuspended: (v: boolean) => void }
+		>('editor-camera');
 
-	const editorCameraOn = () => editorCameraExtension()?.state.enabled === true;
+	/** True once `camera.current` really is the editor camera — `setEnabled` is async. */
+	const editorCameraReady = () => editorCameraExtension()?.state.enabled === true;
 
-	const releaseEditorCamera = () => {
+	/**
+	 * Switch the editor camera on and take its controls off it. Returns false when there is
+	 * no Studio to ask, which is the one case the path cannot run in.
+	 */
+	const claimEditorCamera = (): boolean => {
 		const editorCamera = editorCameraExtension();
-		if (!editorCamera?.state.enabled) return;
-		editorCamera.setEnabled(false);
-		logEngine.info('FlyPath: editor camera switched off — it and the path drive the same camera');
+		if (!editorCamera) {
+			logEngine.warn('FlyPath: no Studio editor camera to drive — is Studio toggled off?');
+			flyPathState.status = 'Needs Studio’s editor camera';
+			return false;
+		}
+		if (!editorCamera.state.enabled) editorCamera.setEnabled(true);
+		editorCamera.setControlsSuspended(true);
+		return true;
+	};
+
+	/**
+	 * The editor camera's own FOV, taken on the first frame the path drives it and put back
+	 * on release. The ONLY thing that needs saving: `CameraControls` restores position and
+	 * orientation from its own state, but it never touches the lens, and `applyPose` lerps
+	 * FOV between waypoints — so without this a dolly-zoom path leaves the editor camera
+	 * permanently at its last waypoint's FOV. Null when the path does not hold it.
+	 */
+	let editorFov: number | null = null;
+
+	/**
+	 * Hand the editor camera back. Un-suspending IS the restore for the transform: the
+	 * controls resume from the state they kept the whole time, so the camera returns to
+	 * where the user last flew it. `enabled` is deliberately left ON — you asked to fly a
+	 * camera path, so ending up on that camera is the expected place to be, and it keeps
+	 * `camera.current` stable across claim and release.
+	 */
+	const releaseEditorCamera = () => {
+		const cam = activeCamera();
+		if (cam && editorFov !== null && cam.isPerspectiveCamera) {
+			cam.fov = editorFov;
+			cam.updateProjectionMatrix();
+		}
+		editorFov = null;
+		editorCameraExtension()?.setControlsSuspended(false);
+		invalidate();
 	};
 
 	// --- the curve -----------------------------------------------------------------
@@ -189,33 +236,6 @@
 	let pendingScrub: number | null = null;
 	/** True from the moment 🎬 is pressed until the take is torn down — pre-roll included. */
 	const takeInFlight = () => recording || prerollFrame >= 0;
-
-	const savedPosition = new THREE.Vector3();
-	const savedQuaternion = new THREE.Quaternion();
-	let savedFov = 60;
-	let savedValid = false;
-
-	const saveCamera = () => {
-		const cam = activeCamera();
-		if (!cam || savedValid) return;
-		savedPosition.copy(cam.position);
-		savedQuaternion.copy(cam.quaternion);
-		savedFov = cam.fov ?? 60;
-		savedValid = true;
-	};
-
-	const restoreCamera = () => {
-		const cam = activeCamera();
-		if (!cam || !savedValid) return;
-		cam.position.copy(savedPosition);
-		cam.quaternion.copy(savedQuaternion);
-		if (cam.isPerspectiveCamera) {
-			cam.fov = savedFov;
-			cam.updateProjectionMatrix();
-		}
-		savedValid = false;
-		invalidate();
-	};
 
 	// --- pose evaluation ---------------------------------------------------------------
 
@@ -332,11 +352,7 @@
 		if (segmentCount(flyPathState) === 0) return;
 		// Playing from a scrub: the queued pose is stale the moment `elapsed` starts moving.
 		pendingScrub = null;
-		releaseEditorCamera();
-		// No saveCamera() here, and that is deliberate — the task does it. Switching the
-		// editor camera off hands `camera.current` back to the scene camera on the next
-		// effect flush, so a snapshot taken NOW could be of the camera we just dismissed,
-		// and restoreCamera() would then park the SCENE camera at the editor camera's pose.
+		if (!claimEditorCamera()) return;
 		engaged = true;
 		finishing = false;
 		if (flyPathState.progress >= 0.999) elapsed = 0;
@@ -365,7 +381,9 @@
 		}
 		if (engaged) {
 			engaged = false;
-			restoreCamera();
+			// Un-suspending is the restore: the controls resume from the state they kept the
+			// whole time, so the editor camera returns to where the user last flew it.
+			releaseEditorCamera();
 		}
 		flyPathState.status =
 			flyPathState.waypoints.length < 2
@@ -381,15 +399,15 @@
 			logEngine.warn('FlyPath: scrub ignored while recording — press Stop first');
 			return;
 		}
-		releaseEditorCamera();
+		if (!claimEditorCamera()) return;
 		engaged = true;
 		flyPathState.isPlaying = false;
 		elapsed = progress * totalDuration(flyPathState);
-		// Posed and saved by the task, for the same reason play() defers: `camera.current`
-		// only hands back from the editor camera on the next effect flush, and posing now
-		// would drive the one we just dismissed. A drag fires this many times per frame —
-		// the latest write wins and the task poses once, which is a bonus rather than a
-		// compromise. invalidate() because applyPose() is no longer here to do it.
+		// Posed by the task, not here: `camera.current` only BECOMES the editor camera on
+		// the next effect flush, and posing now would move the scene camera instead. A drag
+		// fires this many times per frame — the latest write wins and the task poses once,
+		// which is a bonus rather than a compromise. invalidate() because applyPose() is no
+		// longer here to do it.
 		pendingScrub = progress;
 		flyPathState.status = `Scrubbing ${(progress * 100).toFixed(0)}%`;
 		invalidate();
@@ -419,8 +437,7 @@
 		}
 
 		pendingScrub = null;
-		releaseEditorCamera();
-		// Saved by the task, not here — see play().
+		if (!claimEditorCamera()) return;
 		engaged = true;
 		finishing = false;
 		elapsed = 0;
@@ -536,26 +553,27 @@
 	useTask(
 		(delta) => {
 			// THE CAMERA HANDOVER, and it gates everything below that drives the camera.
-			// play(), recordFlythrough() and scrub() all switch Studio's editor camera off
-			// (releaseEditorCamera) because it and the path drive the same object and Studio's
-			// CameraControls would win the fight. `camera.current` hands back to the scene
-			// camera on the next effect flush, so until it has there is nothing safe to do:
-			// posing would drive the camera we just dismissed, and saving would snapshot it —
-			// leaving restoreCamera() to park the SCENE camera at its pose. invalidate() while
-			// holding, because renderMode is on-demand and this frame is being thrown away, so
-			// nothing else here would ask for the next one.
+			// play(), recordFlythrough() and scrub() switch Studio's editor camera ON
+			// (claimEditorCamera) and suspend its controls, but `setEnabled` runs through
+			// Svelte state: `camera.current` only BECOMES the editor camera on the next
+			// effect flush. Posing before then would drive the scene camera — the one this
+			// whole design exists to leave alone — so hold until the swap has landed.
+			// invalidate() while holding, because renderMode is on-demand and this frame is
+			// being thrown away, so nothing else here would ask for the next one.
 			//
-			// Scoped to the driving branches so authoring is untouched — marker drags are
-			// exactly when the editor camera SHOULD be on, and syncMarkers must keep running
-			// with it.
+			// Scoped to the driving branches, so authoring is untouched: syncMarkers must
+			// keep running whether the editor camera is on or off.
 			const driving =
 				prerollFrame >= 0 || finishing || flyPathState.isPlaying || pendingScrub !== null;
 			if (driving) {
-				if (editorCameraOn()) {
+				if (!editorCameraReady()) {
 					invalidate();
 					return;
 				}
-				saveCamera();
+				// First frame the path actually holds the camera: remember the lens. See
+				// `editorFov` — the transform restores itself, the FOV does not.
+				const cam = activeCamera();
+				if (cam && editorFov === null) editorFov = cam.fov ?? 60;
 			}
 
 			// A SCRUB IS A POSE, NOT A TIME ADVANCE, so it is settled above the zero-delta
@@ -601,14 +619,16 @@
 				if (recording) {
 					recording = false;
 					captureActions.stopRecording();
-					restoreCamera();
+					releaseEditorCamera();
 					engaged = false;
 					// Not "recorded": stopRecording only starts the write. Worded so it stays
 					// true through finalizing and after, since nothing updates it again — the
 					// Capture panel owns the authoritative status.
 					flyPathState.status = 'Flythrough done — see the Capture panel';
 				} else {
-					flyPathState.status = 'Finished — Stop to restore the camera';
+					// Held at the end of the path on purpose, so the last shot can be looked
+					// at; Stop hands the editor camera back to its controls.
+					flyPathState.status = 'Finished — Stop to hand the camera back';
 				}
 				return;
 			}
@@ -621,7 +641,7 @@
 					recording = false;
 					flyPathState.isPlaying = false;
 					flyPathState.status = 'Recording stopped — see the Capture panel';
-					restoreCamera();
+					releaseEditorCamera();
 					engaged = false;
 					return;
 				}
