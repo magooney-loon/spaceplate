@@ -20,6 +20,7 @@
 	import { EFFECTS, structuralKeyOf } from '$core/postprocessing/registry';
 	import type { EffectValues } from '$core/postprocessing/types';
 	import { bootState } from './boot.svelte';
+	import { engineClock } from './engineClock';
 
 	const { scene, renderer, camera, autoRenderTask, invalidate } = useThrelte();
 
@@ -227,6 +228,11 @@
 			// Aspect for the vignette's roundness correction — cheap, per frame.
 			renderer.getSize(size);
 			if (size.width > 0 && size.height > 0) build.setAspect(size.width / size.height);
+			// SCENE delta, deliberately not the wall clock: it normalises the per-frame
+			// velocity buffer into a shutter, so motion blur looks the same live and in a
+			// below-realtime capture take. `engineClock.delta` IS this task's delta — read
+			// from the clock rather than taken as an argument so the two cannot drift.
+			build.setShutterScale(engineClock.delta);
 			renderPipeline.render();
 		},
 		{ after: autoRenderTask, autoInvalidate: false }

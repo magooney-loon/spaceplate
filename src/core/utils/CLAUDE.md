@@ -40,6 +40,11 @@ the app. It also pins TSL `time`, which the scheduler cannot reach.
   does, deliberately — audio is never captured.)
 - **A `delta` of 0 is legal** — a held frame. No divisions by it.
 - `engineClock.elapsed` / `.delta` / `.fixed` are readable from outside a task.
+- **A per-frame quantity that is not a delta still has to be normalised by one.** three's
+  `velocity` MRT is the live case: it is an NDC delta per *frame*, so motion blur was 2–5×
+  wider in a below-realtime take than in the viewport. `Renderer.svelte`'s render task feeds
+  `engineClock.delta` to `build.setShutterScale()` for exactly that
+  (`core/postprocessing/CLAUDE.md`).
 - Scene time is **continuous across handovers** (wall clock ↔ fixed-step source): every
   TSL layer's motion is a function of absolute elapsed time, so a jump either way
   teleports the cloud deck, re-phases every star and relocates the rain — on frame 0 of

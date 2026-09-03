@@ -71,10 +71,31 @@ anyway, as a duplicate pose. With `motionBlur` on (it is `defaultEnabled: true`)
 carries a full frame of velocity and the duplicate carries none, so the take alternated blurred
 and sharp frames, intermittently, and worst at the start where the encoder is cold.
 
+**A projection change costs a prime frame.** `applyResolution()` writes `camera.aspect` and
+resizes the drawing buffer, and three's `VelocityNode` copies current → previous projection
+once per _rendered_ frame — so the first frame drawn after it reports a full-screen bogus
+velocity (zero at the centre, growing horizontally towards the edges) and `motionBlur`
+(`defaultEnabled: true`) smears the whole frame along it. That frame is exactly the one a
+still is grabbed on and the one an offline take encodes as frame 0, which is why `viewport`
+— the one resolution that never touches the projection — is sharp and every preset was not.
+`primeFrames` renders one frame and throws it away: the clock source returns **0, not
+`null`**, because a hold would not draw it and drawing it is the whole point, and the task
+decrements it in **one** place so the still, both video paths and the clock skip the same
+frame. It also covers `holdResolution()` re-applying mid-capture, which _clears_ the canvas —
+grabbing in that same tick read the blanked pixels.
+
 **The head frame is released with a step of 0.** A pose driver rewinds and poses before arming
 (flypath's `armTake`), so the first frame the source releases must encode the scene where it
 already is; advancing first would make frame 0 of the video the scene at 1/fps and leave the
 take a frame short at the head. `takeFrames === 0` is the whole test.
+
+**A take must not look different from the viewport, and once did.** three's `velocity`
+buffer is a per-FRAME delta, so motion blur scaled with the frame's duration — a 30fps
+offline take smeared 2–5× wider than the same shot live, because the engine clock steps a
+fixed `1/fps`. The fix is not in capture: `ctx.shutterScale` normalises velocity into a
+shutter in the pipeline itself (`core/postprocessing/CLAUDE.md`). The general rule is that
+a take exercises every place a per-frame quantity was quietly standing in for a per-second
+one — this was the first one found, and probably not the last.
 
 **The take paces the loop, not the other way round.** The clock `invalidate()`s every frame it
 releases, so a take renders at exactly its own rate. An early version paced off `onEncoderReady`

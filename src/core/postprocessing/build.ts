@@ -50,6 +50,12 @@ export interface PipelineBuild {
 	uniforms: Map<string, UniformBag<any>>;
 	/** Write the viewport aspect (vignette roundness); called by the frame task. */
 	setAspect(aspect: number): void;
+	/**
+	 * Write the frame's SCENE delta in seconds (`engineClock.delta`); called by the frame
+	 * task. Turns per-frame velocity into shutter-normalised velocity — see
+	 * `BuildContext.shutterScale`.
+	 */
+	setShutterScale(deltaSeconds: number): void;
 	/** Dispose every node this build created. Does not touch the pipeline itself. */
 	dispose(): void;
 }
@@ -70,6 +76,22 @@ const MRT_TEXTURE_NAME: Record<MrtRequirement, string> = {
 	velocity: 'velocity',
 	emissive: 'emissive'
 };
+
+/**
+ * The frame time velocity-consuming params are tuned AGAINST: `shutterScale` is exactly 1
+ * here, so `motionBlur.blurAmount = 0.25` still means what it has always meant on a 60Hz
+ * display and only departs from it where the frame time does. See
+ * `BuildContext.shutterScale` for why the normalisation exists at all.
+ */
+const REFERENCE_FRAME_SECONDS = 1 / 60;
+
+/**
+ * Ceiling on the scale (480 fps). The product `velocity × shutterScale` is self-limiting —
+ * a shorter frame moves proportionally less — so this is not needed for the smear width;
+ * it is there so one pathological delta (a resumed tab, a clock handover) cannot turn a
+ * frame of sampling noise into a full-screen streak.
+ */
+const MAX_SHUTTER_SCALE = 8;
 
 /** Per-attachment fixups the union can't express — run after setMRT. */
 const MRT_FINALIZE: Record<MrtRequirement, (basePass: any, mrtNode: any) => void> = {
@@ -104,6 +126,7 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 	};
 
 	const aspect = uniform(1);
+	const shutterScale = uniform(1);
 
 	const report: BuildReport = {
 		ok: true,
@@ -135,6 +158,7 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			renderer,
 			pipeline,
 			aspect,
+			shutterScale,
 			track
 		} as unknown as BuildContext;
 
@@ -185,7 +209,8 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			viewZ: basePass.getViewZNode(),
 			velocity: null as any,
 			emissive: null as any,
-			aspect
+			aspect,
+			shutterScale
 		};
 		if (resolution.mrt.includes('velocity')) ctx.velocity = basePass.getTextureNode('velocity');
 		if (resolution.mrt.includes('emissive')) ctx.emissive = basePass.getTextureNode('emissive');
@@ -248,6 +273,13 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 		uniforms,
 		setAspect: (value: number) => {
 			aspect.value = value;
+		},
+		setShutterScale: (deltaSeconds: number) => {
+			// A delta of 0 is legal — a held frame, or the head frame of a capture take. Nothing
+			// moved, so velocity is zero and the scale is irrelevant; 1 keeps it out of the way
+			// rather than dividing by zero.
+			shutterScale.value =
+				deltaSeconds > 0 ? Math.min(REFERENCE_FRAME_SECONDS / deltaSeconds, MAX_SHUTTER_SCALE) : 1;
 		},
 		dispose: disposeAll
 	};

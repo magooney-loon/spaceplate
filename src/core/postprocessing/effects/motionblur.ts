@@ -5,6 +5,11 @@ import type { EffectDef } from '../types';
 export type MotionBlurParams = {
 	/** Loop count — baked by the shader compiler, so structural. */
 	numSamples: number;
+	/**
+	 * Smear width, as a fraction of the distance the scene moves in one frame AT THE
+	 * REFERENCE RATE (`build.ts`, 60fps) — not in one frame of whatever the loop happens
+	 * to be running at. `ctx.shutterScale` is what makes that true; see below.
+	 */
 	blurAmount: number;
 };
 
@@ -34,6 +39,14 @@ export const motionBlurEffect: EffectDef<MotionBlurParams> = {
 		if (input !== (ctx.color as unknown)) {
 			ctx.track({ dispose: () => (input as any).renderTarget.dispose() });
 		}
-		return motionBlur(input, ctx.velocity.mul(u.blurAmount), int(u.numSamples));
+		// `shutterScale` is not optional decoration: `ctx.velocity` is a raw PER-FRAME NDC
+		// delta, so without it the smear width is a function of the frame rate rather than of
+		// the scene's motion — invisible at 144Hz, and 2–5× too wide in an offline capture
+		// take, whose engine clock steps a fixed 1/fps. See BuildContext.shutterScale.
+		return motionBlur(
+			input,
+			ctx.velocity.mul(u.blurAmount).mul(ctx.shutterScale),
+			int(u.numSamples)
+		);
 	}
 };

@@ -84,6 +84,21 @@
 	// override survives at all — but a window resize mid-take does trigger the first, so
 	// `holdResolution()` below re-claims it on the next frame.
 
+	// THE PRIME FRAME. Changing the camera's projection leaves three's VelocityNode one
+	// frame stale: it writes `ndc(current proj) - ndc(previous frame's proj)`, and it copies
+	// current → previous once per RENDERED frame (VelocityNode.update, keyed on frameId). So
+	// the first frame drawn after an aspect change reports a full-screen bogus velocity —
+	// zero in the middle, growing horizontally towards the left and right edges — and
+	// motionBlur (`defaultEnabled: true`) smears the frame along it. That frame is exactly
+	// the one a still is grabbed on and the one an offline take encodes as frame 0, which is
+	// why `viewport` (which never touches the projection) is sharp and every preset is not.
+	//
+	// One rendered-and-discarded frame is precisely enough. It also covers the resize
+	// itself: `holdResolution()` re-applying mid-capture CLEARS the canvas, and grabbing in
+	// that same tick used to read the blanked pixels.
+	let primeFrames = 0;
+	const PRIME_FRAMES = 1;
+
 	const drawingBuffer = new Vector2();
 	const savedSize = new Vector2();
 	/** The size currently forced on the renderer, or null when the canvas is Threlte's again. */
@@ -115,6 +130,9 @@
 			cam.aspect = target.width / target.height;
 			cam.updateProjectionMatrix();
 		}
+		// The projection (and the drawing buffer) just moved under the velocity buffer —
+		// burn a frame before anything reads the canvas. See PRIME_FRAMES above.
+		primeFrames = PRIME_FRAMES;
 		invalidate();
 		return true;
 	};
@@ -373,6 +391,13 @@
 			captureRuntime.posed = false;
 			return null;
 		}
+		// A prime frame is the one case that must RENDER without being part of the take: a
+		// hold (null) would not draw it, and drawing it is the entire point. Step 0, so scene
+		// time does not move either — the take still starts where the pose driver left it.
+		if (primeFrames > 0) {
+			captureRuntime.posed = false;
+			return 0;
+		}
 		captureRuntime.posed = true;
 		// Frame 0 is encoded where it already is. A pose driver rewinds and poses before
 		// arming (flypath's armTake), so advancing before the first encode would make frame 0
@@ -611,6 +636,17 @@
 			// Before anything reads the canvas: if Threlte took the size back mid-capture,
 			// claim it again (see holdResolution).
 			holdResolution();
+
+			// This frame was drawn only to bring the velocity buffer back in step with the
+			// projection (PRIME_FRAMES). Decremented HERE and nowhere else, so every consumer
+			// — the still, both video paths and the clock source — skips the same frame:
+			// nothing is grabbed, nothing is blitted, nothing is encoded, and `elapsed` does
+			// not move. invalidate() because on the still path nothing else would.
+			if (primeFrames > 0) {
+				primeFrames--;
+				invalidate();
+				return;
+			}
 
 			if (stillPending) {
 				stillPending = false;

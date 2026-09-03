@@ -60,6 +60,22 @@ export interface BuildContext {
 	/** Viewport aspect (w/h), owned by the builder, written by the frame task. */
 	aspect: UniformNode<'float', number>;
 	/**
+	 * Velocity → shutter scale. Owned by the builder, written by the frame task.
+	 *
+	 * **Any effect that multiplies `ctx.velocity` must multiply by this too.** three's
+	 * `velocity` MRT is a raw PER-FRAME NDC delta with no notion of time (`VelocityNode`
+	 * subtracts two clip positions and stops), so a smear derived from it scales with the
+	 * frame's delta: the same camera move blurs ~5× wider at 30fps than at 144. That stays
+	 * invisible until an offline capture take runs the engine clock at a fixed `1/fps` step
+	 * and every frame comes out blurrier than the viewport ever looked
+	 * (`extensions/capture/CLAUDE.md`).
+	 *
+	 * Multiplying by this makes the smear a function of SCENE-TIME motion instead — the
+	 * same rule the engine clock already imposes on every task's `delta`. A param tuned
+	 * once holds at every frame rate, offline takes included.
+	 */
+	shutterScale: UniformNode<'float', number>;
+	/**
 	 * Register an intermediate node created inside `build` for disposal. The
 	 * builder only tracks the node an effect RETURNS — anything else owning render
 	 * targets (BloomNode, LensflareNode, ...) must go through here or it leaks on

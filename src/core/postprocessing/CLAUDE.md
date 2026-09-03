@@ -159,7 +159,27 @@ returns already-cubic sources verbatim, so our cube `scene.environment` (what
 - **`motionBlur`** — three's Fn is the one sampler addon that does NOT
   `convertToTexture` its input; our wrapper does (an RTT when fed a computed node,
   e.g. anything after the basic DoF), otherwise it throws `inputNode.sample is not a
-  function`.
+  function`. It also multiplies by **`ctx.shutterScale`** — see below.
+
+### Velocity is per-frame, not per-second — multiply by `ctx.shutterScale`
+
+`VelocityNode` writes `ndc(current) - ndc(previous frame)` and stops there: no delta, no
+normalisation. So any smear derived from it scales with the frame's duration — the same
+camera move blurs ~5× wider at 30fps than at 144, and `blurAmount` only ever means
+something at the rate it was eyeballed on. It stayed invisible because the viewport
+usually runs fast enough for the smear to vanish; an **offline capture take** exposed it,
+running the engine clock at a fixed `1/fps` step and coming out uniformly blurrier than
+anything the viewport ever showed.
+
+`ctx.shutterScale` is a builder-owned uniform (same pattern as `ctx.aspect`) that the
+frame task writes as `REFERENCE_FRAME_SECONDS / engineClock.delta`, clamped, with 0
+mapping to 1. Multiplying velocity by it turns the smear into a function of **scene-time**
+motion — the rule the engine clock already imposes on every task's `delta`
+(`core/utils/CLAUDE.md`). It is 1 at 60fps, so every existing default keeps the look it was
+picked for. **Any future velocity consumer (a revived `traa`, `ssgi`) has to do the same.**
+
+Deliberately not a per-effect param: it is not a look, it is the unit `velocity` is
+missing.
 
 ## LUTs (`luts.svelte.ts`)
 
