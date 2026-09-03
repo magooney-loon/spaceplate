@@ -5,6 +5,7 @@
 	import { LoopRepeat, LoopOnce } from 'three';
 	import { SkeletonHelper, REVISION, type Group, type Mesh } from 'three/webgpu';
 	import { untrack } from 'svelte';
+	import { sceneState } from '$extensions/scene';
 	import { gltfViewerActions } from './gltfViewer.svelte';
 	import { logGltf } from '$extensions/logger';
 	import type { GltfViewerModel } from './types';
@@ -140,9 +141,17 @@
 
 	// Slowly spins the loaded scene around Y while enabled — driven off the group so
 	// it never fights the animation mixer's own transforms on the GLTF scene root.
+	//
+	// This is the one task in the app that invalidates unconditionally per frame (the
+	// group genuinely moved, so it has to), which pins Threlte's 'on-demand' renderMode
+	// at full rate for as long as it runs. Hence the keep-alive guard: Scene.svelte never
+	// unmounts a visited scene, it only toggles group `visible`, so without this the
+	// rotation would keep forcing full-rate frames of whatever scene IS current — same
+	// reason the cube captures in DemoPhysicsBodies guard on it.
 	useTask(
 		(delta) => {
 			if (!group || !model.autoRotate) return;
+			if (sceneState.currentScene !== 'demoScene') return;
 			group.rotation.y += model.autoRotateSpeed * delta;
 			invalidate();
 		},
