@@ -34,10 +34,12 @@
 	// has to pin the loop itself: see the invalidate() in the task.
 
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
+	import { PerspectiveCamera, Vector2 } from 'three/webgpu';
 	import { setFixedStepSource } from '$core';
 	import { sceneState } from '$extensions/scene';
 	import { logEngine } from '$extensions/logger';
 	import {
+		captureResolutionSize,
 		captureRuntime,
 		captureState,
 		registerCaptureDriver,
@@ -45,7 +47,7 @@
 	} from './capture.svelte';
 	import { createOfflineTake, type OfflineTake } from './encoder';
 
-	const { renderer, invalidate, autoRenderTask } = useThrelte();
+	const { renderer, camera, invalidate, autoRenderTask } = useThrelte();
 
 	// --- shared helpers ------------------------------------------------------------
 
@@ -81,6 +83,97 @@
 	// Writing canvas.width/height clears the pixels but keeps the context object, so both
 	// survive the resizes below.
 
+	// --- render resolution ---------------------------------------------------------
+	//
+	// Default (`viewport`) is the historical behaviour: the output is whatever the canvas
+	// already is — CSS size × DPR — so it depends on the window and the display. A preset
+	// instead resizes the RENDERER for the duration of the capture, so the frame is genuinely
+	// DRAWN at that size rather than scaled up from a window-sized one afterwards. A 4K take
+	// out of a half-screen window is real 4K, and everything resolution-dependent follows for
+	// free: the post-processing passes size their targets from the drawing buffer every frame
+	// (three's PassNode), and the blits below read `renderer.domElement` at its new size.
+	//
+	// `updateStyle: false` is the whole trick. The canvas's CSS size is left exactly as
+	// Threlte set it, so only the backing store changes and page layout never moves; the
+	// browser just scales the backing store into the same box. The visible consequence is
+	// that the VIEWPORT looks stretched while a preset with a different aspect ratio is
+	// active — the encoded frame is the correct one, and the panel warns about it.
+	//
+	// The camera aspect has to be set by hand, because nothing in Threlte derives it from the
+	// drawing buffer — its resize task and the T camera plugin both compute it from the CSS
+	// size, which we deliberately are not changing.
+	//
+	// Threlte can still take the canvas back: its resize task (`resizeStage`, ahead of every
+	// other stage) calls `renderer.setSize()` whenever the DOM element actually changes size,
+	// and the `dpr` effect calls `setPixelRatio()`. Neither fires on its own — that is why the
+	// override survives at all — but a window resize mid-take does trigger the first, so
+	// `holdResolution()` below re-claims it on the next frame.
+
+	const drawingBuffer = new Vector2();
+	const savedSize = new Vector2();
+	/** The size currently forced on the renderer, or null when the canvas is Threlte's again. */
+	let sizeOverride: { width: number; height: number } | null = null;
+	let savedPixelRatio = 1;
+	let savedAspect = 0;
+
+	const perspective = () => (camera.current instanceof PerspectiveCamera ? camera.current : null);
+
+	/** True only if THIS call installed the override — the caller then owns releasing it. */
+	const applyResolution = (): boolean => {
+		const target = captureResolutionSize(captureState.resolution);
+		if (!target || sizeOverride) return false;
+
+		// The restore point is read here rather than remembered from mount, so a window that
+		// was resized before the capture still restores to where it actually is.
+		renderer.getSize(savedSize);
+		savedPixelRatio = renderer.getPixelRatio();
+		sizeOverride = target;
+
+		// Pixel ratio first: setPixelRatio() re-runs setSize() with the previous dimensions,
+		// so doing it the other way round would immediately undo the size below.
+		renderer.setPixelRatio(1);
+		renderer.setSize(target.width, target.height, false);
+
+		const cam = perspective();
+		if (cam) {
+			savedAspect = cam.aspect;
+			cam.aspect = target.width / target.height;
+			cam.updateProjectionMatrix();
+		}
+		invalidate();
+		return true;
+	};
+
+	const releaseResolution = () => {
+		if (!sizeOverride) return;
+		sizeOverride = null;
+		renderer.setPixelRatio(savedPixelRatio);
+		renderer.setSize(savedSize.width, savedSize.height, false);
+		const cam = perspective();
+		if (cam && savedAspect > 0) {
+			cam.aspect = savedAspect;
+			cam.updateProjectionMatrix();
+		}
+		invalidate();
+	};
+
+	/**
+	 * Threlte reclaimed the canvas mid-capture — a window resize (its resize task) or a
+	 * graphics-quality change (its dpr effect). Compared on the DRAWING BUFFER because that
+	 * catches both: a `setPixelRatio` alone leaves the logical size untouched.
+	 *
+	 * Re-applying rather than restoring the old numbers is deliberate: where the window is
+	 * NOW is the right place to restore to when the take ends.
+	 */
+	const holdResolution = () => {
+		const target = sizeOverride;
+		if (!target) return;
+		renderer.getDrawingBufferSize(drawingBuffer);
+		if (drawingBuffer.width === target.width && drawingBuffer.height === target.height) return;
+		sizeOverride = null;
+		applyResolution();
+	};
+
 	// --- stills ---------------------------------------------------------------------
 	// Armed here, grabbed in the task: the canvas outside the render loop holds the last
 	// frame's FINAL composite, Gizmo included. Only a grab from inside the task, on a
@@ -92,6 +185,8 @@
 	const stillCanvas = document.createElement('canvas');
 	const stillContext = stillCanvas.getContext('2d');
 	let stillPending = false;
+	/** Whether the armed still is the one that installed the resolution override. */
+	let stillOwnsResolution = false;
 
 	const blitStill = (opaque: boolean) => {
 		if (!stillContext) return false;
@@ -109,6 +204,11 @@
 	const screenshot = () => {
 		if (stillPending) return;
 		stillPending = true;
+		// Installed HERE, not in the task: the frame that gets grabbed has to be drawn at the
+		// target size, and this runs a frame ahead of it. Released after the grab — unless a
+		// recording already owns the override, in which case the still just joins that take's
+		// resolution and must not restore anything.
+		stillOwnsResolution = applyResolution();
 		captureState.status = 'Capturing…';
 		invalidate();
 	};
@@ -261,6 +361,9 @@
 		recorder = null;
 		videoTrack = null;
 		captureState.isRecording = false;
+		// No more frames will be blitted, so the viewport can have its size back now rather
+		// than at the end of finalizing.
+		releaseResolution();
 		// onstop is not synchronous — the last timeslice still has to be flushed and the
 		// chunks assembled before the download fires — so the panel stays gated until it
 		// lands rather than claiming the take is done.
@@ -309,6 +412,9 @@
 
 	const teardownOffline = () => {
 		setFixedStepSource(null);
+		// Covers the normal stop, the async encoder-creation failure and the mid-take encoder
+		// failure alike — all three come through here.
+		releaseResolution();
 		offlineTake = null;
 		offlinePending = false;
 		takeFrames = 0;
@@ -426,6 +532,12 @@
 			return;
 		}
 
+		// Resize the renderer BEFORE measuring: with a preset selected the source canvas is
+		// about to become exactly that size, and the recording canvas has to match it or the
+		// take is a scaled copy of the window after all. Released by stopRealtimeRecording /
+		// teardownOffline, and by the failure check at the bottom of this function.
+		applyResolution();
+
 		// Fixed for the whole recording — a mid-recording resize of the source canvas is
 		// absorbed by scaling instead of breaking the take. Rounded DOWN TO EVEN because
 		// H.264 (and most hardware encoders) reject odd dimensions; it costs at most one
@@ -436,11 +548,17 @@
 		if (videoCanvas.width < 2 || videoCanvas.height < 2) {
 			captureState.status = 'Recording failed: canvas has no size';
 			logEngine.error('Capture: refusing to record a zero-sized canvas');
+			releaseResolution();
 			return;
 		}
 
 		if (captureState.videoMode === 'offline') startOfflineRecording();
 		else startRealtimeRecording();
+
+		// Every failure path in both starters leaves the flag false (the offline one sets it
+		// optimistically and only its async failure clears it again — teardownOffline releases
+		// the override there). One check covers the lot rather than one per early return.
+		if (!captureState.isRecording) releaseResolution();
 	};
 
 	const stopRecording = () => {
@@ -521,9 +639,22 @@
 
 	useTask(
 		(delta) => {
+			// Before anything reads the canvas: if Threlte took the size back mid-capture,
+			// claim it again (see holdResolution).
+			holdResolution();
+
 			if (stillPending) {
 				stillPending = false;
 				grabStill();
+				// toBlob() reads stillCanvas, which the grab already blitted into, so the
+				// renderer can go back to the viewport immediately — the encode is async but
+				// no longer depends on it.
+				if (stillOwnsResolution) {
+					stillOwnsResolution = false;
+					// …unless a recording started in the meantime (armed on one frame, ⏺ on the
+					// next): it is relying on the same override now, and its own stop restores it.
+					if (!recorder && !offlineTake && !offlinePending) releaseResolution();
+				}
 			}
 
 			if (offlineTake || offlinePending) {
@@ -541,6 +672,10 @@
 		registerCaptureDriver({ screenshot, startRecording, stopRecording });
 		return () => {
 			stopRecording();
+			// stopRecording covers a take; this covers a still armed but never grabbed. Leaving
+			// the renderer resized after this component unmounts would be permanent — nothing
+			// else resizes it until the window does.
+			releaseResolution();
 			unregisterCaptureDriver();
 		};
 	});

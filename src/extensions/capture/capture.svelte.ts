@@ -14,13 +14,17 @@ export type {
 	CaptureContainer,
 	CaptureDriver,
 	CaptureImageFormat,
+	CaptureResolution,
 	CaptureState,
 	CaptureVideoMode
 } from './types';
 
+export { CAPTURE_RESOLUTIONS, captureResolutionSize } from './types';
+
 export const captureState = $state<CaptureState>({
 	imageFormat: 'png',
 	imageQuality: 0.92,
+	resolution: 'viewport',
 	videoMode: 'realtime',
 	container: 'webm',
 	fps: 30,
@@ -112,6 +116,12 @@ export const captureActions: CaptureActions = {
 	},
 	setImageQuality(quality) {
 		captureState.imageQuality = quality;
+	},
+	// Refused mid-take like the other structural settings: the recording canvas is sized
+	// once at the start, and the renderer override is released by whoever installed it.
+	setResolution(resolution) {
+		if (this.isBusy()) return;
+		captureState.resolution = resolution;
 	},
 	setVideoMode(mode) {
 		if (this.isBusy()) return;

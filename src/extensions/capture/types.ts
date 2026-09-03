@@ -17,10 +17,42 @@ export type CaptureContainer = 'webm' | 'mp4';
  */
 export type CaptureVideoMode = 'realtime' | 'offline';
 
+/**
+ * Output sizes offered for both stills and video.
+ *
+ * `viewport` is the historical behaviour: whatever the canvas already is, i.e. its CSS size
+ * × DPR, so the file size depends on the window and the display. Every other entry is an
+ * exact pixel size the frame is genuinely RE-RENDERED at (`Capture.svelte` resizes the
+ * renderer for the duration of the capture) — a 4K take out of a half-screen window is real
+ * 4K, not an upscale.
+ *
+ * All widths and heights are even: H.264 and most hardware encoders reject odd dimensions.
+ */
+export const CAPTURE_RESOLUTIONS = [
+	{ value: 'viewport', text: 'Viewport (as-is)', width: 0, height: 0 },
+	{ value: '720p', text: '720p · 1280×720', width: 1280, height: 720 },
+	{ value: '1080p', text: '1080p · 1920×1080', width: 1920, height: 1080 },
+	{ value: '1440p', text: '1440p · 2560×1440', width: 2560, height: 1440 },
+	{ value: '2160p', text: '4K · 3840×2160', width: 3840, height: 2160 }
+] as const;
+
+export type CaptureResolution = (typeof CAPTURE_RESOLUTIONS)[number]['value'];
+
+/** The pixel size of a preset, or `null` for `viewport` — "leave the canvas alone". */
+export const captureResolutionSize = (
+	resolution: CaptureResolution
+): { width: number; height: number } | null => {
+	const entry = CAPTURE_RESOLUTIONS.find((option) => option.value === resolution);
+	if (!entry || entry.width === 0) return null;
+	return { width: entry.width, height: entry.height };
+};
+
 export type CaptureState = {
 	imageFormat: CaptureImageFormat;
 	/** Encoder quality for the lossy formats, 0..1. Ignored for png. */
 	imageQuality: number;
+	/** Output size for stills AND video. A preset re-renders at that size; see above. */
+	resolution: CaptureResolution;
 	videoMode: CaptureVideoMode;
 	container: CaptureContainer;
 	/** Output framerate of a recording. The render loop may run faster; frames are throttled to this. */
@@ -53,6 +85,7 @@ export type CaptureActions = {
 	isBusy(): boolean;
 	setImageFormat(format: CaptureImageFormat): void;
 	setImageQuality(quality: number): void;
+	setResolution(resolution: CaptureResolution): void;
 	setVideoMode(mode: CaptureVideoMode): void;
 	setContainer(container: CaptureContainer): void;
 	setFps(fps: number): void;

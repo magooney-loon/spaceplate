@@ -21,9 +21,9 @@ emits no capture chunk at all — verified: no `mediabunny`, no `MediaRecorder`,
 ## State shape
 
 `imageFormat` ('png'|'jpeg'|'webp'), `imageQuality` (0.92, lossy formats only),
-`videoMode` ('realtime'|'offline'), `container` ('webm'|'mp4'), `fps` (30),
-`bitrateMbps` (16), `maxDurationSec` (60), plus driver-written `isRecording`, `isFinalizing`,
-`elapsedSec`, `status`.
+`resolution` ('viewport'|'720p'|'1080p'|'1440p'|'2160p'), `videoMode` ('realtime'|'offline'),
+`container` ('webm'|'mp4'), `fps` (30), `bitrateMbps` (16), `maxDurationSec` (60), plus
+driver-written `isRecording`, `isFinalizing`, `elapsedSec`, `status`.
 
 **`isFinalizing` is the gap between stopping and having a file**, and both modes have one:
 offline still has to drain its encode queue, mux and build the Blob; realtime is waiting on

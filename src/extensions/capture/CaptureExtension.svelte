@@ -4,9 +4,11 @@
 	import type { Snippet } from 'svelte';
 	import { captureState, captureActions } from './capture.svelte';
 	import {
+		CAPTURE_RESOLUTIONS,
 		extensionScope,
 		type CaptureContainer,
 		type CaptureImageFormat,
+		type CaptureResolution,
 		type CaptureVideoMode
 	} from './types';
 
@@ -34,7 +36,10 @@
 		{ value: 'mp4', text: 'MP4 (H.264)' }
 	];
 
+	const resolutionOptions = CAPTURE_RESOLUTIONS.map(({ value, text }) => ({ value, text }));
+
 	const offline = $derived(captureState.videoMode === 'offline');
+	const fixedResolution = $derived(captureState.resolution !== 'viewport');
 
 	/** Recording, or still writing the file out — either way the settings are locked in. */
 	const busy = $derived(captureState.isRecording || captureState.isFinalizing);
@@ -57,6 +62,29 @@
 		>
 			{captureState.status}
 		</span>
+
+		<!-- Deliberately above both folders: it applies to stills and video alike. -->
+		<List
+			label="Resolution"
+			value={captureState.resolution}
+			options={resolutionOptions}
+			disabled={busy}
+			on:change={(e) => captureActions.setResolution(e.detail.value as CaptureResolution)}
+		/>
+		{#if fixedResolution}
+			<span
+				style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
+			>
+				The scene is re-rendered at this exact size, so it does not depend on the window — but the
+				viewport is stretched to it while a capture runs, and 4K costs what 4K costs.
+			</span>
+		{:else}
+			<span
+				style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
+			>
+				Output is the canvas as it is: window size × device pixel ratio.
+			</span>
+		{/if}
 
 		<Folder title="Image" expanded={true}>
 			<List

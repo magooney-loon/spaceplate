@@ -126,8 +126,8 @@
 				<span
 					style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
 				>
-					Target: {flyPathState.lookAtTarget.map((v) => v.toFixed(1)).join(', ')} — or drag the
-					pink marker in the scene.
+					Target: {flyPathState.lookAtTarget.map((v) => v.toFixed(1)).join(', ')} — or drag the pink marker
+					in the scene.
 				</span>
 			{/if}
 			<List
