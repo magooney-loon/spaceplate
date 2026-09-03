@@ -35,7 +35,7 @@ import type { CaptureContainer } from './types';
 /**
  * Codec preference per container, best first. Probed rather than assumed — encode support
  * is a property of the machine (hardware encoders), not of the browser version, so this is
- * the same shape as the realtime path's mime-type probe.
+ * the same shape as a MediaRecorder mime-type probe.
  */
 const CODECS: Record<CaptureContainer, VideoCodec[]> = {
 	webm: ['vp9', 'av1', 'vp8'],
@@ -111,8 +111,7 @@ export const createOfflineTake = async (options: {
 		quality,
 		keyFrameInterval: 2,
 		// The canvas is fixed for the take, but a DPR change could still resize it underneath
-		// us. Stretch rather than throw — that is what the realtime path's drawImage already
-		// does, so the two modes fail the same way.
+		// us. Stretch rather than throw — that is what the blit's own drawImage already does.
 		sizeChangeBehavior: 'fill',
 		// No frames may be dropped: a dropped frame here would silently shorten the take,
 		// which is the exact failure this whole path exists to rule out.

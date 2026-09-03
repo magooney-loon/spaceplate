@@ -313,8 +313,15 @@
 	/** Base rate of the droplet clock, and how much the camera's speed adds to it. */
 	const DROP_RATE = 0.18;
 	const DROP_RATE_PER_SPEED = 0.025;
-	/** A single-frame move beyond this is a cut, not motion. */
-	const TELEPORT_WORLD = 8;
+	/**
+	 * A camera moving faster than this is being cut, not flown.
+	 *
+	 * A SPEED, not a per-frame distance: the old per-frame form (8 units) meant 1150 u/s
+	 * at 144Hz but only 240 u/s in a 30fps offline capture take, so a flythrough that wet
+	 * the glass in the viewport read as a cut in the recording of it and this layer never
+	 * built any wetness at all. 480 u/s is the old figure at 60fps.
+	 */
+	const TELEPORT_SPEED = 480;
 
 	useTask(
 		(delta) => {
@@ -332,7 +339,7 @@
 			} else {
 				stepVector.subVectors(position, lastPosition);
 				lastPosition.copy(position);
-				if (stepVector.length() <= TELEPORT_WORLD && delta > 0) {
+				if (delta > 0 && stepVector.length() / delta <= TELEPORT_SPEED) {
 					stepVector.divideScalar(delta);
 					cam.getWorldDirection(forward);
 					forwardSpeed = Math.max(0, stepVector.dot(forward));

@@ -1,6 +1,6 @@
-// Capture state + the driver slot. The driver (renderer, render task, MediaRecorder)
-// must live inside <Canvas>, so `Capture.svelte` implements CaptureDriver and registers
-// it here — see capture/CLAUDE.md for the state shape and the two video modes.
+// Capture state + the driver slot. The driver (renderer, render task, encoder) must live
+// inside <Canvas>, so `Capture.svelte` implements CaptureDriver and registers it here —
+// see capture/CLAUDE.md for the state shape and how a take is timed.
 
 import { logEngine } from '$extensions/logger';
 import type { CaptureActions, CaptureDriver, CaptureState } from './types';
@@ -11,8 +11,7 @@ export type {
 	CaptureDriver,
 	CaptureImageFormat,
 	CaptureResolution,
-	CaptureState,
-	CaptureVideoMode
+	CaptureState
 } from './types';
 
 export { CAPTURE_RESOLUTIONS, captureResolutionSize } from './types';
@@ -20,8 +19,7 @@ export { CAPTURE_RESOLUTIONS, captureResolutionSize } from './types';
 export const captureState = $state<CaptureState>({
 	imageFormat: 'png',
 	imageQuality: 0.92,
-	resolution: 'viewport',
-	videoMode: 'realtime',
+	resolution: '1080p',
 	container: 'webm',
 	fps: 30,
 	bitrateMbps: 16,
@@ -32,11 +30,11 @@ export const captureState = $state<CaptureState>({
 	status: 'Idle'
 });
 
-// --- the offline handshake ----------------------------------------------------
+// --- the take handshake -------------------------------------------------------
 //
-// An offline take needs everything that animates to advance on the SAME frame counter the
-// encoder timestamps with, and to stall when the encoder is behind. The advancing is not
-// arranged here — an offline take takes over the ENGINE CLOCK (core/utils/engineClock.ts),
+// A take needs everything that animates to advance on the SAME frame counter the encoder
+// timestamps with, and to stall when the encoder is behind. The advancing is not
+// arranged here — a take takes over the ENGINE CLOCK (core/utils/engineClock.ts),
 // which substitutes a fixed step for the frame's real delta upstream of every task in the
 // app, so nothing else needs to know anything about capture.
 //
@@ -54,10 +52,8 @@ export const captureState = $state<CaptureState>({
 // second-guesses it.
 
 export const captureRuntime = {
-	/** True only while an offline take is in flight. Realtime takes leave this alone. */
-	offline: false,
 	/**
-	 * THE LATCH. Set by the clock source (`Capture.svelte`'s `offlineStep`) on frames it let
+	 * THE LATCH. Set by the clock source (`Capture.svelte`'s `takeStep`) on frames it let
 	 * scene time advance on; consumed (and cleared) by the capture task after the render. A
 	 * frame the clock held is a frame that must not be encoded, whatever the encoder's state
 	 * has become in the meantime.
@@ -111,10 +107,6 @@ export const captureActions: CaptureActions = {
 	setResolution(resolution) {
 		if (this.isBusy()) return;
 		captureState.resolution = resolution;
-	},
-	setVideoMode(mode) {
-		if (this.isBusy()) return;
-		captureState.videoMode = mode;
 	},
 	setContainer(container) {
 		if (this.isBusy()) return;

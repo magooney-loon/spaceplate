@@ -81,10 +81,6 @@
 					     task must register ahead of Studio's Gizmo so a capture grabs the frame
 					     before the Gizmo composites (DOCS/webgpu-notes.md §2). -->
 					<Capture />
-					<!-- Drives camera.current along the authored path from a
-					     { before: autoRenderTask } task: move camera → render → Capture's grab.
-					     Outside <Studio> only because it shares this await block. -->
-					<FlyPath />
 					<Studio
 						extensions={[
 							SceneExtension,
@@ -99,6 +95,14 @@
 							PostProcessingExtension
 						]}
 					>
+						<!-- Drives camera.current along the authored path. INSIDE <Studio>, and
+						     that is load-bearing twice over: it needs the extension context to
+						     switch the editor camera off before a flythrough (the two write the
+						     same camera and Studio's CameraControls would win), and Studio
+						     renders `children` after every extension, so its main-stage task
+						     registers after CameraControls' and runs after it either way.
+						     See extensions/flypath/CLAUDE.md. -->
+						<FlyPath />
 						<Scene />
 					</Studio>
 				{/await}

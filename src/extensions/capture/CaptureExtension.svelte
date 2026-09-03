@@ -8,8 +8,7 @@
 		extensionScope,
 		type CaptureContainer,
 		type CaptureImageFormat,
-		type CaptureResolution,
-		type CaptureVideoMode
+		type CaptureResolution
 	} from './types';
 
 	interface Props {
@@ -26,20 +25,12 @@
 		{ value: 'webp', text: 'WebP' }
 	];
 
-	const modeOptions = [
-		{ value: 'realtime', text: 'Realtime (live)' },
-		{ value: 'offline', text: 'Offline (exact)' }
-	];
-
 	const containerOptions = [
 		{ value: 'webm', text: 'WebM (VP9)' },
 		{ value: 'mp4', text: 'MP4 (H.264)' }
 	];
 
 	const resolutionOptions = CAPTURE_RESOLUTIONS.map(({ value, text }) => ({ value, text }));
-
-	const offline = $derived(captureState.videoMode === 'offline');
-	const fixedResolution = $derived(captureState.resolution !== 'viewport');
 
 	/** Recording, or still writing the file out — either way the settings are locked in. */
 	const busy = $derived(captureState.isRecording || captureState.isFinalizing);
@@ -49,9 +40,7 @@
 			? '⏳ Preparing video…'
 			: captureState.isRecording
 				? `⏹ Stop (${captureState.elapsedSec}s / ${captureState.maxDurationSec}s)`
-				: offline
-					? '⏺ Start Offline Render'
-					: '⏺ Start Recording'
+				: '⏺ Start Offline Render'
 	);
 </script>
 
@@ -71,20 +60,11 @@
 			disabled={busy}
 			on:change={(e) => captureActions.setResolution(e.detail.value as CaptureResolution)}
 		/>
-		{#if fixedResolution}
-			<span
-				style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
-			>
-				The scene is rendered at this size, but the
-				viewport is stretched while capturing.
-			</span>
-		{:else}
-			<span
-				style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
-			>
-				Output is the canvas as it is: window size × device pixel ratio. May cause stutters.
-			</span>
-		{/if}
+		<span
+			style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
+		>
+			The scene is rendered at this size, but the viewport is stretched while capturing.
+		</span>
 
 		<Folder title="Image" expanded={true}>
 			<List
@@ -108,14 +88,10 @@
 
 		<Separator />
 
-		<Folder title="Video" expanded={true}>
-			<List
-				label="Mode"
-				value={captureState.videoMode}
-				options={modeOptions}
-				disabled={busy}
-				on:change={(e) => captureActions.setVideoMode(e.detail.value as CaptureVideoMode)}
-			/>
+		<!-- One video path: an offline render. Frames are timestamped from a counter, so the
+		     output is exactly-spaced however slowly the scene draws — the viewport crawls
+		     while a take runs, and that is the take working, not a stall. -->
+		<Folder title="Video (offline render)" expanded={true}>
 			<List
 				label="Container"
 				value={captureState.container}

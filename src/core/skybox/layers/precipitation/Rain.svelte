@@ -241,10 +241,16 @@
 	/** Seconds for the camera-velocity smoother to cover ~63% of a step change. */
 	const VELOCITY_SMOOTHING = 0.12;
 	/**
-	 * A single-frame camera move beyond this is a cut, not motion. Reporting the implied
+	 * A camera moving faster than this is being cut, not flown. Reporting the implied
 	 * velocity would lean every streak flat for as long as the smoother took to recover.
+	 *
+	 * A SPEED, not a per-frame distance, and that distinction is not pedantic: the old
+	 * per-frame form (8 units) meant 1150 u/s on a 144Hz display and 240 u/s in a 30fps
+	 * offline capture take, so a flythrough that read as motion in the viewport was
+	 * classified as a CUT in the recording of it and the streaks stopped leaning. 480 u/s
+	 * is the old figure at 60fps, so the live behaviour is unchanged.
 	 */
-	const TELEPORT_WORLD = 8;
+	const TELEPORT_SPEED = 480;
 
 	/**
 	 * Builds every layer, once. One closure because all of it is BUILD-TIME props -- see
@@ -761,9 +767,14 @@
 			} else {
 				stepVector.subVectors(position, lastCameraPosition);
 				lastCameraPosition.copy(position);
-				if (stepVector.length() > TELEPORT_WORLD) {
+				// The cut test is on SPEED, so it means the same thing at 30 fps as at 144 —
+				// see TELEPORT_SPEED. Ordered after the `delta > 0` case rather than before it
+				// because on a zero-delta frame there is no speed to test: nothing moved.
+				if (delta <= 0) {
+					/* held frame — no motion, nothing to report */
+				} else if (stepVector.length() / delta > TELEPORT_SPEED) {
 					uCameraVelocity.value.set(0, 0, 0);
-				} else if (delta > 0) {
+				} else {
 					// One-pole smoothing, framerate-independent: the `exp` form gives the
 					// same time constant at 30 fps as at 144, where a bare lerp factor
 					// would not.

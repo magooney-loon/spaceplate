@@ -4,17 +4,33 @@
 	// WHICH CAMERA. Waypoints snapshot `camera.current` and playback drives
 	// `camera.current` — the same object either way, never swapped: `Renderer.svelte`'s
 	// structural effect tracks `$camera` and rebuilds the entire post-processing
-	// pipeline when it changes, so a swap mid-recording would hitch the take. (Playing
-	// while the editor camera is on means Studio's CameraControls fights the path for
-	// the same object; the panel warns about it. The transform is saved on first engage
-	// and restored on stop — see flypath/CLAUDE.md for the workflow.)
+	// pipeline when it changes, so a swap mid-recording would hitch the take. Studio's
+	// editor camera writes that same object, so every action that drives the path
+	// switches it off first — see "the editor camera" below. The transform is saved on
+	// first engage and restored on stop; see flypath/CLAUDE.md for the workflow.
 	//
-	// TASK ORDER: `{ before: autoRenderTask }` — the pose must be written before the frame
-	// is drawn. Capture's blit is `{ after: autoRenderTask }`, so within one frame the
-	// order is: move camera → render → grab. That is what makes a recorded flythrough
-	// frame-accurate.
+	// TASK ORDER: THE MAIN STAGE, and the absence of a constraint here is the whole point.
+	// The pose must be written before the frame is drawn — but also before every task that
+	// READS the camera, and there are seven of those (Rain, Snow, RainLens, SnowLens,
+	// HeightField, Lightning, SkyFog: each anchors a mesh or a pass to `camera.current`).
+	// They all sit at `{ before: autoRenderTask }`, where order falls back to mount order
+	// (DOCS/webgpu-notes.md §2) — and `<Skybox />` is a STATIC import in App.svelte while
+	// this component is a dynamic one, so it mounts in a later tick no matter where its
+	// markup goes. A `before: autoRenderTask` task here can therefore never win that race:
+	// every camera-anchored layer read the pose one frame stale, forever.
+	//
+	// The main stage is `before: renderStage` STRUCTURALLY (threlte core
+	// `scheduler.svelte.js` — renderStage is created `{ after: mainStage }`), so ordering
+	// by stage is the one form mount order cannot defeat. Capture's blit is still
+	// `{ after: autoRenderTask }`, so within one frame the order is unchanged where it
+	// mattered: move camera → sky layers follow it → render → grab.
+	//
+	// `applyPose()` invalidates, and `shouldRender()` is evaluated in the render stage
+	// AFTER this one, so a pose still lands on the frame it was written for — which is
+	// what keeps the pre-roll's "one pose per RENDERED frame" guarantee intact.
 
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
+	import { useStudio } from '@threlte/studio/extend';
 	import * as THREE from 'three/webgpu';
 	import { captureActions, captureState } from '$extensions/capture';
 	import { logEngine } from '$extensions/logger';
@@ -28,9 +44,44 @@
 		unregisterFlyPathDriver
 	} from './flypath.svelte';
 
-	const { camera, invalidate, autoRenderTask } = useThrelte();
+	const { camera, invalidate } = useThrelte();
 
 	const activeCamera = () => camera.current as THREE.PerspectiveCamera | undefined;
+
+	// --- the editor camera ------------------------------------------------------------
+	//
+	// A flythrough and Studio's editor camera write the SAME object (`camera.current` is
+	// never swapped — see WHICH CAMERA above), and Studio's `CameraControls` calls
+	// `cameraControls.update(delta)` from a main-stage task of its own, so with the editor
+	// camera on the two fight for every frame and the path visibly does not follow its
+	// waypoints. It was never a shot anyone wanted anyway: the editor camera is for
+	// authoring, and the whole point of moving along the path is to see what the SCENE
+	// camera sees — which is as true of a scrub as it is of playback, so all three of
+	// play(), recordFlythrough() and scrub() release it.
+	//
+	// So it is switched OFF rather than warned about. `useStudio()` is a plain
+	// `getContext`, undefined when Studio is toggled off (shift+alt+S) — hence the
+	// optional call rather than the try/catch the `useX.ts` hooks use.
+	const studio = useStudio();
+
+	/**
+	 * Studio's own `useEditorCamera()` is read-only (it exposes `enabled` and nothing
+	 * else), so this goes through the extension registry. `'editor-camera'` is
+	 * `editorCameraScope`, which the package does not re-export.
+	 */
+	const editorCameraExtension = () =>
+		studio?.useExtension<{ enabled: boolean }, { setEnabled: (enabled: boolean) => void }>(
+			'editor-camera'
+		);
+
+	const editorCameraOn = () => editorCameraExtension()?.state.enabled === true;
+
+	const releaseEditorCamera = () => {
+		const editorCamera = editorCameraExtension();
+		if (!editorCamera?.state.enabled) return;
+		editorCamera.setEnabled(false);
+		logEngine.info('FlyPath: editor camera switched off — it and the path drive the same camera');
+	};
 
 	// --- the curve -----------------------------------------------------------------
 
@@ -134,6 +185,8 @@
 	let recording = false;
 	/** Pre-roll cursor: -1 when idle, else the sweep frame about to be posed. */
 	let prerollFrame = -1;
+	/** A scrub waiting for the task to pose it — see scrub(). Null when there is none. */
+	let pendingScrub: number | null = null;
 	/** True from the moment 🎬 is pressed until the take is torn down — pre-roll included. */
 	const takeInFlight = () => recording || prerollFrame >= 0;
 
@@ -277,7 +330,13 @@
 
 	const play = () => {
 		if (segmentCount(flyPathState) === 0) return;
-		saveCamera();
+		// Playing from a scrub: the queued pose is stale the moment `elapsed` starts moving.
+		pendingScrub = null;
+		releaseEditorCamera();
+		// No saveCamera() here, and that is deliberate — the task does it. Switching the
+		// editor camera off hands `camera.current` back to the scene camera on the next
+		// effect flush, so a snapshot taken NOW could be of the camera we just dismissed,
+		// and restoreCamera() would then park the SCENE camera at the editor camera's pose.
 		engaged = true;
 		finishing = false;
 		if (flyPathState.progress >= 0.999) elapsed = 0;
@@ -296,6 +355,8 @@
 		flyPathState.isPlaying = false;
 		finishing = false;
 		prerollFrame = -1;
+		// A scrub queued for the task must not survive the thing that hands the camera back.
+		pendingScrub = null;
 		elapsed = 0;
 		flyPathState.progress = 0;
 		if (recording) {
@@ -320,12 +381,18 @@
 			logEngine.warn('FlyPath: scrub ignored while recording — press Stop first');
 			return;
 		}
-		saveCamera();
+		releaseEditorCamera();
 		engaged = true;
 		flyPathState.isPlaying = false;
 		elapsed = progress * totalDuration(flyPathState);
-		applyPose(progress);
+		// Posed and saved by the task, for the same reason play() defers: `camera.current`
+		// only hands back from the editor camera on the next effect flush, and posing now
+		// would drive the one we just dismissed. A drag fires this many times per frame —
+		// the latest write wins and the task poses once, which is a bonus rather than a
+		// compromise. invalidate() because applyPose() is no longer here to do it.
+		pendingScrub = progress;
 		flyPathState.status = `Scrubbing ${(progress * 100).toFixed(0)}%`;
+		invalidate();
 	};
 
 	const recordFlythrough = () => {
@@ -351,7 +418,9 @@
 			);
 		}
 
-		saveCamera();
+		pendingScrub = null;
+		releaseEditorCamera();
+		// Saved by the task, not here — see play().
 		engaged = true;
 		finishing = false;
 		elapsed = 0;
@@ -466,6 +535,50 @@
 
 	useTask(
 		(delta) => {
+			// THE CAMERA HANDOVER, and it gates everything below that drives the camera.
+			// play(), recordFlythrough() and scrub() all switch Studio's editor camera off
+			// (releaseEditorCamera) because it and the path drive the same object and Studio's
+			// CameraControls would win the fight. `camera.current` hands back to the scene
+			// camera on the next effect flush, so until it has there is nothing safe to do:
+			// posing would drive the camera we just dismissed, and saving would snapshot it —
+			// leaving restoreCamera() to park the SCENE camera at its pose. invalidate() while
+			// holding, because renderMode is on-demand and this frame is being thrown away, so
+			// nothing else here would ask for the next one.
+			//
+			// Scoped to the driving branches so authoring is untouched — marker drags are
+			// exactly when the editor camera SHOULD be on, and syncMarkers must keep running
+			// with it.
+			const driving =
+				prerollFrame >= 0 || finishing || flyPathState.isPlaying || pendingScrub !== null;
+			if (driving) {
+				if (editorCameraOn()) {
+					invalidate();
+					return;
+				}
+				saveCamera();
+			}
+
+			// A SCRUB IS A POSE, NOT A TIME ADVANCE, so it is settled above the zero-delta
+			// guard below: it neither reads `delta` nor moves `elapsed`, and a scrub dropped on
+			// a zero-delta frame would sit in the queue with nothing left to invalidate for it.
+			// It cannot coexist with a take (scrub() refuses while one is in flight) or with
+			// playback (it clears isPlaying), so nothing after this cares that it ran.
+			if (pendingScrub !== null) {
+				const progress = pendingScrub;
+				pendingScrub = null;
+				applyPose(progress);
+				return;
+			}
+
+			// A ZERO-DELTA FRAME IS INERT, and saying so explicitly is what the move to the
+			// main stage costs. In the render stage this task simply did not run on a frame
+			// the offline clock held (the render stage is gated on `shouldRender()`); the
+			// main stage runs regardless, and `applyPose()` invalidates — so without this a
+			// held frame would render a frame the take is going to discard, which is exactly
+			// the cost holds were made free of (core/utils/engineClock.ts). Every branch
+			// below this point either advances time or reacts to time having advanced.
+			if (delta === 0) return;
+
 			// Pre-roll owns the loop until it has swept the path: poses 0 → 1 inclusive
 			// across PREROLL_FRAMES rendered frames, then arms on the frame after the last
 			// pose, so the far end of the path is warmed too.
@@ -536,7 +649,8 @@
 
 			if (flyPathState.showPath) syncMarkers(delta);
 		},
-		{ before: autoRenderTask, autoInvalidate: false }
+		// No `before`/`after`: that is what puts this in the main stage. See TASK ORDER above.
+		{ autoInvalidate: false }
 	);
 
 	// --- lifecycle -------------------------------------------------------------------

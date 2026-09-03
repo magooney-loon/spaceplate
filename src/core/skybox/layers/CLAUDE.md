@@ -61,6 +61,22 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   ordering is load-bearing, not tidy.
 - **Task order** falls back to mount order among `before: autoRenderTask` tasks; the one
   real dependency is Lightning → CloudDeck (flash published and read in the same frame).
+- **Anything that MOVES the camera must run in the main stage, not here.** Seven layers
+  anchor themselves to `camera.current` in a `before: autoRenderTask` task (Rain, Snow,
+  RainLens, SnowLens, HeightField, Lightning, SkyFog), and a camera driver competing for
+  the same constraint loses to mount order — `<Skybox />` is a static import in
+  `App.svelte`, so a dynamically-imported driver mounts later and can never get ahead of
+  it. `extensions/flypath` was exactly that, and every one of the seven read the pose a
+  frame stale for the whole of a flythrough. The main stage is `before: renderStage`
+  structurally, which is the fix; see `extensions/flypath/CLAUDE.md`.
+- **A "was that a cut?" test is a SPEED, never a per-frame distance.** Rain, RainLens and
+  SnowLens all reject an implausible camera step so a teleport does not lean every streak
+  flat or flood the glass; all three compared a raw per-frame distance, which meant 1150
+  u/s at 144Hz and 240 u/s in a 30fps offline capture take — so a flythrough that read as
+  motion live was classified as a cut in the recording of it, and the lens layers stayed
+  dry for the whole take. `TELEPORT_SPEED` (480 u/s = the old figure at 60fps) is the
+  same normalisation `ctx.shutterScale` applies to motion blur, and the same rule the
+  engine clock imposes on every task's `delta` (`core/utils/CLAUDE.md`).
 
 ## Families
 

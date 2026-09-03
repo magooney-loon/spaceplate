@@ -41,7 +41,7 @@
 		setTimeout(() => URL.revokeObjectURL(url), 1000);
 	};
 
-	// THE BLIT. Both paths below copy the live canvas into a 2D canvas of their own. The
+	// THE BLIT. Both grabs below copy the live canvas into a 2D canvas of their own. The
 	// WebGPU canvas is configured with COPY_SRC, so it is a valid drawImage source
 	// (DOCS/webgpu-notes.md §5.2) — but only while the frame is still current, which is
 	// why every caller is inside the task.
@@ -60,13 +60,16 @@
 
 	// --- render resolution ---------------------------------------------------------
 	//
-	// Default (`viewport`) is the historical behaviour: the output is whatever the canvas
-	// already is — CSS size × DPR — so it depends on the window and the display. A preset
-	// instead resizes the RENDERER for the duration of the capture, so the frame is genuinely
-	// DRAWN at that size rather than scaled up from a window-sized one afterwards. A 4K take
-	// out of a half-screen window is real 4K, and everything resolution-dependent follows for
-	// free: the post-processing passes size their targets from the drawing buffer every frame
-	// (three's PassNode), and the blits below read `renderer.domElement` at its new size.
+	// EVERY capture resizes the renderer for its duration, so the frame is genuinely DRAWN
+	// at the selected size rather than scaled up from a window-sized one afterwards. A 4K
+	// take out of a half-screen window is real 4K, and everything resolution-dependent
+	// follows for free: the post-processing passes size their targets from the drawing
+	// buffer every frame (three's PassNode), and the blits below read
+	// `renderer.domElement` at its new size.
+	//
+	// There is no longer a "viewport, as-is" option — see CAPTURE_RESOLUTIONS in types.ts.
+	// The upshot here is that `applyResolution()` always has a target and the whole
+	// codebase below has one case instead of two.
 	//
 	// `updateStyle: false` is the whole trick. The canvas's CSS size is left exactly as
 	// Threlte set it, so only the backing store changes and page layout never moves; the
@@ -90,8 +93,8 @@
 	// the first frame drawn after an aspect change reports a full-screen bogus velocity —
 	// zero in the middle, growing horizontally towards the left and right edges — and
 	// motionBlur (`defaultEnabled: true`) smears the frame along it. That frame is exactly
-	// the one a still is grabbed on and the one an offline take encodes as frame 0, which is
-	// why `viewport` (which never touches the projection) is sharp and every preset is not.
+	// the one a still is grabbed on and the one a take encodes as frame 0 — the reason
+	// stills came out smeared while the same shot looked sharp in the viewport.
 	//
 	// One rendered-and-discarded frame is precisely enough. It also covers the resize
 	// itself: `holdResolution()` re-applying mid-capture CLEARS the canvas, and grabbing in
@@ -110,8 +113,8 @@
 
 	/** True only if THIS call installed the override — the caller then owns releasing it. */
 	const applyResolution = (): boolean => {
+		if (sizeOverride) return false;
 		const target = captureResolutionSize(captureState.resolution);
-		if (!target || sizeOverride) return false;
 
 		// The restore point is read here rather than remembered from mount, so a window that
 		// was resized before the capture still restores to where it actually is.
@@ -240,25 +243,22 @@
 
 	// --- video ------------------------------------------------------------------------
 	//
-	// TWO MODES, one canvas. Both read from this 2D canvas rather than from the live one,
-	// so the frames they see are the pre-Gizmo blits described above, and both size it once
-	// at the start of a take so a mid-take resize is absorbed by scaling.
+	// ONE MODE: WebCodecs via mediabunny (encoder.ts). Frames are timestamped from a frame
+	// COUNTER, never a clock, so the output is exactly-spaced however slowly the scene
+	// renders — a take is an offline render, and the viewport crawls while it runs.
 	//
-	// - REALTIME (MediaRecorder). `captureStream(0)` yields frames only when
-	//   requestFrame() is called, putting frame selection under the task's control — but
-	//   not frame TIMING: MediaRecorder timestamps each frame by the wall-clock moment
-	//   requestFrame ran, so a hitch is encoded into the file as a long frame.
-	// - OFFLINE (WebCodecs, encoder.ts). Timestamps come from a frame counter, so the
-	//   output is exactly-spaced however slowly it renders. Not realtime; see encoder.ts.
+	// There used to be a `realtime` mode as well (MediaRecorder off `captureStream`). It is
+	// gone rather than deprecated. MediaRecorder's timeline IS the wall clock, so a hitch
+	// went into the file as a long frame and no amount of making the frame cheaper could
+	// fix it — only reduce how often it happened. Everything below therefore assumes a
+	// take owns the engine clock, which is what makes an 8fps render a correct 30fps video.
+	//
+	// Frames are read from this 2D canvas rather than the live one, so what the encoder
+	// sees is the pre-Gizmo blit described above; it is sized once at the start of a take
+	// so a mid-take resize is absorbed by scaling.
 
 	const videoCanvas = document.createElement('canvas');
 	const videoContext = videoCanvas.getContext('2d', { alpha: false });
-	let recorder: MediaRecorder | null = null;
-	let videoTrack: CanvasCaptureMediaStreamTrack | null = null;
-	let chunks: Blob[] = [];
-	/** Realtime only: seconds since the last frame was pushed to the stream. */
-	let frameAccumulator = 0;
-	let elapsed = 0;
 
 	/** No clear first: the context is opaque and drawImage covers every pixel. */
 	const blitVideo = () => {
@@ -267,104 +267,7 @@
 		return true;
 	};
 
-	// Ordered by the selected container, but deliberately allowed to fall through to the
-	// other one: a machine with no mp4 encoder should still produce a file. The extension
-	// is derived from the mime type that actually won, so the name stays honest either way.
-	const pickMimeType = (): string | null => {
-		const candidates =
-			captureState.container === 'mp4'
-				? ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
-				: ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
-		return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? null;
-	};
-
-	const startRealtimeRecording = () => {
-		if (typeof MediaRecorder === 'undefined' || !videoCanvas.captureStream) {
-			captureState.status = 'Recording unsupported in this browser';
-			logEngine.error('Capture: MediaRecorder or captureStream unavailable');
-			return;
-		}
-
-		const mimeType = pickMimeType();
-		if (!mimeType) {
-			captureState.status = 'Recording failed: no supported codec';
-			logEngine.error('Capture: no MediaRecorder mime type supported');
-			return;
-		}
-
-		const stream = videoCanvas.captureStream(0);
-		videoTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
-		if (!videoTrack) {
-			captureState.status = 'Recording failed: no video track';
-			logEngine.error('Capture: captureStream produced no video track');
-			return;
-		}
-
-		chunks = [];
-		recorder = new MediaRecorder(stream, {
-			mimeType,
-			videoBitsPerSecond: captureState.bitrateMbps * 1_000_000
-		});
-		recorder.ondataavailable = (event) => {
-			if (event.data.size > 0) chunks.push(event.data);
-		};
-		recorder.onerror = (event) => {
-			captureState.status = 'Recording error — see console';
-			logEngine.error('Capture: MediaRecorder error', event);
-			stopRecording();
-		};
-		recorder.onstop = () => {
-			captureState.isFinalizing = false;
-			const extension = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
-			const blob = new Blob(chunks, { type: mimeType });
-			chunks = [];
-			if (blob.size > 0) {
-				download(blob, extension);
-				const size = (blob.size / 1024 / 1024).toFixed(2);
-				captureState.status = `Saved ${elapsed.toFixed(1)}s ${extension} (${size} MB)`;
-				logEngine.info(`Capture: video ${elapsed.toFixed(1)}s ${extension}, ${size} MB`);
-			} else {
-				captureState.status = 'Recording produced no data';
-				logEngine.warn('Capture: recording produced no data');
-			}
-		};
-
-		frameAccumulator = 0;
-		elapsed = 0;
-		captureState.elapsedSec = 0;
-		captureState.isRecording = true;
-		captureState.status = 'Recording…';
-		// Timeslice, not start(): without one MediaRecorder grows one internal buffer for
-		// the whole take (~120 MB at 16 Mbps for 60s) and hands it over as a single Blob at
-		// stop — a GC pause mid-shot. One second per chunk; onstop still assembles one Blob.
-		recorder.start(1000);
-		logEngine.info(
-			`Capture: realtime recording ${videoCanvas.width}×${videoCanvas.height} @ ` +
-				`${captureState.fps}fps, ${mimeType}, cap ${captureState.maxDurationSec}s`
-		);
-		invalidate();
-	};
-
-	const stopRealtimeRecording = () => {
-		if (!recorder) return;
-		const active = recorder;
-		recorder = null;
-		videoTrack = null;
-		captureState.isRecording = false;
-		// No more frames will be blitted, so the viewport can have its size back now rather
-		// than at the end of finalizing.
-		releaseResolution();
-		// onstop is not synchronous — the last timeslice still has to be flushed and the
-		// chunks assembled before the download fires — so the panel stays gated until it
-		// lands rather than claiming the take is done.
-		if (active.state !== 'inactive') {
-			captureState.isFinalizing = true;
-			captureState.status = 'Preparing video…';
-			active.stop();
-		}
-	};
-
-	// --- video: offline (WebCodecs) ----------------------------------------------------
+	// --- video: the take (WebCodecs) ----------------------------------------------------
 
 	let offlineTake: OfflineTake | null = null;
 	/** True between arming a take and the encoder actually existing — creation is async. */
@@ -372,18 +275,17 @@
 	/** Frames the clock has released to this take. Only frame 0 is special (see below). */
 	let takeFrames = 0;
 
-	// THE FIXED-STEP SOURCE (core/utils/engineClock.ts). An offline take owns the engine
-	// clock for its duration, and this is the one decision that gives it away, made once per
-	// frame, before any stage runs. Everything downstream — the flypath camera, the sky
-	// sky model, every TSL layer, Rapier's accumulator — advances by whatever this
-	// returns, because the clock substitutes it for the frame's real delta at the
-	// scheduler.
+	// THE FIXED-STEP SOURCE (core/utils/engineClock.ts). A take owns the engine clock for
+	// its duration, and this is the one decision that gives it away, made once per frame,
+	// before any stage runs. Everything downstream — the flypath camera, the sky model,
+	// every TSL layer, Rapier's accumulator — advances by whatever this returns, because
+	// the clock substitutes it for the frame's real delta at the scheduler.
 	//
 	// THE LATCH (the full story is in capture.svelte.ts): `saturated` is asynchronous —
 	// the encoder's promise can resolve between this call and the capture task at the
 	// end of the same frame — so the decision is LATCHED into `captureRuntime.posed`
 	// here and the capture task only ever reads the latch.
-	const offlineStep = (): number | null => {
+	const takeStep = (): number | null => {
 		// Not ready, or the queue is full: hold. The clock does not advance and the frame is
 		// not even rendered — nothing about this frame reaches the take, whatever the
 		// encoder's state has become by the time the capture task runs.
@@ -413,7 +315,6 @@
 		offlineTake = null;
 		offlinePending = false;
 		takeFrames = 0;
-		captureRuntime.offline = false;
 		captureRuntime.posed = false;
 		captureRuntime.saturated = false;
 		captureState.isRecording = false;
@@ -440,7 +341,6 @@
 		takeFrames = 0;
 		captureState.isRecording = true;
 		captureState.elapsedSec = 0;
-		captureRuntime.offline = true;
 		captureRuntime.posed = false;
 		captureRuntime.saturated = true;
 		captureRuntime.frameStep = 1 / captureState.fps;
@@ -448,7 +348,7 @@
 		// Claim the clock now, not on the frame the encoder lands: from here every frame is
 		// either a frame of the take or a deliberate hold, and nothing animates on the wall
 		// clock in between.
-		setFixedStepSource(offlineStep);
+		setFixedStepSource(takeStep);
 
 		void createOfflineTake({
 			canvas: videoCanvas,
@@ -516,10 +416,10 @@
 		);
 	};
 
-	// --- video: mode dispatch ------------------------------------------------------------
+	// --- video: the driver contract -------------------------------------------------------
 
 	const startRecording = () => {
-		if (recorder || offlineTake || offlinePending) return;
+		if (offlineTake || offlinePending) return;
 
 		if (!videoContext) {
 			captureState.status = 'Recording failed: no 2D context';
@@ -527,16 +427,16 @@
 			return;
 		}
 
-		// Resize the renderer BEFORE measuring: with a preset selected the source canvas is
-		// about to become exactly that size, and the recording canvas has to match it or the
-		// take is a scaled copy of the window after all. Released by stopRealtimeRecording /
-		// teardownOffline, and by the failure check at the bottom of this function.
+		// Resize the renderer BEFORE measuring: the source canvas is about to become exactly
+		// the selected size, and the recording canvas has to match it or the take is a scaled
+		// copy of the window after all. Released by teardownOffline, and by the failure check
+		// at the bottom of this function.
 		applyResolution();
 
 		// Fixed for the whole recording — a mid-recording resize of the source canvas is
 		// absorbed by scaling instead of breaking the take. Rounded DOWN TO EVEN because
 		// H.264 (and most hardware encoders) reject odd dimensions; it costs at most one
-		// pixel and keeps every codec in the offline probe list viable.
+		// pixel and keeps every codec in the probe list viable.
 		const source = renderer.domElement;
 		videoCanvas.width = source.width - (source.width % 2);
 		videoCanvas.height = source.height - (source.height % 2);
@@ -547,47 +447,19 @@
 			return;
 		}
 
-		if (captureState.videoMode === 'offline') startOfflineRecording();
-		else startRealtimeRecording();
+		startOfflineRecording();
 
-		// Every failure path in both starters leaves the flag false (the offline one sets it
-		// optimistically and only its async failure clears it again — teardownOffline releases
-		// the override there). One check covers the lot rather than one per early return.
+		// The starter sets the flag optimistically and only its ASYNC failure clears it again
+		// (teardownOffline releases the override there), so this covers the synchronous
+		// failure paths without one release per early return.
 		if (!captureState.isRecording) releaseResolution();
 	};
 
 	const stopRecording = () => {
 		if (offlineTake || offlinePending) stopOfflineRecording();
-		else stopRealtimeRecording();
 	};
 
 	// --- the task ---------------------------------------------------------------------
-
-	const tickRealtime = (delta: number) => {
-		elapsed += delta;
-		const whole = Math.floor(elapsed);
-		// $state write, so it is gated on the integer changing rather than run at 60Hz.
-		if (whole !== captureState.elapsedSec) captureState.elapsedSec = whole;
-
-		frameAccumulator += delta;
-		const period = 1 / captureState.fps;
-		if (frameAccumulator >= period) {
-			frameAccumulator %= period;
-			if (blitVideo()) videoTrack?.requestFrame();
-		}
-
-		if (elapsed >= captureState.maxDurationSec) {
-			logEngine.info(`Capture: duration cap (${captureState.maxDurationSec}s) reached — stopping`);
-			stopRecording();
-			captureState.status = `Stopped at the ${captureState.maxDurationSec}s cap`;
-			return;
-		}
-
-		// Pins the loop for the recording's duration. renderMode is 'on-demand', so
-		// without this the stream would be fed only whenever something else happened to
-		// invalidate — a variable, mostly-empty video. Bounded by the cap above.
-		invalidate();
-	};
 
 	const tickOffline = () => {
 		const take = offlineTake;
@@ -632,16 +504,16 @@
 	};
 
 	useTask(
-		(delta) => {
+		() => {
 			// Before anything reads the canvas: if Threlte took the size back mid-capture,
 			// claim it again (see holdResolution).
 			holdResolution();
 
 			// This frame was drawn only to bring the velocity buffer back in step with the
-			// projection (PRIME_FRAMES). Decremented HERE and nowhere else, so every consumer
-			// — the still, both video paths and the clock source — skips the same frame:
-			// nothing is grabbed, nothing is blitted, nothing is encoded, and `elapsed` does
-			// not move. invalidate() because on the still path nothing else would.
+			// projection (PRIME_FRAMES). Decremented HERE and nowhere else, so both consumers
+			// — the still and the clock source — skip the same frame: nothing is grabbed,
+			// nothing is blitted, nothing is encoded. invalidate() because on the still path
+			// nothing else would.
 			if (primeFrames > 0) {
 				primeFrames--;
 				invalidate();
@@ -658,15 +530,11 @@
 					stillOwnsResolution = false;
 					// …unless a recording started in the meantime (armed on one frame, ⏺ on the
 					// next): it is relying on the same override now, and its own stop restores it.
-					if (!recorder && !offlineTake && !offlinePending) releaseResolution();
+					if (!offlineTake && !offlinePending) releaseResolution();
 				}
 			}
 
-			if (offlineTake || offlinePending) {
-				tickOffline();
-				return;
-			}
-			if (recorder) tickRealtime(delta);
+			if (offlineTake || offlinePending) tickOffline();
 		},
 		{ after: autoRenderTask, autoInvalidate: false }
 	);

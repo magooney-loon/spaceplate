@@ -274,8 +274,13 @@
 	const stepVector = new THREE.Vector3();
 	const forward = new THREE.Vector3();
 
-	/** A single-frame move beyond this is a cut, not motion. */
-	const TELEPORT_WORLD = 8;
+	/**
+	 * A camera moving faster than this is being cut, not flown. A SPEED, not a per-frame
+	 * distance, for the reason spelled out on RainLens's copy: the per-frame form meant
+	 * 240 u/s in a 30fps offline take against 1150 u/s at 144Hz, so a flythrough was
+	 * classified as a cut in the recording and never fed this layer any speed at all.
+	 */
+	const TELEPORT_SPEED = 480;
 
 	useTask(
 		(delta) => {
@@ -292,7 +297,7 @@
 			} else {
 				stepVector.subVectors(position, lastPosition);
 				lastPosition.copy(position);
-				if (stepVector.length() <= TELEPORT_WORLD && delta > 0) {
+				if (delta > 0 && stepVector.length() / delta <= TELEPORT_SPEED) {
 					stepVector.divideScalar(delta);
 					cam.getWorldDirection(forward);
 					forwardSpeed = Math.max(0, stepVector.dot(forward));
