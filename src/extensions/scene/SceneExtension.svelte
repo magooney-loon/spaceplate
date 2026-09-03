@@ -27,7 +27,7 @@
 	const currentScene = $derived(SCENES.find((s) => s.id === sceneState.currentScene));
 </script>
 
-<ToolbarItem position="left">
+<ToolbarItem position="center">
 	<DropDownPane icon="mdiMap" title="Scenes — {currentScene?.label ?? ''}">
 		{#each SCENES as scene (scene.id)}
 			<Folder title={scene.label} expanded={sceneState.currentScene === scene.id}>
