@@ -63,7 +63,7 @@
 		<span
 			style="display:block; font-size:11px; color:#9aa5b1; padding:2px 4px; line-height:1.5; white-space:normal;"
 		>
-			The scene is rendered at this size, but the viewport is stretched while capturing.
+			The viewport is cooked while capturing.
 		</span>
 
 		<Folder title="Image" expanded={true}>
