@@ -1,7 +1,6 @@
 # Skybox (`src/core/skybox/`)
 
-Everything sky / time / weather / environment. Full concept + plan of record:
-`DOCS/weather-system.md` (§ numbers below refer to it). Sub-area docs: `model/`,
+Everything sky / time / weather / environment. Sub-area docs: `model/`,
 `layers/`, `environment/` — each has its own `CLAUDE.md`.
 
 ```
@@ -36,7 +35,7 @@ Every sky layer sets `material.fog = false` — at radius 1000 any fog would res
 whole sky to flat fog colour (see `layers/CLAUDE.md`). That opt-out still applies on the
 `fogNode` path; `NodeMaterial` gates on `material.fog` before touching the node.
 
-## The descriptor contract (§14.1) — the one rule everything else follows
+## The descriptor contract — the one rule everything else follows
 
 **`descriptor` is a plain mutable object, not `$state`.** One task (Skybox.svelte's
 driver, `before: autoRenderTask`) ticks the clock, samples the curve, mixes weather and
@@ -69,6 +68,37 @@ invalidates, no effect can loop.
   animate it, so they run (and invalidate) only while the flock is ungrounded.
 - **`Lightning`** gates on a live strike. **Lens layers** gate on wetness/frost > 0.
 
+## Update budgets
+
+A continuous sky changes every frame, but consumers have wildly different costs, so
+cadence is tiered:
+
+- **Visual** (dome uniforms, sun position, key light) — every frame; cheap writes,
+  must be smooth.
+- **Environment map** — the one real trap: a re-bake is a full cube render, ruinous at
+  60× time scale if driven per change. `Sky.svelte` owns the budget: re-bake at most
+  every ~250 ms wall time **or** once the sun has moved ~1°, whichever first, and
+  always immediately on a discontinuity (time scrub, clock swap, `over: 0` weather —
+  the model flags these via `consumeDiscontinuity()`).
+- **Gameplay/events** — on threshold crossing (phase change, sunrise, weather targets
+  reached).
+
+The descriptor stays fresh; only the expensive derivative of it steps. That is also
+why data flows one way (clock → model → renderers, renderers never write back): a
+renderer can make cost decisions locally without the model knowing what a cube camera
+is.
+
+## Multiplayer: server-authoritative sky
+
+For a SpacetimeDB game the server is the authority on time-of-day and weather: clients
+run an `external` clock fed by server time and receive weather as data, not commands —
+the adapter is a thin extension (a table, a subscription, a call into the mixer); the
+core stays source-agnostic. **Client-side smoothing is mandatory**: server ticks arrive
+with jitter, so the clock must ease toward the authoritative value, never step, never
+run backwards (a game day must not jump because a packet was late). No prediction or
+rollback needed — nobody notices rain starting 150 ms late. Single-player is the same
+engine with a `realtime` clock and local weather calls.
+
 ## Environment modes
 
 `environmentState.mode` picks `sky` (procedural, default) | `environment` (HDR/EXR) |
@@ -84,3 +114,24 @@ the weather audio beds) therefore lives outside the layers.
   `flashState`. Deliberately not a layer (see above).
 - `extensions/skybox/SkyboxExtension.svelte` — the Studio panel; just another caller of
   `skyActions` / `environmentActions`, plus the `requestStrike()` dev hook.
+
+## Planned: authored sky data
+
+Day-curve keyframes and weather definitions are intended to become **authored data in
+a committed file** (`weather.json`, schema = the model's types; a `version` field so a
+format change can migrate rather than crash) — imported directly so it is bundled,
+type-checked and works in production. Today they live in code (`dayCurve.ts`,
+`WEATHERS` in `weatherMixer.ts`); Studio edits live state only.
+
+The save path is a **dev-server endpoint** (Vite plugin, `apply: 'serve'` — it cannot
+exist in a production build), because it writes to source:
+
+- Validate shape + version **before** touching disk; a malformed POST must not corrupt
+  a committed file.
+- Write via temp file + rename, so an interrupted write cannot truncate the config.
+- Emit 2-space indent + trailing newline (matches Prettier) so saving doesn't churn
+  the diff.
+
+Boot order: file → localStorage override (dev scratchpad only) → live edits. The
+per-scene `environment` plan (`src/extensions/scene/CLAUDE.md`) reuses this same
+endpoint rather than inventing a second mechanism.

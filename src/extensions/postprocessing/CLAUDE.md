@@ -10,9 +10,9 @@ index.ts                    — barrel re-exports
 ```
 
 The engine side lives in **`src/core/postprocessing/`** (registry, builder, uniform
-bag, one module per effect) — see `DOCS/post-processing.md`. This extension is only
-the state + Studio panel; the pipeline itself never imports from here except the
-state (via Renderer.svelte).
+bag, one module per effect) — see its `CLAUDE.md` for the architecture and the
+browser-verified gotchas. This extension is only the state + Studio panel; the
+pipeline itself never imports from here except the state (via Renderer.svelte).
 
 ## Effects (registry-driven)
 
@@ -21,9 +21,9 @@ Ten effects. Base passes (mutually exclusive): `ssaa`, `retro` — else the defa
 (**not** exclusive): `lut`. Anti-aliasing (mutually exclusive): `smaa`, `fxaa`.
 
 `pixelation`, `ao`, `ssgi`, `ssr` and `traa` were **removed** — files deleted, not
-disabled. Don't re-add one by half-measures: `DOCS/post-processing.md` records what
-each needed and what the removal took out with it (the `normal`/`metalrough`/`diffuse`
-MRT rows and the matching `BuildContext` fields).
+disabled. Don't re-add one by half-measures: `$core/postprocessing/CLAUDE.md`
+records what each needed and what the removal took out with it (the
+`normal`/`metalrough`/`diffuse` MRT rows and the matching `BuildContext` fields).
 
 - Every effect: `{ enabled: boolean } & params` — defaults come from the registry
   (`def.params()`), so state, builder and panel cannot drift.
@@ -33,7 +33,7 @@ MRT rows and the matching `BuildContext` fields).
   auto-dropped under a non-default base pass — the panel shows the reason.
 - `motionBlur` (`velocity`) and `bloom` Material mode (`emissive`) are the MRT
   consumers. That keeps the shader-cache isolation in `build.ts` load-bearing — see
-  `post-processing.md` §8.7 before touching it.
+  the MRT shader-cache trap in `$core/postprocessing/CLAUDE.md` before touching it.
 - Param drags are **hot** (uniform writes, no rebuild) except structural params
   (`motionBlur.numSamples`, `lut.lut`, `bloom.mode`, `bloom.lensflare`,
   `bloom.ghostSamples`) which rebuild the graph — `bloom.mode` because it changes

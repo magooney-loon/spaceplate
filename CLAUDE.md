@@ -7,19 +7,21 @@ Vite app (not SvelteKit) — single-page, no router, no SSR.
 
 ```
 src/               — Frontend: Threlte scenes, HUD overlays, engine core, extensions
-                     → see src/CLAUDE.md
+                     → see src/CLAUDE.md (index) and the per-area CLAUDE.md files
+                       under src/core/, src/extensions/ and src/scenes/
 spacetimedb/       — SpacetimeDB module (server): tables, reducers, views
                      → see spacetimedb/CLAUDE.md (API reference)
                      → see spacetimedb/CLI.md   (spacetime CLI reference)
 src/module_bindings/ — Generated client bindings — DO NOT EDIT, regenerate instead
 public/            — Static assets (sounds, models, textures)
 patches/           — pnpm patches for @threlte/extras and @threlte/studio
-DOCS/              — Working notes: post-processing.md (rebuild plan),
-                     weather-system.md (sky/weather concept + impl plan),
-                     scene-environment.md (per-scene look: PP + time + weather),
-                     webgpu-notes.md (WebGPU/Studio gotchas — read before debugging),
-                     RAPIER.md (Rapier physics notes),
-                     plus vendored three.js / threlte sources for reference
+DOCS/              — webgpu-notes.md (WebGPU/Studio gotchas — read before debugging
+                     anything renderer-shaped) and RAPIER.md (Rapier physics notes)
+                     are the permanent references. post-processing.md,
+                     weather-system.md and scene-environment.md are superseded
+                     plans — their content lives in the CLAUDE.md files now and they
+                     will be deleted. Plus vendored three.js / threlte sources
+                     (three.js-dev/) for reference
 ```
 
 `DOCS/` is reference material, not app code — Vite denies serving it (`server.fs.deny`).

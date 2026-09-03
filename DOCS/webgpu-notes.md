@@ -117,7 +117,7 @@ with [RenderPassEncoder]. Expects colorTargets [0, 1]; pipeline has [0].
 
 The cure is to give the pass a private cache namespace via `PassNode.contextNode`
 (`renderer.contextNode.id` _is_ in the key). Full write-up, including why the
-alternatives are wrong: `post-processing.md` §8.7.
+alternatives are wrong: the MRT shader-cache trap in `src/core/postprocessing/CLAUDE.md`.
 
 **That error text has two causes, and this is only one of them.** See §1.5 before
 concluding it is the cache — the fix above is in place and working, and the same message
@@ -160,7 +160,8 @@ it.
 **A fullscreen quad inside the scene pass therefore wipes every non-`output`
 attachment**, no matter how transparent it is: invisible in colour, destructive in
 velocity/normals. That is how Studio's selection outline turned motion blur into an
-identity transform (`post-processing.md` §8.9). Overlays belong after post-processing,
+identity transform (non-`output` MRT attachments do not blend —
+`src/core/postprocessing/CLAUDE.md`). Overlays belong after post-processing,
 not in the base pass.
 
 ---
@@ -482,7 +483,8 @@ Notable upstream fixes carried in the patches:
   a 2D texture node. `CubeMapNode` only converts _equirectangular_ sources and returns
   anything already cubic verbatim, so a cube `scene.environment` (which is what
   `Sky.svelte`'s bake produces) got bound to a `texture_2d` declaration. Now picks
-  `cubeTexture()` for cube sources. See `post-processing.md` §5.2.
+  `cubeTexture()` for cube sources. See the retro patch note in
+  `src/core/postprocessing/CLAUDE.md`.
 
 ---
 
@@ -541,7 +543,7 @@ compiler rewrite that `svelte-check` cannot consume as a drop-in.
 | Studio compat                             | Done, in `patches/`                                    |
 | Viewport Y-origin (gizmo, PiP)            | Done, verified by canvas readback                      |
 | Sky → `SkyMesh`                           | Done (`core/skybox/Sky.svelte`)                        |
-| Post-processing                           | **Removed.** Rebuild planned — `post-processing.md`    |
-| Stars                                     | **Removed.** Needs a TSL point-sprite reimplementation |
-| Sky/weather system                        | **Planned** — `weather-system.md`                      |
+| Post-processing                           | Done — registry/builder in `core/postprocessing/`      |
+| Stars                                     | Done — billboarded TSL quads, not point sprites (`core/skybox/layers/celestial/Stars.svelte`) |
+| Sky/weather system                        | Done — `core/skybox/` (see its CLAUDE.md files)        |
 | `Planet.svelte` terrain shader            | **Not ported.** Still raw GLSL `ShaderMaterial`        |

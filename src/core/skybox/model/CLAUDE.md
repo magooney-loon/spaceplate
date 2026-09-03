@@ -7,7 +7,8 @@ relatively, never through the barrel.
 **Purity rule:** nothing in this folder imports three.js or Threlte — except
 `sky.svelte.ts`, the only stateful module, which wires the pure parts into the façade
 and owns `descriptor` / `skyMeta` / `skyActions` / `skyQueries`. That purity is what
-keeps the model out of Svelte reactive cycles (§14.1) and unit-testable.
+keeps the model out of Svelte reactive cycles (the descriptor contract in
+`../CLAUDE.md`) and unit-testable.
 
 ## The façade (`sky.svelte.ts`)
 
@@ -42,6 +43,13 @@ Timezones are the `realtime` clock's concern, never the model's.
 **Sun/moon** (`sunPath.ts`): fixed arc from `t`; moon mirrors it with a configurable
 lag (default opposition = full moon). Downstream reads only the derived
 direction/elevation/azimuth in `descriptor.sun` / `.moon`.
+
+**Phases** (`phases.ts`): named phases are **derived thresholds on sun elevation**
+(e.g. below −18° = night, −6°…0° = twilight), not presets — moonlight illuminates the
+night, it does not redefine it. `noon` is keyed to the arc's peak (a narrow band
+around the highest point — "above 20°" would swallow most of daylight), and symmetric
+pairs (dawn/dusk, morning/afternoon) are separated by the rising/falling flag. They
+exist for gameplay queries/events and as keyframe anchors for the day curve.
 
 ## Day curve (`dayCurve.ts`)
 
@@ -138,5 +146,13 @@ never re-derive the split in a layer.
 - Ambient fills: `DAY_AMBIENT` 0 (env map genuinely carries day), `MOON_AMBIENT` π/32,
   `TWILIGHT_AMBIENT` π/14 (dawn would otherwise measure darker than midnight — moon
   sets as sun rises).
-- `KEY_MIN_ELEVATION` (3°) floors the light's _aim_ so civil twilight does not light
+- **`KEY_MIN_ELEVATION` (3°) floors the light's _aim_** so civil twilight does not light
   undersides and throw shadows upward.
+- **Sun and moon are computed independently and combined with `max()`** — one shared
+  `horizon` weight once handed over to the moon *and* dimmed the sun, cutting a
+  horizon sun to an eighth of peak and rendering warm keyframes cold. Now
+  `sunShare = sunKey / (sunKey + moonKey)` is the single weight driving direction,
+  colour and intensity, so they cannot disagree. The direction still flips 180° at the
+  handover (~−4.5°, ~8% of peak, colour/intensity continuous) — if a non-opposition
+  moon lag ever makes it visible, fade the light out and back in; do not slerp between
+  opposed vectors.

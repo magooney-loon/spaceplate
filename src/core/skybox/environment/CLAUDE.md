@@ -9,8 +9,8 @@ Which environment lights the scene — orthogonal to time and weather.
   `toggleEnvBackground`, `toggleCubeBackground`, `toggleEnvGround`. The Studio panel
   drives these like any other caller.
 - Mode + last-picked textures persist to localStorage (`spaceplate-skybox-*` keys) as a
-  dev convenience. Authored sky data (curve, weathers) is a different story — §16 of
-  `DOCS/weather-system.md`.
+  dev convenience. Authored sky data (curve, weathers) is a different story — see
+  _Planned: authored sky data_ in `../CLAUDE.md`.
 - Texture lists live in `environmentTextures.ts` (`ENV_TEXTURES`, `CUBE_TEXTURES`).
   Register by dropping files into `public/textures/skybox/{hdr,exr,equi_env}/` (or
   6-face sets under `cube/<name>/`, face order px nx py ny pz nz) and adding an entry.

@@ -12,7 +12,7 @@ fauna/           — Birds (GPU-compute flock)
 ```
 
 All layers are **descriptor consumers**: they read slices of `descriptor` from tasks,
-never props, never `$state` (§14.1, see `../CLAUDE.md`). They mount only in procedural
+never props, never `$state` (the descriptor contract in `../CLAUDE.md`). They mount only in procedural
 mode (the `environment`/`cube` modes replace the whole group) and none of them reach the
 environment map — `Sky.svelte` bakes the dome mesh alone into the cube camera, so the
 deck, moon or a flash never burns a hotspot into the ambient term.
@@ -130,7 +130,7 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   camera-anchored box, zero CPU per particle) — that design is why the height field
   exists as a texture rather than geometry queries.
 - **Every axis of that motion is a self-accumulated distance, never `elapsed × rate`.**
-  Same rule as CloudDeck's scroll (§15.7): an unbounded elapsed term multiplied by a
+  Same rule as CloudDeck's scroll — an unbounded elapsed term multiplied by a
   uniform that moves displaces the whole field by `elapsed × Δrate`. Rain's fall
   (`uFallTime`) and horizontal drift (`uWindTravel`), and Snow's `uFallTime` /
   `uWindDrift`, all accumulate. The wind axis was the one that got missed: `fall ×
@@ -213,7 +213,8 @@ uWindSlant` swept the entire drop field sideways for the duration of any weather
   pull strength breathes on a slow sine — a constant pull to a fixed point is a closed
   orbit, and a flock lapping one visible circuit reads as birds on rails. Gust
   turbulence scaled by the wind channel rides on top. All of it runs off the layer's
-  own accumulated `uTime`, not the TSL `time` node (§15.7).
+  own accumulated `uTime`, not the TSL `time` node (same self-accumulation rule as
+  CloudDeck's scroll).
 - **Placement is a camera contract, not taste**: anchors sit far and LOW (~6-15°
   elevation) because both stock cameras look at the origin roughly horizontally —
   anything overhead is never in frame.
