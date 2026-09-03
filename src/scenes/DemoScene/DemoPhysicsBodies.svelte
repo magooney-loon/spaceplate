@@ -316,10 +316,12 @@
 			{ position: [-7, 0.8, 7], material: golf },
 			{ position: [7, 0.8, 7], material: clearcoatNormal }
 		];
-	// $state.raw silences Svelte's binding_property_non_reactive warning on
-	// bind:ref={ballMeshes[i]}. Raw is what we want regardless: the physics task
-	// only ever reads the array, nothing subscribes to it.
-	let ballMeshes = $state.raw<(THREE.Mesh | undefined)[]>([]);
+	// Filled by each mesh's oncreate, not bind:ref: binding to an array INDEX
+	// (`bind:ref={ballMeshes[i]}`) warns binding_property_non_reactive, and $state.raw
+	// does not silence it — a raw array is unproxied, so the element write notifies
+	// nobody. Nothing needs to: the physics task only ever reads the array, so a plain
+	// array + oncreate (with its cleanup clearing the slot) is both correct and cheaper.
+	const ballMeshes: (THREE.Mesh | undefined)[] = [];
 	let ballYaw = 0;
 
 	// Scratch objects for the per-frame task — allocating a Quaternion/Euler/two
@@ -427,10 +429,15 @@
 		>
 			<Collider shape="ball" args={[0.8]} />
 			<T.Mesh
-				bind:ref={ballMeshes[i]}
 				geometry={ballGeometry}
 				material={ball.material}
 				castShadow
+				oncreate={(ref) => {
+					ballMeshes[i] = ref;
+					return () => {
+						ballMeshes[i] = undefined;
+					};
+				}}
 			/>
 		</RigidBody>
 	</T.Group>
