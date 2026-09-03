@@ -2,6 +2,7 @@
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
 	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
+	import { captureState } from '$extensions/capture';
 	import { flyPathState, flyPathActions, totalDuration, segmentCount } from './flypath.svelte';
 	import { extensionScope, type FlyPathEasing, type FlyPathOrientationMode } from './types';
 
@@ -26,6 +27,11 @@
 	];
 
 	const runnable = $derived(segmentCount(flyPathState) > 0);
+	/**
+	 * The previous take's file is still being written. Arming another one would resize the
+	 * shared recording canvas out from under it, so 🎬 is held until the download fires.
+	 */
+	const finalizing = $derived(captureState.isFinalizing);
 	const duration = $derived(totalDuration(flyPathState));
 
 	// svelte-tweakpane-ui fires `change` for PROGRAMMATIC value writes too, tagged
@@ -171,7 +177,11 @@
 			{/if}
 			<Button title="⏹ Stop / Restore Camera" on:click={() => flyPathActions.stop()} />
 			<Separator />
-			<Button title="🎬 Record Flythrough" on:click={() => flyPathActions.recordFlythrough()} />
+			<Button
+				title={finalizing ? '⏳ Preparing video…' : '🎬 Record Flythrough'}
+				disabled={!runnable || finalizing}
+				on:click={() => flyPathActions.recordFlythrough()}
+			/>
 			<span
 				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-top:4px; line-height:1.6; white-space:normal;"
 			>

@@ -220,6 +220,7 @@
 			stopRecording();
 		};
 		recorder.onstop = () => {
+			captureState.isFinalizing = false;
 			const extension = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
 			const blob = new Blob(chunks, { type: mimeType });
 			chunks = [];
@@ -258,8 +259,14 @@
 		recorder = null;
 		videoTrack = null;
 		captureState.isRecording = false;
-		// The onstop handler above downloads the result.
-		if (active.state !== 'inactive') active.stop();
+		// onstop is not synchronous — the last timeslice still has to be flushed and the
+		// chunks assembled before the download fires — so the panel stays gated until it
+		// lands rather than claiming the take is done.
+		if (active.state !== 'inactive') {
+			captureState.isFinalizing = true;
+			captureState.status = 'Preparing video…';
+			active.stop();
+		}
 	};
 
 	// --- video: offline (WebCodecs) ----------------------------------------------------
@@ -342,9 +349,14 @@
 		teardownOffline();
 		if (!take) return;
 
-		captureState.status = 'Finalizing…';
+		// Draining the encode queue, muxing and building the Blob all happen here, and at
+		//4K none of it is instant. Gate the panel for the whole window so the take does not
+		// read as finished seconds before the download prompt appears.
+		captureState.isFinalizing = true;
+		captureState.status = 'Preparing video…';
 		void take.finish().then(
 			(blob) => {
+				captureState.isFinalizing = false;
 				const seconds = take.encodedSec.toFixed(1);
 				if (blob.size === 0) {
 					captureState.status = 'Recording produced no data';
@@ -359,6 +371,7 @@
 				);
 			},
 			(error: unknown) => {
+				captureState.isFinalizing = false;
 				captureState.status = 'Finalizing failed — see console';
 				logEngine.error('Capture: could not finalize the offline take', error);
 			}

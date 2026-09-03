@@ -27,6 +27,7 @@ export const captureState = $state<CaptureState>({
 	bitrateMbps: 16,
 	maxDurationSec: 60,
 	isRecording: false,
+	isFinalizing: false,
 	elapsedSec: 0,
 	status: 'Idle'
 });
@@ -107,6 +108,9 @@ const requireDriver = (what: string): CaptureDriver | null => {
 };
 
 export const captureActions: CaptureActions = {
+	isBusy() {
+		return captureState.isRecording || captureState.isFinalizing;
+	},
 	setImageFormat(format) {
 		captureState.imageFormat = format;
 	},
@@ -114,11 +118,11 @@ export const captureActions: CaptureActions = {
 		captureState.imageQuality = quality;
 	},
 	setVideoMode(mode) {
-		if (captureState.isRecording) return;
+		if (this.isBusy()) return;
 		captureState.videoMode = mode;
 	},
 	setContainer(container) {
-		if (captureState.isRecording) return;
+		if (this.isBusy()) return;
 		captureState.container = container;
 	},
 	setFps(fps) {
@@ -137,10 +141,13 @@ export const captureActions: CaptureActions = {
 		const active = requireDriver('recording');
 		if (!active) return;
 		if (captureState.isRecording) active.stopRecording();
-		else active.startRecording();
+		// Refused, not queued: the previous take's file is still being written, and its
+		// download has not fired yet. Starting another one now would resize the shared
+		// recording canvas out from under it.
+		else if (!captureState.isFinalizing) active.startRecording();
 	},
 	startRecording() {
-		if (captureState.isRecording) return;
+		if (this.isBusy()) return;
 		requireDriver('startRecording')?.startRecording();
 	},
 	stopRecording() {

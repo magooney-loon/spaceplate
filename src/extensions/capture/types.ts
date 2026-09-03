@@ -33,6 +33,13 @@ export type CaptureState = {
 	// --- driver-written, read-only from the panel's point of view ---
 	isRecording: boolean;
 	/**
+	 * The take has stopped but the file is not ready yet: the offline path is still draining
+	 * its encode queue and muxing, the realtime path is waiting on `MediaRecorder.onstop`.
+	 * Neither is instant, so without this the UI claims "done" and then the download prompt
+	 * arrives seconds later. Panels gate their controls on `isRecording || isFinalizing`.
+	 */
+	isFinalizing: boolean;
+	/**
 	 * Whole seconds of OUTPUT recorded so far; only written when it changes. In offline mode
 	 * this is encoded scene time, not time spent waiting for it.
 	 */
@@ -42,6 +49,8 @@ export type CaptureState = {
 };
 
 export type CaptureActions = {
+	/** True while a take is running OR its file is still being written. Gate UI on this. */
+	isBusy(): boolean;
 	setImageFormat(format: CaptureImageFormat): void;
 	setImageQuality(quality: number): void;
 	setVideoMode(mode: CaptureVideoMode): void;

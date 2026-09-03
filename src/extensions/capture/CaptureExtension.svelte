@@ -36,12 +36,17 @@
 
 	const offline = $derived(captureState.videoMode === 'offline');
 
+	/** Recording, or still writing the file out — either way the settings are locked in. */
+	const busy = $derived(captureState.isRecording || captureState.isFinalizing);
+
 	const recordTitle = $derived(
-		captureState.isRecording
-			? `⏹ Stop (${captureState.elapsedSec}s / ${captureState.maxDurationSec}s)`
-			: offline
-				? '⏺ Start Offline Render'
-				: '⏺ Start Recording'
+		captureState.isFinalizing
+			? '⏳ Preparing video…'
+			: captureState.isRecording
+				? `⏹ Stop (${captureState.elapsedSec}s / ${captureState.maxDurationSec}s)`
+				: offline
+					? '⏺ Start Offline Render'
+					: '⏺ Start Recording'
 	);
 </script>
 
@@ -80,12 +85,14 @@
 				label="Mode"
 				value={captureState.videoMode}
 				options={modeOptions}
+				disabled={busy}
 				on:change={(e) => captureActions.setVideoMode(e.detail.value as CaptureVideoMode)}
 			/>
 			<List
 				label="Container"
 				value={captureState.container}
 				options={containerOptions}
+				disabled={busy}
 				on:change={(e) => captureActions.setContainer(e.detail.value as CaptureContainer)}
 			/>
 			<Slider
@@ -112,7 +119,11 @@
 				step={5}
 				on:change={(e) => captureActions.setMaxDurationSec(e.detail.value)}
 			/>
-			<Button title={recordTitle} on:click={() => captureActions.toggleRecording()} />
+			<Button
+				title={recordTitle}
+				disabled={captureState.isFinalizing}
+				on:click={() => captureActions.toggleRecording()}
+			/>
 			<span
 				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-top:4px; line-height:1.6; white-space:normal;"
 			>

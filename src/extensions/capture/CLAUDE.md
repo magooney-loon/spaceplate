@@ -21,8 +21,16 @@ emits no capture chunk at all — verified: no `mediabunny`, no `MediaRecorder`,
 
 `imageFormat` ('png'|'jpeg'|'webp'), `imageQuality` (0.92, lossy formats only),
 `videoMode` ('realtime'|'offline'), `container` ('webm'|'mp4'), `fps` (30),
-`bitrateMbps` (16), `maxDurationSec` (60), plus driver-written `isRecording`, `elapsedSec`,
-`status`.
+`bitrateMbps` (16), `maxDurationSec` (60), plus driver-written `isRecording`, `isFinalizing`,
+`elapsedSec`, `status`.
+
+**`isFinalizing` is the gap between stopping and having a file**, and both modes have one:
+offline still has to drain its encode queue, mux and build the Blob; realtime is waiting on
+`MediaRecorder.onstop` to flush the last timeslice and assemble the chunks. Neither is instant
+at 4K. Without it the UI reads "done" and the download prompt turns up seconds later. Panels
+gate on it (`captureActions.isBusy()` = `isRecording || isFinalizing`), and starting a new take
+is **refused rather than queued** — it would resize the shared recording canvas out from under
+the take still being written.
 
 `captureRuntime` is a separate **plain** (not `$state`) object — the per-frame handshake
 between an offline take and whatever drives the camera. Both sides touch it every frame, and

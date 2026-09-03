@@ -316,6 +316,15 @@
 	const recordFlythrough = () => {
 		if (segmentCount(flyPathState) === 0) return;
 
+		// The panel already disables 🎬 while this is true, but the action is callable from
+		// anywhere. Arming now would resize the shared recording canvas out from under a
+		// take that is still being muxed.
+		if (captureActions.isBusy()) {
+			logEngine.warn('FlyPath: recording refused — the previous take is still being written');
+			flyPathState.status = 'Waiting for the previous video…';
+			return;
+		}
+
 		const total = totalDuration(flyPathState);
 		if (flyPathState.loop) {
 			logEngine.warn(
@@ -451,7 +460,10 @@
 					captureActions.stopRecording();
 					restoreCamera();
 					engaged = false;
-					flyPathState.status = 'Flythrough recorded';
+					// Not "recorded": stopRecording only starts the write. Worded so it stays
+					// true through finalizing and after, since nothing updates it again — the
+					// Capture panel owns the authoritative status.
+					flyPathState.status = 'Flythrough done — see the Capture panel';
 				} else {
 					flyPathState.status = 'Finished — Stop to restore the camera';
 				}
