@@ -175,8 +175,7 @@
 	     badge stays until it is dismissed rather than vanishing with the load screen. -->
 	<div class="notice">
 		<p>
-			<strong>WebGL fallback.</strong> WebGPU isn't available here, so the renderer fell back to WebGL
-			2 — expect lower performance.
+			<strong>WebGL fallback.</strong> WebGPU isn't available.
 		</p>
 		<a href={WEBGPU_REPORT_URL} target="_blank" rel="noopener noreferrer">webgpureport.org</a>
 		<button class="notice-close" onclick={() => (noticeDismissed = true)} aria-label="Dismiss">
