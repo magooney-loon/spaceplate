@@ -13,12 +13,10 @@ export const SCENES: SceneConfig[] = [
 	{ id: 'demoScene', label: 'Demo Scene', icon: 'mdiEarth' }
 ];
 
-// Per-scene look (post-processing / time / weather) is NOT configured here. The old
-// preset-assignment layer that used to live in this file -- bundled global + per-scene
-// preset IDs, localStorage overrides, and two resolvers -- was deleted: it resolved to
-// null for every input and served zero presets. Its replacement is a declarative
-// `environment` block on each SCENES entry, applied imperatively from setScene() and
-// never from an $effect. See the per-scene `environment` plan in
+// Per-scene look (post-processing / time / weather) is NOT configured here — the old
+// preset layer was deleted (it resolved to null for every input and served zero
+// presets). Its replacement is a declarative `environment` block on each SCENES entry,
+// applied imperatively from setScene() and never from an $effect — see the plan in
 // src/extensions/scene/CLAUDE.md.
 
 // --- State & actions ---

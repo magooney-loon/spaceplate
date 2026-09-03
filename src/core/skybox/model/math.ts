@@ -1,13 +1,7 @@
-// Scalar helpers shared by the sky model and every sky layer.
-//
-// These were duplicated across the whole subsystem before this module existed --
-// `clamp01` in ten files, `lerp` in six, `mulberry32` byte-for-byte in five, `smooth01`
-// in three. That is not just noise: the copies had already started to matter, because a
-// helper you cannot see is a helper nobody checks against its call sites.
-//
-// Pure by construction -- no Svelte, no three.js -- so it belongs in `model/` under the
-// same rule as clock.ts and dayCurve.ts, and the layer components reach it through the
-// model barrel like everything else.
+// Scalar helpers shared by the sky model and every sky layer. Pure by construction
+// -- no Svelte, no three.js -- and reached through the model barrel like everything
+// else. (They were copy-pasted per file before this module existed; drifted copies
+// are why it exists.)
 
 import type { RGB } from './types';
 
@@ -16,11 +10,9 @@ export const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 export const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
 /**
- * Smoothstep easing on an already-normalized `k`.
- *
- * Named `ease` rather than `smoothstep` because the layer components also import TSL's
- * `smoothstep`, and one of the two shadowing the other in a shader file is exactly the
- * kind of bug that renders instead of throwing.
+ * Smoothstep easing on an already-normalized `k`. Named `ease` rather than `smoothstep`
+ * because layers also import TSL's `smoothstep`, and one shadowing the other in a
+ * shader file renders instead of throwing.
  */
 export const ease = (k: number) => k * k * (3 - 2 * k);
 

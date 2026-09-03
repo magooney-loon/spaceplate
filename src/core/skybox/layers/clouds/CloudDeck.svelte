@@ -1,46 +1,39 @@
 <script lang="ts">
 	// The second cloud deck: heavy-weather mass that SkyMesh cannot render.
 	//
-	// WHY IT EXISTS. SkyMesh's built-in fbm layer saturates -- its mask is
-	// `smoothstep(1 - coverage, ..., fbm)` over noise with a hard floor, so past ~0.52
-	// coverage the whole dome is one flat sheet (see Sky.svelte). `Sky.svelte` remaps the
-	// `cloudCover` channel into the band that still draws clouds, which means `rain`,
-	// `snow` and `storm` (0.8-1.0) have nowhere left to go: heavier weather could only
-	// get denser and lower, never *bigger*. This layer is that missing mass. It draws
-	// only above ~0.5 cover -- exactly where SkyMesh runs out -- plus a faint sheared
-	// cirrus band across the middle of the channel so `cloudy`/`overcast` gain streaks.
+	// WHY IT EXISTS. SkyMesh's fbm layer saturates past ~0.52 coverage (its mask is a
+	// `smoothstep(1 - coverage, ..., fbm)` over noise with a hard floor, and Sky.svelte
+	// remaps `cloudCover` into the band that still draws). `rain`, `snow` and `storm`
+	// (0.8-1.0) had nowhere left to go: heavier weather could only get denser and lower,
+	// never *bigger*. This layer is that missing mass: it draws only above ~0.5 cover --
+	// exactly where SkyMesh runs out -- plus a faint sheared cirrus band across the
+	// middle of the channel so `cloudy`/`overcast` gain streaks.
 	//
 	// IT IS A SLAB, NOT A PLANE. The deck marches `steps` slices between two apparent
 	// altitudes, compositing front to back with the alpha early-out from three's
-	// webgpu_volume_cloud. The reason is not detail -- more octaves buy detail, and the flat
-	// version had five of them. It is PARALLAX: a plane-projected field only responds to
-	// camera rotation, so under translation the whole deck slid along like a decal.
-	// Integrating through a thickness is the only fix for that, and self-shadowing (one tap
-	// toward the key light per slice) comes free once there are slices to shadow.
+	// webgpu_volume_cloud. The motive is PARALLAX, not detail: a plane-projected field
+	// only responds to camera rotation, so under translation it slid along like a decal.
+	// Integrating through a thickness is the only fix for that, and self-shadowing (one
+	// tap toward the key light per slice) comes free once there are slices to shadow.
 	//
-	// What it does NOT do is what the example does: no 3D texture. A 128-cube costs 2 MB and
-	// 2.1M CPU noise calls at boot, and being a ball rather than a tiling volume it cannot
-	// scroll -- which would cost the wind accumulator below, a hard requirement. The noise
-	// stays analytic and the slices are sheared apart instead.
+	// What it does NOT do is what the example does: no 3D texture. A 128-cube costs 2 MB
+	// and 2.1M CPU noise calls at boot, and being a ball rather than a tiling volume it
+	// cannot scroll -- which would cost the wind accumulator, a hard requirement. The
+	// noise stays analytic and the slices are sheared apart instead.
 	//
-	// WIND, AT LAST. SkyMesh cannot take the wind channel: its `cloudSpeed` uniform is
-	// multiplied by absolute elapsed time, so changing the speed teleports the pattern.
-	// A layer that owns its offset has no such problem --
-	// this component accumulates a UV offset on the CPU every frame and scrolls both of
-	// its decks with it. That makes it the wind channel's first scroll consumer; Rain
-	// already reads wind for slant.
+	// WIND. The deck scrolls on a UV offset it accumulates itself in its task (the
+	// self-accumulation rule, layers/CLAUDE.md) -- SkyMesh's `cloudSpeed` uniform cannot
+	// take the channel, because it multiplies absolute elapsed time.
 	//
-	// Pure descriptor consumer, like every other sky layer: reads
-	// `weather.cloudCover/cloudType/wind` and the `light` hints in a task, writes only its
-	// own uniforms, never the descriptor. Lighting comes from the key-light hints, so the
-	// deck tracks time of day AND the deck's own attenuation of the key for free -- a
-	// storm at sunset gets warm edges, an overcast night goes near-black, and the model
-	// needs to know none of this.
+	// Pure descriptor consumer, like every sky layer: reads the `weather` and `light`
+	// hints in a task, writes only its own uniforms. The light hints carry time of day
+	// AND the deck's own attenuation of the key -- a storm at sunset gets warm edges, an
+	// overcast night goes near-black.
 	//
 	// It also flashes: Lightning.svelte publishes each strike to `flashState` and this
-	// layer lights up around it -- localized to the strike's azimuth, weighted by its own
-	// cloud structure. That in-deck glow, not a screen wash, is where a storm's lightning
-	// reads from; see flashState.ts for why that state is shared plain, not a prop.
+	// layer lights up around it, localized to the strike's azimuth and weighted by its
+	// own cloud structure. That in-deck glow, not a screen wash, is where a storm's
+	// lightning reads from.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';
@@ -83,7 +76,7 @@
 		/**
 		 * How far the slab's top sits above its base, as a fraction of the base's apparent
 		 * altitude. This is the thickness the march integrates through, and the whole
-		 * reason the deck has an inside — 0 collapses it back to the old single plane.
+		 * reason the deck has an inside — 0 collapses it to a single plane.
 		 */
 		slabThickness?: number;
 		/**
@@ -185,10 +178,8 @@
 			return value;
 		});
 
-	// OCTAVES CAME DOWN WHEN THE MARCH WENT IN, deliberately. The old single plane needed
-	// five octaves because one sample was the entire cloud; a march composites `steps`
-	// slices of a sheared field, which manufactures detail the octaves used to buy — so
-	// per-slice cost drops and the total still lands around 3x the flat deck rather than 6x.
+	// Octaves came DOWN to pay for the march (layers/CLAUDE.md): the sheared slices
+	// manufacture the detail the octaves used to buy.
 	const fbm4 = makeFbm(4); // cirrus only — one sample, it can afford the octaves
 	const fbm3 = makeFbm(3); // slab density
 	const fbm2 = makeFbm(2); // ridge + the light tap, where shape matters more than detail
@@ -217,13 +208,11 @@
 		const slabTop = slabBase * (1 + slabThickness);
 		const seedOffset = vec2((seed % 97) * 0.37, (seed % 89) * 0.53);
 
-		// One slice of the slab: the same threshold-driven coverage the flat deck used,
-		// times a vertical profile. Coverage is threshold-driven like SkyMesh's, but the
-		// threshold TRAVELS with strength -- the headroom SkyMesh does not have.
-		//
-		// `hf` is the fraction through the slab. The profile is what gives the deck a
-		// silhouette instead of a slice sandwich: eroded at the base (flat-bottomed, as
-		// cumulus sit on their condensation level) and tapered off the top.
+		// One slice of the slab: threshold-driven coverage like SkyMesh's, but the
+		// threshold TRAVELS with strength (the headroom SkyMesh does not have), times a
+		// vertical profile over `hf` (fraction through the slab) that erodes the base --
+		// flat-bottomed, as cumulus sit on their condensation level -- and tapers the
+		// top: a silhouette, not a slice sandwich.
 		const sliceDensity = Fn(([uv, hf]: [any, any]) => {
 			const n = fbm3(uv.add(seedOffset));
 			const r = fbm2(uv.mul(1.9).add(vec2(19.3, 7.1)));
@@ -245,21 +234,16 @@
 			const horizonFade = smoothstep(float(0.03), float(0.16), dir.y);
 
 			// PLANE PROJECTION, as SkyMesh: where the view ray crosses a virtual cloud
-			// plane at apparent altitude `h`, i.e. `dir.xz / dir.y * h`. Same construction,
-			// different constants, so the two decks never read as one layer doubled.
-			//
-			// The divisor is FLOORED here, unlike the flat deck's, because the march would
-			// otherwise evaluate `1/0` at the horizon on its way to being multiplied by a
-			// zero fade -- and a NaN survives that multiply.
+			// plane at apparent altitude `h` (`dir.xz / dir.y * h`), with different constants
+			// so the two decks never read as one layer doubled. The divisor is FLOORED,
+			// unlike the flat deck's: the march would otherwise evaluate `1/0` at the
+			// horizon, and a NaN survives being multiplied by the zero fade.
 			const ray = dir.xz.div(max(dir.y, float(0.02))).mul(scale);
 
 			// ── Mass deck: the slab march ────────────────────────────────────────────
 			// Front to back, low slice first (low = near, since the camera is under the
-			// deck looking up), compositing `over` and stopping once the column is opaque.
-			// This is the one thing the flat deck could not do: a projected plane has no
-			// parallax under camera TRANSLATION, only rotation, so it slid with the camera
-			// like a decal. Integrating through a thickness is what fixes that, and the
-			// self-shadowing below comes free with it.
+			// deck looking up), compositing `over` and early-outing once opaque. The
+			// parallax motive is in the header.
 			const lit = uLightColor.mul(uLightAmount);
 			// Premultiplied while accumulating -- the composite below divides back out.
 			const massColorAcc = vec3(0).toVar();
@@ -279,19 +263,17 @@
 				// Per-step alpha scales as 1/steps, so the look is step-count independent
 				// (raise `opticalDepth`, not the step count, for a denser deck).
 				//
-				// `uStrength` is DELIBERATELY NOT IN HERE. It scaled the flat deck's alpha
-				// linearly; inside the march it would sit in the exponent instead, and a
-				// half-strength deck would come out nearly as opaque as a full one --
-				// silently retuning every weather that rides massFrom/massTo. It is applied
-				// to the accumulated alpha below, exactly where the old `mask * uStrength`
-				// applied it. Coverage still grows with strength through the threshold.
+				// `uStrength` is DELIBERATELY NOT IN HERE: inside the march it would sit in
+				// the exponent, and a half-strength deck would come out nearly as opaque as
+				// a full one -- silently retuning every weather that rides massFrom/massTo.
+				// It multiplies the accumulated alpha below; coverage still grows with
+				// strength through the threshold.
 				const density = sliceDensity(uv, hf).mul(opticalDepth / steps);
 
 				If(density.greaterThan(0.001), () => {
-					// SELF-SHADOWING, replacing the flat deck's gradient proxy: one tap
-					// toward the key light and half a slab upward. Cloud there means this
-					// slice is in shadow; nothing there means it is a lit edge. Gated, so
-					// empty sky never pays for it.
+					// SELF-SHADOWING: one tap toward the key light and half a slab upward.
+					// Cloud there means this slice is in shadow; nothing there means it is
+					// a lit edge. Gated, so empty sky never pays for it.
 					const occluder = sliceDensity(uv.add(uLightDir.mul(0.13)), hf.add(0.25).clamp(0, 1));
 					const shade = mix(float(1.35), float(0.45), occluder);
 					const w = massAlphaAcc.oneMinus().mul(density.min(1));
@@ -306,8 +288,7 @@
 				});
 			});
 
-			// The march's own coverage, reused below as the lightning term's structure
-			// weight -- the flat deck's `mask` under a new name.
+			// The march's own coverage, reused below as the lightning term's structure weight.
 			const mask = massAlphaAcc;
 			const massWeight = uStrength.mul(horizonFade);
 			const massAlpha = massAlphaAcc.mul(massWeight);
@@ -339,13 +320,12 @@
 			const totalAlpha = massAlpha.add(wispAlpha).min(1);
 			const color = massPremul.add(wispColor.mul(wispAlpha)).div(totalAlpha.max(1e-4));
 
-			// LIGHTNING. The strike lights the deck from the inside: a sharp angular falloff
-			// around the strike direction, weighted by the local mask so dense cells catch it
-			// and edges stay dark -- structure, which is what makes it read as weather rather
-			// than a lamp behind the sky. The small constant term is the deck-wide bounce.
-			//
-			// Added AFTER the alpha divide, so blending scales it by totalAlpha: only the
-			// deck flashes, never the clear sky through its gaps.
+			// LIGHTNING. The strike lights the deck from the inside: a sharp angular
+			// falloff around the strike direction, weighted by the local mask so dense
+			// cells catch it and edges stay dark -- structure, which makes it read as
+			// weather rather than a lamp behind the sky; the small constant term is the
+			// deck-wide bounce. Added AFTER the alpha divide, so blending scales it by
+			// totalAlpha: only the deck flashes, never the clear sky through its gaps.
 			const align = pow(dot(dir, uFlashDir).max(0), float(4));
 			const flash = vec3(0.72, 0.8, 1.0)
 				.mul(uFlash)
@@ -368,10 +348,7 @@
 	const material = buildMaterial();
 
 	// ── Wind scroll ────────────────────────────────────────────────────────────────
-	// THE ACCUMULATOR. The offset only ever advances -- by a rate derived from the
-	// wind channel -- so the pattern is continuous by construction. There is no speed
-	// uniform for a time multiplication to scramble; changing wind changes only how fast
-	// the deck drifts from here on, never where it currently sits.
+	// THE ACCUMULATOR -- the self-accumulation rule, layers/CLAUDE.md.
 	let windX = 0;
 	let windZ = 0;
 
@@ -388,19 +365,15 @@
 			const wisp = smooth01(wispFrom, wispTo, cover) * (1 - 0.6 * smooth01(0.75, 1, cover));
 
 			// Scroll rate in UV units/s: a slow drift that never fully stops (real air
-			// moves) rising to a visible storm wind. The axis comes from `windDirection`
-			// now -- this is the spot the old comment said a direction channel would plug
-			// into, and it replaces a hardcoded 1 : 0.38 diagonal that made every weather
-			// blow the same way. Still an accumulator, so a change of bearing bends the
-			// drift from here on instead of teleporting the pattern.
+			// moves) rising to a visible storm wind, along the `windDirection` axis.
 			const rate = (0.0025 + clamp01(w.wind) * 0.02) * delta;
 			windX += windAxisX(w) * rate;
 			windZ += windAxisZ(w) * rate;
 			uWind.value.set(windX, windZ);
 
 			// Light hints already carry time of day AND the deck's own attenuation of the
-			// key (they were composed after the weather cut). The 0.05 floor keeps a
-			// faint silhouette under a night deck so it is not a hole in the sky.
+			// key. The 0.05 floor keeps a faint silhouette under a night deck, so it is not
+			// a hole in the sky.
 			const { color, intensity, ambient } = descriptor.light;
 			uLightColor.value.setRGB(color[0], color[1], color[2]);
 			uLightAmount.value = 0.05 + intensity * 0.16 + ambient * 0.55;

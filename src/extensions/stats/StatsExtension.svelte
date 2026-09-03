@@ -48,10 +48,8 @@
 
 	// three zeroes info.render.* at the START of every frame — Animation.js runs
 	// info.reset() inside Threlte's setAnimationLoop callback, BEFORE the scheduler
-	// (and therefore before renderer.render). Reading the per-frame counters from a
-	// default-order task always saw those fresh zeros, which is why DC/TRI/PTS/LINE
-	// sat at 0 while GEO/TEX (memory, never reset) worked. Sampling AFTER the render
-	// task reads the frame's accumulated values instead.
+	// (and therefore before renderer.render) — so the per-frame counters must be sampled
+	// AFTER the render task to read the frame's accumulated values.
 	//
 	// render.calls and compute.calls are LIFETIME counts (of renderer.render() and
 	// renderer.compute() invocations) that reset() never touches — they double as the
@@ -81,8 +79,7 @@
 		const geo = info.memory.geometries;
 		const tex = info.memory.textures;
 		// WebGPU's info has no `programs` array (that is WebGL's shape) — the count of
-		// active programs lives in memory.programs. `info.programs?.length` was always
-		// undefined, which is why PRG never moved off 0.
+		// active programs lives in memory.programs.
 		const prg = info.memory.programs;
 
 		pushHistory(drawCallsHistory, dc);
@@ -178,18 +175,17 @@
 	// `_resolveQueries`, so an unresolved pool fills up and three warns
 	// "WebGPUTimestampQueryPool [<queue>]: Maximum number of queries exceeded".
 	// Resolving here both silences that and is what actually populates the values stats-gl
-	// reads, so the panels report real numbers instead of staying at zero.
+	// reads.
 	//
 	// BOTH QUEUES, and the compute one is not optional merely because compute is. three
 	// keeps a SEPARATE POOL PER TYPE -- the render context's uid picks it, `c:` prefix for
-	// compute -- so resolving RENDER never touches the compute pool, and `Birds.svelte`'s
-	// two `renderer.compute()` passes filled it on their own until it warned. It is also
-	// why the CPT panel sat at a flat 0.00: nothing was ever resolved into it.
+	// compute -- so resolving RENDER never touches the compute pool, and any compute
+	// work (Birds.svelte) fills that one on its own until it warns.
 	//
 	// Tracked per queue rather than under one flag, so a slow queue cannot hold up the
 	// other's turn. Resolving a queue that ran no passes this frame is a no-op inside three
-	// (`currentQueryIndex === 0` returns the last value), so the compute call costs nothing
-	// on the frames the flock is grounded and the layer computes nothing.
+	// (`currentQueryIndex === 0` returns the last value), so the compute call costs
+	// nothing on frames with no compute passes.
 	//
 	// Fire-and-forget: it must not block the frame, and it rejects harmlessly if the
 	// device is lost or the feature is unsupported.
@@ -211,21 +207,14 @@
 
 	// --- pause while capture is recording ------------------------------------------
 	//
-	// Measuring the frame is not free, and all of it lands on the main thread inside the
-	// same frame a recording is trying to blit and hand to the encoder:
-	//
-	//   - `trackGPU`/`trackCPT` make stats-gl set `backend.trackTimestamp`, which writes a
-	//     timestamp query around EVERY render and compute pass.
-	//   - `resolveGpuTimestamps()` issues two async resolves per frame.
-	//   - `stats.update()` redraws stats-gl's own three panels, and `updateCustomPanels()`
-	//     redraws seven more — ten small 2D canvas repaints per rendered frame.
-	//
-	// None of it is visible in the output anyway (the panels are HTML siblings of the
-	// canvas, never composited into it), so a take is exactly when it is worth nothing.
-	// trackTimestamp is cleared too rather than just skipping the task: the per-pass query
-	// writes happen inside the renderer, well upstream of anything this task does.
-	//
-	// The DOM is left alone — hiding it would reflow, and it is not in the capture.
+	// All of the measurement lands on the main thread inside the same frame a recording
+	// is trying to blit and hand to the encoder: per-pass timestamp queries
+	// (`backend.trackTimestamp`), two async resolves, and ten small 2D canvas repaints
+	// (stats-gl's three panels plus the seven custom ones). None of it is visible in the
+	// output anyway — the panels are HTML siblings of the canvas. trackTimestamp is
+	// cleared too rather than just skipping the task: the per-pass query writes happen
+	// inside the renderer, well upstream of anything this task does. The DOM is left
+	// alone — hiding it would reflow, and it is not in the capture.
 	let trackTimestampBefore: boolean | undefined;
 
 	$effect(() => {

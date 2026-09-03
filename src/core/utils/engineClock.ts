@@ -1,52 +1,27 @@
-// THE ENGINE CLOCK — one source of scene time for the whole app.
+// THE ENGINE CLOCK — one source of scene time for the whole app (rules in
+// core/utils/CLAUDE.md; this header is the mechanism).
 //
-// Every animated thing in this app integrates a `delta`: the sky model
-// (`skyActions.tick(delta * 1000)`), every TSL layer's accumulators, Rapier's substep
-// accumulator, the flypath camera, the demo's cube-capture rate limiter. Those deltas all
-// came from the same place — Threlte's scheduler, off the wall clock — and that is fine
-// until something has to render SLOWER THAN REALTIME on purpose.
+// Every animated thing integrates a `delta` (sky model, TSL layer accumulators,
+// Rapier's substep accumulator, flypath camera), all from Threlte's scheduler off
+// the wall clock — wrong the moment something must render SLOWER THAN REALTIME on
+// purpose: an offline capture take (extensions/capture/) timestamps frame N at
+// exactly N/fps however long it took to draw.
 //
-// That something is an offline capture take (`extensions/capture/`). It timestamps frame N
-// at exactly N/fps however long the frame took to draw, so at 8fps of real throughput a
-// 30fps take needs every clock in the app to advance 1/30 s per frame, not the ~125 ms that
-// actually elapsed. Otherwise the camera (which does advance on the frame counter) and
-// everything else run on different clocks, and the output has slow-motion clouds and rain
-// under a correctly-paced camera.
+// The substitution happens ONE LEVEL UP, at `Scheduler.run` — the single place a
+// frame's delta is computed before it is fanned out. The scheduler derives delta as
+// `time - lastTime` (`frame-scheduling/Scheduler.js`), so handing it a FABRICATED
+// timestamp (`lastTime + step * 1000`) makes every stage, task and Rapier's
+// accumulator see exactly `step` seconds. Hence: a task's `delta` argument IS scene
+// time always (new game code is capture-correct with no rule to remember), and
+// `delta === 0` on a held frame is legal — integrating it is pause-correct.
 //
-// WHERE THE OVERRIDE HAPPENS IS THE WHOLE DESIGN. The obvious implementation — have each
-// task read a shared clock instead of its own `delta` argument — means touching ~20 files
-// and, worse, leaves every task written from now on silently drifting until someone
-// remembers the rule. So the substitution happens ONE LEVEL UP, at `Scheduler.run`, which
-// is the single place a frame's delta is computed before being fanned out to every stage
-// and task in the app:
+// TSL `time` is the one thing the scheduler does not reach: it resolves to
+// `nodeFrame.time`, which three advances itself per rAF off `performance.now()`.
+// Nothing public feeds it, so this module writes `renderer._nodes.nodeFrame.time`
+// directly, once per frame, before the render. Private field; guarded, non-fatal.
 //
-//   Threlte's Scheduler derives its delta as `time - lastTime` from the value it is handed
-//   (`frame-scheduling/Scheduler.js`), so handing it a FABRICATED timestamp — `lastTime +
-//   step * 1000` — makes every stage, every task and Rapier's accumulator see exactly
-//   `step` seconds, through Threlte's own unmodified machinery. Nothing downstream knows,
-//   and nothing downstream can forget.
-//
-// Two consequences worth stating, because they are the reason this is not a capture-only
-// hack:
-//
-//   1. A task's `delta` argument IS scene time, always. New game code needs no rule and no
-//      import to be capture-correct.
-//   2. `engineClock.delta` is 0 on a held frame, so integrating it is also the correct way
-//      to be pause-correct. Holding a frame used to be mildly destructive (the sky went on
-//      animating through a frame the take would throw away); now it is inert.
-//
-// TSL `time` IS THE ONE THING THE SCHEDULER DOES NOT REACH. It resolves to
-// `nodeFrame.time`, which three advances itself, per rAF, off `performance.now()`, inside
-// the animation loop that calls the scheduler (`renderers/common/Animation.js`). Nothing
-// public feeds it, so this module writes `renderer._nodes.nodeFrame.time` directly, once
-// per frame, before the render. It is a private field; the alternative is every layer
-// importing a hand-rolled `time` uniform instead of three's, which is the same
-// forget-and-drift trap as above, in shader code. Guarded and non-fatal if it moves.
-//
-// In realtime — which is every frame of a production build, since nothing but capture ever
-// installs a source — this module is a pass-through: it reads `nodeFrame.time` rather than
-// writing it, hands the scheduler the timestamp it was given, and the app behaves exactly
-// as it did before.
+// In realtime — every production frame; only capture installs a source — this is a
+// pass-through: it reads `nodeFrame.time` rather than writing it.
 
 import type { Scheduler } from '@threlte/core/webgpu';
 import { logEngine } from '$extensions/logger';
@@ -78,9 +53,8 @@ export const engineClock = {
  *             encode would drop frame 0.
  * - `step`  — advance scene time by `step` seconds and render.
  *
- * Returning a step above `Scheduler.clampDeltaTo` (0.1 s) is clamped downstream by Threlte
- * like any other delta, so a source must stay under it — capture's FPS slider floors at 12
- * (1/12 s), which does.
+ * Returning a step above `Scheduler.clampDeltaTo` (0.1 s) is clamped downstream like
+ * any other delta, so a source must stay under it.
  */
 export type FixedStepSource = () => number | null;
 
@@ -90,12 +64,10 @@ let source: FixedStepSource | null = null;
  * Hand the clock to a fixed-step source, or `null` to give it back to the wall clock.
  * Exactly one source at a time; installing a second replaces the first.
  *
- * Scene time is CONTINUOUS across both handovers — it carries on from wherever the wall
- * clock left it and three's `nodeFrame.time` resumes from wherever the take left it. That
- * is not cosmetic: every TSL layer's motion is a function of absolute elapsed time, so a
- * jump either way teleports the cloud deck, re-phases every star and relocates the rain
- * (the self-accumulated offset rule) — on frame 0 of a take, which is the one frame
- * that must not do that.
+ * Scene time is CONTINUOUS across both handovers — it carries on from wherever the
+ * other clock left it. Not cosmetic: TSL layer motion is a function of absolute
+ * elapsed time, so a jump teleports the cloud deck and re-phases every star on
+ * frame 0 of a take (utils/CLAUDE.md).
  */
 export const setFixedStepSource = (next: FixedStepSource | null): void => {
 	source = next;
@@ -107,19 +79,17 @@ const nodeFrameOf = (renderer: unknown): NodeFrame | null =>
 	(renderer as { _nodes?: { nodeFrame?: NodeFrame } } | null)?._nodes?.nodeFrame ?? null;
 
 /**
- * Take TSL `time` over for this frame. Applied to held frames too, even though a held frame
- * never renders: three's animation loop has already added a wall-clock delta to `nodeFrame`
- * by the time this runs (it calls `nodeFrame.update()` before the scheduler), so leaving a
- * hold uncorrected would leave the shader clock ahead of scene time — a discrepancy nothing
- * observes today only because nothing renders on a held frame.
+ * Take TSL `time` over for this frame. Applied to held frames too: three's animation
+ * loop has already added a wall-clock delta to `nodeFrame` by the time this runs, so
+ * an uncorrected hold would leave the shader clock ahead of scene time.
  */
 let warnedUnreachable = false;
 
 const pin = (nodeFrame: NodeFrame | null, delta: number): void => {
 	if (!nodeFrame) {
-		// Only reachable with a source installed, so this is the private field having moved
-		// rather than the renderer still initialising. Said out loud once: the symptom
-		// otherwise is a take whose sky and rain are subtly slow, with nothing to point at.
+		// Only reachable with a source installed, so this is the private field having
+		// moved, not the renderer still initialising. Symptom if silent: a take whose
+		// sky and rain are subtly slow.
 		if (!warnedUnreachable) {
 			warnedUnreachable = true;
 			logEngine.warn(
@@ -134,14 +104,13 @@ const pin = (nodeFrame: NodeFrame | null, delta: number): void => {
 };
 
 /**
- * The scheduler's frame timing. `lastTime` and `clampDeltaTo` are ordinary instance fields
- * (`frame-scheduling/Scheduler.js`) that Threlte's `.d.ts` declares `private`, so reaching
- * them needs a structural view of the instance rather than a `Scheduler`.
+ * The scheduler's frame timing. `lastTime` and `clampDeltaTo` are ordinary instance
+ * fields (`frame-scheduling/Scheduler.js`) that Threlte's `.d.ts` declares `private`,
+ * so reaching them needs this structural view rather than a `Scheduler`.
  *
- * `lastTime` is the whole mechanism: the scheduler derives each frame's delta from it, so
- * the fabricated timestamps below are the only thing that has to be written for a fixed step
- * to reach every stage. `clampDeltaTo` is read, never written — a step is clamped exactly
- * like a real delta.
+ * `lastTime` is the whole mechanism — the scheduler derives each frame's delta from
+ * it, so the fabricated timestamps below are all that has to be written.
+ * `clampDeltaTo` is read, never written.
  */
 type SchedulerClock = {
 	run: (time: number) => void;
@@ -177,8 +146,7 @@ export const installEngineClock = (
 			// --- wall clock (pass-through) ---
 			if (wasFixed) {
 				// Resync: the fabricated timeline lagged real time for the whole take, so
-				// `time - lastTime` would now be a jump of however long the take ran over.
-				// Landing it as a zero-delta frame costs one frozen frame and nothing else.
+				// `time - lastTime` would be a huge jump — land it as a zero-delta frame.
 				clock.lastTime = time;
 				wasFixed = false;
 				engineClock.fixed = false;
@@ -200,11 +168,10 @@ export const installEngineClock = (
 		}
 
 		if (step === null) {
-			// Held. Stages still run — with a zero delta, so they are inert — which keeps the
-			// loop-rate telemetry and any UI-side task alive. What does NOT happen is a
-			// render: nothing invalidates, so the render stage's callback skips the whole
-			// stage (Threlte's scheduler fragment gates it on `shouldRender()`), and a frame
-			// the take is going to discard costs nothing to discard.
+			// Held. Stages still run — with a zero delta, so they are inert — keeping
+			// loop-rate telemetry and UI tasks alive. No render happens: nothing
+			// invalidates, so the render stage's callback (gated on `shouldRender()`)
+			// skips — a frame the take will discard costs nothing.
 			engineClock.delta = 0;
 			pin(nodeFrame, 0);
 			originalRun(handedOver);
@@ -216,11 +183,10 @@ export const installEngineClock = (
 		handedOver += step * 1000;
 		pin(nodeFrame, step);
 
-		// Every non-held frame of a take must render, and must render BEFORE the stages run,
-		// or the render stage skips while the ungated stages (Rapier's, and this clock) have
-		// already advanced — physics one step ahead of the frame that was never drawn. The
-		// scheduler evaluates `shouldRender()` inside the render stage's callback, which runs
-		// after this, so invalidating here lands on this frame.
+		// Every non-held frame of a take must render BEFORE the stages run, or physics
+		// ends up a step ahead of a frame never drawn. `shouldRender()` is evaluated
+		// inside the render stage's callback, after this, so invalidating here lands
+		// on this frame.
 		invalidate();
 		originalRun(handedOver);
 	};

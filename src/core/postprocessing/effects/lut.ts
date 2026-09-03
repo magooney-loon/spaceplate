@@ -16,9 +16,9 @@ export const lutEffect: EffectDef<LutParams> = {
 	role: 'grade',
 	order: 10,
 	requires: [],
-	// `.cube` LUTs are authored against a display image, so this needs tone-mapped,
-	// encoded colour rather than the linear values the chain carries. The builder folds
-	// in the single renderOutput() — see EffectDef.displayColor.
+	// `.cube` LUTs are authored against a display image — needs tone-mapped, encoded
+	// colour, not the chain's linear values. The builder folds in the single
+	// renderOutput() (EffectDef.displayColor).
 	displayColor: true,
 	structural: ['lut'],
 	// The graph is built AROUND the texture, so a load landing (or a different LUT being

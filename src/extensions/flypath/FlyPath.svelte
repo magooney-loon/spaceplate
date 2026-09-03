@@ -1,17 +1,13 @@
 <script lang="ts">
 	// The flypath driver — owns the curve, drives the camera, draws the authoring overlay.
 	//
-	// WHICH CAMERA. Waypoints snapshot `camera.current`, and playback drives
-	// `camera.current`. That symmetry is the whole workflow: author with Studio's editor
-	// camera on (fly with the mouse, hit ➕), then turn the editor camera OFF so the app's
-	// own `makeDefault` camera is current, and play or record. Nothing is ever swapped,
-	// which matters — `Renderer.svelte`'s structural effect tracks `$camera` and rebuilds
-	// the entire post-processing pipeline when it changes. A swap mid-recording would
-	// hitch the take. Playing while the editor camera is on works, but Studio's
-	// CameraControls keeps writing to the same object, so the two fight.
-	//
-	// The camera's transform is saved on the first engage and restored on stop, so a
-	// flythrough never leaves the scene camera parked somewhere odd.
+	// WHICH CAMERA. Waypoints snapshot `camera.current` and playback drives
+	// `camera.current` — the same object either way, never swapped: `Renderer.svelte`'s
+	// structural effect tracks `$camera` and rebuilds the entire post-processing
+	// pipeline when it changes, so a swap mid-recording would hitch the take. (Playing
+	// while the editor camera is on means Studio's CameraControls fights the path for
+	// the same object; the panel warns about it. The transform is saved on first engage
+	// and restored on stop — see flypath/CLAUDE.md for the workflow.)
 	//
 	// TASK ORDER: `{ before: autoRenderTask }` — the pose must be written before the frame
 	// is drawn. Capture's blit is `{ after: autoRenderTask }`, so within one frame the
@@ -79,8 +75,8 @@
 	// ConeGeometry points along +Y; rotating -90° about X aims it down -Z, which is the
 	// direction a camera looks. So a marker visibly shows its shot direction.
 	//
-	// Sized well clear of the tube's 0.025 radius — at anything close to it the marker
-	// disappeared into the path line once the waypoints were connected.
+	// Sized well clear of the tube's 0.025 radius, so it does not disappear into the
+	// path line.
 	const markerGeometry = new THREE.ConeGeometry(0.3, 0.9, 12);
 	markerGeometry.rotateX(-Math.PI / 2);
 
@@ -88,10 +84,9 @@
 	markerMaterial.color.set('#4ec9b0');
 	markerMaterial.fog = false;
 
-	// The first waypoint is ALWAYS green and the last ALWAYS red, so which end of the path a
-	// shot flies from reads at a glance — the tube itself is symmetrical and says nothing
-	// about direction. Selection therefore cannot be a colour any more (it would mask an
-	// endpoint); it is a scale bump instead, which stacks with the endpoint colours.
+	// The first waypoint is ALWAYS green and the last ALWAYS red — the tube itself is
+	// symmetrical and says nothing about direction. Selection is a scale bump rather
+	// than a colour, which would mask an endpoint.
 	const startMaterial = new THREE.MeshBasicNodeMaterial();
 	startMaterial.color.set('#3ddc84');
 	startMaterial.fog = false;
@@ -237,11 +232,10 @@
 		}
 
 		// $state write — epsilon-gated so a 60Hz playback does not wake the panel 60x/s.
-		// 0.002 is still ~every other frame on a 10s path, and every one of those writes
-		// re-renders the panel's Scrub slider (FlyPathExtension.svelte). That is tweakpane
-		// laying out a widget inside the very frame a take is trying to blit and encode,
-		// so the gate widens 25x while recording. The exact endpoints always land, so the
-		// slider still reads 0 at the start and 1 at the end either way.
+		// Every write that lands re-renders the panel's Scrub slider (FlyPathExtension):
+		// tweakpane laying out a widget inside the very frame a take is trying to blit and
+		// encode, so the gate widens 25x while recording. The exact 0 and 1 endpoints
+		// always land either way.
 		const epsilon = recording ? 0.05 : 0.002;
 		if (Math.abs(flyPathState.progress - clamped) > epsilon || clamped === 0 || clamped === 1) {
 			flyPathState.progress = clamped;
@@ -319,10 +313,9 @@
 	};
 
 	const scrub = (progress: number) => {
-		// Never let a scrub tear down a take in progress. The panel already filters out
-		// tweakpane's programmatic 'external' change events (which is what made playback
-		// stop one frame in), but a real mis-drag during a recording should not ruin it
-		// either — Stop is the deliberate way out.
+		// Never let a scrub tear down a take in progress — the panel already filters
+		// tweakpane's programmatic 'external' change events, but a real mis-drag during a
+		// recording should not ruin it either. Stop is the deliberate way out.
 		if (takeInFlight()) {
 			logEngine.warn('FlyPath: scrub ignored while recording — press Stop first');
 			return;
@@ -374,12 +367,11 @@
 
 	// --- pre-roll ---------------------------------------------------------------------
 	//
-	// On-demand rendering means the scene is only ever compiled for the angles it has
-	// actually been drawn from. A flythrough that flies somewhere new therefore compiles
-	// pipelines MID-TAKE — the one-off 150-300ms stall that no amount of per-frame
-	// trimming can prevent, because the work is not per-frame. Sweeping the whole path
-	// once first draws every pose through the real pipeline, so those compiles land
-	// before frame 0 instead of inside the shot.
+	// On-demand rendering means the scene is only compiled for angles it has actually
+	// been drawn from, so a flythrough into new territory compiles pipelines MID-TAKE —
+	// a one-off 150-300ms stall that no per-frame trimming can prevent. Sweeping the
+	// whole path once first draws every pose through the real pipeline, so those
+	// compiles land before frame 0 and the far end of the path is warmed too.
 	//
 	// It runs through the normal render loop, one pose per rendered frame (applyPose
 	// invalidates, which pins it), rather than through bootState.warmVersion: that
@@ -525,16 +517,11 @@
 				if (total <= 0) return;
 
 				// `delta` IS the offline clock. An offline take encodes frame N at exactly
-				// N/fps, so the camera has to move on that same counter — and it does, without
-				// a word about capture here, because an offline take takes over the engine
-				// clock and `delta` is whatever that clock says the frame is worth
-				// (core/utils/engineClock.ts): 1/fps on a frame of the take, 0 on a frame the
-				// encoder made it hold, the wall-clock delta the rest of the time.
-				//
-				// This used to be an explicit branch on captureRuntime, and the camera was the
-				// only thing in the app that got it right; everything else — sky, physics, TSL
-				// `time` — still ran on the wall clock and drifted slow against it in a heavy
-				// take.
+				// N/fps, so the camera has to move on that same counter — and it does,
+				// without a word about capture here, because an offline take takes over the
+				// engine clock (core/utils/engineClock.ts) and `delta` is whatever that
+				// clock says the frame is worth: 1/fps on a frame of the take, 0 on a frame
+				// the encoder made it hold, the wall-clock delta the rest of the time.
 				elapsed += delta;
 				if (elapsed >= total) {
 					if (flyPathState.loop) elapsed %= total;

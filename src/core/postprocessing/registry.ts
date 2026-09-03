@@ -55,19 +55,15 @@ export interface EnabledSetResolution {
 }
 
 /**
- * Pure policy: given the enabled set and the quality tier, decide what actually
- * runs. Rules:
- *  - quality 'low' drops everything (bare pass, matching the old low path);
- *  - at most one base pass and one AA — lowest `order` wins, losers are reported;
- *  - explicit `conflicts` are enforced the same way;
- *  - geometry consumers are dropped under a non-default base pass (verified
- *    combinations only);
- *  - the MRT set is the union of the survivors' requirements (`requiresValues`
- *    overrides `requires` when an effect's needs are param-dependent).
+ * Pure policy: given the enabled set and the quality tier, decide what runs —
+ * quality 'low' drops everything; at most one base pass and one AA (lowest `order`
+ * wins, losers reported); explicit `conflicts` enforced the same way; geometry
+ * consumers dropped under a non-default base pass; the MRT set is the union of the
+ * survivors' requirements (`requiresValues` overrides `requires` when needs are
+ * param-dependent).
  *
- * Pure on purpose: the panel calls it to grey things out, the builder calls it to
- * build, neither mutates state. `values` is optional so callers without params at
- * hand still get the static-requirements answer.
+ * Pure on purpose: the panel greys things out with it, the builder builds with it.
+ * `values` is optional so callers without params still get the static answer.
  */
 export const resolveEnabledSet = (
 	enabled: string[],
@@ -92,8 +88,7 @@ export const resolveEnabledSet = (
 		}
 	}
 
-	// Resolve each effect's effective requirements — static unless the def computes
-	// them from its params (bloom's material mode).
+	// Effective requirements — static unless the def computes them from its params.
 	const requirementsOf = (def: EffectDef<any>): Requirement[] =>
 		def.requiresValues ? def.requiresValues(values?.[def.id] ?? def.params()) : def.requires;
 
@@ -168,8 +163,7 @@ export const structuralKeyOf = (enabled: string[], values: EffectValues): string
 			const def = EFFECTS_BY_ID.get(id);
 			const structural = def?.structural ?? [];
 			const parts = structural.map((key) => values[id]?.[key] ?? 0);
-			// Runtime key material the values object cannot carry — currently the LUT's
-			// loaded-texture version, so an async load landing rebuilds the graph.
+			// Runtime key material the values cannot carry (the LUT's texture version).
 			const tag = def?.structuralTag?.();
 			if (tag !== undefined) parts.push(tag as never);
 			return parts.length > 0 ? `${id}(${parts.join(',')})` : id;

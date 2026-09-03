@@ -25,35 +25,23 @@
 
 	const { autoRenderTask, invalidate } = useThrelte();
 
-	// Shadow map resolution per graphics preset. Engine-wide on purpose: this is the one
-	// key light and it mounts in every scene and every environment mode, so the preset
-	// has to reach it from here rather than from a scene.
-	//
-	// Halving the size is a 4x cut in shadow fill, and it is safe to change at runtime on
-	// this renderer: three's ShadowNode.renderShadow() re-applies shadow.mapSize with
-	// shadowMap.setSize() on EVERY shadow render, and the backend reallocates the depth
-	// attachment when the size differs. (The old "dispose the map and null it" dance is a
-	// WebGLRenderer-only caveat — that path never re-read mapSize.) SkyLight arms
-	// shadow.needsUpdate every frame, so the new size lands on the next rendered frame.
+	// Shadow map resolution per graphics preset. Engine-wide on purpose: this is the
+	// one key light and it mounts in every scene and mode, so the preset reaches it from
+	// here. Halving is a 4x cut in shadow fill; safe to change at runtime (ShadowNode
+	// re-applies mapSize on every render -- see SkyLight's shadowMapSize note).
 	const SHADOW_MAP_SIZE: Record<QualityLevel, number> = { high: 2048, low: 1024 };
 	const shadowMapSize = $derived(SHADOW_MAP_SIZE[settingsState.graphics.quality]);
 
-	// Precipitation budgets per preset. The count is the ONE knob that moves what rain and
-	// snow actually cost: their motion is closed-form in the vertex node and costs nothing
-	// per drop (layers/CLAUDE.md), so the bill is rasterising tens of thousands of
-	// transparent, blended quads. Splashes are counted separately because each one carries
-	// two more instanced layers (ring + burst).
-	//
-	// Both layers bake their instance buffers, per-particle randoms and materials ONCE at
-	// mount from these props, so a change has to remount them — hence the {#key} below.
-	// That is a rebuild plus a shader compile: fine for a settings click, never something
-	// to animate.
+	// Precipitation budgets per preset. Count is the ONE knob that moves cost: motion is
+	// closed-form in the vertex node (layers/CLAUDE.md), so the bill is rasterising tens
+	// of thousands of blended quads; splashes carry two more instanced layers each. Both
+	// layers bake buffers and materials ONCE at mount from these props, so a change
+	// remounts them ({#key} below) -- fine for a settings click, never animate it.
 	const PRECIPITATION: Record<QualityLevel, { rain: number; splashes: number; snow: number }> = {
 		high: { rain: 9000, splashes: 1500, snow: 11000 },
 		low: { rain: 4000, splashes: 600, snow: 5000 }
 	};
-	// Identity is stable per preset (it is a reference into the table above), which is what
-	// makes it safe to key on.
+	// Identity is stable per preset (a reference into the table), so keying on it is safe.
 	const precipitation = $derived(PRECIPITATION[settingsState.graphics.quality]);
 
 	// Shadow copies of everything the model can change, so the driver can tell a frame
@@ -61,31 +49,18 @@
 	let lastT = Number.NaN;
 	const lastChannels = CHANNEL_NAMES.map(() => Number.NaN);
 
-	// THE MODEL DRIVER. Exactly one task ticks the sky model, and it must run before
-	// anything that reads the descriptor. Both consumers (Sky's env task, SkyLight's
-	// light task) are also `before: autoRenderTask`, and among tasks sharing a
-	// constraint Threlte's DAG falls back to registration order -- this component
-	// registers before its own children, so the ordering holds by construction.
-	// Worst case if that ever changed: a consumer reads a one-frame-stale descriptor,
-	// which is invisible.
+	// THE MODEL DRIVER (see ../CLAUDE.md). Exactly one task ticks the sky model, before
+	// anything that reads the descriptor: consumers share the `before: autoRenderTask`
+	// constraint and the DAG falls back to registration order, and this component
+	// registers before its children -- worst case is a one-frame-stale read, invisible.
 	//
-	// IT ALSO OWNS THE INVALIDATION FOR EVERY DESCRIPTOR-ONLY CONSUMER. Threlte's
-	// `renderMode` defaults to 'on-demand' and the <Canvas> in App.svelte does not
-	// override it, so a frame is only drawn when something calls `invalidate()`. Every
-	// sky layer used to call it unconditionally, every frame, which quietly turned the
-	// whole app into 'always' -- including at the boot default, which is a MANUAL clock
-	// at timeScale 0 (sky.svelte.ts). A menu sitting on a frozen sunset rendered at full
-	// rate to produce identical frames.
-	//
-	// The split is now by what actually animates. Sky, SkyFog, SkyLight and Moon are
-	// pure functions of the descriptor, so they no longer invalidate at all -- this task
-	// does it for them, and only when the model produced different numbers. The layers
-	// that run off the TSL `time` node (Stars, Nebula, Meteors, CloudDeck, Rain, Snow)
-	// keep their own `invalidate()`, gated on being visible at all. Lightning gates on a
-	// live strike, as it always did.
-	//
-	// Comparing `t` and the six weather channels is sufficient: sun, moon, the sampled
-	// baseline and every light hint derive from exactly those seven numbers.
+	// IT ALSO OWNS THE INVALIDATION for every descriptor-only consumer: renderMode is
+	// 'on-demand', so a frame is drawn only when something invalidates. Sky, SkyFog,
+	// SkyLight and Moon are pure functions of the descriptor and never invalidate
+	// themselves -- this task does it for them, only when the model produced different
+	// numbers. Layers animated by the TSL `time` node keep their own invalidate(), gated
+	// on visibility. Comparing `t` + the weather channels is sufficient: everything else
+	// derives from those numbers.
 	useTask(
 		(delta) => {
 			skyActions.tick(delta * 1000);
@@ -103,10 +78,9 @@
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
 
-	// The old skybox preset layer (skyboxState scalars, stars, transitions) is deleted;
-	// those values are derived outputs of the day curve now. The extension keeps only
-	// the environment-mode state still read below, and its Studio panel drives time
-	// through skyActions -- the same engine API a game would use.
+	// The old skybox preset layer is deleted -- its values are derived outputs of the
+	// day curve now. The Studio panel drives time through skyActions, the same engine
+	// API a game would use.
 
 	const activeEnvTexture = $derived(
 		environmentState.envTextureId
@@ -144,24 +118,19 @@
 
 	     Two orders live in this group and they are different things:
 
- 		     DRAW order is decided by the render queue + renderOrder: the dome is opaque while
-	     everything else is transparent, so all of it lands in the later queue, settled
-	     between themselves by renderOrder 1 (Nebula, Stars, Meteors), 2 (Moon), 2.2
-	     (Birds -- below the deck, in front of the moon), 2.5 (CloudDeck), 2.6 (the
-	     lightning bolt), 3 (Rain, Snow) and 4 (the lightning wash, very faint). The deck
-	     sits over the moon because a cloud deck occludes it; the precipitation draws last
-	     because it is nearest.
+	     DRAW order is the render queue + renderOrder: the dome is opaque, everything
+	     else transparent, settled by renderOrder 1 (Nebula, Stars, Meteors), 2 (Moon),
+	     2.2 (Birds), 2.5 (CloudDeck), 2.6 (the bolt), 3 (Rain, Snow) and 4 (the
+	     lightning wash) -- the deck over the moon because a deck occludes it,
+	     precipitation last because it is nearest.
 
 	     TASK order falls back to mount order among the `before: autoRenderTask` tasks,
-	     and ONE dependency lives here: Lightning publishes the flash to `flashState`, and
-	     CloudDeck reads it, so Lightning mounts first and the deck lights up the same
-	     frame the bolt appears. A swapped order would cost one stale frame -- invisible,
-	     but free to get right.
+	     and ONE dependency lives here: Lightning publishes the flash to `flashState`
+	     and CloudDeck reads it, so Lightning mounts first and the deck lights up the
+	     same frame the bolt appears.
 
-	     None of these reach the environment map: Sky bakes by passing the dome mesh
-	     alone to CubeCamera.update(), so neither the smoke, the deck, the moon nor a
-	     lightning flash burns a hotspot into the ambient term the way the sun disc
-	     would. -->
+	     None of these reach the environment map: Sky bakes the dome mesh alone, so no
+	     layer burns a hotspot into the ambient term. -->
 	<!-- The precipitation height field. Mounted OUTSIDE the group it hides, and before it,
 	     so its pass has run by the time Rain and Snow read the map. Renders nothing
 	     itself. -->
@@ -176,29 +145,23 @@
 		<Birds />
 		<Lightning />
 		<CloudDeck radius={1000} />
-		<!-- Remounted when the graphics preset changes: the counts are baked at mount (see
-		     PRECIPITATION above). Both layers dispose their geometries and materials on
-		     unmount, and their accumulators restart — a visible reset of the curtain, on a
-		     settings click only. -->
+		<!-- Remounted on preset change: counts are baked at mount (see PRECIPITATION).
+		     A visible reset of the curtain, on a settings click only. -->
 		{#key precipitation}
 			<Rain count={precipitation.rain} splashCount={precipitation.splashes} />
 			<Snow count={precipitation.snow} />
 		{/key}
-		<!-- Water on the lens. Mounted LAST in the group and drawn at renderOrder 10, which
-		     is load-bearing rather than tidy: it reads back the framebuffer, so every layer
-		     whose output it is supposed to refract has to have drawn already. Being inside
-		     this group also means HeightField hides it for the collision pass, which is
-		     what it wants -- a screen-space quad is not a surface rain can land on. -->
+		<!-- Water on the lens. Mounted LAST in the group and drawn at renderOrder 10,
+		     load-bearing: it reads back the framebuffer, so every layer it refracts must
+		     have drawn already. Inside the group so HeightField hides it for the
+		     collision pass -- a screen-space quad is not a surface rain lands on. -->
 		<RainLens />
-		<!-- Frost on the lens, the snow counterpart. Drawn at renderOrder 11, after RainLens,
-		     for the same reason RainLens sits above the sky: each reads back the frame, so
-		     the later one composites over the earlier. Both are only ever live at once
-		     during sleet. -->
+		<!-- Frost on the lens, at renderOrder 11 after RainLens: each reads back the
+		     frame, so the later one composites over the earlier. Both are only live at
+		     once during sleet. -->
 		<SnowLens />
-		<!-- Scene fog. Mounted only in procedural mode because its colour comes from the
-		     day curve, which is the procedural sky's authored look -- an HDR environment
-		     brings its own horizon and would fight it. Renders nothing itself; it drives
-		     scene.fog, so its position in the group is immaterial. -->
+		<!-- Scene fog, procedural-mode only: its colour comes from the day curve, and an
+		     HDR environment brings its own horizon. Renders nothing; drives scene.fog. -->
 		<SkyFog />
 	</T.Group>
 {/if}

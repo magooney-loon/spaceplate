@@ -1,6 +1,5 @@
 // Post-processing state — defaults come from the registry so state, builder and panel
-// can never drift apart. The pmndrs-era catalogue and the preset/localStorage layer
-// are gone.
+// can never drift apart.
 
 import { logPostprocessing } from '$extensions/logger';
 import { EFFECTS, EFFECTS_BY_ID } from '$core/postprocessing/registry';

@@ -1,10 +1,8 @@
-// The one effect implemented by hand — the template for any future custom TSL
-// effect. Written rather than imported because the
-// addon version (CRT.js) measures distance in raw uv space: always a viewport
-// ellipse, never a true circle, with no way to ask for one.
-//
-// Placement: late chain, pre-tonemap. Multiplying before tone mapping behaves
-// like real lens falloff; after, it would crush the shadows instead of dimming.
+// The one effect implemented by hand — the template for future custom TSL effects.
+// Written rather than imported because the addon version (CRT.js) measures distance
+// in raw uv space: always a viewport ellipse, never a true circle. Placement: late
+// chain, pre-tonemap (before tone mapping = real lens falloff; after = crushed
+// shadows).
 
 import { Fn, uv, vec2, vec4, float, length, smoothstep, mix } from 'three/tsl';
 import type { EffectDef } from '../types';

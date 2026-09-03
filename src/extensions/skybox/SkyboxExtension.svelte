@@ -21,16 +21,12 @@
 	import type { ChannelName, ClockKind } from '$core/skybox/model';
 	import { requestStrike } from '$core/skybox/layers/lightning/flashState';
 
-	// The preset machine this panel used to drive (sky scalars, stars, transition
-	// lerps, localStorage presets) is gone -- the sky is time-driven and lives in
-	// $core/skybox/model. Studio is just another caller: this
-	// panel reads skyMeta and calls skyActions. It never writes sky parameters directly.
-	// The environment-mode state likewise moved to core (`$core/skybox/environment`) —
-	// Skybox.svelte consumes it in every build — and this panel drives it through
-	// environmentActions the same way. Keyframe editing + save-to-file remain phase 5.
-	// The one deliberate exception is
-	// `requestStrike`: a dev trigger, not an authored-sky control, flowing through the
-	// same shared state the flash already uses (see flashState.ts).
+	// Studio is just another caller: this panel reads skyMeta and drives the sky through
+	// skyActions, and the environment-mode state (`$core/skybox/environment`, consumed
+	// by Skybox.svelte in every build) through environmentActions — never a direct
+	// parameter write. The one deliberate exception is `requestStrike`: a dev trigger,
+	// not an authored-sky control, flowing through the same shared state the flash
+	// already uses (see flashState.ts). Keyframe editing + save-to-file remain phase 5.
 
 	interface Props {
 		children?: Snippet;

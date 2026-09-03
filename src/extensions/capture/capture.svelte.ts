@@ -1,10 +1,6 @@
-// Capture state + the driver slot.
-//
-// The state lives here (always reactive, works without Studio, per the extension rules in
-// extensions/CLAUDE.md). The one thing it CANNOT own is the driver: the renderer, the
-// render task and the MediaRecorder all need to be inside <Canvas>, so `Capture.svelte`
-// implements CaptureDriver and registers it here — the same register/unregister shape
-// already used by scenes/DemoScene/mirrorFloor.ts.
+// Capture state + the driver slot. The driver (renderer, render task, MediaRecorder)
+// must live inside <Canvas>, so `Capture.svelte` implements CaptureDriver and registers
+// it here — see capture/CLAUDE.md for the state shape and the two video modes.
 
 import { logEngine } from '$extensions/logger';
 import type { CaptureActions, CaptureDriver, CaptureState } from './types';
@@ -42,27 +38,20 @@ export const captureState = $state<CaptureState>({
 // encoder timestamps with, and to stall when the encoder is behind. The advancing is not
 // arranged here — an offline take takes over the ENGINE CLOCK (core/utils/engineClock.ts),
 // which substitutes a fixed step for the frame's real delta upstream of every task in the
-// app, so the camera, the sky, the TSL layers and physics all move by one encoded frame per
-// encoded frame without knowing anything about capture.
+// app, so nothing else needs to know anything about capture.
 //
 // What is left here is the frame's verdict, shared between the clock source (which decides,
 // before anything runs) and the capture task (which encodes, after the render). It is a
 // plain object and deliberately NOT `$state`: both are touched every frame, and a reactive
-// write there would wake the Studio panel at frame rate for no reason. Same reasoning as
-// the sky descriptor (the descriptor contract, core/skybox/CLAUDE.md) — one writer per
+// write there would wake the Studio panel at frame rate for no reason — one writer per
 // field, everyone reads from their own task.
 //
-// THE LATCH IS THE WHOLE POINT, and getting it wrong is what made early offline takes
-// twitchy. `saturated` is asynchronous — the encoder's promise can resolve at any moment,
-// including *between* the clock's decision and the capture task within a single frame. An
-// earlier version had both sides read `saturated` directly, so a resolution landing in that
-// window meant the scene held still while the capture task went ahead and encoded anyway:
-// the same pose encoded twice. With motion blur on (it is enabled by default) the first copy
-// carries a full frame of velocity and the duplicate carries none, so the output alternates
-// blurred and sharp frames. Whether it happened at all came down to promise timing, which is
-// why it was intermittent and worst at the start of a take, when the encoder is cold.
-//
-// One decision, made once per frame, by one side. Capture never second-guesses it.
+// THE LATCH IS THE WHOLE POINT. `saturated` is asynchronous — the encoder's promise can
+// resolve at any moment, including *between* the clock's decision and the capture task
+// within a single frame. Both sides reading it directly encoded the same pose twice
+// (blurred then sharp, under default motion blur — intermittent, and worst while the
+// encoder is cold). One decision, made once per frame, by one side. Capture never
+// second-guesses it.
 
 export const captureRuntime = {
 	/** True only while an offline take is in flight. Realtime takes leave this alone. */

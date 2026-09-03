@@ -1,8 +1,5 @@
-// Camera flypath state + actions.
-//
-// The state and all the authoring logic live here (always reactive, works without Studio,
-// per the extension rules in extensions/CLAUDE.md). Anything that needs the camera, the
-// curve or a frame task is in `FlyPath.svelte` and reached through the driver slot.
+// Camera flypath state + actions. Anything that needs the camera, the curve or a
+// frame task is in `FlyPath.svelte`, reached through the driver slot below.
 //
 // EASING IS GLOBAL, NOT PER SEGMENT. Easing each segment separately would drive velocity
 // to zero at every waypoint — a stop-and-go crawl rather than a flythrough. So the ease

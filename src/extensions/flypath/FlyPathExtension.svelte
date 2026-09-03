@@ -28,18 +28,16 @@
 
 	const runnable = $derived(segmentCount(flyPathState) > 0);
 	/**
-	 * The previous take's file is still being written. Arming another one would resize the
-	 * shared recording canvas out from under it, so 🎬 is held until the download fires.
+	 * The previous take's file is still being written — arming another would resize the
+	 * shared recording canvas out from under it.
 	 */
 	const finalizing = $derived(captureState.isFinalizing);
 	const duration = $derived(totalDuration(flyPathState));
 
 	// svelte-tweakpane-ui fires `change` for PROGRAMMATIC value writes too, tagged
-	// `origin: 'external'` (its Binding.svelte dispatches on any bound-value change, not
-	// just widget interaction). The driver writes flyPathState.progress every frame while
-	// playing, so an unguarded handler called scrub() back — and scrub() pauses playback.
-	// The path stopped dead one frame after Play, one waypoint in, and the recording never
-	// reached its finish path. Only act on 'internal', i.e. an actual drag.
+	// `origin: 'external'`. The driver writes flyPathState.progress every frame while
+	// playing, so an unguarded handler would call scrub() back — and scrub() pauses
+	// playback. Only act on 'internal', i.e. an actual drag.
 	const onScrub = (e: CustomEvent<{ value: number; origin: 'external' | 'internal' }>) => {
 		if (e.detail.origin === 'external') return;
 		flyPathActions.scrub(e.detail.value);

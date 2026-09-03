@@ -1,13 +1,10 @@
 <script lang="ts">
-	// WebGPU-native procedural sky. Replaces @threlte/extras' <Sky>, which wraps
-	// three/examples/jsm/objects/Sky.js -- a raw ShaderMaterial. NodeLibrary has no
-	// ShaderMaterial mapping, so on WebGPURenderer that sky is silently swapped for a
-	// blank NodeMaterial and renders wrong. SkyMesh is three's NodeMaterial/TSL port of
-	// the same Preetham model. See DOCS/webgpu-notes.md §1.
-	//
-	// This component is now a pure CONSUMER of the sky descriptor's `sky` + `sun`
-	// slices. It reads a plain object in a task -- there is no reactive prop
-	// plumbing and no $effect, so no cycle can form.
+	// WebGPU-native procedural sky. Replaces @threlte/extras' <Sky>: that wraps a raw
+	// ShaderMaterial, which NodeLibrary cannot map -- on WebGPURenderer it is silently
+	// swapped for a blank NodeMaterial and renders wrong. SkyMesh is three's
+	// NodeMaterial/TSL port of the same Preetham model (see DOCS/webgpu-notes.md §1).
+	// A pure CONSUMER of the descriptor's `sky` + `sun` slices, read in a task: no
+	// reactive props, no $effect, no cycle.
 	import { T, useThrelte, useTask } from '@threlte/core/webgpu';
 	import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 	import * as THREE from 'three/webgpu';
@@ -23,40 +20,23 @@
 		/** Re-bake early once the sun has moved this many degrees since the last one. */
 		envSunDeltaDeg?: number;
 		/**
-		 * `scene.environmentIntensity` for the baked dome. THIS IS NOT A STYLE KNOB either --
-		 * without it the sky is the only thing lighting the scene.
+		 * `scene.environmentIntensity` for the baked dome. THIS IS NOT A STYLE KNOB.
+		 * SkyMesh's output is authored to be looked AT under a tone-mapping exposure, not
+		 * to be integrated as an IBL -- its absolute scale is arbitrary, and fed to
+		 * `scene.environment` raw it buries the key light. The dome must be scaled before
+		 * use; 0.25 puts the key back in charge without making the ambient a hard black.
 		 *
-		 * SkyMesh's output is authored to be looked AT under a tone-mapping exposure, not to
-		 * be integrated as an IBL, and its absolute scale (`EE = 1000`, then `* 0.04`) is
-		 * arbitrary. Fed to `scene.environment` raw it buries the key light. Measured, by
-		 * integrating the dome's radiance against a cosine lobe -- the same quantity three's
-		 * `getIBLIrradiance` returns -- for an up-facing normal under a clear sky:
-		 *
-		 *   time      sky irradiance   key light   key's share of the light on flat ground
-		 *   sunrise            0.121       0.003     2.8%
-		 *   golden am          1.204       0.021     1.7%
-		 *   noon               5.031       0.745    12.9%
-		 *
-		 * A shadow at noon therefore rendered rgb(102,136,223) against a lit rgb(111,141,225)
-		 * -- a 4% difference, i.e. no directional lighting in the scene at any hour, plus a
-		 * heavy blue cast (noon irradiance was [1.78, 5.19, 13.08], a 7:1 blue:red).
-		 *
-		 * 0.25 puts the key back in charge without making the ambient a hard black: shadow
-		 * over lit lands at 0.27-0.33 through the day and 0.10-0.15 at night.
-		 *
-		 * IT IS PAIRED WITH `SUN_INTENSITY` in the model. Lowering this alone darkens every
-		 * daylit scene; the sun constant was raised to absorb exactly what this removes.
-		 * Move them together or re-measure. Do NOT compensate with the day curve's exposure
-		 * -- that is renderer-global, so it drags the dome up with the scene and the sky
-		 * blows out (the noon horizon tone-mapped past white even at the old 0.78, which is
-		 * why the daylight keyframes now sit around 0.65).
+		 * 0.25 IS PAIRED WITH `SUN_INTENSITY` in the model: they are ONE change, so move
+		 * them together or re-measure -- lowering this alone darkens every daylit scene.
+		 * Do NOT compensate with the day curve's `exposure`; that is renderer-global, so
+		 * it drags the dome up with the scene and the sky blows out.
 		 */
 		environmentIntensity?: number;
 		/**
-		 * Ceiling on SkyMesh's `cloudCoverage` uniform. THIS IS NOT A STYLE KNOB -- see the
-		 * cloud mapping in the task below. Past ~0.6 the cloud mask saturates to 1 across the
-		 * entire dome and the clouds become invisible, so the weather channel is remapped
-		 * into a band that always renders as cloud.
+		 * Ceiling on SkyMesh's `cloudCoverage` uniform. NOT A STYLE KNOB -- past ~0.6 the
+		 * cloud mask saturates to 1 across the dome and the clouds become invisible; the
+		 * weather channel is remapped into a band that always renders as cloud (see the
+		 * task below).
 		 */
 		maxCloudCoverage?: number;
 		/** Exponent on the coverage remap. Below 1 it spends more of the channel's range low. */
@@ -124,12 +104,10 @@
 	let lastBakeAzimuth = 0;
 	let lastBakeCloudCover = 0;
 
-	// THE TRAP (the env bake budget in core/skybox/CLAUDE.md): the old code re-baked the env cube
-	// whenever a sky parameter changed. That was correct for a static sky and ruinous
-	// for a moving one -- at 60x time scale it is a full cube bake every frame. The
-	// bake is now on a budget: at most one per envIntervalMs, or earlier if the sun has
-	// swung more than envSunDeltaDeg. The descriptor stays fresh every frame; only this
-	// expensive derivative of it steps.
+	// THE TRAP -- the env bake budget (../CLAUDE.md): a re-bake is a full cube render,
+	// ruinous if driven per change at 60x time scale. At most one bake per envIntervalMs,
+	// or earlier if the sun moved envSunDeltaDeg. The descriptor stays fresh every frame;
+	// only this expensive derivative of it steps.
 	const shouldBake = (deltaMs: number): boolean => {
 		msSinceBake += deltaMs;
 
@@ -175,31 +153,17 @@
 			sunPosition.set(sun.direction.x, sun.direction.y, sun.direction.z);
 			sky.sunPosition.value.copy(sunPosition);
 
-			// CLOUDS. All three uniforms are weather-driven, and the coverage one is REMAPPED
-			// rather than passed straight through. That remap is load-bearing.
-			//
-			// SkyMesh builds its cloud mask as
+			// CLOUDS. The coverage uniform is REMAPPED rather than passed straight through,
+			// and that remap is load-bearing. SkyMesh builds its cloud mask as
 			//     smoothstep(1 - coverage, 1 - coverage + 0.3, cloudNoise)
-			// and `cloudNoise` is a 5-octave fbm rescaled to `n * 0.5 + 0.5`, which puts it at
-			// mean 0.833, sd 0.088 and -- crucially -- a hard MINIMUM of 0.584. Sampled over
-			// the dome:
-			//
-			//   coverage 0.27  mask mean 0.35, sd 0.29   27% clear gaps   <- most structure
-			//   coverage 0.37  mask mean 0.70, sd 0.31    7% clear gaps   <- the three.js demo
-			//   coverage 0.52  mask mean 0.96, sd 0.13    0% clear gaps
-			//   coverage 0.70+ mask IDENTICALLY 1, sd 0   no clouds visible at all
-			//
-			// Above ~0.6 every sample clears the upper edge of the smoothstep, so the mask is
-			// a constant 1 and the dome is uniformly blended to `cloudColor` -- which is
-			// scaled by `vSunE * 0.00002` and therefore nearly black at low sun. Passing the
-			// channel through raw meant `rain` (0.8), `snow` (0.9) and `storm` (1.0) rendered
-			// as a flat, cloudless, slightly darker sky. They looked CLEARER than `cloudy`.
-			//
-			// So the semantic channel (0 = clear, 1 = solid storm) is remapped into the band
-			// that actually draws clouds, and "heavier weather" is expressed through density
-			// and a lower deck rather than through coverage it cannot use. At full weight
-			// this lands on density 0.97 / elevation 1.0, the values three's own Sky demo
-			// uses for its dramatic overcast.
+			// where the 5-octave fbm sits at mean 0.833 with a hard minimum of 0.584 -- so by
+			// ~0.52 the mask is nearly 1 everywhere, and above ~0.6 it is IDENTICALLY 1: the
+			// dome blends uniformly to a nearly-black `cloudColor` and `rain`/`snow`/`storm`
+			// rendered as a flat, cloudless, slightly darker sky. The semantic channel
+			// (0 = clear, 1 = solid storm) is therefore remapped into the band that actually
+			// draws clouds; heavier weather is expressed through density and a lower deck. At
+			// full weight this lands on density 0.97 / elevation 1.0, three's own Sky demo
+			// overcast values.
 			const cover = clamp01(descriptor.weather.cloudCover);
 			// cloudType leans the look toward heavy stratus/storm towers, giving that channel
 			// its first actual job.
@@ -210,14 +174,12 @@
 			sky.cloudDensity.value = lerp(cloudDensityRange[0], cloudDensityRange[1], heaviness);
 			sky.cloudElevation.value = lerp(cloudElevationRange[0], cloudElevationRange[1], heaviness);
 
-			// WIND IS DELIBERATELY NOT BOUND TO cloudSpeed, even though it is the obvious
-			// target. SkyMesh scrolls its cloud plane with `cloudUV += time * cloudSpeed`,
-			// so the offset is proportional to ABSOLUTE elapsed time. Changing the speed
-			// therefore teleports the pattern by `elapsed * delta_speed` -- a barely visible
-			// hitch a few seconds in, a total scramble of the sky an hour into a session.
-			// There is no offset uniform to compensate with. Driving cloud motion from wind
-			// needs a cloud layer that accumulates its own offset, which is phase 4's
-			// problem.
+			// WIND IS DELIBERATELY NOT BOUND TO cloudSpeed: SkyMesh scrolls its cloud plane
+			// by `cloudUV += time * cloudSpeed`, so the offset is proportional to ABSOLUTE
+			// elapsed time -- changing the speed teleports the pattern by `elapsed * delta`,
+			// totally scrambling the sky an hour into a session. There is no offset uniform
+			// to compensate; wind-driven motion needs a layer that accumulates its own offset
+			// (phase 4).
 
 			// The curve's exposure drives the renderer's tone-mapping exposure -- the
 			// classic three.js sky pattern (SkyMesh has no exposure uniform of its own).

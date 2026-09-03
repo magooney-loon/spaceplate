@@ -1,11 +1,7 @@
 // The sky façade. The only stateful module here; everything it imports is pure.
-//
-// Data flows one way: clock -> model -> renderers. Renderers never write back.
-//
-// `descriptor` is a plain mutable object, rewritten in place each tick. It is NOT
-// `$state` and must not become `$state`: it changes every frame, and making it
-// reactive would invalidate the component tree 60x a second -- besides reopening the
-// read/write cycle that produced every reactive loop in this repo's history.
+// Data flows one way: clock -> model -> renderers, renderers never write back. The
+// descriptor is a plain mutable object written in place each tick, never `$state`
+// (the descriptor contract, ../CLAUDE.md).
 
 import { createClock, type Clock, type ClockOptions } from './clock';
 import { createBaseline, sampleDayCurve, DEFAULT_DAY_CURVE } from './dayCurve';
@@ -54,101 +50,54 @@ const SUN_ZENITH: RGB = [1, 0.98, 0.95];
 const MOON_COLOR: RGB = [0.55, 0.68, 1];
 
 /**
- * PEAK key output at high sun.
- *
- * This was `Math.PI / 4` -- the value of the old hardcoded light in Camera.svelte -- for
- * as long as `scene.environment` was fed the raw SkyMesh dome. That dome integrates to
- * roughly 5.0 of irradiance on an up-facing normal at noon, against this light's 0.745,
- * so the sun accounted for 13% of a daylit surface and the sky for the other 87%. The
- * symptom was shadows you could not see (lit rgb(111,141,225) vs shadowed rgb(102,136,223))
- * and everything tinted sky-blue.
- *
- * `Sky.svelte`'s `environmentIntensity` now scales the dome to 0.25. THIS CONSTANT IS THE
- * OTHER HALF OF THAT CHANGE: it absorbs the daylight the env map stopped delivering, so
- * scene brightness lands within 0.88-0.97x of where it was through the whole day while the
- * key goes from 13% of the light to ~70% of it. Measured across the day, a surface turned
- * to the sun gets 1.2-1.6x brighter and shadow-over-lit falls from 0.96 to 0.29.
- *
- * It is deliberately a day-only knob. Removing ambient had to be paid back only where the
- * ambient was doing the work -- by night the env map contributes ~5% and the moon and fill
- * constants below are untouched, which is why night measures 0.94x unchanged.
+ * PEAK key output at high sun. Pairs with `Sky.svelte`'s `environmentIntensity` (0.25):
+ * they are ONE change -- the env map scales the dome down and this absorbs the daylight
+ * it stopped delivering, so the key carries the day instead of the sky. Move them
+ * together and re-measure; never compensate with the day curve's `exposure`
+ * (renderer-global). Deliberately a day-only knob: by night the env map contributes
+ * almost nothing and the moon and fill constants below do the work.
  */
 const SUN_INTENSITY = 4.75;
 
 /**
  * A playable night, not a physical moon -- real moonlight is ~1/400,000 of sunlight.
- *
- * An ABSOLUTE level, not a fraction of the sun: SkyMesh bakes black below -2.31 degrees
- * (see MOON_AMBIENT), so nothing about the env map's scale ever reached the night and
- * nothing about rescaling it should. It does not track SUN_INTENSITY and must not be
- * "restored" to some ratio of it.
- *
- * What reads as night is the cool colour cast, the black sky and the low exposure, not
- * the key light's absolute value. At a 32nd of this the scene was simply unlit.
+ * An ABSOLUTE level, not a fraction of the sun: the env map bakes black at night (see
+ * MOON_AMBIENT), so nothing about its scale ever reached the night and nothing about
+ * rescaling it should. It does not track SUN_INTENSITY and must not be "restored" to
+ * some ratio of it.
  */
 const MOON_INTENSITY = Math.PI / 12;
 
 /**
- * Ambient fill published to the key-light consumer. In the same units as `intensity`.
+ * Ambient fill published to the key-light consumer, in the same units as `intensity`.
+ * Exists because the env map cannot carry night: SkyMesh zeroes its sun term below
+ * -2.31 degrees of sun elevation, so the cube bakes black and every surface facing away
+ * from the moon receives nothing. SkyLight mounts a light for this fill.
  *
- * This exists because of a hard limit in the sky model, not as a nicety. The design
- * says the baked `scene.environment` is "the ambient half" -- and by day it is. At night it
- * cannot be: SkyMesh zeroes its sun term entirely once the sun passes 2.31 degrees
- * below the horizon (`cutoffAngle = pi / 1.95`, then `max(0, ...)`), which collapses the
- * whole dome to `0.1 * Fex * 0.04 + vec3(0, 0.0003, 0.00075)` -- a ceiling of about
- * 0.005 linear luminance. The cube bakes black, the scene gets one directional light,
- * and every surface facing away from the moon receives exactly nothing.
- *
- * So the model publishes an explicit fill and SkyLight mounts a light for it.
- *
- * DAY_AMBIENT is deliberately ZERO. The env map genuinely does carry daylight, and an
- * early version of this that faded to a small daytime value brightened noon by 10% --
- * a change to a daytime look nobody asked to change. The fill exists to fix night; by
- * day it gets out of the way entirely and the crossfade takes it there smoothly.
- *
- * TWILIGHT_AMBIENT covers the same blind spot at the other end. Twilight is *by
- * definition* scattered skylight rather than direct sun, and the same SkyMesh cutoff
- * means the dome renders black through all of it -- so the blue-hour look the day curve
- * carefully authors at -6 and -18 degrees never actually lights anything. Worse, the
- * moon sets as the sun rises (they are at opposition by default), so without this term
- * the fill collapses exactly when the key light does: measured, civil dawn came out at
- * 8.2% of a noon surface against midnight's 28.4%. Dawn was darker than the middle of
- * the night.
+ * DAY_AMBIENT is deliberately zero -- the env map genuinely carries daylight, so the fill
+ * gets out of the way by day. TWILIGHT_AMBIENT covers the same blind spot through
+ * twilight: the dome is still black there, and the moon (at opposition by default) sets
+ * as the sun rises, so without it dawn reads darker than midnight.
  */
 const MOON_AMBIENT = Math.PI / 32;
 const DAY_AMBIENT = 0;
 const TWILIGHT_AMBIENT = Math.PI / 14;
 
 /**
- * Floor on the elevation used to *aim* the key light, in degrees.
- *
- * The sun keeps driving the light down to -6 degrees (see `sunSet` in compose), so
- * without this it would be aimed from underground through all of civil twilight, which
- * lights every underside in the scene and throws its shadows upward. Clamping the aim
- * keeps that band as raking horizontal light -- which is what it looks like anyway,
- * since at that point you are lit by the sky, not the sun.
- *
- * Note this deliberately does NOT prop up flat ground at sunrise: `dot(n, l)` on a
- * horizontal surface under a 3-degree light is 0.05, so the ground goes dark and the
- * vertical faces take the light. That is what a low sun does.
+ * Floor on the elevation used to *aim* the key light, in degrees. Without it the sun
+ * keeps aiming the light from underground through civil twilight, lighting undersides
+ * and throwing shadows upward. It deliberately does NOT prop up flat ground at sunrise:
+ * a 3-degree light leaves horizontal surfaces dark and gives vertical faces the light
+ * -- that is what a low sun does.
  */
 const KEY_MIN_ELEVATION = 3;
 
-/**
- * The weather the sky boots on -- a NAMED one, not a bespoke vector.
- *
- * There used to be a hand-authored boot vector sitting between `clear` and `cloudy`,
- * which meant the app opened on a look no button in the panel could get back to and
- * `skyMeta.weather` reported `'default'` for a sky that was really a weak `cloudy`.
- * Booting on the named weather costs nothing and makes the first frame reproducible:
- * whatever `cloudy` is authored to be is what the app opens with.
- */
+/** Boots on a NAMED weather so the first frame is reproducible from the panel. */
 const BOOT_WEATHER = 'cloudy';
 
-// A named target is a `Partial<WeatherChannels>` by type, so it is spread over a full
-// vector rather than cast to one -- an authored weather that omits a channel still boots
-// to something valid. The base is all-zero except `precipitationType`, which is a POSITION
-// (0 = snow, 1 = rain), so its neutral value is rain -- see the note in WEATHERS.
+// A named target is a `Partial<WeatherChannels>`, so it is spread over a full vector
+// rather than cast -- an authored weather that omits a channel still boots valid. The
+// base is all-zero except `precipitationType`, a POSITION whose neutral value is rain.
 const bootWeather = (): WeatherChannels => ({
 	cloudCover: 0,
 	cloudType: 0,
@@ -175,26 +124,15 @@ export const descriptor: SkyDescriptor = {
 	meta: { t: 0, day: 0, phase: 'night', isDaytime: false }
 };
 
-/**
- * The weather mixer, wired straight onto `descriptor.weather`.
- *
- * It owns and mutates that exact object, so the descriptor never needs a per-frame copy
- * and consumers that cached `descriptor.weather` keep seeing live values.
- */
+/** Owns and mutates `descriptor.weather` exactly, so cached references see live values. */
 const mixer = createWeatherMixer(descriptor.weather, BOOT_WEATHER);
 
 /**
- * The reactive surface -- deliberately tiny.
- *
- * HUD overlays and the Studio panel need to re-render on phase and weather changes, so
- * these values are `$state`. They are WRITTEN by the tick and never read by it, which
- * keeps the one-way rule intact. Everything numeric and per-frame stays on `descriptor`.
- *
- * The channel mirrors are here because a blend is something a dev panel genuinely needs
- * to watch arrive. They are gated hard (`CHANNEL_EPSILON`), so a 20 s storm blend wakes
- * the reactive graph a few dozen times in total rather than 1200 times.
- *
- * All writes are gated by `publishMeta` -- see there for why.
+ * The reactive surface -- deliberately tiny. HUD overlays and the Studio panel need to
+ * re-render on phase and weather changes; the tick WRITES these and never reads them,
+ * keeping the one-way rule intact. The channel mirrors are epsilon-gated so a 20 s
+ * blend wakes the graph a few dozen times rather than 1200. All writes go through
+ * `publishMeta`/`publishWeather`.
  */
 export const skyMeta = $state({
 	t: 0,
@@ -214,10 +152,9 @@ export const skyMeta = $state({
 	lightning: descriptor.weather.lightning
 });
 
-// Manual clock as the template default: the app boots on a curated sunrise rather
-// than the player's wall clock, so the first frame is a known good look and a demo
-// never opens on 3am black. 0.25 is the `sunrise` keyframe exactly -- boot times are
-// keyframe times, not round numbers near them. Games pick their own clock on boot.
+// Manual clock default: the app boots on a curated sunrise rather than the player's
+// wall clock, so a demo never opens on 3am black. 0.25 is the `sunrise` keyframe exactly
+// -- boot times are keyframe times, not round numbers near them. Games pick their own.
 let clock: Clock = createClock('manual', { t: 0.25 });
 let pathOptions: PathOptions = {};
 let curve: DayKeyframe[] = DEFAULT_DAY_CURVE;
@@ -236,16 +173,10 @@ const META_EPSILON = 1 / 1440;
 const CHANNEL_EPSILON = 0.01;
 
 /**
- * Push the tiny reactive slice, but only when it actually moved.
- *
- * `skyMeta` is `$state`, so every write invalidates whatever reads it. Writing `t` raw
- * meant an invalidation on all 60 frames a second even though the panel quantizes to
- * whole game-minutes and the DOM never changed. Gate on a game-minute and the reactive
- * graph wakes a few times a second instead.
- *
- * The gate compares against plain shadow variables, never against `skyMeta` itself.
- * `skyMeta` stays write-only from this module -- that one-way rule is the entire reason
- * a `$state` object is safe to touch from the tick.
+ * Gate publishes so `skyMeta` ($state) only invalidates when a value actually moved --
+ * a game-minute for `t`, CHANNEL_EPSILON for channels. The gates compare plain shadow
+ * variables, never `skyMeta` itself: it stays write-only from this module, which is
+ * what makes a `$state` object safe to touch from the tick.
  */
 let publishedT = -1;
 let publishedDay = -1;
@@ -274,10 +205,8 @@ const publishWeather = (w: WeatherChannels) => {
 		publishedBlending = mixer.blending;
 		skyMeta.blending = mixer.blending;
 	}
-	// Driven off CHANNEL_NAMES rather than a fourth hand-written copy of the channel
-	// list: this module already keeps three (the boot defaults, the reactive mirror and
-	// the gate below), and a channel missing from THIS one would simply never reach the
-	// panel -- a silent omission rather than a type error.
+	// Driven off CHANNEL_NAMES: a channel missing from this loop would simply never
+	// reach the panel -- a silent omission, not a type error.
 	for (const key of CHANNEL_NAMES) {
 		// Also fires when a blend lands exactly on its target, since `to` is reached
 		// only once and the epsilon gate would otherwise strand the final value.
@@ -310,11 +239,9 @@ const publishMeta = (t: number, day: number, phase: PhaseName, daytime: boolean)
 };
 
 /**
- * Recompute the descriptor from the current clock sample.
- *
- * `deltaMs` advances the weather blend. It is 0 on the jump paths (setTime, setClock),
- * which recompose without time passing -- weather must not creep forward because
- * someone scrubbed the clock.
+ * Recompute the descriptor from a clock sample. `deltaMs` advances the weather blend;
+ * it is 0 on the jump paths (setTime, setClock), so weather does not creep forward
+ * because someone scrubbed the clock.
  */
 const compose = (t: number, day: number, deltaMs = 0) => {
 	// Written in place, not reassigned: consumers may hold a reference to
@@ -323,16 +250,14 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	moonAt(t, pathOptions, descriptor.moon);
 	sampleDayCurve(t, descriptor.sky, curve);
 
-	// Weather goes ON TOP of the sampled baseline, never instead of it. The
-	// ordering is the whole design: the curve decides what time it is, the mixer decides
-	// what the weather is doing to that, and an overcast sunset still reads as evening.
+	// Weather goes ON TOP of the sampled baseline, never instead of it: the curve decides
+	// what time it is, the mixer decides what the weather is doing to that.
 	if (deltaMs > 0) mixer.tick(deltaMs);
 	const weather = descriptor.weather;
 	modulateBaseline(descriptor.sky, weather);
 
-	// A body's visibility is how much of it reaches the ground. Nothing consumes this
-	// yet -- it is the slice a cloud-aware lens flare or a "can the player see the moon"
-	// gameplay query reads, and it costs one multiply to publish honestly.
+	// How much of the body reaches the ground -- the slice a cloud-aware lens flare or a
+	// "can the player see the moon" gameplay query reads; costs one multiply to publish.
 	const seen = bodyVisibility(weather);
 	descriptor.sun.visibility = seen;
 	descriptor.moon.visibility = seen;
@@ -342,51 +267,34 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	const daytime = isDaytime(elevation);
 	const phase = phaseFor(elevation, rising, pathOptions.maxElevation ?? DEFAULT_MAX_ELEVATION);
 
-	// Sun and moon are computed INDEPENDENTLY and combined with max(), not lerped across
-	// one shared weight.
-	//
-	// The shared weight was `horizon = clamp01((elevation + 6) / 12)`, and it was one
-	// factor doing two unrelated jobs: handing over to the moon AND dimming the sun. At
-	// elevation 0 it sits at 0.5, so a sun sitting exactly on the horizon was cut to the
-	// 0.25 strength floor and then HALVED AGAIN -- an eighth of peak. Measured, the key
-	// delivered 2.8% of the light reaching flat ground at sunrise and 1.7% at golden hour,
-	// so the warm raking light both keyframes are authored for did not exist; the env map
-	// supplied the frame, and it was flat.
-	//
-	// `sunSet` is the job `horizon` was standing in for on the sun's side: the sun's own
-	// extinction across its last six degrees, and nothing else.
+	// Sun and moon are computed INDEPENDENTLY and combined with max(), never lerped
+	// across one shared weight (a shared `horizon` weight once dimmed the sun AND handed
+	// over to the moon, cutting a horizon sun to an eighth of peak). `sunSet` is the sun's
+	// own extinction across its last six degrees, and nothing else.
 	const sunSet = clamp01((elevation + 6) / 6);
-	// Altitude ramp: the sun's STRENGTH keeps growing above the horizon band. A flat
-	// lerp to SUN_INTENSITY saturated at +6 degrees, which put noon-level light on a
-	// 9-degree late-afternoon sun -- "too bright already at 17:30". Golden hour keeps a
-	// warm quarter-strength floor; full output only above 45 degrees.
+	// Altitude ramp: the sun's STRENGTH keeps growing above the horizon band -- a flat
+	// lerp would put noon-level light on a 9-degree sun. Quarter-strength floor at the
+	// horizon, full output only above 45 degrees.
 	const sunStrength = 0.25 + 0.75 * clamp01(elevation / 45);
 	const sunKey = SUN_INTENSITY * sunSet * sunStrength;
 	const moonKey = MOON_INTENSITY * clamp01(descriptor.moon.elevation / 20);
-	// max(), like the two ambient fills below and for the same reason: they are
-	// alternatives, so whichever is actually lighting the scene must not be dimmed by the
-	// other one fading out.
+	// max(), like the ambient fills below: sun and moon are alternatives, so neither is
+	// dimmed by the other fading out.
 	const clearSkyKey = Math.max(sunKey, moonKey);
 
-	// ONE weight for direction, colour AND intensity, so they cannot disagree. Under
-	// `horizon` the light was 50% moon-blue at sunrise while the sun was the only thing
-	// lighting anything -- a warm keyframe rendered cold.
+	// ONE weight drives direction, colour AND intensity, so they cannot disagree.
 	const sunShare = sunKey + moonKey > 0 ? sunKey / (sunKey + moonKey) : 0;
 	lerpRGB(SUN_HORIZON, SUN_ZENITH, clamp01(elevation / 30), sunColor);
 
-	// The direction still flips through 180 degrees at the handover, because the bodies sit
-	// at opposition by default and interpolating between two opposed vectors is undefined.
-	// It now lands near -4.5 degrees of sun elevation, at ~8% of daytime peak, with colour
-	// and intensity continuous across it.
+	// The direction still flips 180 degrees at the handover (~-4.5 degrees of sun
+	// elevation, ~8% of peak, colour and intensity continuous across it) -- the bodies sit
+	// at opposition by default and interpolating between opposed vectors is undefined.
 	const key = sunShare >= 0.5 ? descriptor.sun : descriptor.moon;
 	directionAt(Math.max(key.elevation, KEY_MIN_ELEVATION), key.azimuth, descriptor.light.direction);
 	lerpRGB(MOON_COLOR, sunColor, sunShare, descriptor.light.color);
-	// A cloud deck is a grey diffuser: it strips the warmth out of the light as well as
-	// the strength. Desaturating toward the colour's own luminance keeps the day/night
-	// crossfade intact underneath -- overcast midnight stays blue-ish, just flatter.
-	//
-	// Gated on `deck`, not raw cover, exactly like the intensity below: scattered cloud
-	// must not grey out the sunrise the app boots into. See DECK_THRESHOLD.
+	// A cloud deck strips the warmth as well as the strength. Desaturating toward the
+	// colour's own luminance keeps the day/night crossfade intact underneath. Gated on
+	// `deck`, not raw cover, exactly like the intensity below -- see DECK_THRESHOLD.
 	const deck = deckFactor(weather.cloudCover);
 	const desaturate = 0.7 * deck;
 	if (desaturate > 0) {
@@ -403,41 +311,23 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	const attenuation = keyAttenuation(weather);
 	descriptor.light.intensity = clearSkyKey * attenuation;
 
-	// Fill light. See MOON_AMBIENT for why this is not optional once the sun is down.
-	//
-	// Two independent sources, combined with max() rather than added: moonlight and
-	// twilight are alternatives, not contributors. Whichever is doing the lighting wins,
-	// and the loser fading out never claws brightness back off the winner.
-	//
-	// Both are then scaled by the DECK factor, because a real deck blocks moonlight and
-	// twilight too -- an overcast night is genuinely darker than a clear one, and skipping
-	// this would leave a storm at midnight brighter than the clear sky it replaced.
-	// Scattered cloud must leave them alone, or the boot default dims every night scene.
+	// Fill light -- see MOON_AMBIENT for why it is not optional once the sun is down.
+	// Moonlight and twilight are alternatives, combined with max() like the key. Both
+	// are scaled by the deck factor: a real deck blocks them too, and scattered cloud
+	// must leave them alone or the boot default dims every night scene.
 	const moonFill = MOON_AMBIENT * clamp01(descriptor.moon.elevation / 20) * (1 - 0.9 * deck);
-	// A triangle peaked at -6 degrees: rises from -18, full at civil twilight, GONE by the
-	// horizon.
-	//
-	// It used to peak at 0 and fade out by +12, which erased the shadows at sunrise and
-	// sunset. The numbers: at elevation 0 the key light is 0.098 -- the sun runs at its
-	// 0.25 strength floor and the sun->moon crossfade halves it again -- against a fill of
-	// 0.224. Flat fill at 2.3x the key light is a scene with no shadows in it, exactly when
-	// the sun is on the horizon and the shadows should be at their longest.
-	//
-	// -6 is the right peak because that is the blind spot this fill exists for: SkyMesh
-	// zeroes its sun term below -2.31 degrees, so the env map is black through all
-	// of civil twilight and the blue hour the day curve authors lights nothing. Above the
-	// horizon that is simply not true any more -- the dome renders, the env map carries the
-	// ambient, and adding a second flat term on top double-counts it.
+	// A triangle peaked at -6 degrees: rises from -18, full at civil twilight, GONE by
+	// the horizon. -6 is the blind spot this fill exists for -- the dome is black through
+	// civil twilight; above the horizon the env map carries the ambient and a second flat
+	// term would double-count it.
 	const twilightFill =
 		TWILIGHT_AMBIENT *
 		clamp01((elevation + 18) / 12) *
 		(1 - clamp01((elevation + 6) / 6)) *
 		(1 - 0.5 * deck);
-	// The overcast return is ADDED, not max()'d: it is not an alternative to the night
-	// fills, it is the light the deck just took off the key coming back diffusely. That
-	// is what makes strong attenuation read as "flat and bright" instead of "dark" --
-	// see AMBIENT_RETURN. It scales with what was actually removed, so a clear sky adds
-	// exactly zero and nothing about the daytime look changes until weather arrives.
+	// The overcast return is ADDED, not max()'d: it is the light the deck just took off
+	// the key coming back diffusely (see AMBIENT_RETURN). It scales with what was
+	// actually removed, so a clear sky adds exactly zero.
 	const overcastReturn = clearSkyKey * (1 - attenuation) * AMBIENT_RETURN;
 	descriptor.light.ambient =
 		Math.max(Math.max(moonFill, twilightFill), DAY_AMBIENT * sunShare) + overcastReturn;
@@ -465,28 +355,22 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 /**
  * Point the weather mixer at a named weather or a raw channel target.
  *
- * Fire-and-forget and idempotent: calling it twice blends to the same place. There is
- * no transition state machine for callers to trip over -- the mixer has internal state,
- * this API does not expose it. Whether the call came from game code, a Studio button or
- * a server subscription, it converges on the same mixer, which is what makes the
- * multiplayer path one code path rather than two.
- *
- * A free function rather than a method so `clearWeather` can delegate to it: a method
- * referencing `skyActions` from inside its own initializer makes the object's inferred
- * type circular.
+ * Fire-and-forget and idempotent: no transition state machine for callers to trip
+ * over, and game code, a Studio button and a server subscription all converge on the
+ * same mixer -- which is what makes the multiplayer path one code path. A free
+ * function rather than a method so `clearWeather` can delegate to it without a
+ * circular inferred type.
  */
 const setWeather = (target: WeatherTarget, options: WeatherOptions = {}) => {
 	if (typeof target === 'string' && !WEATHERS[target]) {
-		// Silently blending to nothing would look like a dropped call. Named weathers are
-		// data, so a typo is the likely cause and it has to be loud.
+		// Named weathers are data, so a typo is the likely cause and it has to be loud.
 		throw new Error(
 			`sky.setWeather: unknown weather '${target}'. Known: ${Object.keys(WEATHERS).join(', ')}`
 		);
 	}
 	mixer.set(target, options);
-	// A snap is a jump, exactly like a time scrub: the env map has to re-bake now rather
-	// than on the next interval, and the descriptor has to carry the new values before
-	// any consumer reads it this frame.
+	// A snap is a jump, exactly like a time scrub: re-bake the env map now, not on the
+	// next interval, and carry the new values before any consumer reads this frame.
 	if (options.over === 0) {
 		discontinuity = true;
 		const sample = clock.sample();
@@ -540,14 +424,7 @@ export const skyActions = {
 		discontinuity = true;
 	},
 
-	/**
-	 * Point the weather mixer at a named weather or a raw channel target.
-	 *
-	 * Fire-and-forget and idempotent: calling it twice blends to the same place. There
-	 * is no transition state machine for callers to trip over -- the mixer has internal
-	 * state, this API does not expose it. Whether the call came from game code, a Studio
-	 * button or a server subscription, it lands on the same mixer.
-	 */
+	/** Point the weather mixer at a target -- see the standalone `setWeather` above. */
 	setWeather,
 
 	/** Blend back to `clear`. Same call as any other target, no special path. */

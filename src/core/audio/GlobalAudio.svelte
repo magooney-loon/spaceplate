@@ -28,10 +28,9 @@
 		`${BASE_URL}sounds/skybox/thunder-4.opus`
 	];
 
-	// One summary line once every file has settled — same shape as the engine's
-	// 'Assets loaded', plus the count. onload/onerror (not oncreate) are the hooks,
-	// so this counts decoded buffers, not mounted components. A failure logs
-	// per-file immediately and downgrades the summary to an error with an x/y count.
+	// One summary line once every file has settled. onload/onerror (not oncreate) are
+	// the hooks, so this counts decoded buffers, not mounted components; a failure
+	// logs per-file immediately and downgrades the summary to x/y.
 	const AUDIO_TOTAL = 5 + THUNDER_URLS.length;
 	let settled = 0;
 	let failed = 0;
@@ -114,19 +113,17 @@
 		}
 	});
 
-	// ── Weather ────────────────────────────────────────────────────────────────────
+	// ── Weather ──────────────────────────────────────────────────────────────────
 	//
-	// The rain bed and thunder claps live in ./weatherAudio.ts — the audio consumer of
-	// the sky's plain state (descriptor + flashState), deliberately NOT in the render
-	// layers, which unmount with the environment mode. This component only registers
-	// the sound files and ticks the module; the full rationale is documented there.
+	// The rain bed and thunder claps live in ./weatherAudio.ts (rationale in its
+	// header and audio/CLAUDE.md). This component only registers the sound files and
+	// ticks the module — never an $effect; the descriptor is plain state.
 	useTask(
 		(delta) => {
 			tickWeatherAudio(delta);
 		},
-		// autoInvalidate OFF, as everywhere else: an audio tick must not itself force
-		// frames and defeat on-demand rendering. This task rides the main stage, which
-		// runs every rAF regardless of draws, so the tick itself is unaffected.
+		// autoInvalidate OFF, as everywhere else — an audio tick must not force frames.
+		// The main stage runs every rAF regardless of draws, so the tick is unaffected.
 		{ autoInvalidate: false }
 	);
 </script>
@@ -173,10 +170,9 @@
 	userData={{ hideInTree: true, selectable: false }}
 />
 
-<!-- Weather. The rain bed loops forever and is faded by volume rather than started and
-     stopped per shower; thunder is one-shots — the takes above, one drawn at random per
-     clap and cloned so strikes can overlap. All are played by ./weatherAudio.ts (ticked
-     from the task above, never by an effect — the descriptor is not reactive by design). -->
+<!-- Weather. The rain bed loops forever, faded by volume rather than started/stopped
+     per shower; thunder is one-shots, cloned so strikes overlap. All are played by
+     ./weatherAudio.ts via the task above, never by an effect. -->
 <Audio
 	src={RAIN_URL}
 	loop

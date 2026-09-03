@@ -1,25 +1,18 @@
 <script lang="ts">
 	// Samples renderer.info into telemetryState for the Settings ▸ System tab. Draws
-	// nothing. Mount it right after <Renderer /> so its sampling task registers after
-	// the draw task and therefore runs after it (same constraint, registration order
-	// decides).
+	// nothing. Mount right after <Renderer /> so its sampling task registers after the
+	// draw task and runs after it (registration order decides).
 	//
-	// TWO TASKS, because Threlte's two stages answer two different questions.
-	// `{ after: autoRenderTask }` puts a task in the RENDER stage, whose callback only
-	// runs its tasks when `shouldRender()` is true (Threlte's scheduler fragment) — so
-	// it ticks once per RENDERED frame. A default task is in the main stage, which the
-	// animation loop runs on every frame, rendered or not. Counting both is what makes
-	// the fps/loopHz pair able to tell "on-demand skipped the render" apart from "the
-	// frame itself got slower".
+	// TWO TASKS: a render-stage task (`{ after: autoRenderTask }`) ticks once per
+	// RENDERED frame, a default (main-stage) task every animation frame, rendered or
+	// not — counting both is what lets the fps/loopHz pair tell "on-demand skipped
+	// the render" apart from "the frame got slower" (utils/CLAUDE.md).
 	//
-	// Both are `autoInvalidate: false`. A sampler that invalidates would force a render
-	// every frame and destroy the very on-demand behaviour it is here to measure.
-	//
-	// Per-frame counters (`info.render.*`) are read in the render-stage task on purpose:
-	// three zeroes them at the START of every frame (`info.reset()` inside Threlte's
-	// setAnimationLoop callback, before the scheduler), so anywhere earlier reads zeros.
-	// `info.render.calls` is a LIFETIME count `reset()` never touches — unchanged since
-	// the last tick means no render happened.
+	// Both `autoInvalidate: false` — invalidating would force a render every frame
+	// and destroy the on-demand behaviour being measured. Per-frame counters are read
+	// in the render-stage task because three zeroes them at frame start;
+	// `info.render.calls` is a LIFETIME count — unchanged since the last tick means
+	// no render happened.
 	import { useThrelte, useTask } from '@threlte/core/webgpu';
 	import { Vector2 } from 'three/webgpu';
 	import { telemetryState } from './telemetry.svelte';
@@ -75,10 +68,9 @@
 			// lives in memory.programs.
 			telemetryState.programs = info.memory.programs;
 
-			// Read here, not at mount: WebGPURenderer is CONSTRUCTED with a WebGPUBackend
-			// either way and only swaps in the WebGL one from getFallback() inside its
-			// async init() (three's Renderer.js). At mount it would claim WebGPU on every
-			// machine. By the first sample the renderer has drawn, so this is settled.
+			// Read here, not at mount: WebGPURenderer only swaps in the WebGL backend
+			// inside its async init() (three's Renderer.js) — at mount it would claim
+			// WebGPU everywhere. By the first sample the renderer has drawn.
 			telemetryState.backend = renderer.backend?.isWebGPUBackend ? 'webgpu' : 'webgl';
 
 			renderer.getDrawingBufferSize(size);

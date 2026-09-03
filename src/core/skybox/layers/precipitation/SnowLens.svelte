@@ -6,12 +6,10 @@
 	// retreats.
 	//
 	// WHAT IT IS, mechanically, is the same trick as RainLens and it inherits every one of
-	// that file's constraints, which are documented there in full rather than repeated here:
-	// one screen-aligned quad drawn last with `depthTest` off, reading the finished frame
-	// through `viewportMipTexture` (a framebuffer COPY, not a second render pass, whose mip
-	// chain is the blur), and decoding that sample back to working space so the round trip
-	// through the material's own output transform is an identity. Read RainLens's header
-	// before touching any of that here.
+	// that file's constraints, documented there in full rather than repeated here: one
+	// screen-aligned quad drawn last with `depthTest` off, reading the finished frame
+	// through `viewportMipTexture`, and decoding that sample back to working space.
+	// Read RainLens's header before touching any of that here.
 	//
 	// TWO LENSES, ONE FRAMEBUFFER. During sleet both layers are live. Whether three hands
 	// them one shared framebuffer copy or two is an implementation detail of
@@ -76,11 +74,10 @@
 		/**
 		 * How much frost snow puts on the glass with the camera standing still.
 		 *
-		 * THIS IS THE DOMINANT TERM, not a floor under a motion-driven effect -- which is
-		 * exactly where the first version of this got it wrong. Rain has to be driven into to
-		 * land on a windscreen, so RainLens has no standing term at all; frost is a
-		 * TEMPERATURE, and a lens sitting in snow ices over whether or not it is going
-		 * anywhere. Motion only deepens it.
+		 * THIS IS THE DOMINANT TERM, not a floor under a motion-driven effect: rain has
+		 * to be driven into to land on a windscreen, so RainLens has no standing term at
+		 * all, but frost is a TEMPERATURE -- a lens sitting in snow ices over whether or
+		 * not it is going anywhere. Motion only deepens it.
 		 */
 		standingFrost?: number;
 		/**
@@ -135,19 +132,16 @@
 	 */
 	const uIce = uniform(new THREE.Vector3(0.78, 0.87, 0.98));
 	/**
-	 * A translation into the NOISE DOMAIN, re-rolled each time the frost returns, so no two
-	 * freezes grow the same arrangement of lobes and dendrites. Without it the pattern is a
-	 * pure function of `screenUV` and every snowfall in every session ices over identically
-	 * -- which is fine for one look at it and obvious the third time.
+	 * A translation into the NOISE DOMAIN, re-rolled each time the frost returns, so no
+	 * two freezes grow the same arrangement of lobes and dendrites. Without it every
+	 * snowfall in every session ices over identically. Seeded at construction as well,
+	 * so the very first freeze is not the one arrangement everybody sees.
 	 *
-	 * IT MUST NOT REACH THE VIGNETTE, and that is the whole reason this is applied inside
-	 * `Frost` rather than folded into `patternUV` where it would be tidier. The vignette is
-	 * distance from the centre OF THE FRAME; offsetting it would slide the whole growth
-	 * field off-centre and the frost would come in from one side of an off-screen ellipse
+	 * IT MUST NOT REACH THE VIGNETTE, which is why this is applied inside `Frost` rather
+	 * than folded into `patternUV` where it would be tidier. The vignette is distance
+	 * from the centre OF THE FRAME; offsetting it would slide the growth field
+	 * off-centre and the frost would come in from one side of an off-screen ellipse
 	 * instead of from the edges. Only the two noise lookups take the offset.
-	 *
-	 * Seeded at construction as well as re-rolled, so the very first freeze of a session is
-	 * not the one arrangement everybody sees.
 	 */
 	const uPatternOffset = uniform(new THREE.Vector2(Math.random() * 512, Math.random() * 512));
 
@@ -249,9 +243,7 @@
 		// see clearly THROUGH ice.
 		const focus = c.y.mul(float(frostBlur));
 
-		// See RainLens's colour-space note: the framebuffer is already in output space, so
-		// decode it to working space and let the material re-encode on the way out. The cast
-		// is the same typings gap it documents.
+		// See RainLens's colour-space note; the cast is the same typings gap it documents.
 		const frame = colorSpaceToWorking(
 			viewportMipTexture(screenUV.add(n), focus),
 			renderer.outputColorSpace
@@ -275,8 +267,7 @@
 
 	const { geometry, material } = build();
 
-	// Plain variables, written and read only by the task -- a per-frame value can never be
-	// reactive state.
+	// Plain variables, written and read only by the task.
 	let growth = 0;
 	let wasVisible = false;
 	let lastPosition: THREE.Vector3 | null = null;
@@ -292,8 +283,7 @@
 			const position = cam.position;
 
 			// How fast, and how much of that is INTO the view -- the same measurement
-			// RainLens makes, signed the same way so that reversing out of the weather does
-			// not count as driving into it.
+			// RainLens makes, signed the same way.
 			let forwardSpeed = 0;
 			let lateralSpeed = 0;
 
@@ -318,31 +308,22 @@
 			// gets its own half rather than both reacting to the total.
 			const snow = snowAmount(descriptor.weather);
 
-			// A PRESENCE CURVE, not the raw amount -- the same shape Rain and Snow use, and
-			// leaving it out is what made this effect need a sprint to show up at all.
-			//
-			// `snowAmount` is `precipitation` times the snow share, and the authored `snow`
-			// weather sits at precipitation 0.7. Multiplying by that directly cost nearly a
-			// third of the effect before anything else had a say, on top of a `standingFrost`
-			// that was itself too low: the product at rest came to 0.18, which puts the growth
-			// front beyond all but the extreme corners of the frame. Reaching anything visible
-			// then needed several world units per second of camera travel, and in DemoScene --
-			// where the orbit makes every unit of it LATERAL, and therefore worth 0.35 --
-			// closer to fourteen.
-			//
+			// A PRESENCE CURVE, not the raw amount -- the same shape Rain and Snow use.
 			// Whether it is snowing is a threshold question, not a proportion: past a light
 			// flurry the glass is cold and the rest is a matter of degree, which the terms
-			// below are what express. So this reaches full by a quarter intensity and is only
-			// here to take the layer cleanly to zero when the snow stops.
+			// below express. So this reaches full by a quarter intensity and is only here to
+			// take the layer cleanly to zero when the snow stops. (Feeding the raw
+			// `snowAmount` in instead starves the effect -- the authored `snow` weather sits
+			// at precipitation 0.7, and the product at rest came to 0.18, which put the
+			// growth front beyond all but the extreme corners.)
 			const presence = Math.min(1, snow * 4);
 
 			const speed = forwardSpeed + lateralSpeed * lateralInfluence;
 			const target = clamp01(standingFrost + speed / speedForFull) * presence * maxFrost;
 
-			// Asymmetric one-pole smoothing, as RainLens -- but slow on BOTH sides, and this
-			// is the whole character of the effect. Water beads in under a second and dries
-			// in a couple; ice takes seconds to form and far longer to give it back. Both
-			// branches use the `exp` form so the time constants hold at any framerate.
+			// Asymmetric one-pole smoothing, as RainLens but slow on BOTH sides (see the
+			// header). Both branches use the `exp` form so the time constants hold at any
+			// framerate.
 			const tau = target > growth ? freezeSeconds : meltSeconds;
 			growth += (target - growth) * (1 - Math.exp(-delta / tau));
 			uGrowth.value = growth;
@@ -361,9 +342,8 @@
 			// threshold specifically. Re-rolling is a discontinuity -- every lobe and every
 			// dendrite moves at once -- so it has to land on a frame where none of them are
 			// drawn. This is that frame: growth has only just crossed 0.002, which puts the
-			// growth front beyond the corners, so coverage is still zero everywhere and the
-			// jump is unobservable. Rolling on the falling edge instead would be a frame too
-			// late, and rolling on a timer would eventually catch the ice mid-life.
+			// front beyond the corners, so coverage is still zero everywhere and the jump is
+			// unobservable.
 			if (visible && !wasVisible) {
 				uPatternOffset.value.set(Math.random() * 512, Math.random() * 512);
 			}

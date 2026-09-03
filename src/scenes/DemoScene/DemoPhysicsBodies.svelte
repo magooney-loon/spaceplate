@@ -190,21 +190,20 @@
 	});
 
 	// Live reflections for the corner balls — one SHARED cube capture instead of four:
-	// a single CubeCamera parks at the floor's center at ball height (the old
-	// icosahedron spot, safely inside the mirror sphere's orbit ring) and all four
-	// materials sample the same map. Trade-off: parallax is center-of-floor rather
-	// than per-ball — broad content (sky, sun disc, the mirror floor, the orbiting
-	// sphere, spawned bodies) reads correctly; only precise neighbour geometry lands
-	// slightly off, which 0.8-radius spheres don't show.
+	// a single CubeCamera parks at the floor's center at ball height, safely inside the
+	// mirror sphere's orbit ring, and all four materials sample the same map.
+	// Trade-off: parallax is center-of-floor rather than per-ball — broad content
+	// (sky, sun disc, the mirror floor, the orbiting sphere, spawned bodies) reads
+	// correctly; only precise neighbour geometry lands slightly off, which
+	// 0.8-radius spheres don't show.
 	//
 	// The map goes through the same PMREM chain as scene.environment (CubeCamera
 	// flags needsPMREMUpdate itself, PMREMNode re-filters on version change), so the
 	// balls keep roughness-filtered reflections. envMapIntensity is mirrored from
 	// scene.environmentIntensity each tick because an explicit material.envMap
-	// switches the intensity source away from the scene value (MaterialProperties) —
-	// 0.25 under the procedural sky, 1.0 in HDR/cube modes, matching the old look.
-	// Size and rate come from the quality preset; on low the capture is dropped entirely
-	// and the balls fall back to scene.environment. The balls are stationary, so only
+	// switches the intensity source away from the scene value (MaterialProperties).
+	// Size, rate and the low-quality fallback (scene.environment instead of a capture)
+	// come from the quality preset (demoQuality.ts). The balls are stationary, so only
 	// moving content (the mirror sphere, spawned bodies, weather) needs the refresh.
 	//
 	// The target and camera are REBUILT when the size changes rather than resized:
@@ -216,14 +215,11 @@
 	);
 	const ballCamera = $derived.by(() => {
 		const camera = new CubeCamera(0.1, 50, ballCapture as never);
-		// Parks at the floor's center at ball height (the old icosahedron spot, safely
-		// inside the mirror sphere's orbit ring).
 		camera.position.set(0, 0.8, 0);
 		return camera;
 	});
 
-	// envMap null on low hands the intensity back to scene.environmentIntensity — an
-	// explicit envMap is what switches that source away from the scene value.
+	// envMap null on low hands the intensity source back to scene.environmentIntensity.
 	$effect(() => {
 		const texture = quality.ballCapture ? ballCapture.texture : null;
 		for (const material of BALL_MATERIALS) material.envMap = texture;
@@ -269,13 +265,11 @@
 	// HalfFloat, sphere hidden during capture to avoid a fully self-occluded frame. Same
 	// CubeCamera-in-a-task pattern as Sky.svelte's bake. Face size and rate come from
 	// the quality preset (rebuilt on change, same CubeRenderTarget reason as the balls);
-	// unlike the ball capture this one is never switched off — the sphere IS the
-	// centrepiece, and without a capture it is a flat gray ball.
+	// unlike the ball capture this one is never switched off (demoQuality.ts).
 	//
 	// PERF: each capture is six scene renders, hence the throttle — a 4 u/s mirror shows
 	// no visible stepping at 30 Hz. The floor's reflection is suspended for the duration
-	// (mirrorFloor.ts); it used to add a half-canvas full-scene render to every one of
-	// those six faces.
+	// (mirrorFloor.ts).
 	const mirrorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 	const mirrorCapture = $derived(
 		new CubeRenderTarget(quality.mirrorCaptureSize, { type: THREE.HalfFloatType })

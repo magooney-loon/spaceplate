@@ -1,10 +1,8 @@
-// The uniform bag — see "Rebuild discipline" in CLAUDE.md. Every numeric param becomes a
-// `uniform()` owned by the pipeline, never a raw number handed to a node factory.
-// That keeps a handle for in-place animation and sidesteps the addon .d.ts
-// inconsistency about which arguments accept nodes.
-//
-// Structural params (loop counts, texture sizes) still flow through the bag so
-// there is one code path — they are simply also keyed into the rebuild decision.
+// The uniform bag — the hot-update path; discipline in ./CLAUDE.md ("Rebuild
+// discipline"). Every numeric param becomes a `uniform()` owned by the pipeline,
+// never a raw number handed to a node factory. Structural params (loop counts,
+// texture sizes) flow through here too — one code path; they are just also keyed
+// into the rebuild decision.
 
 import { uniform } from 'three/tsl';
 import type { EffectParams, UniformBag } from './types';

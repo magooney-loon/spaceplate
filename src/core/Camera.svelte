@@ -4,12 +4,11 @@
 </script>
 
 <!-- The key light lives in core/skybox/SkyLight.svelte, driven by the sky descriptor
-     (sun by day, moon by night) — it never belonged in the camera component. -->
+     (sun by day, moon by night). -->
 <!-- Boot framing: the model's default clock is manual, frozen at t = 0.75 (sunset) —
-     the sun sits on the horizon due west, direction (-1, 0, 0). The camera hangs back
-     east and high, tilted down ~24 degrees so the sun rides the top of the frame and
-     the playground fills the rest. If the default clock ever changes, this aim needs
-     to change with it. -->
+     sun on the horizon due west, direction (-1, 0, 0). The camera hangs back east and
+     high, tilted down ~24 degrees so the sun rides the top of the frame. If the default
+     clock ever changes, this aim needs to change with it. -->
 <T.PerspectiveCamera
 	fov={60}
 	near={0.001}

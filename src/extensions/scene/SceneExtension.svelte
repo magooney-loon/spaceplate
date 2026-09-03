@@ -4,15 +4,10 @@
 	import type { Snippet } from 'svelte';
 	import { sceneActions, sceneState, SCENES } from './scene.svelte';
 
-	// This panel used to also assign post-processing / skybox presets per scene and
-	// globally, warn about effect conflicts between the two, and copy the result to the
-	// clipboard for pasting into bundledPresets.ts. All of it is gone: it managed a
-	// preset layer that resolved to null for every input and held zero presets.
-	//
-	// Its replacement is a declarative `environment` block on each SCENES entry, edited
-	// here and written straight to the committed config by the dev-server endpoint --
-	// no copy-paste step. See the per-scene `environment` plan in
-	// src/extensions/scene/CLAUDE.md.
+	// Scene switching only. The old preset-assignment UI is gone with the preset layer;
+	// its replacement (a declarative `environment` block per scene, edited here and
+	// written straight to the committed config by the dev-server endpoint) is planned —
+	// see src/extensions/scene/CLAUDE.md.
 	const { createExtension } = useStudio();
 
 	let { children }: { children?: Snippet } = $props();

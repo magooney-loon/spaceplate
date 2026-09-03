@@ -19,19 +19,16 @@
 	// floor plate). bounces is left at its DEFAULT (true) ON PURPOSE: that sets the
 	// reflector's update type to per-render-pass, so every camera that renders the
 	// floor (Studio's PiP game-cam and selection pre-renders, the editor camera,
-	// the mirror sphere's cube faces) re-renders the reflection RT for itself. With
-	// bounces: false it refreshed once per frame for whichever camera drew first,
-	// and under the Studio editor camera the reflection slid with the camera
-	// instead of staying anchored to the scene. The reflection rides the emissive
+	// the mirror sphere's cube faces) re-renders the reflection RT for itself — with
+	// bounces: false the one per-frame refresh anchored it to whichever camera drew
+	// first, and it slid with the editor camera. The reflection rides the emissive
 	// slot so the gray base keeps the sky system's lighting and shadows; clamped
 	// because the reflector RT holds RAW HDR dome radiance (render-target passes
-	// skip tone mapping) and the sunset sky peaks well past 1.
-	// resolutionScale comes from the quality preset (demoQuality.ts) and is applied
-	// below — full canvas resolution on high, 0.3 on low. It used to be a fixed 0.5
-	// because the reflection re-rendered for every camera that drew the floor (~7
-	// renders/frame); now that the cube captures swap the reflector out (mirrorFloor.ts)
-	// it renders once per frame, which is what makes the full-resolution high setting
-	// affordable. The value here is just the starting one.
+	// skip tone mapping) and the sunset sky peaks well past 1. resolutionScale comes
+	// from the quality preset (demoQuality.ts) and is applied below — full canvas
+	// resolution on high is affordable because the cube captures swap the reflector
+	// out (mirrorFloor.ts), so it renders once per frame. The value here is just the
+	// starting one.
 	const reflection = reflector({ resolutionScale: 0.5 });
 	reflection.target.rotateX(-Math.PI / 2);
 	reflection.target.userData = { selectable: false, hideInTree: true };

@@ -2,8 +2,7 @@
 // blooms only the emissive MRT attachment (selective — materials must actually emit;
 // mirrors webgpu_postprocessing_bloom_emissive). Lensflare lives here as a sub-toggle
 // rather than a sibling effect because LensflareNode literally samples the bloom
-// buffer (no bloom, no flare) — mirroring three.js webgpu_postprocessing_lensflare:
-//   output = color + bloom + gaussianBlur(lensflare(bloom))
+// buffer (no bloom, no flare): output = color + bloom + gaussianBlur(lensflare(bloom))
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { lensflare } from 'three/addons/tsl/display/LensflareNode.js';
 import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
@@ -99,14 +98,13 @@ export const bloomEffect: EffectDef<BloomParams> = {
 		// carries pre-exposure linear radiance with no ceiling, and the sky's sun disc is
 		// `min(vSunE * Fex, 80) * 760` (SkyMesh.js) — up to 60800 against a noon sky of
 		// order 1. `threshold` cannot fence that off: the disc clears every threshold, and
-		// at radius 1 the mip chain smears its energy over the entire frame, so daylight
-		// came out uniformly washed while night (below the threshold) looked right.
+		// at radius 1 the mip chain smears its energy over the entire frame.
 		//
-		// Clamping only what bloom SAMPLES leaves the image itself untouched — the disc
-		// still renders at full brightness, it just cannot contribute more glow than a
-		// bright sky would. Lower this for a tighter sun, raise it to let genuinely hot
-		// pixels bloom harder. Exposure is not an alternative: it is applied after this
-		// chain, so it scales halo and scene together and never changes the ratio.
+		// Clamping only what bloom SAMPLES leaves the image untouched — the disc still
+		// renders at full brightness, it just cannot out-glow a bright sky. Lower it for
+		// a tighter sun; raise it to let genuinely hot pixels bloom harder. Exposure is
+		// not an alternative: it is applied after this chain, so it scales halo and
+		// scene together and never changes the ratio.
 		const clamped = vec4(input.rgb.min(vec3(u.inputClamp)), input.a);
 		const bloomNode = ctx.track(bloom(clamped, u.strength, u.radius, u.threshold));
 		if (u.lensflare.value < 0.5) return ctx.color.add(bloomNode);

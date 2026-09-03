@@ -1,10 +1,9 @@
 // Live renderer figures for the Settings ▸ System tab. Written by Telemetry.svelte
 // (inside the Canvas, where the renderer lives), read by HUD components outside it —
-// the same split boot.svelte.ts exists for.
-//
-// Deliberately NOT per-frame reactive: the sampler folds a window of frames and writes
-// here at SAMPLE_MS intervals, so an open settings panel re-renders a few times a
-// second instead of once per frame. Static device facts live in capabilities.svelte.ts.
+// the same split boot.svelte.ts exists for. Deliberately NOT per-frame reactive: the
+// sampler folds a window of frames and writes at SAMPLE_MS intervals, so an open
+// panel re-renders a few times a second, not once per frame. Static device facts
+// live in capabilities.svelte.ts.
 
 export type Backend = 'webgpu' | 'webgl' | 'unknown';
 

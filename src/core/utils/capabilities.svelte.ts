@@ -1,12 +1,12 @@
 // Device capability probe. Runs ONCE from main.ts before the app mounts, so every
-// consumer reads a plain synchronous verdict and no component has to await anything.
+// consumer reads a plain synchronous verdict.
 //
-// Why probe at all: `navigator.gpu` existing proves nothing — requestAdapter() still
-// returns null on blocklisted drivers, in VMs/headless, and on browser builds where
-// the feature is compiled in but off. Only an adapter proves WebGPU works. And when
-// it doesn't, WebGPURenderer silently falls back to WebGL2 (App.svelte) — same
-// picture, quietly different backend, no error anywhere. This is what makes that
-// difference visible.
+// Why probe: `navigator.gpu` existing proves nothing — requestAdapter() returns null
+// on blocklisted drivers, in VMs/headless and on builds with the feature compiled in
+// but off; only an adapter proves WebGPU works. Without one, WebGPURenderer silently
+// falls back to WebGL2 (App.svelte) — this probe makes that difference visible.
+// WASM rides the same verdict: Rapier is WASM and Scene.svelte lives inside <World>,
+// so no WASM means no app either.
 //
 // Three outcomes:
 //   'webgpu' — real adapter; the full path.
@@ -15,14 +15,8 @@
 //   'none'   — neither; nothing can render. Loader.svelte blocks with a link to
 //              WEBGPU_REPORT_URL and App.svelte never mounts the <Canvas>.
 //
-// WebAssembly is probed here too, in the same verdict: Rapier is WASM and
-// Scene.svelte lives inside <World>, so no WASM means no game either. (<World>'s own
-// fallback snippet in App.svelte still covers a runtime Rapier init failure on a
-// machine that *does* have WASM.)
-//
-// The result also seeds the graphics preset — see seedGraphicsQuality() in
-// extensions/settings — and fills the Settings ▸ System tab, together with the live
-// renderer figures from utils/telemetry.svelte.ts.
+// Also seeds the graphics preset (seedGraphicsQuality) and fills Settings ▸ System
+// together with telemetry.svelte.ts.
 
 /** Where users are sent to see what their browser actually reports. */
 export const WEBGPU_REPORT_URL = 'https://webgpureport.org/';
@@ -174,11 +168,9 @@ export async function probeCapabilities(): Promise<void> {
 }
 
 // Hybrid laptops expose two adapters, so ask for both ends of the power scale and
-// compare identities: different ones mean a discrete GPU exists and 'high-performance'
-// is the one we were given. Identical means a single (integrated) GPU. Chrome masks
-// device/description unless the developer flag is on, so vendor+architecture is
-// usually all there is to compare — when neither side reports anything, say null
-// rather than guessing.
+// compare identities: different ones mean a discrete GPU. Chrome masks
+// device/description, so vendor+architecture is usually all there is — when neither
+// side reports anything, say null rather than guessing.
 async function hasDiscreteGpu(gpu: GPU, highPerf: AdapterSnapshot | null): Promise<boolean | null> {
 	try {
 		const lowPower = await gpu.requestAdapter({ powerPreference: 'low-power' });

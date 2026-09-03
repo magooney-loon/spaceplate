@@ -3,13 +3,11 @@
 	// straight down over the precipitation box, writing each surface's world Y.
 	//
 	// HOW THE SKY EXCLUDES ITSELF. The pass uses `scene.overrideMaterial`, which three
-	// applies to every material with `allowOverride === true` (Scene.js documents that flag
-	// as exactly this escape hatch). But an opted-out material still DRAWS -- it just draws
-	// with its own shader -- so opting out is not enough for the sky layers: they would
-	// write their own colour into the height map. They are hidden outright for the duration
-	// of the pass instead, via the group ref Skybox.svelte hands down. That also excludes
-	// Rain and Snow themselves, which live in the same group and must not collide with each
-	// other.
+	// applies to every material with `allowOverride === true`. But an opted-out material
+	// still DRAWS -- with its own shader -- so opting out is not enough for the sky
+	// layers: they are hidden outright for the duration of the pass instead, via the
+	// group ref Skybox.svelte hands down. That also excludes Rain and Snow themselves,
+	// which live in the same group and must not collide with each other.
 	//
 	// THE BUDGET, exactly like Sky.svelte's env bake. The pass is skipped entirely unless
 	// something is falling, then runs at most every `intervalMs` -- or immediately once the
@@ -67,12 +65,10 @@
 	// Looking straight down. `up` must not be parallel to the view direction or the view
 	// matrix is degenerate, so +Z is used rather than the default +Y.
 	//
-	// This choice mirrors the map in X -- the view basis comes out with its X axis along
-	// world -X. No `up` avoids a flip on some axis when looking straight down, so the map
-	// is left as-is and `sampleHeightField` undoes it. It also undoes a SECOND flip, on Z,
-	// which this vector has nothing to do with: it comes from a render target being
-	// sampled with v = 0 at the top. Read that note in full before changing this vector --
-	// the two must agree, and only one of the two flips is yours.
+	// This choice mirrors the map in X (the view basis comes out with its X axis along
+	// world -X), and sampling a render target adds a SECOND flip on Z (v = 0 at the
+	// top). `sampleHeightField` undoes both -- read that note in full before changing
+	// this vector: the two must agree, and only one of the two flips is yours.
 	passCamera.up.set(0, 0, 1);
 
 	/**
@@ -102,23 +98,19 @@
 	const suspended: { shadow: THREE.LightShadow; autoUpdate: boolean; needsUpdate: boolean }[] = [];
 
 	/**
-	 * Stop three re-rendering every shadow map inside this pass.
+	 * Stop three re-rendering every shadow map inside this pass. `ShadowNode.updateBefore`
+	 * gates a refresh on the pair (camera, frameId); this pass brings its OWN camera, so
+	 * the gate always misses and every shadow-casting light draws its map a second time,
+	 * purely as a side effect of asking for a height map -- nothing in the result can
+	 * depend on it, the override material being unlit.
 	 *
-	 * `ShadowNode.updateBefore` gates a shadow refresh on the pair (camera, frameId) --
-	 * one update per camera per frame. This pass brings its OWN camera, so the gate always
-	 * misses and every shadow-casting light draws its map a second time, at up to
-	 * `1000 / intervalMs` passes a second, purely as a side effect of asking for a height
-	 * map. Nothing in the result can depend on it: the override material is unlit and
-	 * outputs a world coordinate.
-	 *
-	 * `shadow.autoUpdate` is the right lever because it is read at render time.
+	 * `shadow.autoUpdate` is the right lever because it is read at render time:
 	 * `renderer.shadowMap.enabled` and `light.castShadow` are BUILD-TIME flags baked into
-	 * the light's node graph -- toggling either per pass would recompile every material in
-	 * the scene, which is the failure mode DOCS/webgpu-notes.md warns about.
-	 *
-	 * `needsUpdate` is saved and restored rather than simply cleared: it is a one-shot
-	 * request from somewhere else, and swallowing it here would silently drop a refresh
-	 * that something was relying on.
+	 * the light's node graph, and toggling either per pass would recompile every material
+	 * in the scene (the failure mode DOCS/webgpu-notes.md warns about). `needsUpdate` is
+	 * saved and restored rather than simply cleared: it is a one-shot request from
+	 * somewhere else, and swallowing it would silently drop a refresh something was
+	 * relying on.
 	 */
 	const suspendShadows = () => {
 		suspended.length = 0;

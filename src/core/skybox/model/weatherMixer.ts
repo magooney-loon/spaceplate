@@ -1,22 +1,13 @@
 // Weather.
 //
-// Weather is NOT a preset of the sky. It is a modulation layer applied on top of the
-// day-curve baseline: a storm at noon is still noon under clouds. The sun still drives
-// scattering and light; weather attenuates, adds and obscures. That composition -- day
-// curve *under* weather, never *instead of* it -- is what makes this a system rather
-// than the preset swap it replaced.
-//
-// Pure: no Svelte, no three.js. Two halves live here:
-//
-//   createWeatherMixer  -- the stateful-but-plain mixer. Holds the current channel
-//                          vector and eases it toward a target, per channel, with a
-//                          staggered onset. Mutates its channel object in place.
-//   modulateBaseline    -- the pure function that applies a channel vector over a
-//                          sampled SkyBaseline, plus the light/visibility helpers that
-//                          sky.svelte.ts needs to attenuate the key light.
+// Weather is NOT a preset of the sky: it is a modulation layer on top of the day-curve
+// baseline -- the curve decides what time it is, the mixer what the weather does to it
+// (see ./CLAUDE.md). Pure: no Svelte, no three.js. Two halves: `createWeatherMixer`
+// (stateful-but-plain, eases the channel vector toward a target with a staggered onset,
+// mutates in place) and `modulateBaseline` (pure, plus the light/visibility helpers
+// `sky.svelte.ts` needs to attenuate the key light).
 
-// `ease` is the same smoothstep the day curve samples with, so a weather blend and a
-// time transition read the same way.
+// `ease` is the same smoothstep the day curve samples with, so blends read the same way.
 import { clamp01, ease, lerp, smooth01, wrap01 } from './math';
 import type { RGB, SkyBaseline, WeatherChannels, WeatherTarget } from './types';
 
@@ -34,12 +25,9 @@ export const CHANNEL_NAMES: ChannelName[] = [
 ];
 
 /**
- * Channels that are an ANGLE, so [0,1) is a circle and not a line.
- *
- * These blend along the shorter arc and wrap on write instead of clamping. Easing a
- * bearing from 0.95 to 0.05 has to cross north in a tenth of a turn; clamped linear
- * interpolation would instead sweep nine tenths of the way round through south, and the
- * rain would visibly rotate the wrong way for the whole twenty seconds.
+ * Channels that are an ANGLE, so [0,1) is a circle, not a line: these blend along the
+ * shorter arc and wrap on write instead of clamping (clamped interpolation from 0.95
+ * to 0.05 would sweep nine tenths of the way round through south).
  */
 const WRAPPED_CHANNELS = new Set<ChannelName>(['windDirection']);
 
@@ -54,9 +42,8 @@ const DRY = 1e-3;
  *
  * `stagger` is the fraction of the blend duration a channel waits before it starts
  * moving; every channel still finishes together. That is what makes a storm *arrive*
- * rather than appear: clouds thicken, then the wind gets up, then the rain starts. It
- * is a property of the weather, not of the mixer, because a fog bank rolling in has a
- * completely different order to a squall.
+ * rather than appear, and it is a property of the weather, not the mixer -- a fog bank
+ * rolls in a different order to a squall.
  */
 export type WeatherDefinition = {
 	target: Partial<WeatherChannels>;
@@ -64,25 +51,19 @@ export type WeatherDefinition = {
 };
 
 /**
- * The named weather library.
+ * The named weather library. Kept in code, exactly as `DEFAULT_DAY_CURVE` is; it moves
+ * to the authored `weather.json` when the config plumbing lands (see ../CLAUDE.md).
+ * Values are the whole definition -- there is no hidden per-weather colour or light
+ * data, so anything a weather does to the look is reachable from `setWeather({ ... })`
+ * with raw channels too. Every channel has a renderer: `lightning` drives Lightning's
+ * strike scheduler, `wind` drives CloudDeck's scroll (and Rain's slant),
+ * `precipitationType` picks Rain vs Snow through `rainShare`, `windDirection` gives
+ * them a bearing.
  *
- * Kept in code, exactly as `DEFAULT_DAY_CURVE` is: these are the shipped defaults, and
- * they move to the authored `weather.json` when the config plumbing lands (see
- * Planned: authored sky data in ../CLAUDE.md). Values are the whole definition --
- * there is no hidden per-weather colour or light data, so anything a weather does
- * to the look is reachable from `setWeather({ ... })` with raw channels too.
- *
- * `lightning` drives `Lightning.svelte`'s strike scheduler and `wind` drives
- * `CloudDeck.svelte`'s scroll offset (plus `Rain.svelte`'s slant) -- every channel has a
- * renderer. `precipitationType` picks between `Rain.svelte` and `Snow.svelte` through
- * `precipitationSplit`, and `windDirection` gives all three of those a bearing.
- *
- * NOTE ON `precipitationType` IN DRY WEATHERS. It is authored to 1 (rain) everywhere
- * nothing is falling, and that is deliberate rather than a leftover. A raw partial leaves
- * unmentioned channels where they are, so `setWeather({ precipitation: 0.8 })` from a dry
- * weather inherits whatever type it was carrying -- and "rain" is the answer a caller who
- * did not mention snow expects. Under the old `cloudType` gate that same call from `clear`
- * produced snow.
+ * NOTE ON `precipitationType` IN DRY WEATHERS: authored to 1 (rain) everywhere nothing
+ * is falling, deliberately. A raw partial leaves unmentioned channels where they are,
+ * so `setWeather({ precipitation: 0.8 })` from a dry weather inherits the type it was
+ * carrying -- and "rain" is the answer a caller who did not mention snow expects.
  */
 export const WEATHERS: Record<string, WeatherDefinition> = {
 	clear: {
@@ -111,16 +92,10 @@ export const WEATHERS: Record<string, WeatherDefinition> = {
 		stagger: { wind: 0.2 }
 	},
 	overcast: {
-		// 0.35 is an authored LOOK value, not a physical fraction of sky covered.
-		// SkyMesh's cloud layer saturates early -- its mask is
-		// `smoothstep(1 - coverage, 1 - coverage + 0.3, fbm)` -- so by ~0.5 nearly the whole
-		// dome has passed the threshold and the sky reads as a flat sheet rather than as
-		// cloud. 0.35 is where it looks like overcast.
-		//
-		// The consequence is deliberate and worth knowing: 0.35 is below DECK_THRESHOLD, so
-		// `overcast` does NOT attenuate the key light and keeps its shadows. If you want the
-		// flat, shadowless overcast the light model can produce, that lives at `rain` and
-		// above now.
+		// 0.35 is an authored LOOK value: SkyMesh's cloud mask saturates early, so by ~0.5
+		// the dome reads as a flat sheet (see ./CLAUDE.md). Consequence: 0.35 is below
+		// DECK_THRESHOLD, so `overcast` keeps its shadows -- the flat shadowless deck
+		// lives at `rain` and above.
 		target: {
 			cloudCover: 0.35,
 			cloudType: 0.45,
@@ -176,11 +151,8 @@ export const WEATHERS: Record<string, WeatherDefinition> = {
 		stagger: { wind: 0.15, fog: 0.3, precipitation: 0.45, lightning: 0.6 }
 	},
 	snow: {
-		// `cloudType` RAISED from 0.35 to 0.7 now that it no longer selects the
-		// precipitation type. 0.35 was never a look decision -- it was the highest value
-		// that stayed under the old rain gate at 0.45, which forced a heavy snowfall to
-		// render thin, wispy cloud. A snow deck is thick, and both `Sky.svelte` and
-		// `CloudDeck.svelte` read this channel for exactly that.
+		// A snow deck is thick: `cloudType` 0.7, read by both `Sky.svelte` and
+		// `CloudDeck.svelte` for exactly that.
 		target: {
 			cloudCover: 0.9,
 			cloudType: 0.7,
@@ -194,36 +166,26 @@ export const WEATHERS: Record<string, WeatherDefinition> = {
 		stagger: { fog: 0.25, precipitation: 0.4 }
 	},
 	blizzard: {
-		// The snow side's extreme, which the library was missing: `storm` was the only
-		// weather that closed the deck completely, so the worst winter weather available
-		// was a gentle `snow`. Sits above `snow` on every channel it shares with it.
-		//
-		// `fog` is the defining one, not `precipitation`. A blizzard is a WHITEOUT -- what
-		// makes it dangerous is that you cannot see, and the fog channel is what pulls
-		// SkyFog's band in toward the camera. At 0.8 it is second only to the dedicated
-		// `fog` (0.85) -- and that one is ground mist under a mostly clear sky, where this
-		// is near-identical visibility with a closed deck over it and snow inside it.
-		//
-		// `lightning` stays 0. Thundersnow is real and rare; a caller who wants it can ask
-		// for `setWeather({ lightning: 0.5 })` on top, which is exactly what raw partials
-		// are for.
+		// The snow side's extreme: sits above `snow` on every shared channel. `fog` is the
+		// defining one, not `precipitation` -- a blizzard is a WHITEOUT, and the fog channel
+		// is what pulls SkyFog's band toward the camera (0.8, second only to the dedicated
+		// `fog` weather's 0.85). `lightning` stays 0: thundersnow is real and rare, and a
+		// caller who wants it can `setWeather({ lightning: 0.5 })` on top.
 		target: {
 			cloudCover: 1,
 			cloudType: 0.9,
 			fog: 0.8,
 			precipitation: 1,
-			// 0 = snow. The one channel that MUST be explicit here: a blizzard arriving from
-			// `rain` crosses the sleet band on the way (both ends are wet, so this one
-			// genuinely blends), and a blizzard arriving from anything dry snaps to snow.
+			// 0 = snow, and explicit: from `rain` both ends are wet so this genuinely blends
+			// across the sleet band; from anything dry it snaps.
 			precipitationType: 0,
-			// The highest wind in the library -- `storm` is 0.85. Snow driven sideways is the
-			// whole look; Snow.svelte and CloudDeck.svelte both read it.
+			// The highest wind in the library (`storm` is 0.85) -- snow driven sideways.
 			wind: 0.95,
 			windDirection: 0.5,
 			lightning: 0
 		},
-		// It arrives as weather does: the wind gets up first, then the snow starts, and the
-		// whiteout closes in last. Everything still lands together at the end of the blend.
+		// It arrives as weather does: wind first, then snow, then the whiteout closes in
+		// -- all landing together at the end of the blend.
 		stagger: { wind: 0.05, cloudCover: 0.1, precipitation: 0.3, fog: 0.5 }
 	}
 };
@@ -262,9 +224,9 @@ export type WeatherMixer = {
 /**
  * @param channels the object the mixer will own and mutate. `sky.svelte.ts` passes
  * `descriptor.weather` directly, so the descriptor never needs a per-frame copy.
- * @param initialName what `channels` already holds. The mixer cannot infer it -- it is
- * handed a vector, not a name -- and reporting `'default'` for a caller that seeded the
- * channels from a named weather would mislabel the first frame in every readout.
+ * @param initialName what `channels` already holds -- the mixer cannot infer a name
+ * from a vector, and `'default'` would mislabel a caller that seeded from a named
+ * weather.
  */
 export const createWeatherMixer = (
 	channels: WeatherChannels,
@@ -299,12 +261,11 @@ export const createWeatherMixer = (
 			const stagger = typeof target === 'string' ? WEATHERS[target]?.stagger : undefined;
 			const values = resolve(target);
 
-			// IS ANYTHING FALLING AT EITHER END? `precipitationType` is a POSITION, and the
-			// only one of the eight whose journey is visible independently of its
-			// destination: sweeping it from rain to snow crosses the sleet band, and sleet
-			// is the right thing to see only while something is actually falling through it.
-			// A raw partial that omits `precipitation` leaves it where it is, so the target
-			// reading falls back to the current value rather than to zero.
+			// IS ANYTHING FALLING AT EITHER END? `precipitationType` is a POSITION whose
+			// journey is visible independently of its destination: sweeping rain -> snow
+			// crosses the sleet band, which is right only while something is falling through
+			// it. A raw partial that omits `precipitation` leaves it where it is, so the
+			// target falls back to the current value, not zero.
 			const wetNow = clamp01(channels.precipitation) > DRY;
 			const wetAfter = clamp01(values.precipitation ?? channels.precipitation) > DRY;
 
@@ -323,33 +284,19 @@ export const createWeatherMixer = (
 				}
 
 				// THE TYPE ONLY BLENDS WHEN BOTH ENDS ARE WET. Otherwise the change is
-				// unobservable at one end of the blend, and it is applied THERE instead --
-				// where nothing is falling and nothing can be seen crossing the sleet band.
-				//
-				// Blending it regardless is what made every dry-to-snow transition rain
-				// first. `clear` authors the type at 1 and `snow` at 0 (both deliberately --
-				// see the note on WEATHERS), and `snow` staggers its `precipitation` to 0.4,
-				// so over a 20 s blend the type began sweeping at t=0 while the first flake
-				// did not fall until t=8 s -- by which point the type had reached only ~0.65,
-				// the very top of the sleet band. The snowfall opened as 99% RAIN, sleeted
-				// for a few seconds, and became snow with a third of the blend left. In
-				// reverse, departing snow turned to rain as it thinned out.
-				//
-				// `rain` <-> `snow` is wet at both ends and still blends normally: that
-				// transition genuinely passes through sleet, which is the whole point of
-				// having a band.
+				// unobservable at one end, and it is applied THERE instead -- where nothing
+				// can be seen crossing the sleet band (blending it regardless once made every
+				// dry-to-snow transition open as rain). `rain` <-> `snow` is wet at both
+				// ends and still blends: that transition genuinely passes through sleet.
 				if (channel === 'precipitationType' && !(wetNow && wetAfter)) {
 					if (!wetNow) {
-						// Nothing is falling yet, so the type is free right now. Setting it
-						// here means the first flake of the coming fall is already the right
-						// kind, instead of arriving as rain and converting in view.
+						// Nothing falling yet: the type is free NOW, so the first flake of the
+						// coming fall is already the right kind.
 						channels[channel] = target;
 					} else {
-						// Something is falling now and nothing will be by the end, so the
-						// type is free THEN. A delay of the full duration against the
-						// one-millisecond floor below lands it on the frame the fade
-						// completes -- and `precipitation` is earlier in CHANNEL_NAMES, so
-						// it has already reached zero when this fires.
+						// Falling now, dry by the end: the type is free THEN. A delay of the full
+						// duration lands it on the frame the fade completes (and
+						// `precipitation` is earlier in CHANNEL_NAMES, so it is already zero).
 						blends.set(channel, {
 							from: channels[channel],
 							to: target,
@@ -411,62 +358,40 @@ export const createWeatherMixer = (
 // Everything below is pure: (baseline, channels) -> modulated baseline. No state.
 
 /**
- * Fraction of the key light a full cloud deck removes.
- *
- * Deliberately strong: near solid cover the day is effectively shadowless, which is what
- * a closed deck does -- it turns a point source into a hemisphere. The light does not
- * simply vanish, though; see AMBIENT_RETURN.
- *
- * Note that with `overcast` authored at 0.35 (a SkyMesh look value, see WEATHERS) the
- * weathers that actually reach this are `rain`, `snow` and `storm`.
+ * Fraction of the key light a full cloud deck removes. Deliberately strong: a closed
+ * deck turns a point source into a hemisphere, so near solid cover the day is
+ * effectively shadowless. The light does not vanish -- see AMBIENT_RETURN. With
+ * `overcast` at 0.35 the weathers that actually reach this are `rain`, `snow`, `storm`.
  */
 export const KEY_ATTENUATION = 0.85;
 /**
- * Fog's share. Slightly gentler than a deck, but not by much.
- *
- * The first pass had this at 0.35, which measured out at 52% of the key surviving the
- * `fog` weather -- hard directional shadows through a 76%-opaque white-out. Fog scatters
- * rather than absorbs, so the light does come back (again via AMBIENT_RETURN), but it
- * stops arriving from a direction, which is the part that matters for shadows.
+ * Fog's share of the key attenuation. Fog scatters rather than absorbs, so the light
+ * comes back (via AMBIENT_RETURN) but stops arriving from a direction -- which is the
+ * part that matters for shadows.
  */
 export const KEY_FOG_ATTENUATION = 0.7;
 /**
- * How much of the light the deck took off the key comes back as ambient fill.
- *
- * This is the half that keeps "strong attenuation" from meaning "dark". The energy the
- * cloud layer intercepts is not destroyed, it is re-emitted diffusely, so an overcast
- * noon must read flat and bright rather than dim. Without this the same constant that
- * kills the shadows also kills the daylight, and overcast looks like dusk.
+ * How much of the light the deck took off the key comes back as ambient fill. The
+ * intercepted energy is re-emitted diffusely, so an overcast noon reads flat and bright
+ * rather than dim -- without this, the constant that kills the shadows also kills the
+ * daylight.
  */
 export const AMBIENT_RETURN = 0.45;
 
 /**
- * Cover below which clouds are scattered, not a deck.
- *
- * THE LIGHT MUST NOT SCALE LINEARLY WITH COVER. The first pass did, and it was wrong in
- * a way that had nothing to do with weather: the sky boots at a non-zero `cloudCover`, so
- * every scene silently lost 31% of its key light and gained 0.111 of hemisphere fill
- * before anyone called setWeather. The default look changed, and washed-out shadows were
- * the visible symptom.
- *
- * It is also wrong physically. A directional light models the sun as always-visible; 37%
- * cover means the sun is *intermittently* occluded, which a single directional light
- * cannot represent and which, at ground level, looks like a sunny day with clouds in the
- * sky. Only once the cover closes into a layer does it start behaving like a diffuser.
- *
- * So the light reads a smoothstepped "deck factor" instead of raw cover: exactly zero
- * below 0.4 (the boot default is therefore byte-for-byte the phase-1 look), and ramping
- * to full only as cover approaches solid.
+ * Cover below which clouds are scattered, not a deck. The key light must not scale
+ * linearly with cover: the sky boots at non-zero `cloudCover` (so linear scaling would
+ * change the default look before anyone calls setWeather), and intermittent sun through
+ * scattered cover still reads as a sunny day. `deckFactor` below smoothsteps from here
+ * to solid cover.
  */
 export const DECK_THRESHOLD = 0.4;
 
 /**
  * How much the cloud layer behaves like a deck: 0 = scattered cloud, 1 = solid overcast.
- *
- * Everything that touches the KEY LIGHT goes through this -- attenuation, the ambient
- * return, the colour desaturation, and the night fills in `sky.svelte.ts`. The baseline
- * sky modulation below deliberately does not: thin cloud genuinely adds haze and hides
- * stars, and none of that touches the shadows.
+ * Everything that touches the KEY LIGHT goes through this -- attenuation, ambient
+ * return, desaturation, night fills. The baseline modulation deliberately uses raw
+ * cover: thin cloud adds haze and hides stars, and none of that touches shadows.
  */
 export const deckFactor = (cloudCover: number): number =>
 	smooth01(DECK_THRESHOLD, 1, clamp01(cloudCover));
@@ -477,33 +402,26 @@ export const keyAttenuation = (w: WeatherChannels): number =>
 
 /**
  * How much of a celestial body reaches the ground -- the descriptor's `visibility`.
- *
- * Slightly harsher than the light attenuation on purpose: a body is either *seen* or it
- * is not, and thin cover that still passes usable light already hides the disc.
+ * Harsher than the light attenuation on purpose: a body is either *seen* or not, and
+ * thin cover that still passes usable light already hides the disc.
  */
 export const bodyVisibility = (w: WeatherChannels): number =>
 	clamp01((1 - 0.95 * clamp01(w.cloudCover)) * (1 - 0.6 * clamp01(w.fog)));
 
 /**
  * Where the type channel stops being sleet and becomes wholly one thing or the other.
- *
- * Endpoints matter more than the midpoint here: outside this band exactly ONE
- * precipitation layer is live, so the common case pays for one field of particles and not
- * two. Inside it both render, which is what sleet is.
+ * Endpoints matter more than the midpoint: outside the band exactly ONE precipitation
+ * layer is live, so the common case pays for one field of particles. Inside it both
+ * render, which is what sleet is.
  */
 const SLEET_FROM = 0.35;
 const SLEET_TO = 0.65;
 
 /**
  * How the single `precipitation` amount divides between the rain and snow renderers.
- *
- * ONE definition, three consumers (`Rain`, `Snow`, `RainLens`). The gate constants used to
- * be copy-pasted into each of them -- the precise arrangement `skyLayer.ts` documents as
- * having already produced a real bug once, where the copies drifted and nobody noticed
- * because both versions still rendered something.
- *
- * The two shares always sum to the amount, so intensity is conserved across the sleet band
- * rather than doubling in the middle.
+ * ONE definition, three consumers (`Rain`, `Snow`, `RainLens`) -- never re-derive the
+ * split in a layer; drifted copies have produced a real bug before. The two shares
+ * always sum to the amount, so intensity is conserved across the sleet band.
  */
 export const rainShare = (w: WeatherChannels): number =>
 	smooth01(SLEET_FROM, SLEET_TO, clamp01(w.precipitationType));
@@ -514,16 +432,10 @@ export const snowAmount = (w: WeatherChannels): number =>
 	clamp01(w.precipitation) * (1 - rainShare(w));
 
 /**
- * The wind's horizontal axis, as two scalars rather than a vector.
- *
- * Split in two on purpose: every caller reads these once per frame from a task, and
- * returning an object would allocate 60 times a second per consumer for two numbers.
- * The descriptor-contract rule about per-frame values applies to garbage as much as
- * to reactivity.
- *
- * `windDirection` is one full turn over [0,1). Bearing 0 points along +Z, which is the
- * axis `CloudDeck` and `Rain` were both hardcoded to before this channel existed, so a
- * scene that never sets a direction keeps the look it had.
+ * The wind's horizontal axis, as two scalars rather than a vector: callers read these
+ * once per frame from a task, and an object would allocate 60x a second for two numbers.
+ * `windDirection` is one full turn over [0,1); bearing 0 points along +Z, the axis the
+ * renderers were hardcoded to before this channel existed.
  */
 const TAU = Math.PI * 2;
 
@@ -555,31 +467,27 @@ export const modulateBaseline = (out: SkyBaseline, w: WeatherChannels): SkyBasel
 	// A deck hides stars outright; fog only veils them.
 	out.starVisibility *= (1 - cloud) * (1 - 0.7 * fog);
 
-	// Fog colour, derived entirely from the two channels rather than authored per
-	// weather: desaturate toward the baseline's own luminance under cover, darken under
-	// a deck, and lift toward white as the fog itself thickens. Storm therefore comes
-	// out dark grey and fog comes out a bright white-out, from the same expression --
-	// and a raw `setWeather({ fog: 0.9 })` gets the identical treatment, which is the
-	// point of having no per-weather colour table.
+	// Fog colour, derived from the two channels rather than authored per weather:
+	// desaturate toward the baseline's luminance under cover, darken under a deck, lift
+	// toward white as the fog thickens -- so storm reads dark grey and fog a white-out
+	// from the same expression, and a raw partial gets the identical treatment.
 	const [r, g, b] = out.fogColor;
 	const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
 	const desaturate = clamp01(cloud * 0.75 + fog * 0.6);
 	const darken = 1 - 0.35 * cloud;
-	// The lift is gated on how much light there is to scatter, not on the fog channel
-	// alone. Ungated, a midnight storm came out at 0.11 grey against the clear night's
-	// 0.02 -- fog glowing brighter than the sky it hangs under. Luminance doubles as the
-	// daylight proxy here because the curve's own fog colours already track the day.
+	// The lift is gated on how much light there is to scatter: ungated, a midnight
+	// storm's fog glowed brighter than the sky it hangs under. Luminance doubles as the
+	// daylight proxy because the curve's fog colours already track the day.
 	const lift = 0.28 * fog * Math.min(1, luminance * 2);
 	for (let i = 0; i < 3; i++) {
 		const channel = lerp((out.fogColor as RGB)[i], luminance, desaturate) * darken;
 		(out.fogColor as RGB)[i] = channel + (1 - channel) * lift;
 	}
 
-	// The fog channel is what actually thickens the air; a cloud deck only makes the
-	// existing haze read somewhat heavier. Both terms are deliberately restrained
-	// because the day curve's authored densities are already high at the ends of the
-	// day (0.038 at sunset) and multiply straight through -- SkyFog's `densityScale` is
-	// the world-scale knob, and these are the shape of the curve, not its magnitude.
+	// The fog channel thickens the air; a deck only makes the existing haze read
+	// somewhat heavier. Both terms are restrained because the curve's authored densities
+	// are already high at the ends of the day and multiply straight through -- SkyFog's
+	// `densityScale` is the world-scale knob; these are the shape of the curve.
 	out.fogDensity = out.fogDensity * (1 + 0.6 * cloud) + fog * 0.12;
 
 	return out;

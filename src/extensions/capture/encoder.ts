@@ -45,11 +45,9 @@ const CODECS: Record<CaptureContainer, VideoCodec[]> = {
 /**
  * How many frames may be in flight before the caller has to hold one.
  *
- * Depth 1 — stall on every frame until the encoder acknowledges it — looks tidy and is
- * wrong. `CanvasSource.add()` snapshots the canvas synchronously and encodes asynchronously,
- * so queueing is safe, and every held frame is a frame the scene renders and the take throws
- * away: the sky advances on it, and the afterimage feedback buffer accumulates on it. Holds
- * are mildly destructive, so they should be rare rather than universal.
+ * `CanvasSource.add()` snapshots the canvas synchronously and encodes asynchronously,
+ * so queueing is safe — and a hold costs the take a frame of wall-clock time for
+ * nothing, so holds should be rare rather than universal.
  *
  * Four frames of NV12 at 3840×2160 is ~50 MB, which is the real ceiling on this number.
  */

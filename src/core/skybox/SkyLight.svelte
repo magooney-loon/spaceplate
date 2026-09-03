@@ -1,11 +1,9 @@
 <script lang="ts">
-	// The scene's single key light, driven by the sky descriptor's `light` slice.
-	// Replaces the hardcoded <T.DirectionalLight> that used to live in Camera.svelte.
-	//
-	// One light, not two: it follows the sun by day and the moon by night, crossfading
-	// colour and intensity across the horizon band. The model publishes hints; this
-	// component applies them and owns the shadow configuration, which is game-specific
-	// and deliberately stays out of the descriptor.
+	// The scene's single key light, driven by the sky descriptor's `light` slice. One
+	// light, not two: sun by day, moon by night, crossfading colour and intensity across
+	// the horizon band (the model aims it no lower than KEY_MIN_ELEVATION). This
+	// component applies the hints and owns the game-specific shadow config, which
+	// deliberately stays out of the descriptor.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import type { DirectionalLight, HemisphereLight } from 'three/webgpu';
 	import { descriptor } from './model';
@@ -17,18 +15,16 @@
 		/** Half-extent of the orthographic shadow box, in world units. */
 		shadowRadius?: number;
 		/**
-		 * Shadow map resolution. Skybox.svelte passes this from the graphics preset, and
-		 * changing it at runtime works: ShadowNode.renderShadow() re-applies mapSize with
-		 * setSize() on every shadow render (the "dispose the map first" rule is
-		 * WebGLRenderer-only). The task below arms needsUpdate every frame, so a new size
-		 * lands on the next rendered frame.
+		 * Shadow map resolution, passed by Skybox.svelte from the graphics preset. Changing
+		 * it at runtime works: ShadowNode.renderShadow() re-applies mapSize with setSize()
+		 * on every shadow render (the "dispose the map first" rule is WebGLRenderer-only),
+		 * so a new size lands on the next rendered frame.
 		 */
 		shadowMapSize?: number;
 		castShadow?: boolean;
 		/**
 		 * Scales the descriptor's ambient fill. The model publishes a sky-appropriate
-		 * level; how much of it a given scene wants is game-specific, exactly like the
-		 * shadow config below.
+		 * level; how much a scene wants is game-specific, like the shadow config.
 		 */
 		fillScale?: number;
 	}
@@ -44,29 +40,26 @@
 	// $state.raw, not $state: proxying a three.js instance breaks it, and nothing here
 	// reads the light reactively -- the task writes it directly each frame.
 	let light = $state.raw<DirectionalLight>();
-	// The ambient half. A hemisphere rather than a flat ambient light so the fill still
-	// has a direction to it -- a uniform ambient flattens every form it touches, which
-	// at night is most of the frame.
+	// The ambient half: the env map bakes black at night (see MOON_AMBIENT), so the
+	// model publishes a fill and this mounts it. A hemisphere rather than a flat ambient
+	// so the fill still has a direction -- uniform ambient flattens every form it touches.
 	let fill = $state.raw<HemisphereLight>();
 
 	const { autoRenderTask } = useThrelte();
 
-	// Reading the descriptor in a task rather than an $effect is the whole point: the
-	// descriptor is a plain object, so there is nothing to track and no cycle to form.
-	// `before: autoRenderTask` shares the constraint with the driver task in
-	// Skybox.svelte, so the DAG orders both before the render.
+	// Reading the descriptor in a task, not an $effect: the descriptor is a plain
+	// object, so there is nothing to track and no cycle to form. `before:
+	// autoRenderTask` shares the constraint with Skybox.svelte's driver task, so the DAG
+	// orders both before the render.
 	useTask(
 		() => {
 			if (!light) return;
 
 			// ONE shadow render per frame, shared by every render pass. Node shadows are
-			// RENDER-update nodes deduped only per camera per render() call, so a scene
-			// with extra cameras (the mirror sphere's six cube faces, the floor
-			// reflector's virtual camera, Studio's PiP/selection passes) otherwise
-			// re-renders this 2048² map once per pass — up to ~14× per frame. With
-			// autoUpdate off and needsUpdate armed here, the first pass of the frame
-			// renders the shadow once and every later pass reuses it (shadow content
-			// depends only on the light and casters, not the viewing camera).
+			// deduped only per camera per render() call, so extra cameras (cube faces, the
+			// reflector's virtual camera, Studio's PiP/selection) otherwise re-render this
+			// 2048² map per pass. With autoUpdate off and needsUpdate armed here, the first
+			// pass renders it once and every later pass reuses it.
 			light.shadow.autoUpdate = false;
 			light.shadow.needsUpdate = true;
 
@@ -76,17 +69,16 @@
 			light.intensity = intensity;
 
 			if (fill) {
-				// Same hue as the key, so the fill reads as bounced light from the same
-				// source rather than a second, unexplained one. The ground half is a dimmed
-				// copy: light coming up off the terrain is the same light, minus most of it.
+				// Same hue as the key, so the fill reads as bounced light from the same source;
+				// the ground half is that light minus most of it.
 				fill.color.setRGB(color[0], color[1], color[2]);
 				fill.groundColor.setRGB(color[0] * 0.3, color[1] * 0.3, color[2] * 0.35);
 				fill.intensity = ambient * fillScale;
 			}
 
-			// No invalidate(): the light is a pure function of the descriptor's `light`
-			// slice, so Skybox.svelte's driver task covers it. See the note there on
-			// Threlte's 'on-demand' renderMode.
+			// No invalidate(): the light is a pure function of the descriptor, so
+			// Skybox.svelte's driver task covers it. See the note there on Threlte's
+			// 'on-demand' renderMode.
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);

@@ -1,8 +1,7 @@
 // Post-processing effect registry types — the single source of truth for what an
-// effect IS (role, requirements, conflicts, params). The builder (build.ts) and the
-// Studio panel both consume these definitions; neither hand-wires anything.
-//
-// See CLAUDE.md in this directory.
+// effect IS (role, requirements, conflicts, params). Consumed by the builder
+// (build.ts) and the Studio panel; neither hand-wires anything. Details in
+// ./CLAUDE.md.
 
 import type { Camera, Scene, WebGPURenderer, RenderPipeline } from 'three/webgpu';
 // Deep type-only import: UniformNode is a default export of its module and is not
@@ -13,19 +12,16 @@ import type { QualityLevel } from '$extensions/settings/types';
 /**
  * `grade` sits between the chain and the resolve stage and is deliberately NOT
  * mutually exclusive the way `base`/`resolve` are: colour grading and anti-aliasing
- * are orthogonal, and the plan's "resolve owns the colour transform" rule only
- * needed one owner, not one effect. See `displayColor` for who that owner is now.
+ * are orthogonal. See `displayColor` for who owns the output colour transform.
  */
 export type PassRole = 'base' | 'chain' | 'grade' | 'resolve';
 
 /**
  * Buffers an effect needs from the scene pass. `depth` and `viewZ` come free with
- * every PassNode; the rest are provisioned as MRT attachments by the builder
- * (union of all enabled effects' requirements).
- *
- * `normal`, `metalrough` and `diffuse` went with the ao/ssgi/ssr/traa removal — the
- * union machinery is untouched, so re-adding one is additive (build.ts MRT_LAYOUT).
- * `emissive` feeds bloom's material mode (selective emissive bloom).
+ * every PassNode; the rest are provisioned as MRT attachments by the builder (union
+ * of all enabled effects' requirements). `emissive` feeds bloom's material mode
+ * (selective emissive bloom). Removed members (`normal`, `metalrough`, `diffuse`)
+ * re-add additively — the union machinery is untouched (build.ts MRT_LAYOUT).
  */
 export type Requirement = 'depth' | 'viewZ' | 'velocity' | 'emissive';
 
@@ -74,8 +70,8 @@ export interface BuildContext {
 
 /**
  * One effect definition. Node-graph plumbing is deliberately `any`-typed — the
- * addon `.d.ts`s are looser than their runtime behaviour and fighting them buys
- * nothing (see the rebuild-discipline note in CLAUDE.md).
+ * addon `.d.ts`s are looser than their runtime behaviour ("Rebuild discipline" in
+ * CLAUDE.md).
  */
 export interface EffectDef<P extends EffectParams = EffectParams> {
 	id: string;
@@ -108,10 +104,9 @@ export interface EffectDef<P extends EffectParams = EffectParams> {
 	 * True for FXAA (luma edge detection is defined on sRGB) and for 3D LUTs (`.cube`
 	 * files are authored against a display image).
 	 *
-	 * The builder, not the effect, acts on this: if ANY active effect asks for it, the
-	 * pipeline's automatic output transform is switched off and a single explicit
-	 * `renderOutput()` is folded in before the first such effect. Two effects both
-	 * calling `renderOutput()` themselves would tone-map twice.
+	 * The builder, not the effect, acts on this: if ANY active effect asks for it,
+	 * the pipeline's automatic output transform is switched off and a single
+	 * `renderOutput()` folded in — two callers would tone-map twice.
 	 */
 	displayColor?: boolean;
 	/** Default parameter values — also seeds the extension state and the panel. */
@@ -138,9 +133,9 @@ export interface EffectDef<P extends EffectParams = EffectParams> {
 	/**
 	 * Extra structural key material an effect can only know at runtime — appended to
 	 * `structuralKeyOf`. Read reactive state here to force a rebuild when a resource
-	 * this effect's graph is built AROUND (rather than a uniform it merely reads)
-	 * changes: the LUT effect returns its loaded texture's id, so a LUT finishing its
-	 * async load, or a different one being picked, recompiles the graph.
+	 * the graph is built AROUND changes (not a uniform it merely reads): the LUT
+	 * returns its loaded texture's version, so an async load landing or a different
+	 * pick recompiles the graph.
 	 */
 	structuralTag?: () => string | number;
 	/** Shown in the panel under the effect's controls. */

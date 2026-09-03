@@ -7,25 +7,18 @@
 	// layer is live, so the usual case pays for one field of particles rather than two --
 	// and inside it both render at a share that sums to the amount, which is what sleet is.
 	//
-	// This used to be inferred from `cloudType`, and the cost was not hypothetical: `snow`
-	// had to be authored at cloudType 0.35 purely to stay under the rain gate, so a heavy
-	// snowfall was forced to render thin, wispy cloud. It sits at 0.7 now.
-	//
 	// THE LOOK, ported from a reference shader (the Journey-style point snow):
 	//   - SPECKS, not blobs. The sprite is an inverse-distance falloff
-	//     (0.5/d - 1, clamped): a tight bright core that fades fast, so a flake reads
-	//     as a tiny point of light with a faint halo -- not as a soft disc. A soft disc
-	//     at snow scale reads as styrofoam; this reads as snow.
+	//     (0.5/d - 1, clamped): a tight bright core with a faint halo. A soft disc at
+	//     snow scale reads as styrofoam; this reads as snow.
 	//   - SMALL. Median radius ~0.05 world units with modest variance. The reference
 	//     perspective-scales its point size (uSize * 1/-z); world-unit billboards do
 	//     that for free.
 	//   - COHERENT SWAY. The horizontal wander is phased by POSITION, not by a random
-	//     per-flake seed: sin(t + x*k) drives z, cos(t + z*k) drives x, exactly as the
-	//     reference. Neighbours share phase, so the field shears and swirls like one
-	//     wind field instead of jittering independently -- that coherence, more than
-	//     anything else, is what makes it read as weather rather than as particles.
-	//     The sway sits INSIDE the wrap, as in the reference: a flake pushed past the
-	//     box edge re-enters on the far side, indistinguishable among thousands.
+	//     per-flake seed: sin(t + x*k) drives z, cos(t + z*k) drives x. Neighbours share
+	//     phase, so the field shears and swirls like one wind field instead of jittering
+	//     independently. The sway sits INSIDE the wrap: a flake pushed past the box edge
+	//     re-enters on the far side, indistinguishable among thousands.
 	//   - TWINKLE. A flake is a plate and it tumbles, so its brightness pulses as its
 	//     face turns toward and away from the light. Each flake gets its own rate, so
 	//     the field scintillates rather than breathing as one.
@@ -34,17 +27,13 @@
 	//     neighbours move together; this makes whole regions arrive and pass.
 	//
 	// THE MOTION is all in the vertex node -- zero CPU work per frame per flake, exactly
-	// as Rain: slow fall (fractions of rain's speed), fract-wrapped through the box, plus
-	// an accumulated wind-drift term. Flakes are diffuse reflectors, so colour rides
-	// the descriptor's light hints -- near-white in day sun, a cool grey-blue under a
-	// night deck. Rain's streaks do the same on a much shallower curve: a falling drop is
-	// mostly a refraction of what is behind it and stays legible in the dark, where a snow
-	// flake is a diffuse reflector and a white one at midnight would read as a spark.
+	// as Rain: slow fall, fract-wrapped through the box, plus an accumulated wind-drift
+	// term. Flakes are diffuse reflectors, so colour rides the descriptor's light hints
+	// (see `uFlakeTint`); Rain's streaks do the same on a much shallower curve.
 	//
 	// The mesh is recentered on the active camera every frame, as Rain is, so the box
-	// follows the player without needing a world-sized particle system. The quad is
-	// instanced for the same reason Rain's is: this layer's per-flake data was the
-	// heaviest in the subsystem at 2.20 MB, against 0.40 MB now.
+	// follows the player without a world-sized particle system. The quad is instanced
+	// (skyLayer.ts), as Rain's.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';
@@ -109,45 +98,37 @@
 
 	const opacity = uniform(0);
 	/**
-	 * Accumulated wind travel, in world units -- NOT `time * wind`. Snow falls slowly
-	 * enough to track a flake, so the elapsed-x-rate teleport matters here: a time-multiplied
-	 * wind term kicks the whole field sideways by `elapsed x delta_wind` the moment the
-	 * channel blends, and the kick grows the longer the session runs. Rain tolerates
-	 * that (its streaks reshuffle constantly anyway); this layer accumulates the offset
-	 * on the CPU, exactly as CloudDeck.svelte does, so wind changes only alter the rate.
+	 * Accumulated wind travel, in world units -- never `time * wind` (the elapsed x rate
+	 * teleport; see Rain's `uFallTime`). Snow falls slowly enough to track a flake, so
+	 * the teleport would be plainly visible here.
 	 */
 	const uWindDrift = uniform(new THREE.Vector2());
 	/**
 	 * Fraction of the flake field that is alive, against each flake's own random.
-	 *
-	 * The same change Rain got, and for the same reason: `precipitation` drove nothing but
-	 * alpha, so light snow was heavy snow at lower opacity -- 11000 flakes at identical
-	 * spacing, faded. Culling thins the field for real, and because flake SIZE is scaled by
-	 * the same flag a dead flake is a zero-area quad the rasteriser never sees.
+	 * Culling thins the field for real, and because flake SIZE is scaled by the same
+	 * flag a dead flake is a zero-area quad the rasteriser never sees.
 	 */
 	const uDensity = uniform(1);
 	/**
-	 * Accumulated fall, in seconds-equivalent, replacing the raw `time` node -- required
-	 * once the fall rate started tracking intensity. See the identical note in Rain.
+	 * Accumulated fall, in seconds-equivalent, replacing the raw `time` node -- see
+	 * Rain's `uFallTime` for why it must accumulate.
 	 */
 	const uFallTime = uniform(0);
 	/**
 	 * Flake colour, derived from the light hints on the CPU. Near-white in day sun, and a
-	 * COOL grey-blue at night rather than a dimmer white -- unlit snow takes its colour from
-	 * the sky above it, and a neutral grey flake at midnight reads as dust.
-	 *
-	 * A `Vector3` rather than a `Color`, as Rain's tint: this is a working-space shader
-	 * constant and `Color` would colour-manage it on assignment.
+	 * COOL grey-blue at night rather than a dimmer white -- unlit snow takes its colour
+	 * from the sky above it, and a neutral grey flake at midnight reads as dust.
+	 * A `Vector3` rather than a `Color`: this is a working-space shader constant and
+	 * `Color` would colour-manage it on assignment.
 	 */
 	const uFlakeTint = uniform(new THREE.Vector3(0.3, 0.3, 0.3));
 	/** Flake size multiplier: heavier snow falls in bigger flakes as well as more of them. */
 	const uSizeScale = uniform(1);
 	/**
-	 * Unit wind bearing and the travelling-gust terms, the same construction Rain uses for
-	 * its sheets and for the same reason -- snow arrives in flurries, and a field at uniform
-	 * density is the one thing that reads unmistakably as a particle system. Milder here:
-	 * the coherent sway already gives snow some of this, so the density banding only has to
-	 * supply the slow part the sway cannot.
+	 * Unit wind bearing and the travelling-gust terms, as Rain's sheets: snow arrives
+	 * in flurries, and a field at uniform density is the one thing that reads
+	 * unmistakably as a particle system. Milder than Rain's -- the coherent sway
+	 * already gives snow some of this.
 	 */
 	const uWindDir = uniform(new THREE.Vector2(0, 1));
 	const uSheet = uniform(0);
@@ -170,15 +151,12 @@
 		const rng = mulberry32(seed);
 
 		// Per-flake data: box position, (speed, size, phase, swayAmp), and
-		// (windMul, bright, densityDraw, twinkleRate).
-		//
-		// The density draw is packed into the EXISTING vector rather than given its own
-		// attribute: an instanced attribute still occupies one of WebGPU's 8 vertex-buffer
-		// slots (skyLayer.ts), and widening a buffer costs none -- which is also where the
-		// twinkle rate went when it was added, taking this from a vec3 to a vec4 for free.
-		// The draw is its own random rather than a reuse of `phase`, which is the flake's
-		// offset down the box -- culling against that would delete whole horizontal bands of
-		// the field at a time.
+		// (windMul, bright, densityDraw, twinkleRate). The density draw is packed into
+		// the EXISTING vector rather than given its own attribute -- an instanced attribute
+		// takes one of WebGPU's 8 vertex-buffer slots (skyLayer.ts), while widening a
+		// buffer costs none (where the twinkle rate went too). The draw is its own random
+		// rather than a reuse of `phase`, which is the flake's offset down the box --
+		// culling against that would delete whole horizontal bands of the field at a time.
 		const centers = new Float32Array(count * 3);
 		const params = new Float32Array(count * 4);
 		const params2 = new Float32Array(count * 4);
@@ -227,34 +205,26 @@
 
 		// FALL + WRAP. Identical construction to Rain's Y, including the part that matters
 		// most: the wrap is taken about the anchor IN WORLD SPACE, so a flake hangs at a
-		// fixed world position and is merely recycled when the box moves past it. Wrapping
-		// in box-local space instead translates every flake with the camera, and the field
-		// slides along with the player instead of being something you move through. See the
-		// worked algebra in Rain.svelte.
+		// fixed world position and is merely recycled when the box moves past it. See the
+		// worked note in Rain.svelte.
 		const fall = uFallTime.mul(aSpeed).add(aPhase.mul(boxHeight));
 		const y = fract(aCenter.y.add(halfHeight).sub(fall).sub(anchor.y).div(boxHeight))
 			.mul(boxHeight)
 			.sub(halfHeight);
 
-		// THE SWIRL, as the reference: sway phased by POSITION (z's phase comes from x,
-		// x's phase from the already-swayed z -- sequential, exactly like the shader it
-		// was ported from), so neighbours move together and the field shears like one
-		// wind field. Both sway terms sit INSIDE the wrap. The spatial rate (0.12)
-		// tunes the coherence: ~1.5 swirl cells across the box -- fully shared phase
-		// would move the field as one rigid sheet, fully independent phase reads as
-		// jitter. The 0.5 temporal rate is the reference's lazy meander.
+		// THE SWIRL: sway phased by POSITION (z's phase from x, x's phase from the
+		// already-swayed z -- sequential, as the reference), so neighbours move together
+		// and the field shears like one wind field. Both sway terms sit INSIDE the wrap.
+		// The spatial rate (0.12) tunes the coherence -- ~1.5 swirl cells across the box:
+		// fully shared phase would move the field as one rigid sheet, fully independent
+		// phase reads as jitter. The 0.5 temporal rate is the reference's lazy meander.
 		//
-		// THE SWIRL PHASE IS TAKEN BEFORE THE WRAP, and that is not the same as taking it
-		// after. `xBase` / `zBase` are world quantities -- a per-flake constant plus the
-		// shared wind travel -- so a flake's place in the swirl depends only on where it
-		// is in the WORLD. Phasing off the post-wrap local coordinate instead (which is
-		// what reading `z` here would do, now that the wrap subtracts the anchor) would
-		// make the swirl a function of camera position: walk across the scene and every
-		// flake changes the way it sways. It also removes the seam the original had, where
-		// the phase jumped discontinuously across the wrap boundary.
-		// The drift is now a VECTOR along the weather's bearing. It was a scalar with a
-		// hardcoded 0.55 on Z -- a fixed diagonal standing in for the wind direction the
-		// descriptor did not carry, so snow always blew the same way regardless of weather.
+		// THE SWIRL PHASE IS TAKEN BEFORE THE WRAP: `xBase`/`zBase` are world quantities
+		// (a per-flake constant plus the shared wind travel), so a flake's place in the
+		// swirl depends only on where it is in the WORLD. Phasing off the post-wrap local
+		// coordinate instead would make the swirl a function of camera position -- walk
+		// across the scene and every flake changes the way it sways.
+		// The drift is a VECTOR along the weather's bearing.
 		const xBase = aCenter.x.add(halfWidth).add(uWindDrift.x.mul(aWindMul));
 		const zBase = aCenter.z.add(halfDepth).add(uWindDrift.y.mul(aWindMul));
 
@@ -290,15 +260,11 @@
 		const density = uDensity.mul(mix(float(1), gust.mul(0.5).add(0.5), uSheet));
 
 		// Camera-facing billboard, as Rain/Stars. Deliberately NOT depth-pinned: flakes
-		// have honest depth and must be occluded by the world.
-		// Density rides on SIZE as well as opacity, so a culled flake collapses to zero area
-		// and is discarded before rasterisation rather than drawn fully transparent.
-		//
-		// A SMOOTHSTEP RATHER THAN A `step`, which it used to be. That was defensible while
-		// the threshold only moved at the speed of a weather blend; a gust sweeps it several
-		// times a second, and a hard cut against that flickers. It matters more here than in
-		// Rain -- a flake is slow enough to keep your eye on, which is exactly what makes a
-		// pop legible, and it is why this layer already fades its wrap and its landing.
+		// have honest depth and must be occluded by the world. Density rides on SIZE as
+		// well as opacity, so a culled flake collapses to zero area before rasterisation.
+		// The alive ramp is a smoothstep rather than a `step` because the gust threshold
+		// sweeps several times a second and a hard cut flickers (see `wrapFade` for why a
+		// pop is especially legible on snow).
 		const alive = smoothstep(density.sub(0.06), density, aRandom).oneMinus();
 		material.vertexNode = billboardClip(
 			vec3(x, y, z),
@@ -311,8 +277,6 @@
 		//
 		// Snow does NOT splash -- a flake that reaches a surface has landed, so it fades
 		// out over the last few centimetres of its fall rather than vanishing on a step.
-		// That soft edge matters more here than it does for rain: flakes are slow enough to
-		// watch individually, and a hard cut reads as popping.
 		//
 		// Where the field has no data `valid` is 0, `settle` collapses to 1, and flakes
 		// fall through as they did before -- the same fail-safe Rain relies on.
@@ -329,13 +293,11 @@
 		const dist = sqrt(corner.x.mul(corner.x).add(corner.y.mul(corner.y))).mul(0.5);
 		const speck = float(0.5).div(dist.max(1e-3)).sub(1).clamp(0, 1);
 
-		// THE TWINKLE. A flake is a plate, not a sphere: it tumbles, and its brightness
-		// pulses as its face turns toward and away from the light. Each flake gets its own
-		// rate and reads its phase from the one it already carries, so the field scintillates
-		// instead of pulsing together. Off the raw `time` node deliberately -- unlike the
-		// fall and the drift, the rate here is a per-flake CONSTANT, so there is no
-		// multiplier that can change under absolute elapsed time and no teleport to
-		// design around.
+		// THE TWINKLE (see the header): each flake gets its own rate and reads its phase
+		// from the one it already carries, so the field scintillates rather than pulsing
+		// together. Off the raw `time` node deliberately -- unlike the fall and the drift,
+		// the rate here is a per-flake CONSTANT, so there is no multiplier that can change
+		// under absolute elapsed time and no teleport to design around.
 		const twinkle = sin(time.mul(aTwinkleRate).add(aPhase.mul(6.283)))
 			.mul(0.17)
 			.add(0.87);
@@ -360,8 +322,7 @@
 
 	const { geometry, material } = build();
 
-	// The wind accumulator's rate, world units per second at full wind channel. Two
-	// components now, because the drift follows a bearing rather than a fixed diagonal.
+	// The wind accumulator's rate, world units per second at full wind channel.
 	let driftX = 0;
 	let driftZ = 0;
 	const WIND_RATE = 1.1;
@@ -385,24 +346,15 @@
 			opacity.value = Math.min(0.95, presence * (0.35 + w.cloudCover * 0.65));
 			uDensity.value = clamp01(0.08 + 0.92 * snow);
 			// Size is the third knob, alongside presence and density: a flurry is made of
-			// smaller flakes as well as fewer, and drawing whiteout-sized flakes at flurry
-			// spacing is what made light snow read as heavy snow with holes in it.
+			// smaller flakes as well as fewer.
 			uSizeScale.value = 0.75 + 0.4 * snow;
 
-			// Heavier snow falls faster, through the accumulator so a change in rate never
-			// teleports the field.
+			// Heavier snow falls faster, through the accumulator (see `uFallTime`).
 			uFallTime.value += delta * (0.7 + 0.3 * snow);
 
-			// Advance the accumulated wind travel, now ALONG THE BEARING. Still an
-			// accumulator rather than `time * wind`, for the reason in the uniform's note:
-			// snow is slow enough to follow one flake, so the teleport would be
-			// plainly visible here. Accumulating means a change of strength OR of direction
-			// only bends the path from here on, which is what a shifting wind does.
-			//
-			// Strength is a 0..1 INTENSITY. It used to be `(w.wind * 2 - 1)`, treating 0.5
-			// as neutral -- so the boot default (0.1) drifted flakes at 0.88 units/s in
-			// still air, twice as fast as the `snow` weather's own 0.3 and in the opposite
-			// direction.
+			// Advance the accumulated wind travel ALONG THE BEARING (see `uWindDrift`):
+			// accumulating means a change of strength OR direction only bends the path from
+			// here on, which is what a shifting wind does. Strength is a 0..1 INTENSITY.
 			const wind = clamp01(w.wind);
 			const dirX = windAxisX(w);
 			const dirZ = windAxisZ(w);

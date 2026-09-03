@@ -18,9 +18,8 @@ import type { PhaseName } from './types';
  * `noon` stops meaning anything -- a scene at 3pm would report `noon`. Keyed to the
  * peak it stays a narrow band around the sun's highest point.
  *
- * `maxElevation` must be the arc's actual peak. Callers used to let it default while
- * the arc itself was configurable, so lowering the arc to, say, 40 degrees meant the
- * peak never reached 0.95 * 75 and `noon` could never fire.
+ * `maxElevation` must be the arc's actual peak -- a stale default means `noon` can
+ * never fire on a lowered arc.
  */
 export const phaseFor = (
 	sunElevation: number,
@@ -29,10 +28,8 @@ export const phaseFor = (
 ): PhaseName => {
 	if (sunElevation >= maxElevation * 0.95) return 'noon';
 	if (sunElevation < -18) return 'night';
-	// The evening side used to answer 'dusk' for BOTH of the next two bands while the
-	// morning side distinguished 'astronomicalDawn' from 'dawn' -- so the day curve had an
-	// `astronomicalDusk` keyframe that no phase name corresponded to, and `phaseChange`
-	// fired a different number of times going down than coming up.
+	// Both evening bands are distinguished, matching the morning side -- `phaseChange`
+	// must fire the same number of times going down as coming up.
 	if (sunElevation < -6) return rising ? 'astronomicalDawn' : 'astronomicalDusk';
 	if (sunElevation < 0) return rising ? 'dawn' : 'dusk';
 	if (sunElevation < 6) return rising ? 'sunrise' : 'sunset';

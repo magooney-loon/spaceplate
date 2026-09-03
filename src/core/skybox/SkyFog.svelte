@@ -1,32 +1,16 @@
 <script lang="ts">
-	// Scene fog, driven by the descriptor's `sky.fogColor` and active camera range.
+	// Scene fog, driven by the descriptor's `sky.fogColor` + `fogDensity` and the active
+	// camera range -- the consumer that makes the weather `fog` channel visible at ground
+	// level. A descriptor consumer like Sky and SkyLight: reads a plain object in a task,
+	// writes three objects directly; no $effect, no reactive props, no cycle.
 	//
-	// Those two fields have been authored on all twelve day-curve keyframes since phase 1
-	// and nothing consumed them, so a `fog` or `storm` target had nothing to show for
-	// itself at ground level. This is the consumer that makes the weather visible.
-	//
-	// A descriptor consumer like Sky and SkyLight: reads a plain object in a task, writes
-	// three objects directly. No $effect, no reactive prop plumbing, no cycle.
-	//
-	// WHY THIS WORKS ON WEBGPU, AND WHY THE Fog IS CREATED EXACTLY ONCE:
-	// three's NodeManager.updateFog() converts `scene.fog` into a `fog()` node, binding
-	// colour and distances through `reference()` -- so mutating this instance every frame
-	// is a uniform write and costs nothing. But it caches that node against the fog
-	// OBJECT's identity (`sceneData.fog !== sceneFog`), so assigning a *new* Fog
-	// would rebuild the node and invalidate every material's cache key. One instance,
-	// mutated forever.
-	//
-	// THE NODE IS OURS NOW (`scene.fogNode`), FOR HEIGHT FOG. `NodeManager.getFogNode()`
-	// returns `scene.fogNode || <the one built from scene.fog>`, so supplying our own is
-	// how three intends this to be extended (webgpu_fog_height). The Fog instance stays
-	// on the scene as the parameter carrier -- the node reads its colour and distances
-	// through the same `reference()` binding three would have used, so the per-frame
-	// mutation below drives both the range term and everything that inspects `scene.fog`.
-	// The node itself is built ONCE for the same cache-key reason as the Fog object.
-	//
-	// `material.fog = false` still opts a material out on this path (NodeMaterial gates
-	// on it before touching the fog node), so the sky layers are unaffected -- which is
-	// load-bearing, since at radius 1000 they would otherwise resolve to flat fog colour.
+	// THE Fog AND THE NODE ARE EACH CREATED EXACTLY ONCE, then mutated forever: three.js
+	// caches the fog node against the fog object's identity, so assigning a *new* Fog
+	// (or fogNode) rebuilds the node and invalidates every material's cache key (see
+	// ../CLAUDE.md). The Fog instance stays on the scene as the parameter carrier, bound
+	// into the node through `reference()` exactly as NodeManager.updateFog() would; our
+	// own `scene.fogNode` adds the second, height-based term. `material.fog = false`
+	// still opts a material out on this path, so the sky layers are unaffected.
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import {
@@ -42,11 +26,9 @@
 	interface Props {
 		/**
 		 * Where clear-weather horizon haze starts, as a fraction of the active camera's
-		 * `far` plane. Linear fog is deliberate for the boilerplate: it masks the end of
-		 * the camera range instead of tinting nearby models the way FogExp2 does.
-		 *
-		 * The weather fog channel pulls this band inward; clear sunset still gets a warm
-		 * horizon, while explicit fog can still close visibility down.
+		 * `far` plane. Linear fog is deliberate: it masks the end of the camera range
+		 * instead of tinting nearby models the way FogExp2 does. The weather fog channel
+		 * pulls this band inward; clear sunset keeps a warm horizon.
 		 */
 		clearNearFraction?: number;
 		clearFarFraction?: number;
@@ -60,13 +42,10 @@
 		/** Used before a default camera is registered, or for unusual cameras without `far`. */
 		fallbackFar?: number;
 		/**
-		 * Peak density of the GROUND layer -- the height-fog term, which is what makes fog
-		 * sit in the world rather than hang at a fixed distance from the camera.
-		 *
-		 * `exponentialHeightFogFactor` computes `1 - exp(-(density * (height - y) * viewZ)^2)`,
-		 * so the units are 1/(world unit squared) and the sane range is small: at the demo's
-		 * 144-unit far plane and a 20-unit layer, 0.0022 is a thick bank and 0.0005 is a
-		 * suggestion. Retune it against the camera range, not by eye at one distance.
+		 * Peak density of the GROUND layer -- the height-fog term that makes fog sit in
+		 * the world rather than hang at a fixed distance. Units are 1/(world unit²) and
+		 * the sane range is small: at a 144-unit far plane and a 20-unit layer, 0.0022 is
+		 * a thick bank and 0.0005 a suggestion. Retune against camera range, not by eye.
 		 */
 		groundFogDensity?: number;
 		/**
@@ -76,10 +55,9 @@
 		 */
 		groundFogHeightRange?: [number, number];
 		/**
-		 * How much ground fog the day curve's own haze is allowed to produce with NO weather
-		 * fog at all, as a fraction of the full amount. This is what puts mist in the valley
-		 * at dawn and dusk (where `fogDensity` peaks) and leaves noon clear, without anyone
-		 * having to call `setWeather`.
+		 * How much ground fog the day curve's own haze may produce with NO weather fog,
+		 * as a fraction of the full amount -- mist in the valley at dawn/dusk (where
+		 * `fogDensity` peaks) and a clear noon, with no `setWeather` call.
 		 */
 		clearGroundFogShare?: number;
 	}
@@ -110,11 +88,9 @@
 	const groundDensityNode = uniform(0).setGroup(renderGroup);
 	const groundTopNode = uniform(0).setGroup(renderGroup);
 
-	// @types/three declares these looser than they run: `reference()` comes back without
-	// `setGroup`, and the fog factors as a bare `Node` with no chaining. Same trap as the
-	// post-processing registry (see the rebuild-discipline note in
-	// src/core/postprocessing/CLAUDE.md) -- node plumbing is `any` on purpose rather
-	// than fought.
+	// @types/three declares these looser than they run (`reference()` without `setGroup`,
+	// fog factors as bare `Node`). Node plumbing is `any` on purpose rather than fought
+	// (see src/core/postprocessing/CLAUDE.md).
 	const node = (value: unknown): any => value;
 
 	// Built once, at mount. `reference` binds by property name, so these track the Fog
@@ -156,24 +132,20 @@
 			fog.near = far * nearFraction;
 			fog.far = Math.max(fog.near + 1, far * farFraction);
 
-			// The ground layer answers to the same two signals as the band -- the weather
-			// channel, and the day curve's own haze scaled down -- so dawn and dusk get mist
-			// for free and noon does not. Its ceiling rises with its density: thin mist is
-			// shallow, a fog bank is deep.
+			// The ground layer answers to the same two signals as the band (weather channel,
+			// day-curve haze scaled down); its ceiling rises with its density.
 			const groundWeight = clamp01(Math.max(fogWeight, clearHaze * clearGroundFogShare));
 			groundDensityNode.value = groundFogDensity * groundWeight;
 			groundTopNode.value = lerp(groundFogHeightRange[0], groundFogHeightRange[1], groundWeight);
 
 			// Assigned once. See the header note -- swapping either rebuilds nodes.
 			if (scene.fog !== fog) scene.fog = fog;
-			// `fogNode` is not in @types/three's Scene (the runtime reads it in
-			// NodeManager.getFogNode); the repo's node plumbing is `any` for exactly this
-			// class of gap.
+			// `fogNode` is not in @types/three's Scene; same `any`-for-gaps rule as above.
 			if ((scene as any).fogNode !== fogNode) (scene as any).fogNode = fogNode;
 
-			// No invalidate(): the fog is a pure function of the descriptor and the active
-			// camera's far plane, so Skybox.svelte's driver task covers it. See the note
-			// there on Threlte's 'on-demand' renderMode.
+			// No invalidate(): the fog is a pure function of the descriptor and the camera's
+			// far plane, so Skybox.svelte's driver task covers it. See the note there on
+			// Threlte's 'on-demand' renderMode.
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);

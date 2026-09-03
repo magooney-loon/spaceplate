@@ -1,10 +1,8 @@
-// The pipeline builder. Reads the registry plus the
-// enabled set, provisions the MRT attachments, folds the chain, applies the
-// resolve stage, and owns every node it creates (disposal on rebuild).
-//
-// Discipline (see "Rebuild discipline" in CLAUDE.md): every numeric param reaches a
-// node factory as a `uniform()` from the bag built here, never a raw number — param
-// drags write `.value`, only the structural key rebuilds.
+// The pipeline builder: resolves the base pass, provisions the MRT attachments,
+// folds the chain, applies the resolve stage, and owns every node it creates
+// (disposal on rebuild). Discipline — every numeric param reaches a node factory
+// as a `uniform()` from the bag, never a raw number — in ./CLAUDE.md ("Rebuild
+// discipline").
 
 import {
 	pass,
@@ -57,16 +55,11 @@ export interface PipelineBuild {
 }
 
 /**
- * MRT attachment name → the TSL node that writes it.
- *
- * `velocity` feeds motion blur. `emissive` feeds bloom's material mode — packed as
- * `vec4(emissive, output.a)` and blended like the output attachment (NormalBlending),
- * mirroring webgpu_postprocessing_bloom_emissive. The union algorithm below is
- * unchanged and still general — re-adding a normals consumer means one row here
- * (`normal: () => packNormalToRGB(normalView)`), one in MRT_TEXTURE_NAME, one member
- * on `Requirement`, and the unpacked `sample(uv => unpackRGBToNormal(...))` node on
- * BuildContext. See the "Removed effects" section of CLAUDE.md for the full
- * attachment table.
+ * MRT attachment name → the TSL node that writes it. `velocity` feeds motion blur;
+ * `emissive` feeds bloom's material mode — packed as `vec4(emissive, output.a)` and
+ * blended like the output attachment (NormalBlending), mirroring
+ * webgpu_postprocessing_bloom_emissive. Re-adding a member is one row here, one in
+ * MRT_TEXTURE_NAME, one on `Requirement` (see "Removed effects" in CLAUDE.md).
  */
 const MRT_LAYOUT: Record<MrtRequirement, (ctx: any) => any> = {
 	velocity: () => velocity,
@@ -121,7 +114,7 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 	};
 
 	// The fallback installs a bare pass — a broken graph must not take the render
-	// loop down with it (worth keeping from the old implementation).
+	// loop down with it.
 	const installFallback = (error: unknown) => {
 		disposeAll();
 		uniforms.clear();
@@ -167,30 +160,20 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			}
 		}
 
-		// 2b. Shader-cache isolation for the MRT pass. THIS IS LOAD-BEARING, not a
-		// tuning knob — without it motion blur dies on a WebGPU validation error:
+		// 2b. Shader-cache isolation for the MRT pass — LOAD-BEARING, not a tuning
+		// knob (full trap in ./CLAUDE.md). Compiled shaders are cached under
+		// `RenderObject.initialCacheKey`, which carries NO MRT information, so any
+		// other render of this scene without MRT (Studio's viewport, Sky.svelte's
+		// CubeCamera env bake) compiles a one-output shader under the same key —
+		// this pass then reuses it against N attachments and motion blur dies on a
+		// WebGPU validation error.
 		//
-		//   Attachment state of [RenderPipeline "..."] is not compatible with
-		//   [RenderPassEncoder]. Expects colorTargets [0, 1], pipeline has [0].
-		//
-		// NodeMaterial folds the MRT into its output at build time by reading
-		// `renderer.getMRT()` (NodeMaterial.js §MRT), but the compiled result is cached
-		// in `nodeBuilderCache` under `RenderObject.initialCacheKey` — a key that
-		// contains NO MRT information. Anything else that renders this same scene
-		// without MRT (Studio's viewport, Sky.svelte's per-frame CubeCamera env bake,
-		// any auxiliary target pass) therefore compiles a one-output shader under the
-		// same key, and this pass then reuses it against N attachments.
-		//
-		// `renderer.contextNode.id` IS in that key, and PassNode swaps
-		// `renderer.contextNode` for its own for the duration of its render. So handing
-		// the pass an empty context gives everything drawn inside it a private
-		// cache namespace — same generated code, different key. A fresh context per
-		// build also means a changed attachment set recompiles rather than reusing
-		// shaders built for the previous count.
-		//
-		// Ask the PASS whether it has attachments, not `resolution.mrt`: a base-pass
-		// effect may provision its own MRT internally (pixelationPass did exactly that
-		// before it was removed) and would otherwise slip through unisolated.
+		// `renderer.contextNode.id` IS in the key, and PassNode swaps in its own
+		// contextNode for the duration of its render — so an empty `context()` here
+		// gives the pass a private cache namespace: same generated code, different
+		// key. Fresh per build, so a changed attachment set recompiles too. Ask the
+		// PASS, not `resolution.mrt`: a base-pass effect may provision its own MRT
+		// internally and slip through unisolated.
 		if (basePass.getMRT() !== null) basePass.contextNode = context();
 
 		// 3. Resolve the build context — no effect ever reaches for the pass itself.
@@ -220,13 +203,11 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			uniforms.set(def.id, bag);
 		}
 
-		// 5. The output colour transform, owned here rather than by an effect. FXAA and
-		// the 3D LUT both need display-referred input (`displayColor`), and if each ran
-		// its own renderOutput() a pipeline with both would tone-map twice. So: disable
-		// the pipeline's automatic transform once, fold in exactly one renderOutput(),
-		// and every later stage sees encoded colour.
-		//
-		// Tone mapping stays Threlte's — this READS renderer.toneMapping, never writes it.
+		// 5. The output colour transform, owned here rather than by an effect: if any
+		// active effect declares `displayColor`, disable the pipeline's automatic
+		// transform once and fold in exactly one renderOutput() — two callers would
+		// tone-map twice. Tone mapping stays Threlte's: this READS
+		// renderer.toneMapping, never writes it.
 		const activeDefs = resolution.active.map((id) => EFFECTS_BY_ID.get(id)!);
 		const wantsDisplayColor = activeDefs.some((def) => def.displayColor);
 		// Reset first — a previous build may have disabled it.

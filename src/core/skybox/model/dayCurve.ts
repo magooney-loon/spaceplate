@@ -1,52 +1,27 @@
-// The day curve. One continuous day instead of ten discrete presets.
+// The day curve. One continuous day instead of ten discrete presets: sunrise/day/
+// sunset/night are points on one timeline, and the old weather "presets" were never
+// sky states at all -- they belong to the mixer. Defaults are seeded from the old
+// presets' values; authored keyframes will come from weather.json (see ../CLAUDE.md).
+// `exposure` is applied by Sky.svelte as renderer.toneMappingExposure (SkyMesh has no
+// exposure uniform) -- a look, not physics.
 //
-// The old SKY_PRESETS were these keyframes wearing a disguise: sunrise/day/sunset/
-// night are four points on one timeline. The rest (cloudy, storm, fog) are not here at
-// all -- they were always weather wearing a sky costume, and belong to the mixer.
-//
-// These defaults are seeded from the values the old presets shipped with, so the look
-// is recognisable. They are the fallback; authored keyframes will come from
-// weather.json (see Planned: authored sky data in ../CLAUDE.md) once the config
-// plumbing exists.
-//
-// exposure is applied by Sky.svelte as renderer.toneMappingExposure (SkyMesh has no
-// exposure uniform). These values are a look, not physics.
-//
-// The whole ramp sits below 1 -- peaking at 0.66 in daylight -- on purpose. Under AgX,
-// pulling exposure down moves the daylight highlights into the filmic shoulder instead
-// of clipping them flat, which is most of what reads as "cinematic". It also keeps the
-// curve deliberately FLAT (0.58 to 0.68 across the whole day), so scene brightness
-// varies because the light varies, not because a virtual camera is riding its own
-// exposure knob.
-//
-// DO NOT REACH FOR THIS KNOB WHEN THE DAYTIME FRAME LOOKS BLOWN OUT. The daylight
-// keyframes ran at 0.76-0.78 until global bloom went into the pipeline and washed the
-// whole day out; dimming here barely helped, because bloom runs on linear values BEFORE
-// this exposure is applied -- it scales halo and scene together and never changes the
-// ratio between them. The actual cause was the sun disc (60800 linear, SkyMesh.js) being
-// smeared over the frame by the bloom mips, and the actual fix is bloom's `inputClamp`
-// (effects/bloom.ts). These five daylight keyframes then came back up to a ~0.1 dim
-// against their originals, which is the part that was genuinely a look choice.
-//
-// Exposure below the twilight cutoff is doing a different job: the dome
-// is black down there (see the SkyLight fill), so it is the only lever that decides
-// whether moonlit geometry reads at all.
+// The whole ramp sits below 1 (0.58-0.68 across the day) on purpose: under AgX it keeps
+// daylight highlights in the filmic shoulder instead of clipping them flat, and scene
+// brightness varies because the light varies, not because a virtual camera rides its
+// own exposure knob. DO NOT reach for this knob when the daytime frame looks blown
+// out -- that is bloom, not this curve (see ./CLAUDE.md). Below the twilight cutoff
+// exposure is doing a different job: the dome is black down there, so it is the only
+// lever deciding whether moonlit geometry reads at all.
 //
 // KEYFRAME TIMES ARE NOT FREE. They are the inverse of the sun arc (sunPath.ts):
 //
 //     t = 0.25 + asin(elevation / maxElevation) / 2pi      (morning)
 //     t = 0.75 - asin(elevation / maxElevation) / 2pi      (evening)
 //
-// The first pass of this curve was authored by eye and drifted badly from the arc --
-// the `sunrise` keyframe landed at +9.4 degrees of elevation, `sunset` at -4.7, `dusk`
-// at -23. The sky's look and the sun's position disagreed by 20-30 degrees, which is
-// exactly the "something is off" that no individual value explains. Each keyframe below
-// is now pinned to the elevation milestone its name claims, and the comment on each one
-// records that elevation. Retime them together or they drift apart again.
-//
-// The pinning assumes `maxElevation` = DEFAULT_MAX_ELEVATION. A game that changes the
-// arc's peak shifts every twilight boundary, so the arc peak is effectively part of
-// this curve's contract.
+// Each keyframe is pinned to the elevation milestone its name claims (recorded in its
+// comment); retime them together or they drift apart. The pinning assumes
+// `maxElevation` = DEFAULT_MAX_ELEVATION -- a game that changes the arc's peak shifts
+// every twilight boundary, so the peak is effectively part of this curve's contract.
 
 import { ease, lerp, lerpRGB } from './math';
 import type { DayKeyframe, SkyBaseline } from './types';
@@ -94,22 +69,10 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 	{
 		// 0 deg. The sun is exactly on the horizon -- peak scattering, peak colour.
 		//
-		// TURBIDITY IS NOT THE COLOUR KNOB HERE; RAYLEIGH IS. This keyframe was authored at
-		// turbidity 9 / rayleigh 2.8 on the assumption that "more scattering" meant "more
-		// sunrise". It does not. Turbidity feeds `vBetaM`, and mie scattering is nearly
-		// wavelength-flat, so raising it grows a big GREY halo -- measured, the glow band
-		// within 35 degrees of the sun came out rgb(131,122,131) at saturation 0.14. A
-		// colourless sunrise, which is exactly what "washed out" looked like.
-		//
-		// The red comes from rayleigh EXTINCTION along the horizon path (`Fex` in SkyMesh):
-		// blue is scattered out of the line of sight and red survives. Rayleigh 5 puts the
-		// band at rgb(184,135,105) at 8 degrees, rgb(181,82,68) at 3 and rgb(72,2,3) at the
-		// horizon -- and collapses the below-horizon smear that used to fill the lower half
-		// of frame from rgb(94,10,7) to rgb(8,0,0) at -20 degrees.
-		//
-		// Turbidity still sets how BIG and how bright that halo is, so it comes down with it.
-		// None of this touches scene lighting: the env map is at 0.25 and the key dominates,
-		// so ground and sun-facing surfaces measure identical before and after.
+		// RAYLEIGH IS THE COLOUR KNOB HERE, NOT TURBIDITY: turbidity feeds mie, which is
+		// wavelength-flat and only grows a grey halo; the red comes from rayleigh
+		// extinction along the horizon path (see ./CLAUDE.md). Turbidity still sets how
+		// big and bright the halo is.
 		t: 0.25,
 		name: 'sunrise',
 		turbidity: 6,
@@ -124,23 +87,9 @@ export const DEFAULT_DAY_CURVE: DayKeyframe[] = [
 	{
 		// +6 deg. Morning golden hour -- the mirror of goldenHour below.
 		//
-		// IT IS NOT ACTUALLY GOLDEN, AND IT CANNOT BE MADE SO. Preetham's warm window is
-		// roughly 0 to 2 degrees of SUN elevation and no uniform widens it: the redness rides
-		// the `mix(1, sqrt(vSunE * ratio * Fex), pow(1 - sunDir.y, 5))` term, whose weight is
-		// 1.0 at the horizon and already 0.57 by +6. Above ~4 degrees the sun-side sky
-		// measures blue (warm -0.36 on an R-minus-B scale) whatever turbidity and rayleigh
-		// do, and by +14 it is 100% clipped white. Don't spend an afternoon here; the golden
-		// look lives on the `sunrise` / `sunset` keyframes, which is where it has been moved.
-		//
-		// What IS worth doing is stopping it clipping. At the old turbidity 6 / rayleigh 2 /
-		// exposure 0.72, six of seven sampled elevations from -20 to +25 were past white --
-		// a flat blue-white sheet with no gradient in it. The values below take that to four,
-		// which is where the curve flattens out; pushing exposure lower buys nothing more and
-		// only costs the scene (0.62 keeps the ground at 0.9x, 0.48 drops it to 0.7x).
-		//
-		// It has since come down a little anyway -- 0.62 -> 0.58 -- alongside the rest of
-		// the daylight half (header note). That is the cheap end of the range measured
-		// above; the sun's own glare was never this keyframe's problem to solve.
+		// NOT ACTUALLY GOLDEN, AND CANNOT BE MADE SO: Preetham's warm window is only
+		// ~0-2 degrees of sun elevation (see ./CLAUDE.md). The values are tuned to stop
+		// clipping, nothing more; the golden look lives on `sunrise`/`sunset`.
 		t: 0.2627,
 		name: 'goldenMorning',
 		turbidity: 5,

@@ -1,20 +1,12 @@
 // Weather audio: the rain bed and the thunder claps, driven from the sky.
 //
-// THE CONTRACT. This is the audio consumer of the same plain-state contract the render
-// layers use (the descriptor contract, core/skybox/CLAUDE.md): the descriptor is a
-// plain mutable object written by one model task, and lightning publishes strikes to
-// `flashState`. Nothing here may be an `$effect` -- it would run once at mount and
-// never again. GlobalAudio mounts the `<Audio>` objects (it registers the sound
-// files) and hands them over via the attach functions; its task calls
-// `tickWeatherAudio(delta)`.
-//
-// WHY THE TRIGGERS DO NOT LIVE IN THE LAYERS (Rain.svelte / Lightning.svelte): the
-// layers unmount whenever the environment mode is not the procedural sky, and a
-// looping bed torn down with a render component is exactly the race the
-// "GlobalAudio never unmounts" rule exists to prevent (see src/CLAUDE.md). The layers
-// already publish everything audio needs as plain state -- `flashState.strikeId` /
-// `strikeDistance` for thunder, `descriptor.weather` for the bed. This file is the
-// single seam for the planned audio-engine rework.
+// THE CONTRACT: the audio consumer of the sky's plain state (core/skybox/CLAUDE.md) --
+// the descriptor is a plain mutable object written by one model task, lightning
+// publishes strikes to `flashState`, and nothing here may be an `$effect` (it would
+// run once at mount and never again). GlobalAudio mounts the `<Audio>` objects, hands
+// them over via the attach functions, and its task calls `tickWeatherAudio(delta)`.
+// The triggers deliberately do NOT live in the layers: layers unmount with the
+// environment mode, and a looping bed must not (audio/CLAUDE.md).
 
 import type { Audio as ThreeAudio } from 'three';
 import { settingsState } from '$extensions/settings';
@@ -38,10 +30,9 @@ const SPEED_OF_SOUND = 343;
 const THUNDER_RANGE = 4200;
 /**
  * Share of bolt strikes that voice thunder. The strike scheduler is paced for the EYE
- * (photosafety-bounded: a bolt every couple of seconds at a full channel), and a clap
- * at that rate stops reading as weather -- dropping some restores the gap. Uniform in
- * distance on purpose: nearness already decides how a clap sounds, not whether the
- * storm owes you one.
+ * (a bolt every couple of seconds at a full channel), and a clap at that rate stops
+ * reading as weather. Uniform in distance on purpose: nearness already decides how a
+ * clap sounds, not whether the storm owes you one.
  */
 const BOLT_THUNDER_CHANCE = 0.75;
 
@@ -64,24 +55,19 @@ export const attachThunderAudio = (audio: ThreeAudio): void => {
 };
 
 /**
- * Make one clap not sound like the last. The recording is a single take, and a storm
- * that replays it byte-for-byte every strike reads as a sound effect, not weather.
- * Both terms derive from the strike's distance -- the same cue the volume uses:
+ * Make one clap not sound like the last -- a storm that replays one take
+ * byte-for-byte reads as a sound effect, not weather. Both terms derive from the
+ * strike's distance:
  *
  * - Playback rate. A near strike cracks sharp and short; a far one stretches into a
- *   deeper, longer rumble. Tape-style rate moves pitch and duration together, which
- *   is roughly what multipath smearing does to a distant discharge.
- * - Lowpass cutoff. Air scatters the high frequencies out of a clap over kilometres,
- *   so the far end of the range keeps only the rumble. Nearness is squared so the
- *   crack is reserved for genuinely close strikes -- mid-range stays dark.
+ *   deeper, longer rumble (tape-style rate moves pitch and duration together).
+ * - Lowpass cutoff. Air scatters the high frequencies out over kilometres, so the
+ *   far end keeps only the rumble. Nearness is squared so the crack is reserved for
+ *   genuinely close strikes -- mid-range stays dark.
  *
- * Both are jittered, so even two strikes at the same distance never match. This is the
- * plain Web Audio graph doing what a buffer-processing pass (cf. three's
- * webgpu_compute_audio example) would: no compute pass, no readback latency to
- * desync the scheduled flash-to-sound gap, no second AudioContext per clap.
- *
- * The filter node must be created per clap: `clone()` shares the template's filter
- * array by reference, so a shared node would tie every clap in the air to one cutoff.
+ * Both are jittered, so two strikes at the same distance never match. The filter
+ * node must be created per clap: `clone()` shares the template's filter array by
+ * reference.
  */
 const modulateClap = (clap: ThreeAudio, distance: number): void => {
 	const nearness = Math.max(0, 1 - distance / THUNDER_RANGE);
@@ -99,14 +85,13 @@ export const tickWeatherAudio = (delta: number): void => {
 	// split means the bed follows sleet across the blend instead of cutting out.
 	const target = rainAmount(w) + snowAmount(w) * SNOW_SHARE;
 
-	// Framerate-independent one-pole, as the sky layers use. A hard cut here would
-	// click, and worse, would make a 20 s weather blend arrive instantly in the audio
-	// while it was still ramping visually.
+	// Framerate-independent one-pole, as the sky layers use: a hard cut would click,
+	// and would make a 20 s weather blend arrive instantly in the audio.
 	rainLevel += (target - rainLevel) * (1 - Math.exp(-delta / RAIN_FADE));
 
-	// The buffer guard is not paranoia: `src` is fetched asynchronously, so there are
-	// real frames after mount where the Audio object exists with nothing in it, and
-	// `play()` on an empty buffer starts a silent source that then refuses the real one.
+	// The buffer guard is real: `src` fetches asynchronously, so there are frames
+	// where the Audio exists with no buffer -- play() then starts a silent source
+	// that refuses the real one.
 	if (rainAudio?.buffer) {
 		const audible = rainLevel > 0.004 && settingsState.audio.ambienceEnabled;
 		// Volume first, then play -- otherwise the frame a shower starts on gets one
@@ -116,10 +101,9 @@ export const tickWeatherAudio = (delta: number): void => {
 		else if (!audible && rainAudio.isPlaying) rainAudio.pause();
 	}
 
-	// A new strike: schedule its thunder for when the sound would actually arrive.
-	// Bolts only, and not all of them: a sheet is a cell backlighting itself with no
-	// channel to the ground, and claps for every event -- sheets, bolts, re-strikes --
-	// were what made the storm read as a sound effect on repeat.
+	// A new strike: schedule its thunder for when the sound would arrive. Bolts only
+	// (a sheet is a cell backlighting itself, no channel to the ground), and not all
+	// of them -- a clap for every event reads as a sound effect on repeat.
 	if (flashState.strikeId !== lastStrikeId) {
 		lastStrikeId = flashState.strikeId;
 		const distance = flashState.strikeDistance;
@@ -131,9 +115,8 @@ export const tickWeatherAudio = (delta: number): void => {
 		) {
 			pendingThunder.push({
 				atMs: performance.now() + (distance / SPEED_OF_SOUND) * 1000,
-				// Inverse falloff rather than inverse-square: thunder carries far better
-				// than the point-source law suggests, and squared attenuation makes
-				// anything past a few hundred metres inaudible.
+				// Inverse falloff, not inverse-square: squared attenuation makes thunder
+				// past a few hundred metres inaudible.
 				volume: Math.max(0.08, 1 - distance / THUNDER_RANGE),
 				distance
 			});
@@ -146,13 +129,11 @@ export const tickWeatherAudio = (delta: number): void => {
 			if (pendingThunder[i].atMs > now) continue;
 			const { volume, distance } = pendingThunder[i];
 			pendingThunder.splice(i, 1);
-			// Polyphonic: a storm can easily put a second strike in the air before the
-			// first has finished rolling, and cutting one off to start the next is the
-			// one thing that would make it read as a sound effect rather than weather.
-			// The take is drawn uniformly at random: the takes are varieties of weather,
-			// not near/far markers -- distance is already spoken for by the volume, the
-			// rate and the filter, and double-encoding it would make the set predictable.
-			// A take still loading is simply out of the draw; a clap never waits on a fetch.
+			// Polyphonic: a storm can put a second strike in the air before the first
+			// finishes rolling. The take is drawn uniformly at random -- the takes are
+			// varieties of weather, not near/far markers (distance is already spoken for
+			// by volume, rate and filter). A still-loading take is out of the draw; a
+			// clap never waits on a fetch.
 			const loaded = thunderTakes.filter((t) => t.buffer);
 			if (settingsState.audio.sfxEnabled && loaded.length > 0) {
 				const clone = loaded[Math.floor(Math.random() * loaded.length)].clone() as ThreeAudio;

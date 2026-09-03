@@ -1,8 +1,5 @@
-// Types for the sky/weather model. See model/CLAUDE.md.
-//
-// Nothing in src/core/skybox/model/ imports three.js or Threlte. The model is pure so it can
-// be unit-tested, logged and scrubbed with no renderer in the room -- and, more
-// importantly, so it can never participate in a Svelte reactive cycle.
+// Types for the sky/weather model. Nothing here imports three.js or Threlte -- the
+// model is pure (see model/CLAUDE.md).
 
 export type ClockKind = 'realtime' | 'external' | 'manual';
 
@@ -75,15 +72,9 @@ export type WeatherChannels = {
 	/** How much is falling. What KIND is `precipitationType`, not this. */
 	precipitation: number;
 	/**
-	 * NOT an intensity: 0 = snow, 1 = rain, and the band between them is sleet.
-	 *
-	 * This used to be inferred from `cloudType`, which cost real things. `snow` had to be
-	 * authored at cloudType 0.35 purely to stay under the rain gate, so a snowstorm could
-	 * not have heavy-looking clouds -- its cloud morphology was hostage to its
-	 * precipitation type. And because a raw partial leaves unmentioned channels where they
-	 * are, `setWeather({ precipitation: 0.8 })` from `clear` (cloudType 0) silently gave
-	 * you SNOW. Splitting the two makes both authorable, and makes sleet something you can
-	 * ask for rather than something that only happened mid-blend.
+	 * NOT an intensity: 0 = snow, 1 = rain, the band between is sleet. Split from
+	 * `cloudType` (its former gate) so morphology is never hostage to precipitation
+	 * type -- and sleet is something you can ask for, not just a mid-blend artifact.
 	 */
 	precipitationType: number;
 	/** Wind strength. Never bipolar: 0 = still, 1 = storm. */
@@ -125,12 +116,9 @@ export type LightHints = {
 };
 
 /**
- * The single output contract of the model.
- *
- * This is a PLAIN MUTABLE OBJECT, deliberately not `$state`. One task writes it in
- * place each frame; consumers read it from their own tasks. Nothing is tracked, so no
- * effect can loop on it. Per-frame numbers must never become reactive -- they change
- * 60x a second and would invalidate the component tree at that rate.
+ * The single output contract of the model: a PLAIN MUTABLE OBJECT, never `$state` --
+ * one task writes it in place each frame, consumers read it from their own tasks
+ * (the descriptor contract, ../CLAUDE.md).
  */
 export type SkyDescriptor = {
 	sun: CelestialBody;

@@ -1,19 +1,14 @@
 <script lang="ts">
-	// The post-processing pipeline — rebuilt per src/core/postprocessing/CLAUDE.md.
-	//
+	// The post-processing pipeline — details in src/core/postprocessing/CLAUDE.md.
 	// Owns exactly one THREE.RenderPipeline for its lifetime and swaps its
 	// outputNode as the *structural key* changes (enabled set + quality + structural
-	// params). Param drags never rebuild: they write uniform values in place via the
-	// hot effect. The graph itself is built by $core/postprocessing/build.ts from
-	// the effect registry — nothing is hand-wired here.
+	// params); param drags never rebuild — they write uniform values in place via
+	// the hot effect. The graph itself is built by $core/postprocessing/build.ts.
 	//
 	// Studio task ordering per DOCS/webgpu-notes.md §2: registered
 	// `{ after: autoRenderTask, autoInvalidate: false }`, and this component must
-	// stay the FIRST child inside <Canvas> so the pipeline draws before the Gizmo.
-	//
-	// Tone mapping is deliberately NOT written here. Threlte's renderer context owns
-	// renderer.toneMapping via the <Canvas> option; the FXAA effect only reads it
-	// when it takes over the output colour transform.
+	// stay the FIRST child inside <Canvas> so it draws before the Gizmo. Tone
+	// mapping is NOT written here — Threlte's renderer context owns it.
 
 	import { useThrelte, useTask } from '@threlte/core/webgpu';
 	import { untrack } from 'svelte';
@@ -75,17 +70,13 @@
 	const structuralKey = $derived(quality + '|' + structuralKeyOf(enabledIds, structuralValues()));
 
 	/**
-	 * Low quality bypasses the pipeline ENTIRELY rather than building an empty one.
-	 *
-	 * `resolveEnabledSet` already drops every effect at this tier, but a *built* pipeline
-	 * is not free just because its graph is: the base `pass()` still allocates a
-	 * full-resolution RGBA16Float colour target plus a Depth24Plus depth buffer, and every
-	 * frame still pays a fullscreen blit from it to the canvas — for a graph that does
-	 * nothing at all. Low is precisely the tier where that VRAM and bandwidth is scarce.
-	 *
-	 * So at low we build nothing, hold no render target, and the task below renders the
-	 * scene straight to the canvas. Tone mapping and the output colour space are the
-	 * renderer's own in that path, which is what `outputColorTransform` would have done.
+	 * Low quality bypasses the pipeline ENTIRELY rather than building an empty one:
+	 * a *built* pipeline is not free just because its graph is — the base `pass()`
+	 * still allocates a full-resolution RGBA16Float target + Depth24Plus buffer and
+	 * pays a fullscreen blit per frame, for a graph that does nothing. Low is the
+	 * tier where that VRAM and bandwidth is scarce. At low we build nothing, hold no
+	 * render target, and the task below renders straight to the canvas (tone mapping
+	 * then being the renderer's own, as `outputColorTransform` would have done).
 	 */
 	const bypass = $derived(quality === 'low');
 
@@ -103,9 +94,8 @@
 			build?.dispose();
 			build = null;
 
-			// Disposing the build disposed the base pass, and with it the only large
-			// render target we own — so dropping to low actually releases the memory
-			// rather than merely stopping to use it.
+			// Disposing the build disposed the base pass and its render target — the
+			// only large one we own — so dropping to low actually releases the memory.
 			if (skip) {
 				logPostprocessing.info('Post-processing bypassed: quality is low');
 				invalidate();
@@ -179,20 +169,18 @@
 	// --- boot warmup -----------------------------------------------------------
 
 	// On-demand rendering draws only when something invalidates, so a quiet scene
-	// behind the loading screen stays cold: every pipeline (the base pass under its
-	// private contextNode + all post effects + the mounted scenes' materials) would
-	// compile at the first frame AFTER the loader hides — exactly the stall a warm
-	// frame removes. Every bootState.warmVersion bump (the scene warmup sweep in
-	// extensions/scene, driven from Loader.svelte) asks for one render through the
-	// real graph while a cover still hides the canvas. renderer.init() is idempotent,
-	// and render() kicks three's async pipeline compilation, which lands in the
-	// background during the sweep's grace delays.
+	// behind the loading screen stays cold: everything (the base pass under its
+	// private contextNode, all post effects, the mounted scenes' materials) would
+	// compile at the first frame AFTER the loader hides — the stall a warm frame
+	// removes. Each bootState.warmVersion bump (the warmup sweep, driven from
+	// Loader.svelte) renders once through the real graph while a cover still hides
+	// the canvas; renderer.init() is idempotent, and render() kicks three's async
+	// compilation, which lands during the sweep's grace delays.
 	//
-	// renderer.compileAsync(scene, camera) is deliberately NOT used: it compiles under
-	// the renderer's default context with no MRT — the wrong variants for this graph,
-	// whose scene pass lives in a private contextNode namespace (build.ts; see
-	// the MRT shader-cache trap in src/core/postprocessing/CLAUDE.md). Warming
-	// must go through the pipeline itself.
+	// Deliberately NOT renderer.compileAsync(scene, camera): it compiles under the
+	// default context with no MRT — the wrong variants for this graph (see the
+	// shader-cache trap in postprocessing/CLAUDE.md). Warming goes through the
+	// pipeline itself.
 	let warming = false;
 	$effect(() => {
 		const version = bootState.warmVersion;

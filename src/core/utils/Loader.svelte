@@ -10,20 +10,18 @@
 
 	const { progress, active, item, loaded, total, errors } = useProgress();
 
-	// Boot probe verdict (capabilities.svelte.ts — settled before mount).
-	// blocked: nothing to load into, so this screen replaces the loader entirely.
-	// degraded: WebGPU missing, WebGPURenderer fell back to WebGL2 — playable, so it
-	// gets a dismissible badge that outlives the loading screen instead.
+	// Boot probe verdict (settled before mount). blocked: nothing to load into, so
+	// this screen replaces the loader. degraded: WebGL2 fallback — playable, so it
+	// gets a dismissible badge that outlives the loading screen.
 	const blocked = $derived(isBlocked());
 	const degraded = $derived(capabilityState.tier === 'webgl');
 	let noticeDismissed = $state(false);
 
 	// 'Done' here is a quiet period, not finishedOnce: three's manager has no 'queue
-	// drained' event — items queue as they are discovered, so loaded catches up with
-	// total transiently BETWEEN items and finishedOnce latches true on the first
-	// catch-up. Keying the UI off it made the bar hit 100% and the prompt arm while
-	// assets were still streaming in. settled = quiet for a grace period (covers the
-	// nothing-to-load case too, which starts quiet); any new item restarts the wait.
+	// drained' event — loaded catches up with total transiently BETWEEN items, so
+	// finishedOnce latches on the first catch-up and would arm the prompt while
+	// assets were still streaming. settled = quiet for a grace period (covers the
+	// nothing-to-load case too); any new item restarts the wait.
 	let settled = $state(false);
 	$effect(() => {
 		// Never start the warmup sweep on a blocked device — with no <Canvas> mounted
@@ -32,8 +30,7 @@
 		const timeout = setTimeout(() => {
 			settled = true;
 			// Assets done — kick the scene warmup sweep (visits + warm-renders every
-			// scene while this screen still covers the canvas). It latches
-			// bootState.scenesWarmed when finished, which is what arms the prompt below.
+			// scene behind this screen). Its scenesWarmed latch arms the prompt below.
 			void sceneActions.warmupScenes();
 		}, 500);
 		return () => clearTimeout(timeout);
@@ -44,11 +41,10 @@
 
 	const tweened = new Tween(0, { duration: 600, easing: cubicOut });
 	$effect(() => {
-		// Two passes, two sources. While assets stream, the LoadingManager drives the
-		// bar. Once settled, ownership flips to the warmup sweep (bootState.warmProgress):
-		// the bar rolls back to 0 and climbs again as scenes are visited and
-		// warm-rendered — the second 0→100 pass reads as the shader compilation it is.
-		// (Straggler loads the sweep discovers no longer touch the bar.)
+		// Two passes, two sources: while assets stream the LoadingManager drives the
+		// bar; once settled, ownership flips to the warmup sweep (warmProgress) — the
+		// bar rolls back and climbs again, reading as the shader compilation it is.
+		// Straggler loads the sweep discovers no longer touch the bar.
 		if (settled) {
 			tweened.target = bootState.warmProgress;
 			return;
@@ -68,8 +64,7 @@
 	});
 
 	// One line, once, when the load cycle has settled. Counts are read via .current
-	// on purpose — $-reads here would re-trigger the effect per item (that was the
-	// every-line spam).
+	// on purpose — $-reads here would re-trigger the effect per item.
 	$effect(() => {
 		if (!settled) return;
 		logEngine.info(`Assets loaded (${loaded.current})`);

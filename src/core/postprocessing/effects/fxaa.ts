@@ -9,10 +9,9 @@ export const fxaaEffect: EffectDef<FxaaParams> = {
 	role: 'resolve',
 	order: 2,
 	requires: [],
-	// FXAA detects edges by luma on sRGB, so it needs post-tonemap input. It used to
-	// disable outputColorTransform and call renderOutput() itself; the builder now owns
-	// that for the whole pipeline, because the LUT effect wants the same input and two
-	// effects each calling renderOutput() would tone-map the frame twice.
+	// FXAA detects edges by luma on sRGB, so it needs post-tonemap input. The builder
+	// owns the single renderOutput() for the whole pipeline (`displayColor`) — the LUT
+	// wants the same input, and two callers would tone-map twice.
 	displayColor: true,
 	note: 'Low-cost AA — the fallback when SMAA is too expensive.',
 	params: () => ({}) as FxaaParams,

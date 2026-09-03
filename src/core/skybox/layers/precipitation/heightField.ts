@@ -1,14 +1,12 @@
 // The precipitation height field: "what is the topmost surface under this point?"
 //
 // WHY IT EXISTS. Rain and Snow animate entirely in the vertex node -- a `fract()` sawtooth
-// through a camera-anchored box, zero CPU work per particle (see Rain.svelte). That is what
-// makes 9000 drops affordable, and it is also why they knew nothing about the world and
-// fell straight through the ground, the physics bodies and every loaded model.
-//
-// This module is the world knowledge they were missing, in the one shape that keeps the
-// vertex-node design intact: a small texture holding the surface height at each world XZ,
-// rendered from an orthographic camera looking straight down (HeightField.svelte) and
-// sampled per particle in the vertex stage.
+// through a camera-anchored box, zero CPU work per particle (see Rain.svelte). That is
+// what makes 9000 drops affordable, and it is also why they knew nothing about the world:
+// this module is the world knowledge they were missing, in the one shape that keeps the
+// vertex-node design intact -- a small texture holding the surface height at each world
+// XZ, rendered from an orthographic camera looking straight down (HeightField.svelte)
+// and sampled per particle in the vertex stage.
 //
 // THE CONTRACT, and it is deliberately fail-safe: `.r` is the surface's world Y, `.a` is
 // 1 where something was drawn and 0 where nothing was. Every consumer treats `a == 0` as
@@ -17,8 +15,7 @@
 // to what it did before rather than to drops hanging in mid-air.
 //
 // Same sharing pattern as flashState.ts: a plain module with one writer (HeightField's
-// task) and any number of readers, none of them reactive. Per-frame values can never be
-// props.
+// task) and any number of readers, none of them reactive.
 
 import * as THREE from 'three/webgpu';
 import { float, step, textureLevel, uniform, vec2 } from 'three/tsl';
@@ -32,14 +29,12 @@ export const HEIGHT_MAP_SIZE = 256;
 
 /**
  * Created at module scope so the texture's IDENTITY is stable before any material is
- * built. Rain and Snow bake `texture(heightTarget.texture)` into their node graphs once,
- * at mount; handing them a target that a component creates later would mean rebuilding
- * those graphs, and swapping a texture under a live material invalidates its cache key.
- *
+ * built: Rain and Snow bake `texture(heightTarget.texture)` into their node graphs once,
+ * at mount, and swapping a texture under a live material invalidates its cache key.
  * No GPU memory is committed here -- three allocates on first render.
  *
- * HalfFloat because the stored value is a signed world coordinate, so a UNORM format
- * would clamp it to 0..1 and a ground plane at y=0 would be indistinguishable from one at
+ * HalfFloat because the stored value is a signed world coordinate: a UNORM format
+ * would clamp it to 0..1, making a ground plane at y=0 indistinguishable from one at
  * y=-50. Precision is ~0.03 world units at y=50, far below a drop's size.
  */
 export const heightTarget = new THREE.RenderTarget(HEIGHT_MAP_SIZE, HEIGHT_MAP_SIZE, {
@@ -79,41 +74,30 @@ export const heightFieldState = {
 };
 
 /**
- * Sample the field at a world-space position.
- *
- * Returns the surface's world Y and a 0/1 validity flag. `valid` is 0 both where nothing
- * was drawn and where the sample falls OUTSIDE the map -- a particle that has drifted past
- * the baked footprint has no information, and inventing one would be worse than letting it
- * fall.
+ * Sample the field at a world-space position. Returns the surface's world Y and a 0/1
+ * validity flag. `valid` is 0 both where nothing was drawn and where the sample falls
+ * OUTSIDE the map -- a particle that has drifted past the baked footprint has no
+ * information, and inventing one would be worse than letting it fall.
  *
  * Sampled with `textureLevel(..., 0)` rather than plain `texture(...)`: this runs in the
- * VERTEX stage, which has no implicit derivatives on WebGPU, so an automatic-LOD sample is
- * invalid there. `textureLevel` is `texture(...).level(0)` and compiles to an explicit-LOD
- * fetch.
+ * VERTEX stage, which has no implicit derivatives on WebGPU, so an automatic-LOD sample
+ * is invalid there. `textureLevel` compiles to an explicit-LOD fetch.
  */
 export const sampleHeightField = (worldPosition: THREE.Node<'vec3'>) => {
 	// World XZ -> map UV. BOTH NEGATIONS ARE LOAD-BEARING, and they come from two
-	// different places, which is why one of them was missing for so long.
+	// different places.
 	//
 	// X, from the VIEW BASIS. The pass camera looks straight down with `up = +Z`, and
 	// `Matrix4.lookAt` sets x = up x z; here z (eye - target) is +Y, so x = +Z x +Y = -X.
 	// The camera's X axis runs along world -X, so ndc.x = -(worldX - centerX) / extent.
 	//
 	// Z, from the TEXTURE CONVENTION. The camera's Y axis comes out as world +Z, so
-	// ndc.y = +(worldZ - centerZ) / extent -- but ndc.y = +1 is the TOP of the target, and
-	// a colour attachment is sampled with v = 0 at the top (WebGPU's origin; `ScreenNode`
-	// flips WebGL's fragcoord to match, and RainLens's `screenUV` note says the same). So
-	// v = 0.5 - ndc.y / 2, one more negation, and it has nothing to do with the `up`
+	// ndc.y = +(worldZ - centerZ) / extent -- but ndc.y = +1 is the TOP of the target,
+	// and a colour attachment is sampled with v = 0 at the top (WebGPU's origin), so
+	// v = 0.5 - ndc.y / 2: one more negation, and it has nothing to do with the `up`
 	// vector. Looking straight down cannot avoid a flip on one axis; sampling a render
 	// target adds a second one on the other, and BOTH are undone here, in the one place
 	// that owns the world <-> uv mapping.
-	//
-	// What the missing Z flip looked like: the map read back MIRRORED about the plane
-	// z = centerZ, and centerZ is the camera's own Z. So it was self-concealing -- park the
-	// camera on the world X axis and the mirror plane passes through the origin, where the
-	// demo scene is roughly symmetric, and collisions look perfect. Orbit round to the Z
-	// axis and the plane sits 13 units off the scene: drops then sampled empty map, fell
-	// through the real ground, and landed on nothing where its reflection would have been.
 	const rel = worldPosition.xz.sub(uHeightCenter).div(uHeightExtent.mul(2));
 	const uv = vec2(rel.x.negate(), rel.y.negate()).add(0.5);
 

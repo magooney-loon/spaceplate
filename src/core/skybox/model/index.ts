@@ -7,8 +7,7 @@
 // the env-mode state in ../environment. See model/CLAUDE.md.
 
 export * from './sky.svelte';
-// Shared scalar helpers. The layer components pull clamp01 / smooth01 / mulberry32 from
-// here rather than each redeclaring them, which is what they used to do.
+// Shared scalar helpers, pulled from here rather than redeclared per layer.
 export { clamp01, ease, lerp, lerpRGB, mulberry32, smooth01, wrap01 } from './math';
 export { createClock, createRealtimeClock, createExternalClock, createManualClock } from './clock';
 export type { Clock, ClockOptions } from './clock';
@@ -24,9 +23,8 @@ export {
 	modulateBaseline,
 	keyAttenuation,
 	bodyVisibility,
-	// The precipitation split and the wind bearing. Every layer that renders weather goes
-	// through these rather than reading the raw channels -- see `rainAmount`'s note on the
-	// copy-paste bug the old inline gate constants were one edit away from.
+	// The precipitation split and the wind bearing: every layer that renders weather
+	// goes through these rather than reading the raw channels.
 	rainShare,
 	rainAmount,
 	snowAmount,

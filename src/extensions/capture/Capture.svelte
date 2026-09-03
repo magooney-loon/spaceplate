@@ -1,37 +1,15 @@
 <script lang="ts">
-	// The capture driver — stills and video.
+	// The capture driver — stills and video. Renders nothing; owns the grab task.
 	//
-	// WHAT ENDS UP IN THE OUTPUT:
-	//
-	// 1. The toolbar, its panes and the scene HUD are plain HTML siblings of the canvas
-	//    (App.svelte / SceneHud.svelte). Nothing HTML is ever composited into the canvas,
-	//    so reading the canvas back excludes all of it for free.
-	// 2. Studio's 3D content — the grid, axes/light/group helpers, transform controls and
-	//    the selection outline — IS in the canvas, and is captured. That is deliberate:
-	//    each of those has its own toggle in Studio's toolbar (and deselecting clears the
-	//    outline), so hiding them is the user's call shot by shot. Sometimes the grid is
-	//    exactly what you want in the frame.
-	// 3. The corner navigation Gizmo is the one thing with no useful toggle — it is a
-	//    viewport widget, never wanted in an image, and turning it off means turning off
-	//    the editor camera. It is a @threlte/extras component mounted by Studio's
-	//    CameraControls, rendering from its own task registered `{ after: autoRenderTask }`,
-	//    and among tasks sharing a constraint the DAG falls back to registration order
-	//    (DOCS/webgpu-notes.md §2). So the grab below runs after the pipeline has drawn the
-	//    frame but BEFORE the Gizmo composites on top of it.
-	//
-	// THAT ORDERING IS WHY App.svelte MOUNTS THIS IN THE SAME `{#await}` AS <Studio>, and
-	// immediately before it. Two dynamic imports racing for render-task order would not be
-	// a guarantee; one Promise.all resolving into one fragment is — both mount in the same
-	// tick, in document order, so this task registers first and stays first. (The Gizmo
-	// re-registers when the editor camera is toggled, which only ever pushes it later.)
-	// Being in that block also keeps the extension convention intact: dynamically imported
-	// behind VITE_GAME_ENGINE, so none of it ships to production.
-	//
-	// ON-DEMAND RENDERING: tasks constrained `{ after: autoRenderTask }` inherit the
-	// renderStage, whose callback gates the whole stage on `shouldRender()` (threlte
-	// core, scheduler.svelte.js). So this task runs ONLY on frames that actually
-	// rendered — which is exactly the guarantee a grab needs. It also means a recording
-	// has to pin the loop itself: see the invalidate() in the task.
+	// What ends up in the output (HTML excluded for free, Studio's 3D helpers captured
+	// on purpose) and why App.svelte must mount this in the same `{#await}` as <Studio>,
+	// immediately before it, are documented in capture/CLAUDE.md. The load-bearing local
+	// ordering: the grab task is `{ after: autoRenderTask }`, and among tasks sharing a
+	// constraint the DAG falls back to registration order (DOCS/webgpu-notes.md §2) — so
+	// it runs after the pipeline draws the frame but BEFORE the corner Gizmo composites
+	// on top. The same constraint also means the task only runs on frames that actually
+	// rendered (the renderStage gates on `shouldRender()`), which is the guarantee a
+	// canvas read-back needs.
 
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import { PerspectiveCamera, Vector2 } from 'three/webgpu';
@@ -71,14 +49,11 @@
 	// This copy is the single most expensive thing capture does per frame: it scales with
 	// the BACKING STORE, not the CSS size, so at `high` on a 2× display a 1920px canvas
 	// costs a 3840×2160 copy on the main thread. Two things keep it as cheap as it can be:
-	//
-	// 1. Each context is acquired ONCE, at module scope. getContext() options only take
-	//    effect on the first call for a given canvas, so they cannot be passed from a
-	//    per-frame lookup — and the video path wants `alpha: false`.
-	// 2. `alpha: false` gives the recording canvas an opaque context: no per-pixel alpha
-	//    channel to composite, and it starts out black. That is what lets blitVideo() skip
-	//    a full-canvas fillRect that used to run every frame immediately before drawImage
-	//    overwrote every pixel of it.
+	// each context is acquired ONCE, at module scope (getContext() options only take
+	// effect on the first call for a given canvas, so they cannot be passed from a
+	// per-frame lookup — and the video path wants `alpha: false`), and that opaque video
+	// context starts out black with no per-pixel alpha to composite, which is what lets
+	// blitVideo() skip a fillRect entirely.
 	//
 	// Writing canvas.width/height clears the pixels but keeps the context object, so both
 	// survive the resizes below.
@@ -252,10 +227,9 @@
 	// at the start of a take so a mid-take resize is absorbed by scaling.
 	//
 	// - REALTIME (MediaRecorder). `captureStream(0)` yields frames only when
-	//   requestFrame() is called, which puts frame selection under the task's control
-	//   instead of the browser's sampler. What it does NOT put under our control is frame
-	//   TIMING: MediaRecorder timestamps each frame by the wall-clock moment requestFrame
-	//   ran, so a hitch is encoded into the file as a long frame.
+	//   requestFrame() is called, putting frame selection under the task's control — but
+	//   not frame TIMING: MediaRecorder timestamps each frame by the wall-clock moment
+	//   requestFrame ran, so a hitch is encoded into the file as a long frame.
 	// - OFFLINE (WebCodecs, encoder.ts). Timestamps come from a frame counter, so the
 	//   output is exactly-spaced however slowly it renders. Not realtime; see encoder.ts.
 
@@ -342,11 +316,9 @@
 		captureState.elapsedSec = 0;
 		captureState.isRecording = true;
 		captureState.status = 'Recording…';
-		// Timeslice, not start(): without one, MediaRecorder holds the entire take in a
-		// single growing internal buffer and hands it over as one Blob at stop — at 16 Mbps
-		// for 60s that is ~120 MB, and growing an allocation that size mid-take is exactly
-		// the kind of thing that buys a GC pause in the middle of a shot. One second of
-		// video per chunk keeps the peak bounded; onstop still assembles them into one Blob.
+		// Timeslice, not start(): without one MediaRecorder grows one internal buffer for
+		// the whole take (~120 MB at 16 Mbps for 60s) and hands it over as a single Blob at
+		// stop — a GC pause mid-shot. One second per chunk; onstop still assembles one Blob.
 		recorder.start(1000);
 		logEngine.info(
 			`Capture: realtime recording ${videoCanvas.width}×${videoCanvas.height} @ ` +
@@ -385,16 +357,14 @@
 	// THE FIXED-STEP SOURCE (core/utils/engineClock.ts). An offline take owns the engine
 	// clock for its duration, and this is the one decision that gives it away, made once per
 	// frame, before any stage runs. Everything downstream — the flypath camera, the sky
-	// model, every TSL layer, Rapier's accumulator — advances by whatever this returns,
-	// because the clock substitutes it for the frame's real delta at the scheduler.
+	// sky model, every TSL layer, Rapier's accumulator — advances by whatever this
+	// returns, because the clock substitutes it for the frame's real delta at the
+	// scheduler.
 	//
-	// THE LATCH IS STILL THE POINT (see capture.svelte.ts). `saturated` is asynchronous: the
-	// encoder's promise can resolve at any moment, including between this call and the
-	// capture task at the end of the same frame. So the decision is LATCHED into
-	// `captureRuntime.posed` here and the capture task only ever reads the latch. It moved
-	// out of the pose driver and into the clock source because the clock is now the single
-	// side that decides anything about a frame — and the frames that are part of the take are
-	// exactly the frames scene time advanced on.
+	// THE LATCH (the full story is in capture.svelte.ts): `saturated` is asynchronous —
+	// the encoder's promise can resolve between this call and the capture task at the
+	// end of the same frame — so the decision is LATCHED into `captureRuntime.posed`
+	// here and the capture task only ever reads the latch.
 	const offlineStep = (): number | null => {
 		// Not ready, or the queue is full: hold. The clock does not advance and the frame is
 		// not even rendered — nothing about this frame reaches the take, whatever the
@@ -610,10 +580,9 @@
 		}
 
 		// THE LATCH (captureRuntime.posed, see capture.svelte.ts). The ONLY thing consulted:
-		// the clock source already decided, before this frame rendered, whether it is part of
-		// the take. Re-deriving that from `take.saturated` here is the bug that made takes
-		// twitchy — the encoder can resolve between the two, and then a frame the clock held
-		// gets encoded anyway, as a duplicate of the previous pose.
+		// the clock source already decided, before this frame rendered, whether it is part
+		// of the take. Never re-derive it from `take.saturated` — the encoder can resolve
+		// between the two, and a held frame would be encoded as a duplicate pose.
 		if (!captureRuntime.posed) return;
 		captureRuntime.posed = false;
 

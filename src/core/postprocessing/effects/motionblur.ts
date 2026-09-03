@@ -21,14 +21,11 @@ export const motionBlurEffect: EffectDef<MotionBlurParams> = {
 		numSamples: { min: 4, max: 64, step: 1 },
 		blurAmount: { min: 0, max: 4, step: 0.05 }
 	},
-	// A TSL Fn, not a node class — no instance to hold uniforms on, so the bag is
-	// the only way to animate it. The example multiplies velocity by a blur scale.
-	//
-	// motionBlur is the one sampler addon that does NOT convertToTexture its input
-	// (bloom/fxaa/smaa/afterImage all do) — fed a computed chain node (the basic
-	// DoF's mix, the old bokeh DoF's output, ...) it throws
-	// "inputNode.sample is not a function". Convert here: texture inputs pass
-	// through untouched at zero cost, computed ones get an RTT.
+	// A TSL Fn, not a node class — no instance holds uniforms, so the bag is the
+	// only way to animate it. It is also the one sampler addon that does NOT
+	// convertToTexture its input — fed a computed chain node (the basic DoF's mix)
+	// it throws "inputNode.sample is not a function". Convert here: texture inputs
+	// pass through at zero cost, computed ones get an RTT.
 	build: (ctx, u) => {
 		const input = convertToTexture(ctx.color);
 		// RTTNode owns a render target but has no dispose() — register the target

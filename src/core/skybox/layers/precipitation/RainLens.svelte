@@ -8,11 +8,9 @@
 	// already rendered and puts it back distorted -- drops act as tiny lenses, the wet glass
 	// between them is defocused, and the trails they leave behind are clear streaks. It is a
 	// post-processing effect in every respect EXCEPT that it needs no post-processing
-	// pipeline, which this app does not have (`core/utils/Renderer.svelte` is a stub and
-	// `autoRender` is left on -- see src/CLAUDE.md). `viewportMipTexture` is what makes that
-	// work: three documents it as the input for refractive materials, it extracts the
-	// framebuffer with a COPY rather than a second render pass, and its mip chain supplies
-	// the defocus blur for free.
+	// pipeline, which this app does not have (see src/CLAUDE.md). `viewportMipTexture`
+	// makes that work: a framebuffer COPY, not a second render pass, whose mip chain
+	// supplies the defocus blur for free.
 	//
 	// DRAW ORDER IS THE WHOLE TRICK. The copy happens in that node's `updateBefore`, which
 	// NodeFrame fires once per render at the moment the first object using it is drawn
@@ -82,10 +80,9 @@
 		 * How much sideways motion counts toward wetting, as a fraction of forward motion.
 		 *
 		 * Physically this should be near zero -- rain lands on a windscreen because you
-		 * drive INTO it. It is not zero because DemoScene's camera orbits the origin with
-		 * `lookAt(0,0,0)`, so its velocity is always perpendicular to its view direction and
-		 * its forward speed is identically zero: at 0 the effect could never be seen there
-		 * at all. Drop it to 0 for a first-person controller.
+		 * drive INTO it. It is not zero because DemoScene's camera orbits the origin, so
+		 * its forward speed is identically zero. Drop it to 0 for a first-person
+		 * controller.
 		 */
 		lateralInfluence?: number;
 		/** Seconds for the lens to bead up, and to dry off. Asymmetric on purpose. */
@@ -114,12 +111,9 @@
 	/** Overall strength: drives both the droplet density and the blend against the frame. */
 	const uWetness = uniform(0);
 	/**
-	 * The droplet animation clock, ACCUMULATED on the CPU rather than `time * rate`.
-	 *
-	 * The rate depends on how fast the camera is moving, and a rate multiplied into absolute
-	 * elapsed time teleports the whole pattern by `elapsed x rate-change` the instant it
-	 * changes -- the trap that CloudDeck and Snow's `uWindDrift` already work around,
-	 * and it would be far more visible here than in either of those.
+	 * The droplet animation clock, ACCUMULATED on the CPU rather than `time * rate`:
+	 * the rate moves with camera speed, so the elapsed x rate teleport would relocate
+	 * the whole pattern (see Rain's `uFallTime`) -- far more visible here than there.
 	 */
 	const uDropTime = uniform(0);
 
@@ -140,20 +134,17 @@
 
 		// ── The ported shader ────────────────────────────────────────────────────────
 		//
-		// Everything below is inside `Fn()`, which matters: TSL's assignment operators need
-		// a stack to record into and fail SILENTLY outside one (see skyLayer.ts). The port
-		// leans on `.toVar()` / `.addAssign()` heavily, because the original is written in
-		// GLSL's mutable style and rewriting it into pure expressions would make it
-		// impossible to diff against the source.
+		// Everything below is inside `Fn()`: TSL's assignment operators need a stack to
+		// record into and fail SILENTLY outside one (see skyLayer.ts). The port leans on
+		// `.toVar()` / `.addAssign()` heavily, keeping it diffable against the GLSL
+		// original's mutable style.
 
 		/**
 		 * The shader's `S(a, b, t)`, written out rather than deferred to TSL's `smoothstep`.
 		 *
 		 * The port needs the DESCENDING form -- `Saw` calls it as `S(1., b, t)` with a > b,
 		 * and so does the main drop -- and WGSL leaves `smoothstep` UNDEFINED when
-		 * edge0 >= edge1. Drivers happen to evaluate the same polynomial either way today,
-		 * but that is undefined behaviour to lean on. The explicit clamp is two instructions
-		 * and is defined for both orders.
+		 * edge0 >= edge1. The explicit clamp is defined for both orders.
 		 */
 		const S = Fn(([a, b, t]: [any, any, any]): any => {
 			const x = t.sub(a).div(b.sub(a)).clamp(0, 1).toVar();
@@ -231,9 +222,8 @@
 			const trailFront = S(float(-0.02), float(0.02), st.y.sub(y));
 			const trail = S(r.mul(0.23), r.mul(r).mul(0.15), cd).mul(trailFront).mul(r).mul(r);
 
-			// Droplets strung along the trail, on a grid pinned to the glass.
-			// (The original computes a first `droplets` from a `trail2` term and then
-			// overwrites both on the next line without using them; that dead pair is not
+			// Droplets strung along the trail, on a grid pinned to the glass. (The original
+			// computes a `droplets`/`trail2` pair it then overwrites unused -- dead code not
 			// reproduced here.)
 			const dropletY = fract(uvBase.y.mul(10)).add(st.y.sub(0.5));
 			const dd = st.sub(vec2(x, dropletY)).length();
@@ -296,11 +286,9 @@
 		const refractedUV = shaderUV.add(n);
 		const sampleUV = vec2(refractedUV.x, refractedUV.y.oneMinus());
 
-		// See the colour-space note in the header: the framebuffer is already in output
-		// space, so decode it to working space and let the material re-encode on the way out.
-		// The cast is a typings gap, not a shape mismatch: `colorSpaceToWorking` is declared
-		// as returning its own `ColorSpaceNode` class rather than one of the vec unions
-		// `colorNode` is typed against, though it produces a vec4 here like any other sample.
+		// See the colour-space note in the header. The cast is a typings gap, not a shape
+		// mismatch: `colorSpaceToWorking` is declared as returning its own node class
+		// rather than the vec unions `colorNode` is typed against.
 		material.colorNode = colorSpaceToWorking(
 			viewportMipTexture(sampleUV, focus),
 			renderer.outputColorSpace
@@ -315,8 +303,7 @@
 
 	const { geometry, material } = build();
 
-	// Plain variables, written and read only by the task -- a per-frame value can never be
-	// reactive state.
+	// Plain variables, written and read only by the task.
 	let wetness = 0;
 	let dropTime = 0;
 	let lastPosition: THREE.Vector3 | null = null;
@@ -389,9 +376,8 @@
 	});
 
 	// The active camera — game or Studio editor — is the only one allowed to see the
-	// lens (see LENS_LAYER in skyLayer.ts). Subscribed rather than read once so swapping
-	// cameras carries the layer over; the subscription also fires immediately with the
-	// current camera.
+	// lens (see LENS_LAYER in skyLayer.ts); subscribed so swapping cameras carries the
+	// layer over, and the subscription fires immediately with the current camera.
 	$effect(() => {
 		const unsubscribe = camera.subscribe((cam) => cam.layers.enable(LENS_LAYER));
 		return unsubscribe;

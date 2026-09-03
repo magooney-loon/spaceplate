@@ -5,21 +5,15 @@
 //
 //     /* import './__debug'; */
 //
-// Uncomment to arm every probe below; comment it back out when you are done. Because
-// that is the only reference, a commented import keeps all of this out of the bundle —
-// there is no env flag to remember and no dead weight in production.
+// Uncomment to arm every probe; comment it back when done. That import is the only
+// reference, so commented-out means fully out of the production bundle.
 //
-// ## Adding a probe
-//
-// One module per probe, exporting an `install*()` that is safe to call twice, then a
-// call here. Keep each one self-contained and write down WHY it exists and what its
-// output means — a probe with no explanation is worse than no probe, because the next
-// person cannot tell a real finding from noise. Probes are meant to be deleted
-// individually once the bug they chase is closed; `git log` is the archive.
-//
-// Prefer patching a three/Threlte prototype (as `mrtProbe` does) over editing an engine
-// file: a probe that requires threading an instance through `Renderer.svelte` will rot,
-// and worse, leaves a plausible-looking hook behind in real code when it is removed.
+// Adding a probe: one module exporting an `install*()` that is safe to call twice,
+// plus a call here. Keep it self-contained and write down WHY it exists and what
+// its output means — a probe with no explanation is worse than none. Delete a
+// probe once its bug is closed; git log is the archive. Prefer patching a
+// three/Threlte prototype (as mrtProbe does) over editing an engine file: a
+// threaded-through hook rots and leaves a plausible-looking seam in real code.
 
 import { installMrtProbe } from './mrtProbe';
 import { installPostProcessingBridge } from './ppBridge';

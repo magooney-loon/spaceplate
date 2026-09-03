@@ -1,16 +1,13 @@
-// LUT assets for the `lut` effect — the only effect on the list with an asset
-// dependency (see the "LUTs" section of CLAUDE.md).
-//
-// The set is three's own: the nine LUTs from `webgpu_postprocessing_3dlut`, copied
-// verbatim from `DOCS/three.js-dev/examples/luts/` into `public/luts/`. Credits per
-// that example page: RocketStock (the `.CUBE` grades) and FreePresets.com
-// (Presetpro-Cinematic). Filenames are kept exactly as three ships them so the two
-// can be diffed.
+// LUT assets for the `lut` effect — the only effect with an asset dependency (see
+// the "LUTs" section of CLAUDE.md). The set is three's own: the nine LUTs from
+// webgpu_postprocessing_3dlut, copied verbatim into `public/luts/`, filenames kept
+// as three ships them so the sets stay diffable. Credits: RocketStock (the `.CUBE`
+// grades) and FreePresets.com (Presetpro-Cinematic).
 //
 // A `.svelte.ts` module because the load is async while `EffectDef.build()` is
 // synchronous: the effect builds as a no-op until its texture has landed, and the
-// `$state` version counter below is what tells Renderer.svelte's structural key to
-// rebuild the graph once it has. Nothing here is read per frame.
+// `$state` version counter is what rebuilds the graph once it has. Nothing here is
+// read per frame.
 
 import { LUTCubeLoader } from 'three/addons/loaders/LUTCubeLoader.js';
 import { LUT3dlLoader } from 'three/addons/loaders/LUT3dlLoader.js';
@@ -62,9 +59,8 @@ export const getLutTexture = (index: number): Data3DTexture | undefined => textu
 
 /**
  * All three loaders return `{ texture3D }` with the cube's edge length in
- * `image.width`, so the only thing that varies is which one parses the file.
- * `.png` LUTs are horizontal strips, not images to be sampled directly — hence a
- * dedicated loader rather than a TextureLoader.
+ * `image.width`; only the parser varies. `.png` LUTs are horizontal strips, not
+ * sampled images — hence a dedicated loader rather than a TextureLoader.
  */
 const loaderFor = (file: string) => {
 	if (/\.cube$/i.test(file)) return new LUTCubeLoader();
