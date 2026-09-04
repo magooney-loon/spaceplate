@@ -20,10 +20,11 @@ export type PassRole = 'base' | 'chain' | 'grade' | 'resolve';
  * Buffers an effect needs from the scene pass. `depth` and `viewZ` come free with
  * every PassNode; the rest are provisioned as MRT attachments by the builder (union
  * of all enabled effects' requirements). `emissive` feeds bloom's material mode
- * (selective emissive bloom). Removed members (`normal`, `metalrough`, `diffuse`)
- * re-add additively — the union machinery is untouched (build.ts MRT_LAYOUT).
+ * (selective emissive bloom), `normal` feeds AO. Removed members (`metalrough`,
+ * `diffuse`) re-add additively — the union machinery is untouched (build.ts
+ * MRT_LAYOUT).
  */
-export type Requirement = 'depth' | 'viewZ' | 'velocity' | 'emissive';
+export type Requirement = 'depth' | 'viewZ' | 'velocity' | 'emissive' | 'normal';
 
 /** MRT-attachable requirements — `depth`/`viewZ` are PassNode builtins, never attachments. */
 export type MrtRequirement = Exclude<Requirement, 'depth' | 'viewZ'>;
@@ -57,6 +58,8 @@ export interface BuildContext {
 	velocity: any;
 	/** Emissive texture node — only set when some effect requires `emissive`. */
 	emissive: any;
+	/** View-space normal texture node — only set when some effect requires `normal`. */
+	normal: any;
 	/** Viewport aspect (w/h), owned by the builder, written by the frame task. */
 	aspect: UniformNode<'float', number>;
 	/**

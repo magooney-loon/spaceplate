@@ -167,8 +167,11 @@ light.shadow.shadowNode = new CSMShadowNode(light, { cascades: 4, maxFar: 1000 }
 // AnalyticLightNode picks up light.shadow.shadowNode as a custom shadow node.
 ```
 
-Untested here. `SkyLight.svelte`'s fitted single cascade is the current design and is
-correct for the demo's scale.
+Untested here. `SkyLight.svelte`'s single cascade is the current design; since it
+auto-fits to the visible casters (quantised radius, texel-snapped centre — see
+`core/skybox/CLAUDE.md`) it covers arbitrary scene sizes, but only by trading texel
+density for coverage. `maxShadowRadius` (400) is the line where that trade stops being
+worth it and CSM becomes the real answer.
 
 ### 2.7 `<InstancedMesh>` from `@threlte/extras` breaks on-demand rendering [31]
 

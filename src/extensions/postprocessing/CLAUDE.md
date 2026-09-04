@@ -16,28 +16,37 @@ pipeline itself never imports from here except the state (via Renderer.svelte).
 
 ## Effects (registry-driven)
 
-Ten effects. Base passes (mutually exclusive): `ssaa`, `retro` — else the default
-`pass()`. Chain: `dof`, `motionBlur`, `bloom`, `afterimage`, `vignette`. Grade
+Eleven effects. Base passes (mutually exclusive): `ssaa`, `retro` — else the default
+`pass()`. Chain: `ao`, `dof`, `motionBlur`, `bloom`, `afterimage`, `vignette`. Grade
 (**not** exclusive): `lut`. Anti-aliasing (mutually exclusive): `smaa`, `fxaa`.
 
-`pixelation`, `ao`, `ssgi`, `ssr` and `traa` were **removed** — files deleted, not
+`pixelation`, `ssgi`, `ssr` and `traa` were **removed** — files deleted, not
 disabled. Don't re-add one by half-measures: `$core/postprocessing/CLAUDE.md`
 records what each needed and what the removal took out with it (the
-`normal`/`metalrough`/`diffuse` MRT rows and the matching `BuildContext` fields).
+`metalrough`/`diffuse` MRT rows and the matching `BuildContext` fields).
+
+`ao` was **revived** and brought the `normal` MRT row back with it. It is the only
+effect that exists to fix a lighting error rather than to add a look: nothing else
+occludes `scene.environment` or `SkyLight`'s hemisphere fill, so without it a closed
+model is lit from the inside by the whole sky. Off by default — read its section in
+`$core/postprocessing/CLAUDE.md` before retuning it.
 
 - Every effect: `{ enabled: boolean } & params` — defaults come from the registry
   (`def.params()`), so state, builder and panel cannot drift.
 - Quality `low` drops everything (bare pass). `minQuality` still exists on `EffectDef`
   but no effect uses it now — `ssgi`/`ssr` were its only consumers.
-- Geometry consumers (`dof`, `motionBlur`, and `bloom` in Material mode) are
+- Geometry consumers (`ao`, `dof`, `motionBlur`, and `bloom` in Material mode) are
   auto-dropped under a non-default base pass — the panel shows the reason.
-- `motionBlur` (`velocity`) and `bloom` Material mode (`emissive`) are the MRT
-  consumers. That keeps the shader-cache isolation in `build.ts` load-bearing — see
-  the MRT shader-cache trap in `$core/postprocessing/CLAUDE.md` before touching it.
+- `motionBlur` (`velocity`), `ao` (`normal`) and `bloom` Material mode (`emissive`) are
+  the MRT consumers. That keeps the shader-cache isolation in `build.ts` load-bearing —
+  see the MRT shader-cache trap in `$core/postprocessing/CLAUDE.md` before touching it.
+  It also means `ao` and `motionBlur` share an exposure: non-`output` attachments do not
+  blend, so the lens layers' screen-filling quads overwrite both buffers in heavy
+  weather.
 - Param drags are **hot** (uniform writes, no rebuild) except structural params
   (`motionBlur.numSamples`, `lut.lut`, `bloom.mode`, `bloom.lensflare`,
-  `bloom.ghostSamples`) which rebuild the graph — `bloom.mode` because it changes
-  the MRT set, not just the graph.
+  `bloom.ghostSamples`, `ao.resolutionScale`) which rebuild the graph — `bloom.mode`
+  because it changes the MRT set, not just the graph.
 - `bloom` has a **mode** toggle: Global (colour buffer) vs Material (`emissive`
   attachment — selective emissive bloom, `requiresValues` on the def). It also
   carries a **lensflare sub-toggle** (a param, not a sibling effect — `LensflareNode`

@@ -5,6 +5,7 @@
 import type { QualityLevel } from '$extensions/settings/types';
 import type { EffectDef, EffectValues, MrtRequirement, Requirement } from './types';
 import { afterimageEffect } from './effects/afterimage';
+import { aoEffect } from './effects/ao';
 import { bloomEffect } from './effects/bloom';
 import { dofEffect } from './effects/dof';
 import { fxaaEffect } from './effects/fxaa';
@@ -19,6 +20,7 @@ import { vignetteEffect } from './effects/vignette';
 export const EFFECTS: EffectDef<any>[] = [
 	ssaaEffect,
 	retroEffect,
+	aoEffect,
 	dofEffect,
 	motionBlurEffect,
 	bloomEffect,

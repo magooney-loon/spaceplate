@@ -11,8 +11,9 @@ registry.ts    — EFFECTS list + resolveEnabledSet policy + structuralKeyOf
 build.ts       — the builder: base pass, MRT union, chain fold, grade, resolve, fallback
 uniforms.ts    — createUniformBag / writeUniformBag — the hot-update path
 luts.svelte.ts — LUT catalogue + async load cache (three's nine example LUTs, public/luts/)
-effects/*.ts   — 10 EffectDefs: ssaa, retro (base) · dof, motionBlur, bloom (+lensflare
-                 sub-toggle), afterimage, vignette (chain) · lut (grade) · smaa, fxaa (AA)
+effects/*.ts   — 11 EffectDefs: ssaa, retro (base) · ao, dof, motionBlur, bloom
+                 (+lensflare sub-toggle), afterimage, vignette (chain) · lut (grade) ·
+                 smaa, fxaa (AA)
 ```
 
 ## Roles — effects are not peers
@@ -23,7 +24,7 @@ Four `PassRole`s exist because a flat enable-grid cannot express the relationshi
   (`extends PassNode`). None enabled → the default `pass(scene, camera)`. The builder
   asks `basePass.getMRT()` instead of assuming the default — a base pass may provision
   attachments the registry never asked for (pixelationPass did exactly that).
-- **chain** (`dof`, `motionBlur`, `bloom`, `afterimage`, `vignette`) — plain
+- **chain** (`ao`, `dof`, `motionBlur`, `bloom`, `afterimage`, `vignette`) — plain
   colour-in/colour-out, folded in `order` threading `ctx.color`. Some are TSL `Fn`s,
   not node classes (`motionBlur`, `vignette`, our `dof`) — no instance holds uniforms,
   so **the uniform bag is the only way to animate them**.
@@ -34,8 +35,8 @@ Four `PassRole`s exist because a flat enable-grid cannot express the relationshi
 The MRT set is a **function of the enabled set**, never fixed: the builder unions the
 `requires` of every survivor and provisions only that. `viewZ`/`depth` come free from
 `PassNode` (`getViewZNode()`) and add no attachment. Live MRT consumers today:
-`velocity` (motionBlur) and `emissive` (bloom Material mode, provisioned only when the
-mode param asks — `requiresValues` on the def).
+`velocity` (motionBlur), `emissive` (bloom Material mode, provisioned only when the
+mode param asks — `requiresValues` on the def) and `normal` (ao).
 
 ## The build (build.ts)
 
@@ -193,13 +194,39 @@ missing.
 - Attribution lives in each file's header (RocketStock `.CUBE` grades,
   FreePresets.com `.3dl`) — leave them intact.
 
-## Removed effects: pixelation, ao, ssgi, ssr, traa
+## `ao` — the one effect that is not a look
+
+`effects/ao.ts` wraps three's `GTAONode`. It is here because **nothing else in the
+engine occludes the ambient term**: `Sky.svelte` bakes the dome into
+`scene.environment` and `SkyLight.svelte` mounts a hemisphere fill, and neither knows
+geometry is in the way — so a closed model is lit from all directions by the full sky
+and the sun appears to shine through its walls. Shadow maps do not help; they attenuate
+the single key light, and `DAY_AMBIENT` is 0 exactly because the env map carries
+daylight (`core/skybox/model/CLAUDE.md`).
+
+- **Off by default.** It is a real per-frame cost on a frame that may already render the
+  scene five times, and it changes every existing scene's look.
+- **It multiplies the composite, not the indirect term** — separating that needs the
+  `diffuse` attachment removed with the old effects. Directly-lit surfaces darken
+  slightly; that is the known error of every screen-space AO, not a bug.
+- **Its params live on the node, not in a factory call** (`ao()` takes only depth,
+  normal, camera). The bag's `uniform()`s are **assigned onto the node before setup** —
+  `setup()` is lazy and reads `this.radius` & co. then, so assignment after a build
+  silently does nothing. Same rule as "never pass a raw number to a node factory", for a
+  node with nowhere to pass them.
+- `resolutionScale` is a plain property, not a uniform → the one `structural` param.
+- **Heavy weather degrades it**, via the no-blending rule below: `RainLens`/`SnowLens`
+  are screen-filling quads inside the scene pass and overwrite the whole normal buffer.
+  Motion blur has the same exposure on `velocity`. The prePass question under "Removed
+  effects" is the real fix.
+
+## Removed effects: pixelation, ssgi, ssr, traa (ao was revived)
 
 Cut wholesale after being built — a **scope decision, not a defeat**: the shared root
 cause (the shader-cache trap) was found and fixed, so they could have been finished.
 What a revival restores:
 
-- MRT rows: `ao`/`ssao` (depth, normal), `traa` (depth, velocity), `ssgi` (depth,
+- MRT rows (`normal` is now live — `ao` re-added it): `traa` (depth, velocity), `ssgi` (depth,
   normal, velocity, diffuse), `ssr` (depth, normal, metalrough), `denoise` (depth,
   normal). The union algorithm is untouched and still general — a row in `build.ts`'s
   MRT table, a `Requirement` member, and the unpack node on `BuildContext`.

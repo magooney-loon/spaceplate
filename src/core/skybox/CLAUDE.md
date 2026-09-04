@@ -7,7 +7,8 @@ Everything sky / time / weather / environment. Sub-area docs: `model/`,
 Skybox.svelte     — mount + THE driver task + env/cube mode switch
 Sky.svelte        — the dome (three's SkyMesh), descriptor consumer, env bake budget
 SkyLight.svelte   — the descriptor-driven key light (sun→moon crossover); its shadow map
-                    size comes from Skybox.svelte, per graphics preset (2048 / 1024)
+                    size comes from Skybox.svelte, per graphics preset (2048 / 1024), and
+                    it AUTO-FITS its shadow frustum to the visible casters (see below)
 SkyFog.svelte     — scene.fog from the day curve + fog channel
 model/            — the pure model + the sky façade (descriptor, skyActions, skyMeta)
 layers/           — every renderer that draws on/around the dome
@@ -34,6 +35,38 @@ Two factors, unioned as transmittances (`1 - (1 - range)(1 - height)`):
 Every sky layer sets `material.fog = false` — at radius 1000 any fog would resolve the
 whole sky to flat fog colour (see `layers/CLAUDE.md`). That opt-out still applies on the
 `fogNode` path; `NodeMaterial` gates on `material.fog` before touching the node.
+
+## The shadow frustum is fitted, not fixed (`SkyLight.svelte`)
+
+The box used to be a hard ±20 world units at the **world origin**, sized for DemoScene's
+20×20 floor. Anything outside it is absent from the shadow map entirely — it neither
+casts nor receives — so the key light passed straight through any model bigger than 40
+units across. At sunset it was worse in three ways at once, because `KEY_MIN_ELEVATION`
+floors the aim at 3°: the shadow camera looks nearly **horizontally**, which spends the
+±20 top/bottom on world *height* rather than ground, and put casters more than ~45 units
+along the sun axis past the old `distance * 2.5` far plane.
+
+It now fits a bounding sphere over the **visible shadow casters** each `fitIntervalMs`
+(500 ms, budgeted like Sky's env bake — measuring is the expensive half, applying is
+free). Three properties keep that from becoming its own bug:
+
+- **`shadowRadius` is a floor, not a value.** A small scene is bit-identical to before.
+- **The radius is quantised to that floor** (20, 40, 60 …). Texel density is a function
+  of the box, so a box tracking the bounds continuously would re-blur every shadow in
+  the frame as a physics body rolled.
+- **The centre is snapped to the texel grid.** Making the centre mobile is what
+  *introduces* shadow-edge crawl; the snap is what takes it back out.
+- `maxShadowRadius` (400) caps it, so one stray body flung to infinity cannot inflate
+  the box until every shadow is mush. `normalBias` scales with texel size — at ±20 a
+  texel is 2 cm and zero bias was fine, at ±400 it is 39 cm and very much is not.
+
+Still **one cascade**. Past the cap the honest answer is `CSMShadowNode`
+(`DOCS/best-practices.md` §2.6), not a bigger single map. `light.target` is now parented
+to the scene, because a mobile centre needs its `matrixWorld` to actually update.
+
+**Shadows do not occlude the ambient term** — `scene.environment` and the hemisphere
+fill light closed interiors from the inside regardless. That is the `ao` effect's job
+(`core/postprocessing/CLAUDE.md`), and it is off by default.
 
 ## The descriptor contract — the one rule everything else follows
 

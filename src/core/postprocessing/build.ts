@@ -10,6 +10,7 @@ import {
 	output,
 	velocity,
 	emissive,
+	normalView,
 	vec4,
 	uniform,
 	context,
@@ -64,17 +65,21 @@ export interface PipelineBuild {
  * MRT attachment name → the TSL node that writes it. `velocity` feeds motion blur;
  * `emissive` feeds bloom's material mode — packed as `vec4(emissive, output.a)` and
  * blended like the output attachment (NormalBlending), mirroring
- * webgpu_postprocessing_bloom_emissive. Re-adding a member is one row here, one in
- * MRT_TEXTURE_NAME, one on `Requirement` (see "Removed effects" in CLAUDE.md).
+ * webgpu_postprocessing_bloom_emissive. `normal` is view-space, the layout GTAONode's
+ * own docs specify (`mrt({ output, normal: normalView })`). Re-adding a member is one
+ * row here, one in MRT_TEXTURE_NAME, one on `Requirement` (see "Removed effects" in
+ * CLAUDE.md).
  */
 const MRT_LAYOUT: Record<MrtRequirement, (ctx: any) => any> = {
 	velocity: () => velocity,
-	emissive: () => vec4(emissive, output.a)
+	emissive: () => vec4(emissive, output.a),
+	normal: () => normalView
 };
 
 const MRT_TEXTURE_NAME: Record<MrtRequirement, string> = {
 	velocity: 'velocity',
-	emissive: 'emissive'
+	emissive: 'emissive',
+	normal: 'normal'
 };
 
 /**
@@ -96,6 +101,11 @@ const MAX_SHUTTER_SCALE = 8;
 /** Per-attachment fixups the union can't express — run after setMRT. */
 const MRT_FINALIZE: Record<MrtRequirement, (basePass: any, mrtNode: any) => void> = {
 	velocity: () => {},
+	// Normals stay at the pass's default float format and default (no) blending: a
+	// blended normal is a meaningless direction, and transparent geometry writing
+	// garbage into it is the known cost of MRT-on-the-main-pass (CLAUDE.md, "Removed
+	// effects" — the prePass question this re-opens).
+	normal: () => {},
 	// UnsignedByte emissive saves bandwidth (example does the same); NormalBlending so
 	// transparent surfaces write emissive like they write color (default is no blend).
 	emissive: (basePass, mrtNode) => {
@@ -209,11 +219,13 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			viewZ: basePass.getViewZNode(),
 			velocity: null as any,
 			emissive: null as any,
+			normal: null as any,
 			aspect,
 			shutterScale
 		};
 		if (resolution.mrt.includes('velocity')) ctx.velocity = basePass.getTextureNode('velocity');
 		if (resolution.mrt.includes('emissive')) ctx.emissive = basePass.getTextureNode('emissive');
+		if (resolution.mrt.includes('normal')) ctx.normal = basePass.getTextureNode('normal');
 
 		// 4. Fold chain effects in order, threading ctx.color.
 		const chain = resolution.active
