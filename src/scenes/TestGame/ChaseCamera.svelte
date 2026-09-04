@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { useThrelte } from '@threlte/core/webgpu';
 	import { CameraControls, useFollow } from '@threlte/extras';
-	import type CameraControlsRef from 'camera-controls';
+	import CameraControlsImpl from 'camera-controls';
 	import * as THREE from 'three/webgpu';
 	import { sceneState } from '$extensions/scene';
 
@@ -33,9 +33,16 @@
 	// on the way in.
 	const MIN_DISTANCE = 0.05;
 	const MAX_DISTANCE = 30;
+	// Right-drag height. Sits in useFollow's `lookAtOffset`, which the hook adds to the
+	// tracked point UNSMOOTHED every frame — the one part of the rig meant to be tweaked
+	// live. Dragging the target up lifts the whole orbit, so the camera rises with it.
+	const HEIGHT_MIN = -1.4; // below the roofline, looking up the road
+	const HEIGHT_MAX = 6; // helicopter
+	const HEIGHT_PER_PX = 0.014;
 
-	const { camera, invalidate } = useThrelte();
-	let controls = $state.raw<CameraControlsRef>();
+	const { camera, dom, invalidate } = useThrelte();
+	let controls = $state.raw<CameraControlsImpl>();
+	let lookHeight = $state(0);
 
 	// Stand down while Studio is flying its editor camera (dev only). `camera.current` IS
 	// the editor camera then, and `CameraControls.update()` writes position + lookAt on
@@ -51,8 +58,8 @@
 		target: active ? target : undefined,
 		controls,
 		// The target IS the chase anchor (TestGame parents it inside the RigidBody at the
-		// car's middle), so nothing to offset here.
-		lookAtOffset: [0, 0, 0],
+		// car's middle), so the only offset is the player's right-drag height.
+		lookAtOffset: [0, lookHeight, 0],
 		// A trailing rig: the camera lags the car slightly under acceleration and leads it
 		// into the direction of travel, which is what sells speed.
 		followSmoothTime: 0.12,
@@ -101,6 +108,55 @@
 			cam.position.copy(savedPosition);
 			cam.quaternion.copy(savedQuaternion);
 			invalidate();
+		};
+	});
+
+	// Right button is OURS. camera-controls binds it to TRUCK by default, which pans the
+	// orbit target — and useFollow writes that target back to the car every frame, so the
+	// stock binding is dead input anyway. Taking it means one owner, not two.
+	$effect(() => {
+		if (controls) controls.mouseButtons.right = CameraControlsImpl.ACTION.NONE;
+	});
+
+	// Right-drag = raise/lower the camera. Drag up, camera goes up.
+	$effect(() => {
+		if (!active) return;
+
+		let pointer: number | null = null;
+
+		const onPointerDown = (e: PointerEvent) => {
+			if (e.button !== 2) return;
+			pointer = e.pointerId;
+			dom.setPointerCapture(e.pointerId);
+			e.preventDefault();
+		};
+		const onPointerMove = (e: PointerEvent) => {
+			if (e.pointerId !== pointer) return;
+			const next = lookHeight - e.movementY * HEIGHT_PER_PX;
+			lookHeight = next < HEIGHT_MIN ? HEIGHT_MIN : next > HEIGHT_MAX ? HEIGHT_MAX : next;
+			invalidate();
+		};
+		const endDrag = (e: PointerEvent) => {
+			if (e.pointerId !== pointer) return;
+			if (dom.hasPointerCapture(e.pointerId)) dom.releasePointerCapture(e.pointerId);
+			pointer = null;
+		};
+		// Without this the browser menu eats the drag on the first frame.
+		const onContextMenu = (e: Event) => e.preventDefault();
+
+		dom.addEventListener('pointerdown', onPointerDown);
+		dom.addEventListener('pointermove', onPointerMove);
+		dom.addEventListener('pointerup', endDrag);
+		dom.addEventListener('pointercancel', endDrag);
+		dom.addEventListener('contextmenu', onContextMenu);
+
+		return () => {
+			dom.removeEventListener('pointerdown', onPointerDown);
+			dom.removeEventListener('pointermove', onPointerMove);
+			dom.removeEventListener('pointerup', endDrag);
+			dom.removeEventListener('pointercancel', endDrag);
+			dom.removeEventListener('contextmenu', onContextMenu);
+			if (pointer !== null && dom.hasPointerCapture(pointer)) dom.releasePointerCapture(pointer);
 		};
 	});
 </script>

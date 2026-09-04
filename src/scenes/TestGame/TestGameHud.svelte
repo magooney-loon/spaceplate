@@ -19,7 +19,7 @@
 	<!-- Controls hint -->
 	<div class="info">
 		<p>Arrows drive · Space handbrake · Q/E shift down/up</p>
-		<p>Drag to tilt the camera · wheel to zoom</p>
+		<p>Drag to tilt · right-drag to raise/lower · wheel to zoom</p>
 	</div>
 </div>
 
