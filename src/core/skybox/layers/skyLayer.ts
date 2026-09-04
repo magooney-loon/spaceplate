@@ -119,6 +119,54 @@ export const instancedQuad = (
 	return geometry;
 };
 
+/**
+ * One regular polygon CIRCUMSCRIBING the unit circle, drawn `count` times — the
+ * round-sprite counterpart to `instancedQuad`.
+ *
+ * FOR FILL RATE, AND NOTHING ELSE. A particle whose falloff dies at radius 1 (Snow's
+ * inverse-distance speck, `0.5/d - 1`) draws its disc inside the inscribed circle of its
+ * quad, so the four corners — `(4 - π)/4`, **21.5% of every flake's fragments** — are
+ * rasterised, shaded and alpha-blended to produce exactly nothing. At 11 000 flakes on a
+ * fill-bound frame that is real money.
+ *
+ * The apothem is 1, so the drawn disc is untouched and no shader changes: the layer still
+ * reads its corner from `positionLocal.xy` on the same 0..1 radius convention, and the
+ * few fragments beyond radius 1 still clamp to zero — there are simply far fewer of them.
+ * Octagon area is `8·tan(π/8) = 3.31` against the square's 4, so **17% fewer fragments**
+ * for four extra vertices per instance. On a fill-bound layer that trade is roughly 60:1
+ * in favour; it is the wrong trade for a layer that is vertex-bound.
+ *
+ * `sides = 4` reproduces `CENTERED_QUAD` exactly, which is the sanity check that the
+ * construction is right.
+ *
+ * Not for Rain: its streaks are long thin quads whose gradient fills the whole shape, so
+ * there are no dead corners to reclaim.
+ */
+export const instancedDisc = (count: number, sides = 8): THREE.InstancedBufferGeometry => {
+	const geometry = new THREE.InstancedBufferGeometry();
+
+	const radius = 1 / Math.cos(Math.PI / sides);
+	const position = new Float32Array(sides * 3);
+	for (let v = 0; v < sides; v++) {
+		// The half-step offset is what puts an EDGE tangent to the circle rather than a
+		// vertex on it — i.e. what makes this circumscribed rather than inscribed.
+		const angle = (v / sides) * Math.PI * 2 + Math.PI / sides;
+		position[v * 3] = Math.cos(angle) * radius;
+		position[v * 3 + 1] = Math.sin(angle) * radius;
+		position[v * 3 + 2] = 0;
+	}
+
+	// Triangle fan, wound counter-clockwise to match `instancedQuad` — sky layers are
+	// `FrontSide`, so a reversed winding would cull the whole field.
+	const index: number[] = [];
+	for (let v = 1; v < sides - 1; v++) index.push(0, v, v + 1);
+
+	geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+	geometry.setIndex(index);
+	geometry.instanceCount = count;
+	return geometry;
+};
+
 // Per-instance attribute constructors.
 //
 // The explicit type argument is required for the same reason `attribute<'vec2'>(...)`

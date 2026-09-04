@@ -13,6 +13,15 @@ export type AudioSettings = {
 
 export type GraphicsSettings = {
 	quality: QualityLevel;
+	/**
+	 * Render resolution as a fraction of what the preset would otherwise use, 0.5–1.
+	 *
+	 * Multiplies the preset's base device pixel ratio rather than replacing it, so 1 is
+	 * exactly the old behaviour on both presets and the knob composes instead of fighting
+	 * them. `App.svelte` owns the arithmetic. This is the cheapest lever there is on a
+	 * fill-rate-bound frame — 0.5 is a quarter of the fragments.
+	 */
+	renderScale: number;
 };
 
 export type GeneralSettings = {
@@ -40,6 +49,7 @@ export type AudioActions = {
 
 export type GraphicsActions = {
 	setQuality: (quality: QualityLevel) => void;
+	setRenderScale: (v: number) => void;
 };
 
 export type GeneralActions = {

@@ -15,6 +15,7 @@ export type { ExtensionState, ExtensionActions, QualityLevel } from './types';
 export const BASE_URL = import.meta.env.BASE_URL;
 
 const GRAPHICS_KEY = 'graphics-quality';
+const RENDER_SCALE_KEY = 'render-scale';
 const UI_VISIBLE_KEY = 'ui-visible';
 const MOUSE_SENSITIVITY_KEY = 'mouse-sensitivity';
 const AIM_SENSITIVITY_KEY = 'aim-sensitivity';
@@ -61,6 +62,14 @@ const loadVolume = (key: string, fallback: number): number => {
 	return isNaN(v) ? fallback : Math.min(1, Math.max(0, v));
 };
 
+/** Render scale floor. Below this the frame is mush, and the fill saving has run out. */
+export const MIN_RENDER_SCALE = 0.5;
+
+const clampRenderScale = (v: number): number =>
+	isNaN(v) ? 1 : Math.min(1, Math.max(MIN_RENDER_SCALE, v));
+
+const loadRenderScale = (): number => parseFloat(fromStorage(RENDER_SCALE_KEY, '1'));
+
 export const settingsState = $state<ExtensionState>({
 	audio: {
 		musicVolume: loadVolume(MUSIC_VOLUME_KEY, 0.7),
@@ -71,7 +80,8 @@ export const settingsState = $state<ExtensionState>({
 		sfxEnabled: false
 	},
 	graphics: {
-		quality: loadQuality()
+		quality: loadQuality(),
+		renderScale: clampRenderScale(loadRenderScale())
 	},
 	general: {
 		uiVisible: fromStorage(UI_VISIBLE_KEY, 'true') !== 'false',
@@ -145,6 +155,12 @@ export const graphicsActions: GraphicsActions = {
 		settingsState.graphics.quality = quality;
 		toStorage(GRAPHICS_KEY, quality);
 		logSettings.info('Graphics quality:', quality);
+	},
+	setRenderScale(v: number) {
+		const scale = clampRenderScale(v);
+		settingsState.graphics.renderScale = scale;
+		toStorage(RENDER_SCALE_KEY, String(scale));
+		logSettings.info('Render scale:', scale);
 	}
 };
 

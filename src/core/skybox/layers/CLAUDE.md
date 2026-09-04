@@ -19,6 +19,15 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 
 ## Shared plumbing (`skyLayer.ts`) — the invariants
 
+- **`instancedDisc(count, sides = 8)`** — a regular polygon **circumscribing** the unit
+  circle, for any particle whose falloff dies at radius 1. A square spends `(4 - π)/4` =
+  **21.5% of every sprite's fragments** shading and alpha-blending corners that are
+  guaranteed zero; an octagon spends 17% fewer for four extra vertices per instance,
+  which on a fill-bound layer is roughly a 60:1 trade. The apothem is 1, so the drawn
+  disc and the shader are unchanged — Snow swapped geometry and nothing else.
+  `sides = 4` reproduces `CENTERED_QUAD` exactly, which is the check that the
+  construction is right. **Wrong tool for Rain**: its streaks are long thin quads whose
+  gradient fills the whole shape, so there are no dead corners to reclaim.
 - **`instancedQuad(count, corners)`** — one shared four-vertex quad + per-instance
   attributes. Every particle layer used to write each per-particle value four times
   (Rain 1.52 MB → 0.25 MB instanced). The corner arrives as `positionLocal.xy`. Note

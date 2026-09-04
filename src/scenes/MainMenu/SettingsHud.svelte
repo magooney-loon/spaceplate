@@ -244,6 +244,33 @@
 				</div>
 
 				<div class="section">
+					<p class="section-label">Render Scale</p>
+					<div class="sens-row">
+						<span class="sens-label">Resolution</span>
+						<input
+							type="range"
+							min="0.5"
+							max="1"
+							step="0.05"
+							value={settingsState.graphics.renderScale}
+							oninput={(e) =>
+								graphicsActions.setRenderScale(parseFloat((e.target as HTMLInputElement).value))}
+							class="sens-slider"
+						/>
+						<span class="sens-value">
+							{Math.round(settingsState.graphics.renderScale * 100)}%
+						</span>
+					</div>
+					<p class="section-note">
+						{#if telemetryState.bufferWidth > 0}
+							Drawing at {telemetryState.bufferWidth}×{telemetryState.bufferHeight}.
+						{/if}
+						Lower this first when the framerate drops — it is the only setting that costs sharpness rather
+						than content, and halving it quarters the work.
+					</p>
+				</div>
+
+				<div class="section">
 					<p class="section-label">Mouse Sensitivity</p>
 					<div class="sens-row">
 						<span class="sens-label">Look</span>

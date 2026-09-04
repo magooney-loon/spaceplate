@@ -57,7 +57,7 @@
 	import { sampleHeightField } from './heightField';
 	import {
 		billboardClip,
-		instancedQuad,
+		instancedDisc,
 		instancedVec3,
 		instancedVec4,
 		skyLayerMaterial,
@@ -287,10 +287,14 @@
 		const settle = mix(float(1), smoothstep(float(0), float(0.35), aboveSurface), valid);
 
 		// THE SPECK: inverse-distance falloff, ported from the reference's
-		// 0.5/distance - 1. The quad's corners are +/-1, so distance to centre is
-		// length(corner) * 0.5 with the quad's edge at 0.5 -- the exact normalisation
-		// gl_PointCoord gives point sprites. Bright core at a quarter of the radius,
-		// gone at the edge; the epsilon guards the divide at the exact centre.
+		// 0.5/distance - 1. The corner convention is a unit RADIUS -- distance to centre
+		// is length(corner) * 0.5, reaching 0.5 at radius 1 -- which is the exact
+		// normalisation gl_PointCoord gives point sprites. Bright core at a quarter of the
+		// radius, gone at radius 1; the epsilon guards the divide at the exact centre.
+		//
+		// Dying at radius 1 is also why the geometry is an octagon (instancedDisc) rather
+		// than a quad: everything outside that circle clamps to zero, so a square spent
+		// 21.5% of every flake's fragments blending nothing.
 		const dist = sqrt(corner.x.mul(corner.x).add(corner.y.mul(corner.y))).mul(0.5);
 		const speck = float(0.5).div(dist.max(1e-3)).sub(1).clamp(0, 1);
 
@@ -318,7 +322,9 @@
 			.mul(nearFade)
 			.mul(alive);
 
-		return { geometry: instancedQuad(count), material };
+		// An octagon, not a quad: the speck below dies at radius 1, so a square's corners
+		// are 21.5% of every flake's fragments blended to nothing. See instancedDisc.
+		return { geometry: instancedDisc(count), material };
 	};
 
 	const { geometry, material } = build();

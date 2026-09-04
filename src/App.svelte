@@ -36,18 +36,21 @@
 		});
 	};
 
+	// THE BACKBUFFER SIZE, AND THEREFORE THE FILL BILL. Everything fill-rate-bound in this
+	// engine — the precipitation fields above all, but also the mirror floor's
+	// full-resolution reflection pass and every post-processing pass — scales with the
+	// square of this number. It is the cheapest lever there is, and the only one that
+	// costs sharpness rather than content.
+	//
+	// The preset picks the BASE: full device pixel ratio on 'high' (uncapped on purpose —
+	// a Retina panel that can afford it should get it), 1 on 'low'. `renderScale` is then
+	// a plain multiplier on top, so it composes with the preset instead of fighting it and
+	// its default of 1 reproduces the old behaviour exactly on both.
 	const dpr = $derived.by(() => {
 		if (typeof window === 'undefined') return 1;
 		const deviceDPR = window.devicePixelRatio || 1;
-
-		switch (settingsState.graphics.quality) {
-			case 'low':
-				return 1;
-			case 'high':
-				return deviceDPR;
-			default:
-				return deviceDPR;
-		}
+		const base = settingsState.graphics.quality === 'low' ? 1 : deviceDPR;
+		return base * settingsState.graphics.renderScale;
 	});
 </script>
 

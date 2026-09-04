@@ -388,19 +388,27 @@ Clear weather was unchanged, as the control. Two fixes, both layer-mask work:
 2. **The lens quads excluded from the floor reflector** (§2.8) — a second fullscreen
    `viewportMipTexture` pass per frame, and a rendering bug besides.
 
-**Still open, and it is a look decision, not a bug.** The main-pass overdraw is
-untouched: 11 000 alpha-blended square billboards with `depthWrite = false`, every
-fragment blended whether it contributes or not. Snow costs more than rain despite fewer
-particles because rain's quads are thin streaks and snow's are squares, and snow's
-fragment shader is the heavier one. The knobs, in order of effect:
+**Then the main-pass overdraw**, which is where the rest of it lives: 11 000
+alpha-blended billboards with `depthWrite = false`, every fragment blended whether it
+contributes or not. Snow costs more than rain despite having _fewer_ particles, because
+rain's quads are thin streaks and snow's were squares, and snow's fragment shader is the
+heavier one. Three knobs, in order of effect — the first two are now shipped:
 
-- **dpr.** `App.svelte` gives the high preset `window.devicePixelRatio` uncapped; at dpr 2
-  that is 4× the fragments of low. Capping at 1.5 is the single biggest lever and costs
-  only sharpness.
-- **Count.** `PRECIPITATION` in `Skybox.svelte` — the doc's own note that count is "the
-  ONE knob that moves cost" is right, and it thins the snowfall visibly.
-- **Quad area.** Snow's speck falloff reaches zero at the inscribed circle, so ~21% of
-  every flake's fragments are provably zero-contribution corners.
+- **Resolution — the biggest lever, and the only one that costs sharpness rather than
+  content.** `App.svelte` gave the high preset `window.devicePixelRatio` uncapped, which
+  at dpr 2 is 4× the fragments of low. Now `settingsState.graphics.renderScale` (0.5–1,
+  Settings ▸ General) multiplies the preset's base dpr, so the user can trade sharpness
+  for frames without dropping to the low preset and losing post-processing too. **Reach
+  for this before particle counts.**
+- **Quad area — free, no look change.** Snow's speck falloff reaches zero at the
+  inscribed circle, so a square spent `(4 - π)/4` = 21.5% of every flake's fragments
+  blending guaranteed zeros. `instancedDisc` (skyLayer.ts) draws a circumscribing octagon
+  instead: 17% fewer fragments, four extra vertices per instance, apothem 1 so the drawn
+  disc and the shader are untouched. Verified by construction — `sides = 4` reproduces
+  `CENTERED_QUAD` exactly, and the winding is CCW so `FrontSide` doesn't cull it.
+- **Count — the one that actually changes the look.** `PRECIPITATION` in `Skybox.svelte`;
+  the doc's own note that count is "the ONE knob that moves cost" is right, but it thins
+  the snowfall visibly, which is why it is last.
 
 `SnowLens` also keeps drawing for ≈30s after snow stops (`meltSeconds = 6` decaying to a
 `growth > 0.002` cutoff) — by design, "frost is a temperature", but it is a fullscreen
