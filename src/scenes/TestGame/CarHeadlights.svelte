@@ -119,13 +119,15 @@
 	/>
 	<T.Object3D bind:ref={targetL} position={[0, 0, -BEAM_LENGTH]} />
 
-	<!-- Volumetric-looking beam cone: cylinder rotated so +Y (v=1, narrow end) points
-	     forward (-Z), centred half a beam length ahead. -->
+	<!-- Volumetric-looking beam cone: rotation.x = +π/2 maps +Y → +Z, so the narrow
+	     top (v=1) sits at the lamp (z=0) and the cone widens toward −Z (forward). With
+	     rotation.x = −π/2 it inverts — narrow bright tip 7m out, wide end at the lamp,
+	     which reads as the beam shining INTO the car. -->
 	<T.Mesh
 		geometry={beamGeometry}
 		material={beamMaterial}
 		position={[0, 0, -BEAM_LENGTH / 2]}
-		rotation={[-Math.PI / 2, 0, 0]}
+		rotation={[Math.PI / 2, 0, 0]}
 		userData={{ selectable: false, hideInTree: true }}
 	/>
 
@@ -152,11 +154,12 @@
 	/>
 	<T.Object3D bind:ref={targetR} position={[0, 0, -BEAM_LENGTH]} />
 
+	<!-- See HeadlightL for the rotation direction gotcha. -->
 	<T.Mesh
 		geometry={beamGeometry}
 		material={beamMaterial}
 		position={[0, 0, -BEAM_LENGTH / 2]}
-		rotation={[-Math.PI / 2, 0, 0]}
+		rotation={[Math.PI / 2, 0, 0]}
 		userData={{ selectable: false, hideInTree: true }}
 	/>
 
