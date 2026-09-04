@@ -13,8 +13,8 @@ DemoScene/ DemoScene.svelte, DemoSceneHud.svelte, DemoPhysicsBodies.svelte,
            SpawnedBodies.svelte, mirrorFloor.ts, demoQuality.ts
 TestGame/  TestGame.svelte, TestGameHud.svelte, CarCluster.svelte, ChaseCamera.svelte,
            CarWheels.svelte, CarHeadlights.svelte, carInput.svelte.ts, gr86.ts,
-           drivetrain.ts, carTelemetry.svelte.ts (driving prototype: city trimesh +
-           GR86 on one chassis body with a simulated drivetrain)
+           drivetrain.ts, carTelemetry.svelte.ts, cityColliders.ts (driving prototype:
+           city trimesh + GR86 on one chassis body with a simulated drivetrain)
 ```
 
 ## DemoScene specifics
@@ -74,6 +74,15 @@ TestGame/  TestGame.svelte, TestGameHud.svelte, CarCluster.svelte, ChaseCamera.s
   longitudinal AND lateral — is modelled in the drivetrain/task; contacts keep normal impulses
   only. Trade-off: a parked car can creep on slopes steeper than rolling resistance holds
   (~0.75°); hold Space (handbrake force) or a brake key if that ever matters.
+- **City collision is hand-rolled** (`cityColliders.ts`), not `<AutoColliders>`: the trimesh
+  flags cannot be passed through AutoColliders, and without `TriMeshFlags.FIX_INTERNAL_EDGES`
+  a flat tessellated road produces ghost contacts at internal triangle edges — bumps and
+  snags on perfectly flat asphalt. Each mesh's root-relative transform is baked into the
+  vertices (same trick as CarWheels). Applies to any static level geometry driven over.
+- **The chassis is a `roundCuboid`** (r = 0.18 m): rapier's rounding DILATES outward (total
+  half-extent = h + r), so r is subtracted from each half-extent to keep the outer size;
+  square box edges otherwise face-catch on seams, kerbs and barrier lips. Applies to any
+  dynamic body meant to slide along static geometry.
 - **`carTelemetry.svelte.ts` is the plain-object / `$state`-mirror split** the sky uses:
   `carSim` is written every physics step (200 Hz) and read by `CarWheels`; `carHud` is
   quantised and published at 30 Hz for `CarCluster.svelte`. The HUD must never read `carSim` —

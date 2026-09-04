@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T } from '@threlte/core/webgpu';
 	import { useGltf, useDraco, useKtx2, useMeshopt } from '@threlte/extras';
-	import { AutoColliders, Collider, RigidBody, usePhysicsTask } from '@threlte/rapier';
+	import { Collider, RigidBody, usePhysicsTask } from '@threlte/rapier';
 	import {
 		CoefficientCombineRule,
 		type RigidBody as RapierRigidBody,
@@ -19,6 +19,7 @@
 	import { CAR_INPUT_KEYS, carInput, resetCarInput } from './carInput.svelte';
 	import { G, GR86, UNITS_PER_METER } from './gr86';
 	import { createDrivetrain } from './drivetrain';
+	import { buildCityColliders } from './cityColliders';
 	import { carSim, publishCarHud, resetCarTelemetry } from './carTelemetry.svelte';
 
 	// Test Game 3D scene — driving prototype.
@@ -39,6 +40,12 @@
 
 	const city = useGltf(`${BASE_URL}models/testgame/track.glb`, decoders);
 	const car = useGltf(`${BASE_URL}models/testgame/2023_toyota_gr86_compressed.glb`, decoders);
+
+	// Static collision for the city — built once when the GLB lands. Hand-rolled
+	// instead of <AutoColliders> because the trimesh flags (FIX_INTERNAL_EDGES,
+	// which stops ghost bumps at internal triangle seams on the flat roads) can
+	// only be passed through explicit args. See cityColliders.ts.
+	const cityColliders = $derived($city?.scene ? buildCityColliders($city.scene) : []);
 
 	$effect(() => {
 		if ($city?.scene) logGltf.info('TestGame track loaded');
@@ -249,12 +256,14 @@
 <svelte:window onkeydown={onKeydown} onkeyup={onKeyup} onblur={resetCarInput} />
 
 {#if $city}
-	<T.Group name="City" scale={1} position={[ 165.7624, 8.7, -206.0916 ]} rotation={[ 0, -1.0472, 0 ]}>
-		<!-- Trimesh per mesh (the GLB is ~22 named building/prop/road meshes): exact
-		     collision for a drivable city, fixed bodies by AutoColliders' default. -->
-		<AutoColliders shape="trimesh">
-			<T is={$city.scene} />
-		</AutoColliders>
+	<T.Group name="City" scale={1} position={[ 101.4641, 8.7, -102.459 ]} rotation={[ 0, -1.0472, 0 ]}>
+		<!-- The track GLB: Ground/Asphalt planes, Metal barriers, trees, decals — one
+		     trimesh per mesh, transforms baked (cityColliders.ts). Bare <Collider>s
+		     attach to an implicit fixed body, exactly like AutoColliders did. -->
+		<T is={$city.scene} />
+		{#each cityColliders as c (c.id)}
+			<Collider shape="trimesh" args={c.args} />
+		{/each}
 	</T.Group>
 {/if}
 
@@ -288,10 +297,18 @@
 				<CarHeadlights />
 			</T.Group>
 
-			<!-- Chassis: ONE box instead of per-mesh hulls (the model is dozens of
-			     meshes — seats, glass, engine — each a silly collider). Args are
-			     half-extents in model meters, scaled by the parent group to match the
-			     visual; offset to the car's centre height (model Y spans 0..1.31).
+			<!-- Chassis: ONE rounded box instead of per-mesh hulls (the model is dozens
+			     of meshes — seats, glass, engine — each a silly collider). Args are in
+			     model meters, scaled by the parent group (×2.5) to match the visual.
+			     Measured from the GLB: the car spans y 0.01 (tire bottoms) .. 1.31 (roof),
+			     so the group offset puts this box at y 0.06..1.16 — just above the tyre
+			     contact plane (ground clearance) and under the roof.
+			     ROUNDED (r = 0.18 m): a plain cuboid's square edges catch on triangle
+			     seams, kerbs and barrier lips — each edge contact is a wall-faced stop.
+			     The rounding is DILATING in rapier (total half-extent = h + r), so each
+			     half-extent has r subtracted to preserve the outer size: 0.95-0.18,
+			     0.55-0.18, 2.1-0.18. The flat bottom plane stays where it was, so the
+			     ride height is unchanged.
 			     FRICTIONLESS (Min rule → min(0, μ_road) = 0) on purpose: the chassis is
 			     one box, so contact friction is STATIC friction against the COM drive
 			     force — at real gravity (gravityScale 2.5) the cap is μ·m·g ≈ 0.65 ·
@@ -303,8 +320,8 @@
 			     (ground, kerbs, walls). Verified against rapier in isolation. -->
 			<T.Group position={[0, 1.53, 0]} scale={2.5}>
 				<Collider
-					shape="cuboid"
-					args={[0.95, 0.55, 2.1]}
+					shape="roundCuboid"
+					args={[0.95 - 0.18, 0.55 - 0.18, 2.1 - 0.18, 0.18]}
 					mass={GR86.mass}
 					friction={0}
 					frictionCombineRule={CoefficientCombineRule.Min}
