@@ -163,8 +163,21 @@
 	});
 
 	// --- direction arrows -----------------------------------------------------------
+	//
+	// ONE draw call however long the path — the arrows are identical cones spaced along
+	// the curve, so they are a single hand-rolled InstancedMesh in the shape of
+	// `scenes/DemoScene/SpawnedBodies.svelte`. NOT @threlte/extras' `<InstancedMesh>`:
+	// its Api task invalidate()s unconditionally on every sync, which would pin the
+	// on-demand render loop forever (best-practices.md §2.7). The sync is an $effect,
+	// not a task, because arrow transforms derive from the curve alone — they change
+	// exactly when it does (including every frame of a marker drag, which is what keeps
+	// the overlay tracking the drag), so the effect cannot pin the loop either.
 
 	const ARROW_SPACING = 4.5;
+	const ARROW_LENGTH = 0.4;
+	/** Buffer cap: 512 arrows spans ~2300 world units of path at ARROW_SPACING. A path
+	 *  long enough to reach it just stops growing arrows past the cap. */
+	const MAX_ARROWS = 512;
 
 	const arrowGeometry = new THREE.ConeGeometry(0.10, 0.4, 12);
 	arrowGeometry.rotateX(-Math.PI / 2);
@@ -176,33 +189,52 @@
 	arrowMaterial.depthWrite = false;
 	arrowMaterial.fog = false;
 
-	const arrows = $derived.by(() => {
+	const arrowMesh = new THREE.InstancedMesh(arrowGeometry, arrowMaterial, MAX_ARROWS);
+	arrowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+	arrowMesh.count = 0;
+	arrowMesh.visible = false;
+	// The arrows sit wherever the curve goes — a bounding sphere would be stale the
+	// moment the path is edited, and culling one draw call is not worth recomputing it.
+	arrowMesh.frustumCulled = false;
+	arrowMesh.userData = { selectable: false, hideInTree: true };
+
+	// Section-local scratch. Sharing applyPose's temps would work today (nothing here
+	// runs concurrently) but scratch shared across sections is how aliasing bugs start.
+	const arrowPoint = new THREE.Vector3();
+	const arrowTangent = new THREE.Vector3();
+	const arrowQuat = new THREE.Quaternion();
+	const arrowMatrix = new THREE.Matrix4();
+	const ARROW_ORIGIN = new THREE.Vector3(0, 0, 0);
+	const ARROW_UP = new THREE.Vector3(0, 1, 0);
+	const ARROW_ONE = new THREE.Vector3(1, 1, 1);
+
+	$effect(() => {
 		const source = curve;
-		if (!source) return [];
-		const len = source.getLength();
-		const count = Math.max(1, Math.floor(len / ARROW_SPACING));
-		const result: {
-			position: [number, number, number];
-			quaternion: [number, number, number, number];
-		}[] = [];
-		for (let i = 1; i <= count; i++) {
-			const t = i / (count + 1);
-			const point = source.getPoint(t);
-			const tangent = source.getTangent(t).normalize();
-			const arrowLen = 0.4;
-			const offset = point.clone().sub(tangent.clone().multiplyScalar(arrowLen / 2));
-			const m = new THREE.Matrix4().lookAt(
-				new THREE.Vector3(0, 0, 0),
-				tangent,
-				new THREE.Vector3(0, 1, 0)
-			);
-			const q = new THREE.Quaternion().setFromRotationMatrix(m);
-			result.push({
-				position: [offset.x, offset.y, offset.z],
-				quaternion: [q.x, q.y, q.z, q.w]
-			});
+		const matrices = arrowMesh.instanceMatrix.array as Float32Array;
+		let n = 0;
+		if (source) {
+			const len = source.getLength();
+			const count = Math.max(1, Math.floor(len / ARROW_SPACING));
+			for (let i = 1; i <= count && n < MAX_ARROWS; i++) {
+				const t = i / (count + 1);
+				source.getPoint(t, arrowPoint);
+				source.getTangent(t, arrowTangent).normalize();
+				// Seat the cone so its tip rides the curve: pull back half its length.
+				arrowPoint.addScaledVector(arrowTangent, -ARROW_LENGTH / 2);
+				arrowMatrix.lookAt(ARROW_ORIGIN, arrowTangent, ARROW_UP);
+				arrowQuat.setFromRotationMatrix(arrowMatrix);
+				arrowMatrix.compose(arrowPoint, arrowQuat, ARROW_ONE);
+				matrices.set(arrowMatrix.elements, n * 16);
+				n++;
+			}
 		}
-		return result;
+		arrowMesh.count = n;
+		// An empty mesh costs no draw call at all, same as the sky layers.
+		arrowMesh.visible = n > 0;
+		arrowMesh.instanceMatrix.needsUpdate = true;
+		// Runs only when the curve changed, so this asks for exactly the frames the old
+		// per-arrow prop writes used to — never a pinned loop.
+		invalidate();
 	});
 
 	// --- overlay assets (script-owned, see DemoScene for the same pattern) -----------
@@ -257,6 +289,7 @@
 
 	$effect(() => () => {
 		tubeMaterial.dispose();
+		arrowMesh.dispose();
 		arrowGeometry.dispose();
 		arrowMaterial.dispose();
 		markerGeometry.dispose();
@@ -750,16 +783,9 @@
 		/>
 	{/if}
 
-	{#each arrows as arrow, i (i)}
-		<T.Mesh
-			geometry={arrowGeometry}
-			material={arrowMaterial}
-			position={arrow.position}
-			quaternion={arrow.quaternion}
-			frustumCulled={false}
-			userData={{ selectable: false, hideInTree: true }}
-		/>
-	{/each}
+	<!-- One draw call for every arrow, whatever the path length. Script-owned and synced
+	     by the effect above, hence `dispose={false}` — see SpawnedBodies for the shape. -->
+	<T is={arrowMesh} dispose={false} />
 
 	{#each flyPathState.waypoints as waypoint, index (waypoint.id)}
 		<!-- Deliberately selectable and visible in the tree: that is what lets Studio's
