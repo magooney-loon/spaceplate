@@ -11,8 +11,8 @@
      clock ever changes, this aim needs to change with it. -->
 <T.PerspectiveCamera
 	fov={60}
-	near={0.001}
-	far={144}
+	near={1}
+	far={420}
 	makeDefault
 	position={[24, 10, 0]}
 	oncreate={(ref) => {
