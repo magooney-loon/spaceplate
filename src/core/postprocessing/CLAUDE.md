@@ -11,9 +11,9 @@ registry.ts    — EFFECTS list + resolveEnabledSet policy + structuralKeyOf
 build.ts       — the builder: base pass, MRT union, chain fold, grade, resolve, fallback
 uniforms.ts    — createUniformBag / writeUniformBag — the hot-update path
 luts.svelte.ts — LUT catalogue + async load cache (three's nine example LUTs, public/luts/)
-effects/*.ts   — 11 EffectDefs: ssaa, retro (base) · ao, dof, motionBlur, bloom
-                 (+lensflare sub-toggle), afterimage, vignette (chain) · lut (grade) ·
-                 smaa, fxaa (AA)
+effects/*.ts   — 13 EffectDefs: ssaa, retro (base) · ao, dof, motionBlur, rainLens,
+                 snowLens, bloom (+lensflare sub-toggle), afterimage, vignette (chain) ·
+                 lut (grade) · smaa, fxaa (AA)
 ```
 
 ## Roles — effects are not peers
@@ -24,7 +24,8 @@ Four `PassRole`s exist because a flat enable-grid cannot express the relationshi
   (`extends PassNode`). None enabled → the default `pass(scene, camera)`. The builder
   asks `basePass.getMRT()` instead of assuming the default — a base pass may provision
   attachments the registry never asked for (pixelationPass did exactly that).
-- **chain** (`ao`, `dof`, `motionBlur`, `bloom`, `afterimage`, `vignette`) — plain
+- **chain** (`ao`, `dof`, `motionBlur`, `rainLens`, `snowLens`, `bloom`, `afterimage`,
+  `vignette`) — plain
   colour-in/colour-out, folded in `order` threading `ctx.color`. Some are TSL `Fn`s,
   not node classes (`motionBlur`, `vignette`, our `dof`) — no instance holds uniforms,
   so **the uniform bag is the only way to animate them**.
@@ -220,10 +221,11 @@ daylight (`core/skybox/model/CLAUDE.md`).
   `renderer.getDrawingBufferSize()`, which is already `devicePixelRatio × renderScale`
   (App.svelte's `dpr`). Three scales in this app are one word apart — the third is
   DemoScene's reflector.
-- **Heavy weather degrades it**, via the no-blending rule below: `RainLens`/`SnowLens`
-  are screen-filling quads inside the scene pass and overwrite the whole normal buffer.
-  Motion blur has the same exposure on `velocity`. The prePass question under "Removed
-  effects" is the real fix.
+- **The precipitation fields still perturb it**, via the no-blending rule below: they
+  are thousands of small transparent quads in the scene pass, each punching its own
+  normal through. This used to be far worse — the two lens layers were *screen-filling*
+  quads that wiped the buffer outright, which is what adding AO surfaced (see `rainLens`
+  below). The prePass question under "Removed effects" is the real fix.
 
 ## Removed effects: pixelation, ssgi, ssr, traa (ao was revived)
 

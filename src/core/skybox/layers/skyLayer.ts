@@ -31,16 +31,20 @@ import {
 export const SKY_LAYER_USERDATA = { hideInTree: true, selectable: false };
 
 /**
- * The layer the screen-space lens overlays (RainLens, SnowLens) render on.
+ * The layer screen-space overlays render on. **Currently nobody is on it** — the rain and
+ * frost lenses that were its only residents are post-processing chain effects now
+ * (`core/postprocessing/effects/rainLens.ts`, `snowLens.ts`), which is where an overlay
+ * belongs and is the reason the layer's whole problem evaporated. It is kept, with its
+ * reasoning intact, because the next in-scene fullscreen overlay needs every word of it.
  *
- * LOAD-BEARING, not organisation. Those quads are written straight to clip space and
- * read the finished framebuffer (`viewportMipTexture`) — they are only meaningful for
- * the camera the player looks through. Any OTHER camera rendering the scene (the mirror
- * sphere's and corner balls' cube-capture faces, the floor reflector's virtual camera,
- * Studio's selection pre-render, the HeightField pass) would draw them as a fullscreen
- * layer of re-sampled, wrong-viewport garbage that reads as blown-out bloom. Lens meshes
- * are moved onto this layer and the ACTIVE camera (`camera.subscribe`) enables it, so
- * every internal camera — which all use the default layer-0 mask — stops seeing them.
+ * WHAT IT WAS FOR. Those quads were written straight to clip space and read the finished
+ * framebuffer (`viewportMipTexture`) — only meaningful for the camera the player looks
+ * through. Any OTHER camera rendering the scene (the mirror sphere's and corner balls'
+ * cube-capture faces, the floor reflector's virtual camera, Studio's selection pre-render,
+ * the HeightField pass) would draw them as a fullscreen layer of re-sampled,
+ * wrong-viewport garbage that reads as blown-out bloom. The meshes moved onto this layer
+ * and the ACTIVE camera (`camera.subscribe`) enabled it, so every internal camera — which
+ * all use the default layer-0 mask — stopped seeing them.
  *
  * **A CLONED CAMERA IS NOT A FRESH ONE.** That "default layer-0 mask" argument holds for
  * every internal camera that is CONSTRUCTED (the cube faces, the HeightField ortho) and
@@ -48,8 +52,9 @@ export const SKY_LAYER_USERDATA = { hideInTree: true, selectable: false };
  * `camera.clone()`, and `Object3D.copy` copies `layers.mask` (three 0.185,
  * `Object3D.js:1615`). The floor reflector's virtual camera therefore inherited this bit
  * from the active camera and reflected the lens quads — measured `mask=3` at runtime, so
- * the failure above was live, not theoretical. `DemoScene.svelte` strips the bit back off
- * on the way out of `getVirtualCamera`. **Any new reflector owes the same.**
+ * the failure above was live, not theoretical. `DemoScene.svelte` still strips the bit on
+ * the way out of `getVirtualCamera`; that is now defensive rather than load-bearing.
+ * **Any new reflector owes the same.**
  */
 export const LENS_LAYER = 1;
 

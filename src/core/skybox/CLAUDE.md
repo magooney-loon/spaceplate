@@ -99,7 +99,9 @@ invalidates, no effect can loop.
   `mesh.visible` so an invisible layer costs no draw call either. **`Birds`** is the
   same contract with a different clock: its two `renderer.compute()` passes are what
   animate it, so they run (and invalidate) only while the flock is ungrounded.
-- **`Lightning`** gates on a live strike. **Lens layers** gate on wetness/frost > 0.
+- **`Lightning`** gates on a live strike. **`LensDriver`** gates on wetness/frost > 0 —
+  it renders nothing itself, but the two lens POST effects it feeds are animated, so the
+  invalidation is still owed (`layers/precipitation/lensState.svelte.ts`).
 
 ## Update budgets
 

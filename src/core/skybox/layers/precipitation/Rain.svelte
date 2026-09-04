@@ -707,7 +707,7 @@
 		(delta) => {
 			const w = descriptor.weather;
 			// `rainAmount` owns the rain/snow split (the explicit `precipitationType`
-			// channel), one definition shared with Snow and RainLens.
+			// channel), one definition shared with Snow and LensDriver.
 			const rain = rainAmount(w);
 
 			// INTENSITY IS SPLIT ACROSS FOUR KNOBS (density, width, length, fall speed --

@@ -419,7 +419,7 @@ const SLEET_TO = 0.65;
 
 /**
  * How the single `precipitation` amount divides between the rain and snow renderers.
- * ONE definition, three consumers (`Rain`, `Snow`, `RainLens`) -- never re-derive the
+ * ONE definition, three consumers (`Rain`, `Snow`, `LensDriver`) -- never re-derive the
  * split in a layer; drifted copies have produced a real bug before. The two shares
  * always sum to the amount, so intensity is conserved across the sleet band.
  */

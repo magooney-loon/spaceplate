@@ -6,7 +6,8 @@ Every renderer that draws on/around the dome, grouped by family:
 skyLayer.ts      — shared plumbing (see below) — ALL layers use it
 celestial/       — Stars, Moon, Meteors, Nebula + milkyWay.ts
 clouds/          — CloudDeck
-precipitation/   — Rain, Snow, RainLens, SnowLens, HeightField + heightField.ts
+precipitation/   — Rain, Snow, HeightField + heightField.ts, LensDriver + lensState.svelte.ts
+                   (the CPU half of the two lens POST effects — see below)
 lightning/       — Lightning + flashState.ts
 fauna/           — Birds (GPU-compute flock)
 ```
@@ -39,7 +40,7 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   pinned layer also needs `frustumCulled={false}` (bounding volume beyond the far plane
   → culled before it draws).
 - **`projectClip(localPosition)`** — the honest-depth counterpart for near-camera
-  layers (rain streaks, lens quads) that must be occluded by scene geometry. Written
+  layers (rain streaks) that must be occluded by scene geometry. Written
   out because those layers read `positionLocal` as their quad corner — feeding it from
   `material.positionNode` would be circular.
 - **`billboardClip` / `streakClip`** — must be ONE pure expression: no `.toVar()`, no
@@ -65,22 +66,23 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 - **Draw order** = render queue + `renderOrder`: 1 (Nebula, Stars, Meteors), 2 (Moon),
   2.2 (Birds — under the deck, over the moon), 2.5 (CloudDeck — occludes the moon),
   2.6 (bolt), 3 (Rain, Snow — nearest), 4 (the faint lightning sky wash),
-  **10 (RainLens) / 11 (SnowLens)** — the lens layers read back the finished frame
-  via `viewportMipTexture`, so everything they refract must have drawn first. That
-  ordering is load-bearing, not tidy.
+  The lens overlays used to sit above all of it at **10 / 11**; they are
+  post-processing chain effects now and no longer participate in draw order at all
+  (see *The lenses left* below).
 - **Task order** falls back to mount order among `before: autoRenderTask` tasks; the one
   real dependency is Lightning → CloudDeck (flash published and read in the same frame).
-- **Anything that MOVES the camera must run in the main stage, not here.** Seven layers
+- **Anything that MOVES the camera must run in the main stage, not here.** Six layers
   anchor themselves to `camera.current` in a `before: autoRenderTask` task (Rain, Snow,
-  RainLens, SnowLens, HeightField, Lightning, SkyFog), and a camera driver competing for
+  LensDriver, HeightField, Lightning, SkyFog), and a camera driver competing for
   the same constraint loses to mount order — `<Skybox />` is a static import in
   `App.svelte`, so a dynamically-imported driver mounts later and can never get ahead of
-  it. `extensions/flypath` was exactly that, and every one of the seven read the pose a
+  it. `extensions/flypath` was exactly that, and every one of them read the pose a
   frame stale for the whole of a flythrough. The main stage is `before: renderStage`
   structurally, which is the fix; see `extensions/flypath/CLAUDE.md`.
-- **A "was that a cut?" test is a SPEED, never a per-frame distance.** Rain, RainLens and
-  SnowLens all reject an implausible camera step so a teleport does not lean every streak
-  flat or flood the glass; all three compared a raw per-frame distance, which meant 1150
+- **A "was that a cut?" test is a SPEED, never a per-frame distance.** Rain and
+  LensDriver reject an implausible camera step so a teleport does not lean every streak
+  flat or flood the glass; all three call sites (the lens test was duplicated until
+  LensDriver merged the two) compared a raw per-frame distance, which meant 1150
   u/s at 144Hz and 240 u/s in a 30fps offline capture take — so a flythrough that read as
   motion live was classified as a cut in the recording of it, and the lens layers stayed
   dry for the whole take. `TELEPORT_SPEED` (480 u/s = the old figure at 60fps) is the
@@ -166,7 +168,8 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   shape. Measured per-frame triangles before/after excluding them from those captures:
   rain median 600k → 312k and its p99 spike frames 1.06M → 478k; snow median 392k → 260k,
   p99 696k → 430k; clear unchanged (the control). The floor reflector still gets them,
-  because its virtual camera is a clone and inherits the bit — see LENS_LAYER's note.
+  because its virtual camera is a clone and inherits the bit. (LENS_LAYER itself now has
+  no residents — see its note in `skyLayer.ts`.)
 - **Every axis of that motion is a self-accumulated distance, never `elapsed × rate`.**
   Same rule as CloudDeck's scroll — an unbounded elapsed term multiplied by a
   uniform that moves displaces the whole field by `elapsed × Δrate`. Rain's fall
@@ -178,10 +181,40 @@ uWindSlant` swept the entire drop field sideways for the duration of any weather
   **rollback distance**, not an absolute one.
 - Amounts come from `rainAmount`/`snowAmount` (the `precipitationType` split; sleet
   renders both). Snow's flakes dim with the light hints, so a night snowfall reads
-  faint and cool. Lens layers: `RainLens` wets/dries with hysteresis (quick to wet,
-  slow to dry), `SnowLens` is dendritic frost creeping in from the edges, slow both
-  ways. Both are post-processing without a pipeline — screen-space quads reading
-  `viewportMipTexture`, drawn last (renderOrder 10/11).
+  faint and cool.
+
+#### The lenses left — and why that is not a relocation
+
+`RainLens.svelte` and `SnowLens.svelte` are gone. They were screen-filling quads drawn
+inside the scene pass, described in their own headers as "post-processing in every
+respect EXCEPT that it needs no post-processing pipeline" — which stopped being true
+when the pipeline grew MRT attachments. **Non-`output` attachments do not blend**, so
+one fullscreen quad in the scene pass overwrites the entire `velocity` and `normal`
+buffer. Motion blur is `defaultEnabled` and had been silently degrading to an identity
+transform in any rain; AO would have gone the same way. `core/postprocessing/CLAUDE.md`
+had already written the rule down ("overlays belong after post-processing") — the lenses
+predated it.
+
+What stayed here is the CPU half:
+
+- **`LensDriver.svelte`** — measures camera speed once for both lenses (the old
+  components ran the same forward/lateral decomposition twice, and the copies had begun
+  to drift), reads the weather, integrates wetness and frost growth, and writes
+  `lensState`. Renders nothing. Mounted **inside the sky group**, so an HDR or cube
+  environment leaves the lenses off exactly as unmounting the meshes used to.
+- **`lensState.svelte.ts`** — `flashState`'s contract with TSL readers: one writer, and
+  the shared values are module-scope `uniform()`s so their identity survives a pipeline
+  rebuild. `lensActivity` is the one reactive thing in it, and it is a `structuralTag`:
+  a dry lens is left OUT of the graph rather than folded in with a zero uniform, because
+  the droplet/crystal fields are evaluated three times per pixel fullscreen and no
+  uniform value avoids that. Hysteresis in the driver keeps the latch from thrashing.
+
+The effects themselves are `core/postprocessing/effects/rainLens.ts` and `snowLens.ts`.
+Two things changed in the move that are worth knowing before retuning either: they now
+read **linear working colour** rather than the encoded framebuffer (so the colour-space
+round trip is gone, but the input is unbounded HDR and needs bloom's `inputClamp`
+treatment), and the mip source is an `rtt()` rather than `viewportMipTexture`, which
+copies whatever target is bound and is meaningless mid-chain.
 
 ### `lightning/`
 
@@ -200,9 +233,10 @@ uWindSlant` swept the entire drop field sideways for the duration of any weather
 - Both of Lightning's meshes blend additively with a **custom blend that writes no
   destination alpha**. Stock `AdditiveBlending` is `src.a + dst.a`, and a layer that
   carries its coverage in `colorNode` (as the bolt does, to keep `uBolt`'s 1.25 peak out
-  of alpha's [0,1] clamp) emits `src.a = 1` over its whole quad. The lens layers draw
-  last and multiply the frame's alpha into their own wetness, so that stamp came back as
-  a hard-edged rectangle of over-blurred wet lens on every strike. **Any large additive
+  of alpha's [0,1] clamp) emits `src.a = 1` over its whole quad. The lens layers used to
+  draw last and multiply the frame's alpha into their own wetness, so that stamp came back
+  as a hard-edged rectangle of over-blurred wet lens on every strike — they no longer read
+  frame alpha, but the flag stays: the frame's alpha is the canvas's. **Any large additive
   layer that does not put real coverage in `opacityNode` owes the frame the same custom
   blend.**
 

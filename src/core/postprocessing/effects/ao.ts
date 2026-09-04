@@ -20,13 +20,15 @@
 // before anything blurs it, and before bloom — a creased corner that bloom has already
 // filled with halo cannot be darkened back.
 //
-// KNOWN LIMITATION, the same one motion blur already lives with: non-`output` MRT
-// attachments do not blend (../CLAUDE.md), so every transparent thing drawn inside the
-// scene pass OVERWRITES the normal buffer rather than compositing into it — the
-// precipitation fields, and above all `RainLens`/`SnowLens`, which are screen-filling
-// quads. Expect the AO to degrade in heavy weather. The real fix is the prePass that
-// CLAUDE.md's "Removed effects" section still lists as the pipeline's open cost
-// question; it is not something this effect can solve on its own.
+// NON-`output` MRT ATTACHMENTS DO NOT BLEND (../CLAUDE.md), so every transparent thing
+// drawn inside the scene pass OVERWRITES the normal buffer rather than compositing into
+// it. Adding this effect is what surfaced that: the two lens layers were screen-filling
+// quads in the scene pass and would have wiped the whole buffer in any rain — they had
+// already been doing it to `velocity`, silently disabling the default-enabled motion blur.
+// They are chain effects now (`rainLens.ts`, `snowLens.ts`), which removes the fullscreen
+// case entirely. What remains is the precipitation FIELDS: thousands of small transparent
+// quads that still punch their own normals through. Localised rather than total, and the
+// real fix is still the prePass under CLAUDE.md's "Removed effects".
 import { vec3, vec4 } from 'three/tsl';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import type { EffectDef } from '../types';

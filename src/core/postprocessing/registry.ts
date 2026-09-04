@@ -11,7 +11,9 @@ import { dofEffect } from './effects/dof';
 import { fxaaEffect } from './effects/fxaa';
 import { lutEffect } from './effects/lut';
 import { motionBlurEffect } from './effects/motionblur';
+import { rainLensEffect } from './effects/rainLens';
 import { retroEffect } from './effects/retro';
+import { snowLensEffect } from './effects/snowLens';
 import { smaaEffect } from './effects/smaa';
 import { ssaaEffect } from './effects/ssaa';
 import { vignetteEffect } from './effects/vignette';
@@ -23,6 +25,8 @@ export const EFFECTS: EffectDef<any>[] = [
 	aoEffect,
 	dofEffect,
 	motionBlurEffect,
+	rainLensEffect,
+	snowLensEffect,
 	bloomEffect,
 	afterimageEffect,
 	vignetteEffect,

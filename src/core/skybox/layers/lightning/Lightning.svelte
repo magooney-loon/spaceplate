@@ -19,14 +19,19 @@
 	// blend, a tight blue-violet glow around it, a broad cool halo beyond -- the
 	// photographic look, and the reason `colorNode` carries the whole spatial structure.
 	//
-	// BOTH MESHES BLEND ADDITIVELY AND WRITE NO ALPHA, which is load-bearing rather than
-	// tidy. They cover huge areas of the frame; the lens layers (RainLens, SnowLens) draw
-	// last and sample the finished frame INCLUDING its alpha; and stock
-	// `AdditiveBlending` is `src.a + dst.a` on the alpha channel. A layer carrying its
-	// coverage in `colorNode` therefore emits src.a = 1 for every pixel it covers, lit or
-	// not, and stamps a screen-sized rectangle of alpha into the frame, which the wet
-	// lens reads as "composite here at full wetness". See the blend flags where each
-	// material is built.
+	// BOTH MESHES BLEND ADDITIVELY AND WRITE NO ALPHA. Stock `AdditiveBlending` is
+	// `src.a + dst.a` on the alpha channel, so a layer carrying its coverage in
+	// `colorNode` -- as these do, to keep `uBolt`'s 1.25 peak out of alpha's [0,1] clamp
+	// -- emits src.a = 1 for every pixel it covers, lit or not, and stamps a screen-sized
+	// rectangle of alpha into the frame. See the blend flags where each material is built.
+	//
+	// THE BUG THAT FOUND THIS IS GONE, and the flag stays anyway. The lens layers used to
+	// be meshes drawn last that sampled the finished frame INCLUDING its alpha, so the
+	// stamp came back as a hard-edged rectangle of over-blurred wet lens on every strike.
+	// They are post-processing chain effects now (`core/postprocessing/effects/rainLens.ts`)
+	// and blend on their own coverage, so nothing downstream reads this alpha any more --
+	// but the frame's alpha is still the canvas's, and a layer that lies about its coverage
+	// is still lying. Any large additive layer owes the frame the same blend.
 	//
 	// WHY NO TWO BOLTS LOOK ALIKE: four per-strike uniforms beyond the path seed and the
 	// ground gate -- `uWander` (how much the channel meanders), `uLean` (a linear tilt,

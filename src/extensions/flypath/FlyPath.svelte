@@ -11,8 +11,9 @@
 	//
 	// TASK ORDER: THE MAIN STAGE, and the absence of a constraint here is the whole point.
 	// The pose must be written before the frame is drawn — but also before every task that
-	// READS the camera, and there are seven of those (Rain, Snow, RainLens, SnowLens,
-	// HeightField, Lightning, SkyFog: each anchors a mesh or a pass to `camera.current`).
+	// READS the camera, and there are six of those (Rain, Snow, LensDriver, HeightField,
+	// Lightning, SkyFog: each anchors a mesh, a pass or a uniform to `camera.current` —
+	// LensDriver measures its SPEED, which is the same dependency and the same race).
 	// They all sit at `{ before: autoRenderTask }`, where order falls back to mount order
 	// (DOCS/webgpu-notes.md §2) — and `<Skybox />` is a STATIC import in App.svelte while
 	// this component is a dynamic one, so it mounts in a later tick no matter where its

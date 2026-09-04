@@ -10,9 +10,8 @@
 	import Meteors from './layers/celestial/Meteors.svelte';
 	import Birds from './layers/fauna/Birds.svelte';
 	import Rain from './layers/precipitation/Rain.svelte';
-	import RainLens from './layers/precipitation/RainLens.svelte';
 	import Snow from './layers/precipitation/Snow.svelte';
-	import SnowLens from './layers/precipitation/SnowLens.svelte';
+	import LensDriver from './layers/precipitation/LensDriver.svelte';
 	import CloudDeck from './layers/clouds/CloudDeck.svelte';
 	import Lightning from './layers/lightning/Lightning.svelte';
 	import HeightField from './layers/precipitation/HeightField.svelte';
@@ -151,15 +150,12 @@
 			<Rain count={precipitation.rain} splashCount={precipitation.splashes} />
 			<Snow count={precipitation.snow} />
 		{/key}
-		<!-- Water on the lens. Mounted LAST in the group and drawn at renderOrder 10,
-		     load-bearing: it reads back the framebuffer, so every layer it refracts must
-		     have drawn already. Inside the group so HeightField hides it for the
-		     collision pass -- a screen-space quad is not a surface rain lands on. -->
-		<RainLens />
-		<!-- Frost on the lens, at renderOrder 11 after RainLens: each reads back the
-		     frame, so the later one composites over the earlier. Both are only live at
-		     once during sleet. -->
-		<SnowLens />
+		<!-- The CPU half of both lens effects. Renders NOTHING -- the lenses themselves are
+		     post-processing chain effects now (rainLens.ts / snowLens.ts); this measures the
+		     camera and the weather and writes the uniforms they read. It is here, inside the
+		     group, so the lenses follow the environment mode exactly as the old meshes did:
+		     no procedural sky, no driver, no wet glass. See lensState.svelte.ts. -->
+		<LensDriver />
 		<!-- Scene fog, procedural-mode only: its colour comes from the day curve, and an
 		     HDR environment brings its own horizon. Renders nothing; drives scene.fog. -->
 		<SkyFog />
