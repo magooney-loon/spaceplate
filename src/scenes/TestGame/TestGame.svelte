@@ -12,6 +12,9 @@
 	import CarWheels from './CarWheels.svelte';
 	import ChaseCamera from './ChaseCamera.svelte';
 	import { CAR_INPUT_KEYS, carInput, resetCarInput } from './carInput.svelte';
+	import { G, GR86, UNITS_PER_METER } from './gr86';
+	import { createDrivetrain } from './drivetrain';
+	import { carSim, publishCarHud, resetCarTelemetry } from './carTelemetry.svelte';
 
 	// Test Game 3D scene — driving prototype.
 	// Controls: arrows drive, Space handbrake, Q/E shift down/up — deliberately keys
@@ -72,39 +75,39 @@
 	const onKeydown = (e: KeyboardEvent) => setKey(e, true);
 	const onKeyup = (e: KeyboardEvent) => setKey(e, false);
 
-	// ── Driving (arcade model, all magnitudes in world units — tune by feel) ─────
+	// ── Driving ──────────────────────────────────────────────────────────────────
 	//
-	// One dynamic box for the chassis (no per-wheel simulation): engine force along
-	// body-local -Z (the model's nose), yaw via torque impulse scaled by speed, and
-	// grip implemented as lateral-velocity damping per step — Space loosens the grip
-	// (drift) instead of locking the wheels. Roll is disabled on the body
-	// (enabledRotations) so the car cannot tip sideways; pitch survives for slopes.
-
-	const CHASSIS_MASS = 900;
-	const ENGINE_FORCE = 12500; // ≈ 14 units/s² at mass 900
-	const REVERSE_FACTOR = 0.5;
-	const MAX_SPEED = 60; // units/s forward or reverse
-	// Steering is DIRECT yaw-rate control, not torque: authority ramps from zero at
-	// MIN_STEER_SPEED (no turning in place) to full at STEER_SPEED_REF, and the yaw
-	// rate itself is lerped toward target at STEER_RESPONSE — torque impulses here
-	// previously produced ~0.9 rad/s PER STEP at full authority (comical spin).
-	const MAX_YAW_RATE = 0.9; // rad/s ≈ 52°/s
-	const MIN_STEER_SPEED = 0.5;
-	const STEER_SPEED_REF = 10; // full authority at this forward speed
-	const STEER_RESPONSE = 10;
-	// Damping RATES, in 1/s — `exp(-rate * delta)` is the fraction kept. Per-STEP fractions
-	// (what these were) are a lie the moment the physics framerate moves, and it moved:
-	// the world runs a fixed 200 Hz now, so the old "0.85 kept per step" drift would have
-	// been applied 200×/s instead of 60 and the handbrake would have stopped drifting
-	// altogether. Each rate below is the old constant converted at 60 Hz (-ln(keep) * 60),
-	// so the car drives exactly as it did — it just keeps driving that way at any rate.
-	const GRIP_RATE = 138; // lateral velocity bleed (grippy) — was 0.1 kept/step
-	const HANDBRAKE_GRIP_RATE = 9.7; // loose — this is the drift — was 0.85 kept/step
-	const HANDBRAKE_BRAKE_RATE = 2.45; // forward speed bled while Space is held — was 0.04/step
+	// Still ONE dynamic box for the chassis (no per-wheel suspension), but the
+	// longitudinal half is now a real drivetrain: torque curve → clutch → 6-speed
+	// box → traction limit at the rear axle (drivetrain.ts, all SI, GR86 numbers in
+	// gr86.ts). Grip stays a lateral-velocity damp per step, and the drivetrain hands
+	// back how much of it is left — the handbrake takes it all, wheelspin takes a
+	// chunk (power oversteer). Roll is disabled on the body (enabledRotations) so the
+	// car cannot tip sideways; pitch survives for slopes.
+	//
+	// UNITS: the sim thinks in metres, the world is 2.5 units to the metre. Forces
+	// and velocities convert at this boundary and nowhere else — see gr86.ts.
+	//
+	// Steering is DIRECT yaw-rate control, not torque, and the target is now the
+	// smaller of two real limits rather than a speed ramp: what the front wheels
+	// GEOMETRICALLY point at (v·tan δ / wheelbase, an Ackermann bicycle) and what
+	// the tyres can HOLD (μ·g / v). Below ~30 km/h you get the GR86's real 5.5 m
+	// turning circle; at 150 km/h the same key press is a lane change, because 1.1 g
+	// is all there is. Nothing turns on the spot: yaw falls out of speed.
+	const YAW_MIN_SPEED = 1.5; // m/s floor under the grip cap, so it can't divide by ~0
+	const HANDBRAKE_YAW_BOOST = 2.2; // the cap the tyres can't hold — this is the flick
+	// Grip damping RATES, in 1/s — `exp(-rate * delta)` is the fraction kept. Per-STEP
+	// fractions are a lie the moment the physics framerate moves, and it moved (the world
+	// runs a fixed 200 Hz). These two are the endpoints the drivetrain's `gripFactor`
+	// interpolates between: 1 = planted, 0 = the handbrake's drift.
+	const GRIP_RATE = 138;
+	const HANDBRAKE_GRIP_RATE = 9.7;
 
 	let carBody = $state.raw<RapierRigidBody>();
 	/** What ChaseCamera follows — an empty parented to the chassis body, see below. */
 	let chaseAnchor = $state.raw<THREE.Object3D>();
+
+	const drivetrain = createDrivetrain();
 
 	// Tasks never allocate (core/utils/CLAUDE.md) — every per-step scratch lives here,
 	// and the rapier getter methods fill their target instead of returning fresh objects.
@@ -116,21 +119,21 @@
 	const _lin = { x: 0, y: 0, z: 0 } as Vector;
 	const _ang = { x: 0, y: 0, z: 0 } as Vector;
 
+	const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+	/** Fraction of a `rate`-per-second exponential decay consumed in `dt`. */
+	const damp = (rate: number, dt: number) => 1 - Math.exp(-rate * dt);
+
 	usePhysicsTask((delta) => {
 		const body = carBody;
 		if (!body) return;
 		// Keep-alive: never drive the car from another scene's frames.
 		if (sceneState.currentScene !== 'testGame') return;
 
-		const throttle = (carInput.up ? 1 : 0) - (carInput.down ? 1 : 0);
-		const steer = (carInput.left ? 1 : 0) - (carInput.right ? 1 : 0);
+		const steerKey = (carInput.left ? 1 : 0) - (carInput.right ? 1 : 0);
 		const handbrake = carInput.handbrake;
 
 		body.linvel(_lin);
 		_vel.set(_lin.x, _lin.y, _lin.z);
-
-		// Idle and barely moving → hands off, so the body can sleep.
-		if (throttle === 0 && steer === 0 && !handbrake && _vel.lengthSq() < 0.25) return;
 
 		const rot = body.rotation(_rot);
 		_q.set(rot.x, rot.y, rot.z, rot.w);
@@ -139,39 +142,102 @@
 
 		const vForward = _vel.dot(_forward);
 		const vLateral = _vel.dot(_right);
+		const speedMs = vForward / UNITS_PER_METER;
+		const absSpeed = Math.abs(speedMs);
 
-		// Engine — reset+add each step (rapier forces persist until reset).
+		// Steering rack. Runs even parked — a stopped car still turns its wheels, and
+		// CarWheels renders exactly this value, so the visual lock is the one the
+		// physics used. Lock bleeds off with speed so the keyboard stops being a
+		// switch between "straight" and "spin" on the motorway.
+		const lockFraction =
+			1 -
+			(1 - GR86.steerHighSpeedFactor) * clamp(absSpeed / GR86.steerFalloffSpeed, 0, 1);
+		carSim.steer += (steerKey * lockFraction - carSim.steer) * damp(GR86.steerResponse, delta);
+
+		// Parked and untouched → hands off, so the body can sleep. resetForces(false)
+		// first: rapier forces persist until cleared, and waking the body to clear them
+		// would defeat the point. Q/E count as input even though they move nothing —
+		// the gearbox is the drivetrain's, and it only advances inside `step()`.
+		const idle =
+			steerKey === 0 &&
+			!handbrake &&
+			!carInput.up &&
+			!carInput.down &&
+			!carInput.shiftUp &&
+			!carInput.shiftDown;
+		if (idle && _vel.lengthSq() < 0.25) {
+			body.resetForces(false);
+			drivetrain.idle(delta);
+			carSim.speedMs = 0;
+			carSim.rpm = drivetrain.state.rpm;
+			carSim.gear = drivetrain.state.gear;
+			carSim.slip = 0;
+			carSim.throttle = 0;
+			carSim.brake = 0;
+			carSim.handbrake = false;
+			carSim.limiting = false;
+			publishCarHud(delta);
+			return;
+		}
+
+		const out = drivetrain.step(delta, speedMs, {
+			forward: carInput.up,
+			backward: carInput.down,
+			handbrake,
+			shiftUp: carInput.shiftUp,
+			shiftDown: carInput.shiftDown
+		});
+
+		// Longitudinal — one force along the nose. Newtons → world (a_world = a_si·UPM).
+		const longitudinal = (out.driveForce + out.resistForce) * UNITS_PER_METER;
 		body.resetForces(true);
-		if (throttle !== 0 && Math.abs(vForward) < MAX_SPEED) {
-			const magnitude = throttle > 0 ? ENGINE_FORCE : ENGINE_FORCE * REVERSE_FACTOR;
-			body.addForce(
-				{ x: _forward.x * magnitude * throttle, y: _forward.y * magnitude * throttle, z: _forward.z * magnitude * throttle },
-				true
-			);
-		}
+		body.addForce(
+			{
+				x: _forward.x * longitudinal,
+				y: _forward.y * longitudinal,
+				z: _forward.z * longitudinal
+			},
+			true
+		);
 
-		// Steering — direct yaw-rate control: no torque to integrate, no place-spinning.
-		// Authority ramps with speed (none below MIN_STEER_SPEED, full at STEER_SPEED_REF)
-		// and flips sign in reverse, like backing a real car.
-		let targetYaw = 0;
-		if (steer !== 0 && Math.abs(vForward) > MIN_STEER_SPEED) {
-			const authority =
-				Math.min(1, (Math.abs(vForward) - MIN_STEER_SPEED) / (STEER_SPEED_REF - MIN_STEER_SPEED)) *
-				Math.sign(vForward);
-			targetYaw = MAX_YAW_RATE * steer * authority;
-		}
+		// Yaw — the lesser of the geometric and the grip-limited rate. Signed by
+		// `speedMs`, so reversing steers backwards like a real car, and zero at rest.
+		const steerAngle = carSim.steer * GR86.maxSteerAngle;
+		const yawGeometric = (speedMs * Math.tan(steerAngle)) / GR86.wheelbase;
+		const latMu = GR86.tireMuLat * (handbrake ? HANDBRAKE_YAW_BOOST : 1);
+		const yawCap = (latMu * G) / Math.max(absSpeed, YAW_MIN_SPEED);
+		const targetYaw = clamp(yawGeometric, -yawCap, yawCap);
 		const ang = body.angvel(_ang);
-		ang.y += (targetYaw - ang.y) * Math.min(1, STEER_RESPONSE * delta);
+		ang.y += (targetYaw - ang.y) * damp(GR86.yawResponse, delta);
 		body.setAngvel(ang, true);
 
-		// Grip — bleed the lateral velocity (drift on handbrake), bleed some forward
-		// speed while braking. Vertical motion (gravity, slopes) passes through.
-		const keepLateral = Math.exp(-(handbrake ? HANDBRAKE_GRIP_RATE : GRIP_RATE) * delta);
-		_vel.addScaledVector(_right, -vLateral * (1 - keepLateral));
-		if (handbrake) {
-			_vel.addScaledVector(_forward, -vForward * (1 - Math.exp(-HANDBRAKE_BRAKE_RATE * delta)));
-		}
+		// Grip — bleed the lateral velocity. Vertical motion (gravity, slopes) passes
+		// through untouched; braking is a force now, not a velocity haircut.
+		const gripRate =
+			HANDBRAKE_GRIP_RATE + (GRIP_RATE - HANDBRAKE_GRIP_RATE) * clamp(out.gripFactor, 0, 1);
+		_vel.addScaledVector(_right, -vLateral * damp(gripRate, delta));
 		body.setLinvel({ x: _vel.x, y: _vel.y, z: _vel.z }, true);
+
+		// Instruments — plain object at 200 Hz, $state mirror at 30 (carTelemetry).
+		carSim.speedMs = speedMs;
+		carSim.rpm = drivetrain.state.rpm;
+		carSim.gear = drivetrain.state.gear;
+		carSim.slip = drivetrain.state.slip;
+		carSim.throttle = drivetrain.state.throttle;
+		carSim.brake = drivetrain.state.brake;
+		carSim.handbrake = handbrake;
+		carSim.limiting = drivetrain.state.limiting;
+		publishCarHud(delta);
+	});
+
+	// Leaving the scene parks the instruments — the HUD unmounts with them, but the
+	// mirror is module state and would otherwise still read 180 km/h on the way back in.
+	$effect(() => {
+		if (sceneState.currentScene !== 'testGame') return;
+		return () => {
+			drivetrain.reset();
+			resetCarTelemetry();
+		};
 	});
 </script>
 
@@ -192,11 +258,18 @@
      world units while the collider args below stay in model meters. -->
 {#if $car}
 	<T.Group name="GR86" rotation={[ -0.0079, -1.1613, -0.0197 ]} position={[ 1.4599, 8.661, -3.4031 ]}>
+		<!-- linearDamping is 0 on purpose: aero drag and rolling resistance are in the
+		     drivetrain now, and a blanket damping term on top of them is the same loss
+		     counted twice (it was also what capped the old top speed). gravityScale is
+		     UNITS_PER_METER because the shared <World> pulls at 9.8 units/s², which in
+		     this 2.5-units-to-the-metre city is 3.9 m/s² — moon gravity, and a car that
+		     floats over every kerb. Scene-local: the global value belongs to DemoScene too. -->
 		<RigidBody
 			bind:rigidBody={carBody}
 			type="dynamic"
-			linearDamping={0.2}
+			linearDamping={0}
 			angularDamping={1.5}
+			gravityScale={UNITS_PER_METER}
 			enabledRotations={[true, true, false]}
 			ccd={true}
 		>
@@ -205,7 +278,7 @@
 				<!-- Steerable/rolling wheels — shader-driven, see CarWheels.svelte.
 				     visualScale must match this group's scale: the roll rate divides
 				     world speed by the world-space wheel radius. -->
-				<CarWheels scene={$car.scene} body={carBody} visualScale={2.5} />
+				<CarWheels scene={$car.scene} visualScale={2.5} />
 				<!-- Car-local units on purpose (nose is -Z — see CarHeadlights.svelte). -->
 				<CarHeadlights />
 			</T.Group>
@@ -215,7 +288,7 @@
 			     half-extents in model meters, scaled by the parent group to match the
 			     visual; offset to the car's centre height (model Y spans 0..1.31). -->
 			<T.Group position={[0, 1.53, 0]} scale={2.5}>
-				<Collider shape="cuboid" args={[0.95, 0.55, 2.1]} mass={CHASSIS_MASS} friction={0.6} />
+				<Collider shape="cuboid" args={[0.95, 0.55, 2.1]} mass={GR86.mass} friction={0.6} />
 			</T.Group>
 
 			<!-- What the chase camera looks at. An empty inside the RigidBody rather than

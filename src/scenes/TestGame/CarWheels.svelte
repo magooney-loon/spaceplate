@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { usePhysicsTask } from '@threlte/rapier';
-	import type { RigidBody as RapierRigidBody, Rotation, Vector } from '@dimforge/rapier3d-compat';
 	import * as THREE from 'three/webgpu';
 	import {
 		Fn,
@@ -17,7 +16,8 @@
 	} from 'three/tsl';
 	import { sceneState } from '$extensions/scene';
 	import { logGltf } from '$extensions/logger';
-	import { carInput } from './carInput.svelte';
+	import { GR86, UNITS_PER_METER } from './gr86';
+	import { carSim } from './carTelemetry.svelte';
 
 	// Steerable + rolling wheels for the GR86.
 	//
@@ -32,10 +32,8 @@
 	// vertex-deforming material owns BOTH ends of the velocity buffer or motion blur
 	// smears it against its own rest pose. See buildWheelNodes.
 
-	let { scene, body, visualScale = 1 }: { scene: THREE.Group; body?: RapierRigidBody; visualScale?: number } = $props();
+	let { scene, visualScale = 1 }: { scene: THREE.Group; visualScale?: number } = $props();
 
-	const MAX_STEER_ANGLE = 0.42; // rad ≈ 24° — the visual lock
-	const STEER_SMOOTH = 12; // visual steer lerp rate
 	const WHEEL_MAT = /^wheel/i;
 
 	// One shared uniform pair across all six wheel materials.
@@ -225,12 +223,13 @@
 	});
 
 	// ── Per-step uniform updates ─────────────────────────────────────────────────
-
-	const _q = new THREE.Quaternion();
-	const _forward = new THREE.Vector3();
-	const _rot = { x: 0, y: 0, z: 0, w: 1 } as Rotation;
-	const _lin = { x: 0, y: 0, z: 0 } as Vector;
-	let visSteer = 0;
+	//
+	// Both values come from `carSim`, the driving model's plain per-step feed
+	// (carTelemetry.svelte.ts). Deriving them here again would mean the visual lock
+	// could disagree with the angle the physics actually steered at — and it did:
+	// this used to read raw key state, so the wheels sat at full lock while the
+	// speed-sensitive rack was using a third of it. TestGame is the parent, so its
+	// physics task registers (and runs) first — `carSim` is fresh here, not a frame old.
 
 	const TAU = Math.PI * 2;
 	const wrapAngle = (a: number): number => {
@@ -241,21 +240,15 @@
 	usePhysicsTask((delta) => {
 		if (sceneState.currentScene !== 'testGame') return;
 
-		// Visual steer from raw input — works at standstill, like a real car.
-		const target = ((carInput.left ? 1 : 0) - (carInput.right ? 1 : 0)) * MAX_STEER_ANGLE;
-		visSteer += (target - visSteer) * Math.min(1, STEER_SMOOTH * delta);
-		uSteer.value = visSteer;
+		uSteer.value = carSim.steer * GR86.maxSteerAngle;
 
-		if (!body) return;
-		// Roll from forward speed. The angle lives in car-local space but vForward is
-		// WORLD units — divide by the WORLD radius (local × visualScale), or the wheels
-		// spin visualScale× too fast and strobe into mush. Wrapped to ±π so the f32
-		// sin/cos in the shader never loses precision on long drives.
-		const rot = body.rotation(_rot);
-		_q.set(rot.x, rot.y, rot.z, rot.w);
-		_forward.set(0, 0, -1).applyQuaternion(_q);
-		const lv = body.linvel(_lin);
-		const vForward = _forward.x * lv.x + _forward.y * lv.y + _forward.z * lv.z;
-		uRoll.value = wrapAngle(uRoll.value - (vForward / (wheelRadius * visualScale)) * delta);
+		// Roll from road speed, plus whatever the rear tyres are spinning past it —
+		// the same slip term the drivetrain feeds the tacho, so wheelspin looks like
+		// wheelspin. The angle lives in car-local space and the speed is in METRES, so
+		// it converts to world units and divides by the WORLD radius (model radius ×
+		// visualScale) — miss either and the wheels spin 2.5× off and strobe into mush.
+		// Wrapped to ±π so the f32 sin/cos in the shader keeps its precision on long drives.
+		const surfaceSpeed = carSim.speedMs * (1 + carSim.slip * 0.8) * UNITS_PER_METER;
+		uRoll.value = wrapAngle(uRoll.value - (surfaceSpeed / (wheelRadius * visualScale)) * delta);
 	});
 </script>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { sceneActions } from '$extensions/scene';
 	import { soundActions } from '$core';
+	import CarCluster from './CarCluster.svelte';
 </script>
 
 <!-- Test Game HUD -->
@@ -18,9 +19,12 @@
 
 	<!-- Controls hint -->
 	<div class="info">
-		<p>Arrows drive · Space handbrake · Q/E shift down/up</p>
+		<p>↑ throttle · ↓ brake (hold stopped for reverse) · Space handbrake · Q/E shift</p>
 		<p>Drag to tilt · right-drag to raise/lower · wheel to zoom</p>
 	</div>
+
+	<!-- Speed / gear / rpm — bottom right. -->
+	<CarCluster />
 </div>
 
 <style>

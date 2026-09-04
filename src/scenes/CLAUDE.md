@@ -11,9 +11,10 @@ MainMenu/  MainMenu.svelte, MainMenuHud.svelte, SettingsHud.svelte (tabs: Genera
            Controls, System — System reads capabilityState + telemetryState)
 DemoScene/ DemoScene.svelte, DemoSceneHud.svelte, DemoPhysicsBodies.svelte,
            SpawnedBodies.svelte, mirrorFloor.ts, demoQuality.ts
-TestGame/  TestGame.svelte, TestGameHud.svelte, ChaseCamera.svelte, CarWheels.svelte,
-           CarHeadlights.svelte, carInput.svelte.ts (driving prototype: city trimesh +
-           GR86 on one arcade chassis body)
+TestGame/  TestGame.svelte, TestGameHud.svelte, CarCluster.svelte, ChaseCamera.svelte,
+           CarWheels.svelte, CarHeadlights.svelte, carInput.svelte.ts, gr86.ts,
+           drivetrain.ts, carTelemetry.svelte.ts (driving prototype: city trimesh +
+           GR86 on one chassis body with a simulated drivetrain)
 ```
 
 ## DemoScene specifics
@@ -54,9 +55,23 @@ TestGame/  TestGame.svelte, TestGameHud.svelte, ChaseCamera.svelte, CarWheels.sv
   0..n times per rendered frame. Every damping constant in the driving model is therefore a
   RATE in 1/s applied as `exp(-rate * delta)`, never a "fraction kept per step" — the latter
   silently retunes the car whenever the physics framerate moves.
+- **The driving model is SI; the world is not.** `gr86.ts` holds the real car's numbers
+  (torque curve, 6MT ratios, tyre μ, drag) in metres/kg/newtons, `drivetrain.ts` is the pure
+  engine → clutch → gearbox → traction step, and `TestGame.svelte` converts at exactly one
+  boundary: `UNITS_PER_METER = 2.5`, the same 2.5 the car's visual group is scaled by. Forces
+  and velocities scale by it, rad/s does not. The car's `gravityScale` is that constant too —
+  the shared `<World>` pulls at 9.8 *units*/s², which in this city is 3.9 m/s². Validated
+  against the real GR86: 0-60 mph 5.7 s (6.1 published), 140 mph governed, redline in 1st at
+  ~50 km/h.
+- **`carTelemetry.svelte.ts` is the plain-object / `$state`-mirror split** the sky uses:
+  `carSim` is written every physics step (200 Hz) and read by `CarWheels`; `carHud` is
+  quantised and published at 30 Hz for `CarCluster.svelte`. The HUD must never read `carSim` —
+  200 Svelte invalidations/second per field for a needle nobody can follow.
 - **`CarWheels.svelte` deforms vertices in `positionNode`**, so it also writes
   `positionPrevious` — a vertex-deforming material owns both ends of the velocity buffer or
   motion blur smears it against its own rest pose. Applies to any future deforming material.
+  Its steer angle and roll rate come from `carSim`, not from raw key state — the rack is
+  speed-sensitive, so re-deriving it here would show full lock while the physics used a third.
 
 ## Adding a scene
 
