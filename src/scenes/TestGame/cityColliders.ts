@@ -7,7 +7,10 @@
 // snags and small kicks at triangle seams on perfectly flat asphalt.
 // `TriMeshFlags.FIX_INTERNAL_EDGES` makes Rapier account for adjacent triangle
 // normals (pseudo-normals) when building contacts, which removes exactly those.
-// This is the standard flag for static level geometry.
+// This is the standard flag for static level geometry. NOTE: with this flag set,
+// trimesh contacts become effectively ONE-SIDED — the triangles must face where
+// the bodies come from (up, for roads). A track GLB with flipped winding would
+// let the car fall through where the unflagged trimesh caught it from both sides.
 //
 // Each mesh's root-relative transform is BAKED into the vertex array (the same
 // trick CarWheels uses), so every collider lands at the city group's origin with

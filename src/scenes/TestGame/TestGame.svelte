@@ -300,15 +300,14 @@
 			<!-- Chassis: ONE rounded box instead of per-mesh hulls (the model is dozens
 			     of meshes — seats, glass, engine — each a silly collider). Args are in
 			     model meters, scaled by the parent group (×2.5) to match the visual.
-			     Measured from the GLB: the car spans y 0.01 (tire bottoms) .. 1.31 (roof),
-			     so the group offset puts this box at y 0.06..1.16 — just above the tyre
-			     contact plane (ground clearance) and under the roof.
+			     Measured from the GLB: the car spans y 0.01 (tire bottoms) .. 1.31 (roof);
+			     the group offset puts this box at y 0.06..1.16 — the belly IS the ground
+			     contact (a touch above the tire plane, so the resting tires sink ~5 cm,
+			     imperceptible from the chase cam), top under the roof.
 			     ROUNDED (r = 0.18 m): a plain cuboid's square edges catch on triangle
 			     seams, kerbs and barrier lips — each edge contact is a wall-faced stop.
 			     The rounding is DILATING in rapier (total half-extent = h + r), so each
-			     half-extent has r subtracted to preserve the outer size: 0.95-0.18,
-			     0.55-0.18, 2.1-0.18. The flat bottom plane stays where it was, so the
-			     ride height is unchanged.
+				 half-extent has r subtracted to preserve the outer size.
 			     FRICTIONLESS (Min rule → min(0, μ_road) = 0) on purpose: the chassis is
 			     one box, so contact friction is STATIC friction against the COM drive
 			     force — at real gravity (gravityScale 2.5) the cap is μ·m·g ≈ 0.65 ·
@@ -317,7 +316,9 @@
 			     was cancelled — the car could not move at all. Grip belongs to the
 			     drivetrain (rear-axle traction clip, rolling resistance, brakes) and
 			     the lateral velocity damp; contacts keep their normal impulses only
-			     (ground, kerbs, walls). Verified against rapier in isolation. -->
+			     (ground, kerbs, walls). Verified against rapier in isolation.
+			     (Wheel-contact balls at the measured pivots were tried on top of this
+			     and reverted — see git history before revisiting.) -->
 			<T.Group position={[0, 1.53, 0]} scale={2.5}>
 				<Collider
 					shape="roundCuboid"

@@ -24,7 +24,7 @@ index.ts                  — barrel re-exports
 - **`framerate` is a fixed 200 Hz, so a `usePhysicsTask` may run 0..n times per rendered
   frame.** Anything a task integrates must be expressed PER SECOND and scaled by `delta` —
   a "fraction kept per step" constant silently changes the feel of the game the moment this
-  number moves (it is how TestGame's drift and handbrake are written: `exp(-rate * delta)`).
+  number moves (write damping as `exp(-rate * delta)`, never as a kept-fraction).
 - Spawning auto-switches to `demoScene` via `sceneActions.setScene('demoScene')`.
 - `spawnBall()` / `spawnBox()` are both one internal `spawn(type)` — the shapes differ only by `type` and their collider.
 - **`MAX_BODIES` is a Rapier budget, not a render one.** The renderer draws every spawned body in **two instanced draw calls** (`scenes/DemoScene/SpawnedBodies.svelte`), so what the cap actually bounds is the simulation, the collider pairs and 500 `<RigidBody>` components' effects.
