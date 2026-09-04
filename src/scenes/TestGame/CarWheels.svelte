@@ -3,7 +3,7 @@
 	import { usePhysicsTask } from '@threlte/rapier';
 	import type { RigidBody as RapierRigidBody, Rotation, Vector } from '@dimforge/rapier3d-compat';
 	import * as THREE from 'three/webgpu';
-	import { cos, mix, positionLocal, sin, step, uniform, vec3 } from 'three/tsl';
+	import { cos, mix, normalLocal, positionLocal, sin, step, uniform, vec3 } from 'three/tsl';
 	import { sceneState } from '$extensions/scene';
 	import { logGltf } from '$extensions/logger';
 	import { carInput } from './carInput.svelte';
@@ -20,7 +20,7 @@
 	// Caveat: normals are not rotated (no normalNode) — at ≤0.45 rad steer and a
 	// spinning tire you will not see it.
 
-	let { scene, body }: { scene: THREE.Group; body?: RapierRigidBody } = $props();
+	let { scene, body, visualScale = 1 }: { scene: THREE.Group; body?: RapierRigidBody; visualScale?: number } = $props();
 
 	const MAX_STEER_ANGLE = 0.42; // rad ≈ 24° — the visual lock
 	const STEER_SMOOTH = 12; // visual steer lerp rate
@@ -102,13 +102,22 @@
 				if (z > q.maxZ) q.maxZ = z;
 			}
 		}
-		const pivotY = (minY + maxY) / 2;
-		const trackHalf = Math.abs((quad[0].minX + quad[0].maxX) / 2);
-		const frontZ = (quad[0].minZ + quad[0].maxZ) / 2;
-		const rearZ = (quad[2].minZ + quad[2].maxZ) / 2;
 		wheelRadius = quad.reduce((sum, q) => sum + (q.maxY - q.minY) / 2, 0) / quad.length;
 
-		const measured = [pivotY, trackHalf, frontZ, rearZ, wheelRadius, splitX, splitZ];
+		// Per-wheel pivots from each quadrant's OWN bbox — an overall-centre pivot makes
+		// wheels orbit slightly while rolling (reads as wobble/blur at speed).
+		const centres = quad.map((q) => ({
+			x: (q.minX + q.maxX) / 2,
+			y: (q.minY + q.maxY) / 2,
+			z: (q.minZ + q.maxZ) / 2
+		}));
+
+		const measured = [
+			...centres.flatMap((c) => [c.x, c.y, c.z]),
+			wheelRadius,
+			splitX,
+			splitZ
+		];
 		const rigOK = measured.every(Number.isFinite);
 		if (!rigOK) logGltf.warn('CarWheels: non-finite wheel measurements — wheels stay static');
 
@@ -116,14 +125,17 @@
 		// webgpu-notes.md §1.3); step+oneMinus+mix are the branchless selects (§1.2).
 		// Built lazily: on a measurement failure the baked meshes still render, just
 		// without steer/roll — never leave the car wheel-less.
-		let wheelNode: ReturnType<typeof buildWheelNode> | null = null;
-		function buildWheelNode() {
+		let wheelNodes: { position: ReturnType<typeof buildWheelNodes>['position']; normal: ReturnType<typeof buildWheelNodes>['normal'] } | null =
+			null;
+		function buildWheelNodes() {
+			const [FL, FR, RL, RR] = centres.map((c) => vec3(c.x, c.y, c.z));
 			const p = positionLocal.toVar();
 			const leftF = step(splitX, p.x).oneMinus(); // 1 when x < split (left)
 			const frontF = step(splitZ, p.z).oneMinus(); // 1 when z < split (front)
-			const pivotX = mix(trackHalf, -trackHalf, leftF);
-			const pivotZ = mix(rearZ, frontZ, frontF);
-			const rel = p.sub(vec3(pivotX, pivotY, pivotZ));
+			const frontPivot = mix(FR, FL, leftF);
+			const rearPivot = mix(RR, RL, leftF);
+			const pivot = mix(rearPivot, frontPivot, frontF);
+			const rel = p.sub(pivot);
 
 			const cr = cos(uRoll),
 				sr = sin(uRoll);
@@ -139,9 +151,25 @@
 				rolled.y,
 				rolled.x.negate().mul(ss).add(rolled.z.mul(cs))
 			);
-			return mix(rolled, steered, frontF).add(vec3(pivotX, pivotY, pivotZ));
+			const position = mix(rolled, steered, frontF).add(pivot);
+
+			// Same rotation for the normals (rotation-only, no translation) — otherwise
+			// the shading stays frozen while the geometry spins, which reads as mush.
+			const n = normalLocal.toVar();
+			const nRolled = vec3(
+				n.x,
+				n.y.mul(cr).sub(n.z.mul(sr)),
+				n.y.mul(sr).add(n.z.mul(cr))
+			);
+			const nSteered = vec3(
+				nRolled.x.mul(cs).add(nRolled.z.mul(ss)),
+				nRolled.y,
+				nRolled.x.negate().mul(ss).add(nRolled.z.mul(cs))
+			);
+			const normal = mix(nRolled, nSteered, frontF);
+			return { position, normal };
 		}
-		if (rigOK) wheelNode = buildWheelNode();
+		if (rigOK) wheelNodes = buildWheelNodes();
 
 		for (const { geometry, material } of baked) {
 			const mesh = new THREE.Mesh(geometry, material);
@@ -150,15 +178,17 @@
 			mesh.receiveShadow = true;
 			scene.add(mesh);
 			bakedMeshes.push(mesh);
-			if (wheelNode) {
+			if (wheelNodes) {
 				// 1:1 mesh↔material in this model, so mutating the material is safe.
-				(material as THREE.MeshStandardNodeMaterial).positionNode = wheelNode;
+				const material = mesh.material as THREE.MeshStandardNodeMaterial;
+				material.positionNode = wheelNodes.position;
+				material.normalNode = wheelNodes.normal;
 				material.needsUpdate = true;
 			}
 		}
 
 		logGltf.info(
-			`CarWheels: ${baked.length} meshes baked — track ±${trackHalf.toFixed(2)}, axles ${frontZ.toFixed(2)}/${rearZ.toFixed(2)}, r=${wheelRadius.toFixed(2)}`
+			`CarWheels: ${baked.length} meshes baked — pivots FL(${centres[0].x.toFixed(2)}, ${centres[0].y.toFixed(2)}, ${centres[0].z.toFixed(2)}) r=${wheelRadius.toFixed(2)}, scale ×${visualScale}`
 		);
 	});
 
@@ -178,6 +208,12 @@
 	const _lin = { x: 0, y: 0, z: 0 } as Vector;
 	let visSteer = 0;
 
+	const TAU = Math.PI * 2;
+	const wrapAngle = (a: number): number => {
+		const wrapped = a % TAU;
+		return wrapped > Math.PI ? wrapped - TAU : wrapped < -Math.PI ? wrapped + TAU : wrapped;
+	};
+
 	usePhysicsTask((delta) => {
 		if (sceneState.currentScene !== 'testGame') return;
 
@@ -187,12 +223,15 @@
 		uSteer.value = visSteer;
 
 		if (!body) return;
-		// Roll from forward speed (negative: rolling toward -Z spins the wheel -X).
+		// Roll from forward speed. The angle lives in car-local space but vForward is
+		// WORLD units — divide by the WORLD radius (local × visualScale), or the wheels
+		// spin visualScale× too fast and strobe into mush. Wrapped to ±π so the f32
+		// sin/cos in the shader never loses precision on long drives.
 		const rot = body.rotation(_rot);
 		_q.set(rot.x, rot.y, rot.z, rot.w);
 		_forward.set(0, 0, -1).applyQuaternion(_q);
 		const lv = body.linvel(_lin);
 		const vForward = _forward.x * lv.x + _forward.y * lv.y + _forward.z * lv.z;
-		uRoll.value -= (vForward / wheelRadius) * delta;
+		uRoll.value = wrapAngle(uRoll.value - (vForward / (wheelRadius * visualScale)) * delta);
 	});
 </script>

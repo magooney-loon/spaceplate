@@ -191,8 +191,10 @@
 		>
 			<T.Group scale={2.5}>
 				<T is={$car.scene} />
-				<!-- Steerable/rolling wheels — shader-driven, see CarWheels.svelte. -->
-				<CarWheels scene={$car.scene} body={carBody} />
+				<!-- Steerable/rolling wheels — shader-driven, see CarWheels.svelte.
+				     visualScale must match this group's scale: the roll rate divides
+				     world speed by the world-space wheel radius. -->
+				<CarWheels scene={$car.scene} body={carBody} visualScale={2.5} />
 				<!-- Car-local units on purpose (nose is -Z — see CarHeadlights.svelte). -->
 				<CarHeadlights />
 			</T.Group>
