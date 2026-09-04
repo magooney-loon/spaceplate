@@ -256,7 +256,7 @@
 <svelte:window onkeydown={onKeydown} onkeyup={onKeyup} onblur={resetCarInput} />
 
 {#if $city}
-	<T.Group name="City" scale={1} position={[ 101.4641, 8.7, -102.459 ]} rotation={[ 0, -1.0472, 0 ]}>
+	<T.Group name="City" scale={1.5} position={[ 101.4641, 8.7, -102.459 ]} rotation={[ 0, -1.0472, 0 ]}>
 		<!-- The track GLB: Ground/Asphalt planes, Metal barriers, trees, decals — one
 		     trimesh per mesh, transforms baked (cityColliders.ts). Bare <Collider>s
 		     attach to an implicit fixed body, exactly like AutoColliders did. -->
@@ -271,7 +271,7 @@
      world transform at creation); scale 2.5 lives on the children so the BODY speaks
      world units while the collider args below stay in model meters. -->
 {#if $car}
-	<T.Group name="GR86" rotation={[ -0.0079, -1.1613, -0.0197 ]} position={[ 1.4599, 8.661, -3.4031 ]}>
+	<T.Group name="GR86" rotation={[ -0.0079, -2.5, -0.0197 ]} position={[ 1.4599, 8.661, -3.4031 ]}>
 		<!-- linearDamping is 0 on purpose: aero drag and rolling resistance are in the
 		     drivetrain now, and a blanket damping term on top of them is the same loss
 		     counted twice (it was also what capped the old top speed). gravityScale is
