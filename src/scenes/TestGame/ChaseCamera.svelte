@@ -26,7 +26,12 @@
 
 	const CHASE_DISTANCE = 12; // world units behind the car
 	const CHASE_POLAR = 1.15; // rad from +Y — ~24° above the horizon, so it reads "bird"
-	const MIN_DISTANCE = 5;
+	// The anchor sits at the car's middle and the car is ~3.3 world units tall, so anything
+	// under ~1.5 puts the camera inside the cabin — that is the point, zoom all the way in
+	// and you are sitting in it. The floor is a hair off zero because camera-controls
+	// requires a positive minDistance; the camera's near plane is 0.001, so nothing clips
+	// on the way in.
+	const MIN_DISTANCE = 0.05;
 	const MAX_DISTANCE = 30;
 
 	const { camera, invalidate } = useThrelte();
