@@ -11,6 +11,8 @@ MainMenu/  MainMenu.svelte, MainMenuHud.svelte, SettingsHud.svelte (tabs: Genera
            Controls, System — System reads capabilityState + telemetryState)
 DemoScene/ DemoScene.svelte, DemoSceneHud.svelte, DemoPhysicsBodies.svelte,
            SpawnedBodies.svelte, mirrorFloor.ts, demoQuality.ts
+TestGame/   TestGame.svelte, TestGameHud.svelte (driving prototype — currently empty
+           scene + HUD with controls hint)
 ```
 
 ## DemoScene specifics

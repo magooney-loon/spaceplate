@@ -10,7 +10,8 @@ export type { ExtensionState, ExtensionActions } from './types';
 
 export const SCENES: SceneConfig[] = [
 	{ id: 'mainMenu', label: 'Main Menu', icon: 'mdiHome' },
-	{ id: 'demoScene', label: 'Demo Scene', icon: 'mdiEarth' }
+	{ id: 'demoScene', label: 'Demo Scene', icon: 'mdiEarth' },
+	{ id: 'testGame', label: 'Test Game', icon: 'mdiCar' }
 ];
 
 // Per-scene look (post-processing / time / weather) is NOT configured here — the old
@@ -26,7 +27,7 @@ export const sceneState = $state<ExtensionState>({
 	previousScene: null,
 	isTransitioning: false,
 	// The boot scene counts as visited; every other scene mounts on first visit.
-	visited: { mainMenu: true, demoScene: false }
+	visited: { mainMenu: true, demoScene: false, testGame: false }
 });
 
 export const sceneActions: ExtensionActions = {
@@ -47,6 +48,10 @@ export const sceneActions: ExtensionActions = {
 
 	goToDemoScene() {
 		this.setScene('demoScene');
+	},
+
+	goToTestGame() {
+		this.setScene('testGame');
 	},
 
 	goBack() {

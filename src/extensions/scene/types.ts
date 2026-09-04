@@ -1,6 +1,6 @@
 export const extensionScope = 'scene';
 
-export type SceneType = 'mainMenu' | 'demoScene';
+export type SceneType = 'mainMenu' | 'demoScene' | 'testGame';
 
 export type SceneConfig = {
 	id: SceneType;
@@ -28,6 +28,7 @@ export type ExtensionActions = {
 	setScene: (scene: SceneType) => void;
 	goToMainMenu: () => void;
 	goToDemoScene: () => void;
+	goToTestGame: () => void;
 	goBack: () => void;
 	transitionTo: (scene: SceneType, transitionDuration?: number) => Promise<void>;
 	/** Boot-only sweep: briefly visits every scene so it mounts + warm-renders. */

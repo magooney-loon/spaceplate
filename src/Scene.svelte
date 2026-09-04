@@ -4,6 +4,7 @@
 	import { sceneState } from '$extensions/scene';
 	import MainMenu from '$scenes/MainMenu/MainMenu.svelte';
 	import DemoScene from '$scenes/DemoScene/DemoScene.svelte';
+	import TestGame from '$scenes/TestGame/TestGame.svelte';
 
 	// Keep-alive means demoScene's Rapier bodies exist while other scenes are current,
 	// and the world's own simulation task is not scene-gated. Freeze the world when
@@ -34,5 +35,11 @@
 {#if sceneState.visited.demoScene}
 	<T.Group name="DemoScene" visible={sceneState.currentScene === 'demoScene'}>
 		<DemoScene />
+	</T.Group>
+{/if}
+
+{#if sceneState.visited.testGame}
+	<T.Group name="TestGame" visible={sceneState.currentScene === 'testGame'}>
+		<TestGame />
 	</T.Group>
 {/if}

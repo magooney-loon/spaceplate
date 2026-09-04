@@ -18,11 +18,21 @@
 		<button
 			onclick={() => {
 				soundActions.playClick();
+				sceneActions.goToTestGame();
+			}}
+			class="menu-button"
+		>
+			🚗 Test Game
+		</button>
+
+		<button
+			onclick={() => {
+				soundActions.playClick();
 				sceneActions.goToDemoScene();
 			}}
 			class="menu-button"
 		>
-			🚀 Start Demo
+			🚀 Demo Scene
 		</button>
 
 		<button
@@ -44,7 +54,7 @@
 
 	.title {
 		position: absolute;
-		top: 18.5%;
+		top: 16.5%;
 		left: 50%;
 		transform: translateX(-50%);
 		text-align: center;
