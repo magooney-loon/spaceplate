@@ -58,7 +58,7 @@
 
 <!-- Player car — scale/position deliberately left as-authored, tuned by hand. -->
 {#if $car}
-	<T.Group name="GR86" scale={2} rotation={[ -3.1295, -0.2417, -3.1335 ]} position={[ 1.4599, 8.661, -3.4031 ]}>
+	<T.Group name="GR86" scale={2.5} rotation={[ -3.1295, -0.2417, -3.1335 ]} position={[ 1.4599, 8.661, -3.4031 ]}>
 	    <AutoColliders>
 			<T is={$car.scene} />
 	    </AutoColliders>
