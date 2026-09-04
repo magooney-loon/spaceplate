@@ -3,7 +3,18 @@
 	import { usePhysicsTask } from '@threlte/rapier';
 	import type { RigidBody as RapierRigidBody, Rotation, Vector } from '@dimforge/rapier3d-compat';
 	import * as THREE from 'three/webgpu';
-	import { cos, mix, normalLocal, positionLocal, sin, step, uniform, vec3 } from 'three/tsl';
+	import {
+		Fn,
+		cos,
+		mix,
+		normalLocal,
+		positionLocal,
+		positionPrevious,
+		sin,
+		step,
+		uniform,
+		vec3
+	} from 'three/tsl';
 	import { sceneState } from '$extensions/scene';
 	import { logGltf } from '$extensions/logger';
 	import { carInput } from './carInput.svelte';
@@ -17,8 +28,9 @@
 	// rotated around its own wheel's pivot (measured from the baked geometry), front
 	// wheels get the steer rotation, all wheels roll. Same draw calls, no splitting.
 	//
-	// Caveat: normals are not rotated (no normalNode) — at ≤0.45 rad steer and a
-	// spinning tire you will not see it.
+	// Normals get the same rotation (normalNode), and so does `positionPrevious` — a
+	// vertex-deforming material owns BOTH ends of the velocity buffer or motion blur
+	// smears it against its own rest pose. See buildWheelNodes.
 
 	let { scene, body, visualScale = 1 }: { scene: THREE.Group; body?: RapierRigidBody; visualScale?: number } = $props();
 
@@ -121,10 +133,9 @@
 		const rigOK = measured.every(Number.isFinite);
 		if (!rigOK) logGltf.warn('CarWheels: non-finite wheel measurements — wheels stay static');
 
-		// The vertex rotation. Pure expression (no assign → no Fn stack needed,
-		// webgpu-notes.md §1.3); step+oneMinus+mix are the branchless selects (§1.2).
-		// Built lazily: on a measurement failure the baked meshes still render, just
-		// without steer/roll — never leave the car wheel-less.
+		// The vertex rotation. step+oneMinus+mix are the branchless selects
+		// (webgpu-notes.md §1.2). Built lazily: on a measurement failure the baked meshes
+		// still render, just without steer/roll — never leave the car wheel-less.
 		let wheelNodes: { position: ReturnType<typeof buildWheelNodes>['position']; normal: ReturnType<typeof buildWheelNodes>['normal'] } | null =
 			null;
 		function buildWheelNodes() {
@@ -135,38 +146,51 @@
 			const frontPivot = mix(FR, FL, leftF);
 			const rearPivot = mix(RR, RL, leftF);
 			const pivot = mix(rearPivot, frontPivot, frontF);
-			const rel = p.sub(pivot);
 
 			const cr = cos(uRoll),
 				sr = sin(uRoll);
-			const rolled = vec3(
-				rel.x,
-				rel.y.mul(cr).sub(rel.z.mul(sr)),
-				rel.y.mul(sr).add(rel.z.mul(cr))
-			);
 			const cs = cos(uSteer),
 				ss = sin(uSteer);
-			const steered = vec3(
-				rolled.x.mul(cs).add(rolled.z.mul(ss)),
-				rolled.y,
-				rolled.x.negate().mul(ss).add(rolled.z.mul(cs))
-			);
-			const position = mix(rolled, steered, frontF).add(pivot);
 
-			// Same rotation for the normals (rotation-only, no translation) — otherwise
-			// the shading stays frozen while the geometry spins, which reads as mush.
-			const n = normalLocal.toVar();
-			const nRolled = vec3(
-				n.x,
-				n.y.mul(cr).sub(n.z.mul(sr)),
-				n.y.mul(sr).add(n.z.mul(cr))
-			);
-			const nSteered = vec3(
-				nRolled.x.mul(cs).add(nRolled.z.mul(ss)),
-				nRolled.y,
-				nRolled.x.negate().mul(ss).add(nRolled.z.mul(cs))
-			);
-			const normal = mix(nRolled, nSteered, frontF);
+			// Roll about X (all four), then steer about Y (front pair only). Rotation
+			// only, so it serves vertices (fed the pivot-relative offset) and normals
+			// (fed the normal) alike — otherwise the shading stays frozen while the
+			// geometry spins, which reads as mush.
+			// (`any` throughout: node-graph plumbing, per postprocessing/CLAUDE.md.)
+			const spin = (v: any) => {
+				const rolled = vec3(
+					v.x,
+					v.y.mul(cr).sub(v.z.mul(sr)),
+					v.y.mul(sr).add(v.z.mul(cr))
+				);
+				const steered = vec3(
+					rolled.x.mul(cs).add(rolled.z.mul(ss)),
+					rolled.y,
+					rolled.x.negate().mul(ss).add(rolled.z.mul(cs))
+				);
+				return mix(rolled, steered, frontF);
+			};
+			const place = (src: any) => spin(src.sub(pivot).toVar()).add(pivot);
+
+			// An Fn (a stack, webgpu-notes.md §1.3) rather than a pure expression for one
+			// reason: VELOCITY. VelocityNode measures ndc(positionLocal) − ndc(positionPrevious),
+			// and `positionPrevious` defaults to the RAW geometry attribute — three only
+			// overwrites it for skinning/instancing/batching, never for a material's
+			// positionNode. So a deformed wheel reported (deformed − rest pose) as its
+			// per-frame motion: a large constant velocity at every steer/roll angle except
+			// the rest pose, which is exactly the permanent smear motion blur was drawing.
+			// Feeding the SAME deformation into positionPrevious makes the deformation
+			// contribute zero velocity, so the wheels blur from the car's motion like every
+			// other mesh. Gated on needsPreviousData() (three's own guard) so the extra
+			// varying is only emitted for a pass that actually writes the velocity attachment.
+			const position = Fn((builder: any) => {
+				if (builder.needsPreviousData()) {
+					positionPrevious.assign(place(positionPrevious.toVar()));
+				}
+				return place(p);
+			}, 'vec3')();
+
+			const normal = spin(normalLocal.toVar());
 			return { position, normal };
 		}
 		if (rigOK) wheelNodes = buildWheelNodes();
