@@ -16,7 +16,9 @@ src/module_bindings/ — Generated client bindings — DO NOT EDIT, regenerate i
 public/            — Static assets (sounds, models, textures)
 patches/           — pnpm patches for @threlte/extras and @threlte/studio
 DOCS/              — webgpu-notes.md (WebGPU/Studio gotchas — read before debugging
-                     anything renderer-shaped) and RAPIER.md (Rapier physics notes)
+                     anything renderer-shaped), RAPIER.md (Rapier physics notes) and
+                     best-practices.md (performance reference: what the engine already
+                     handles, the open gaps, and the rules for new scene content)
                      are the permanent references. post-processing.md,
                      weather-system.md and scene-environment.md are superseded
                      plans — their content lives in the CLAUDE.md files now and they
