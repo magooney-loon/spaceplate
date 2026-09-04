@@ -58,7 +58,7 @@
 
 <!-- Player car — scale/position deliberately left as-authored, tuned by hand. -->
 {#if $car}
-	<T.Group name="GR86" scale={1.5}>
+	<T.Group name="GR86" scale={2}>
 		<T is={$car.scene} />
 	</T.Group>
 {/if}
