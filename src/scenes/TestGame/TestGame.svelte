@@ -5,6 +5,7 @@
 	import { REVISION, type Mesh } from 'three/webgpu';
 	import { BASE_URL } from '$extensions/settings';
 	import { logGltf } from '$extensions/logger';
+	import CarHeadlights from './CarHeadlights.svelte';
 
 	// Test Game 3D scene — driving prototype.
 	// Controls: arrows drive, Space handbrake, Q/E shift down/up — deliberately keys
@@ -61,6 +62,9 @@
 	<T.Group name="GR86" scale={2.5} rotation={[ -0.0079, -1.1613, -0.0197 ]} position={[ 1.4599, 8.661, -3.4031 ]}>
 	    <AutoColliders>
 			<T is={$car.scene} />
-	    </AutoColliders>
+		    </AutoColliders>
+		<!-- Inside the group on purpose: inherits the hand-tuned transform and speaks
+		     car-local units (nose is -Z, width on X — see CarHeadlights.svelte). -->
+		<CarHeadlights />
 	</T.Group>
 {/if}
