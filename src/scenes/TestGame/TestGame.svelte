@@ -9,6 +9,7 @@
 	import { sceneState } from '$extensions/scene';
 	import { logGltf } from '$extensions/logger';
 	import CarHeadlights from './CarHeadlights.svelte';
+	import CarWheels from './CarWheels.svelte';
 	import { CAR_INPUT_KEYS, carInput, resetCarInput } from './carInput.svelte';
 
 	// Test Game 3D scene — driving prototype.
@@ -82,8 +83,14 @@
 	const ENGINE_FORCE = 12500; // ≈ 14 units/s² at mass 900
 	const REVERSE_FACTOR = 0.5;
 	const MAX_SPEED = 60; // units/s forward or reverse
-	const STEER_TORQUE = 9000;
-	const STEER_SPEED_REF = 8; // full steering authority above this forward speed
+	// Steering is DIRECT yaw-rate control, not torque: authority ramps from zero at
+	// MIN_STEER_SPEED (no turning in place) to full at STEER_SPEED_REF, and the yaw
+	// rate itself is lerped toward target at STEER_RESPONSE — torque impulses here
+	// previously produced ~0.9 rad/s PER STEP at full authority (comical spin).
+	const MAX_YAW_RATE = 0.9; // rad/s ≈ 52°/s
+	const MIN_STEER_SPEED = 0.5;
+	const STEER_SPEED_REF = 10; // full authority at this forward speed
+	const STEER_RESPONSE = 10;
 	const KEEP_LATERAL_GRIP = 0.1; // fraction of lateral velocity kept per step (grippy)
 	const KEEP_LATERAL_HANDBRAKE = 0.85; // loose — this is the drift
 	const HANDBRAKE_BRAKE = 0.04; // forward speed bled per step while Space is held
@@ -98,8 +105,9 @@
 	const _vel = new THREE.Vector3();
 	const _rot = { x: 0, y: 0, z: 0, w: 1 } as Rotation;
 	const _lin = { x: 0, y: 0, z: 0 } as Vector;
+	const _ang = { x: 0, y: 0, z: 0 } as Vector;
 
-	usePhysicsTask(() => {
+	usePhysicsTask((delta) => {
 		const body = carBody;
 		if (!body) return;
 		// Keep-alive: never drive the car from another scene's frames.
@@ -133,12 +141,19 @@
 			);
 		}
 
-		// Steering — yaw torque scaled by signed forward speed: none at standstill,
-		// inverted while reversing.
-		if (steer !== 0 && Math.abs(vForward) > 0.1) {
-			const authority = Math.min(1, Math.abs(vForward) / STEER_SPEED_REF) * Math.sign(vForward);
-			body.applyTorqueImpulse({ x: 0, y: STEER_TORQUE * steer * authority, z: 0 }, true);
+		// Steering — direct yaw-rate control: no torque to integrate, no place-spinning.
+		// Authority ramps with speed (none below MIN_STEER_SPEED, full at STEER_SPEED_REF)
+		// and flips sign in reverse, like backing a real car.
+		let targetYaw = 0;
+		if (steer !== 0 && Math.abs(vForward) > MIN_STEER_SPEED) {
+			const authority =
+				Math.min(1, (Math.abs(vForward) - MIN_STEER_SPEED) / (STEER_SPEED_REF - MIN_STEER_SPEED)) *
+				Math.sign(vForward);
+			targetYaw = MAX_YAW_RATE * steer * authority;
 		}
+		const ang = body.angvel(_ang);
+		ang.y += (targetYaw - ang.y) * Math.min(1, STEER_RESPONSE * delta);
+		body.setAngvel(ang, true);
 
 		// Grip — bleed the lateral velocity (drift on handbrake), bleed some forward
 		// speed while braking. Vertical motion (gravity, slopes) passes through.
@@ -170,12 +185,14 @@
 			bind:rigidBody={carBody}
 			type="dynamic"
 			linearDamping={0.2}
-			angularDamping={2.5}
+			angularDamping={1.5}
 			enabledRotations={[true, true, false]}
 			ccd={true}
 		>
 			<T.Group scale={2.5}>
 				<T is={$car.scene} />
+				<!-- Steerable/rolling wheels — shader-driven, see CarWheels.svelte. -->
+				<CarWheels scene={$car.scene} body={carBody} />
 				<!-- Car-local units on purpose (nose is -Z — see CarHeadlights.svelte). -->
 				<CarHeadlights />
 			</T.Group>
