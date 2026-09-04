@@ -7,12 +7,15 @@
 	import TestGame from '$scenes/TestGame/TestGame.svelte';
 
 	// Keep-alive means demoScene's Rapier bodies exist while other scenes are current,
-	// and the world's own simulation task is not scene-gated. Freeze the world when
-	// the physics scene is not current.
+	// and the world's own simulation task is not scene-gated. Freeze the world when no
+	// physics scene (demoScene, testGame) is current.
 	const { pause, resume } = useRapier();
 	$effect(() => {
-		if (sceneState.currentScene === 'demoScene') resume();
-		else pause();
+		if (sceneState.currentScene === 'demoScene' || sceneState.currentScene === 'testGame') {
+			resume();
+		} else {
+			pause();
+		}
 	});
 </script>
 

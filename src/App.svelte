@@ -13,7 +13,7 @@
 		Telemetry,
 		capabilityState
 	} from '$core';
-	import { World } from '@threlte/rapier';
+	import { World, Debug } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
 	import { WebGPURenderer } from 'three/webgpu';
@@ -77,6 +77,13 @@
 			framerate={physicsState.framerate}
 		>
 			<PhysicsWorldLogger />
+			<!-- Global physics debug overlay — one mount instead of per-scene copies. Draws
+			     EVERY collider in the world, keep-alive scenes' bodies included (colliders are
+			     world-global, not scene-local), so DemoScene's floor/balls show while in
+			     TestGame and vice versa. Gated on Studio mode like the panel that toggles it. -->
+			{#if import.meta.env.VITE_GAME_ENGINE === 'true' && physicsState.debug}
+				<Debug />
+			{/if}
 			{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 				{#await Promise.all( [import('@threlte/studio'), import('./extensions/scene/SceneExtension.svelte'), import('./extensions/capture/CaptureExtension.svelte'), import('./extensions/sound/SoundExtension.svelte'), import('./extensions/logger/LoggerExtension.svelte'), import('./extensions/gltf-viewer/GltfViewerExtension.svelte'), import('./extensions/physics/PhysicsExtension.svelte'), import('./extensions/stats/StatsExtension.svelte'), import('./extensions/skybox/SkyboxExtension.svelte'), import('./extensions/postprocessing/PostProcessingExtension.svelte'), import('./extensions/flypath/FlyPathExtension.svelte'), import('./extensions/capture/Capture.svelte'), import('./extensions/flypath/FlyPath.svelte')] ) then [{ Studio }, { default: SceneExtension }, { default: CaptureExtension }, { default: SoundExtension }, { default: LoggerExtension }, { default: GltfViewerExtension }, { default: PhysicsExtension }, { default: StatsExtension }, { default: SkyboxExtension }, { default: PostProcessingExtension }, { default: FlyPathExtension }, { default: Capture }, { default: FlyPath }]}
 					<!-- Renders nothing; sits before <Studio> in the same await block on purpose:

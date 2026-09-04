@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { T, useThrelte } from '@threlte/core/webgpu';
-	import { Collider, Debug, Attractor, useRapier } from '@threlte/rapier';
+	import { Collider, Attractor, useRapier } from '@threlte/rapier';
 	import * as THREE from 'three/webgpu';
 	import { reflector } from 'three/tsl';
 	import { physicsState } from '$extensions/physics';
@@ -122,12 +122,6 @@
 </script>
 
 <PhysicsController />
-
-{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-	{#if physicsState.debug}
-		<Debug />
-	{/if}
-{/if}
 
 {#if physicsState.attractorEnabled}
 	<Attractor
