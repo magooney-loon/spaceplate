@@ -10,7 +10,6 @@
 	     alt text keeps the old title for anyone who never sees the image. -->
 	<div class="title">
 		<img class="logo" src="{BASE_URL}logo.png" alt="Spaceplate Engine" />
-		<p class="subtitle">Threlte/Svelte/Spacetime</p>
 	</div>
 
 	<!-- Menu Buttons -->
@@ -67,11 +66,6 @@
 		display: block;
 		width: min(38rem, 72vw);
 		height: auto;
-	}
-
-	.subtitle {
-		margin-top: 0.5rem;
-		color: #aaa;
 	}
 
 	.menu-buttons {

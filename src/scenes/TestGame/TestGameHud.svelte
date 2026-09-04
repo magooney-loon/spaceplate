@@ -18,7 +18,7 @@
 
 	<!-- Controls hint -->
 	<div class="info">
-		<p>WASD drive, space handbrake</p>
+		<p>Arrows drive · Space handbrake · Q/E shift down/up</p>
 	</div>
 </div>
 
