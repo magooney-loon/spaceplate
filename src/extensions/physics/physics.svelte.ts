@@ -5,7 +5,8 @@ import type {
 	PhysicsFramerate,
 	PhysicsState,
 	PhysicsActions,
-	PhysicsBody
+	PhysicsBody,
+	PhysicsBodyType
 } from './types';
 
 export type {
@@ -13,11 +14,26 @@ export type {
 	PhysicsFramerate,
 	PhysicsState,
 	PhysicsActions,
-	PhysicsBody
+	PhysicsBody,
+	PhysicsBodyType
 } from './types';
 
 const COLORS = ['#4488ff', '#ff4466', '#44ff88', '#ff8844', '#aa44ff', '#ffdd44'];
 const randomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
+
+/**
+ * Hard cap on spawned bodies. At the cap a spawn evicts the OLDEST body instead of
+ * growing the array, so the scene's cost is bounded no matter how long the button is
+ * held.
+ *
+ * The number is a Rapier budget, not a render one: the renderer draws all of these in
+ * two instanced draw calls (`scenes/DemoScene/SpawnedBodies.svelte`), so what actually
+ * scales here is the simulation, the collider pairs and the 500 `<RigidBody>`
+ * components' effects. Eviction unmounts one component and creates one body per click,
+ * which is nothing at click frequency — recycling the Rapier body in place would buy
+ * nothing and needs a teleport path.
+ */
+export const MAX_BODIES = 500;
 
 const WORLD_DEFAULTS = {
 	gravityX: 0,
@@ -59,6 +75,28 @@ const spawnPosition = (): [number, number, number] =>
 	physicsState.spawnRandom
 		? [(Math.random() - 0.5) * 8, 8 + Math.random() * 4, (Math.random() - 0.5) * 8]
 		: [0, 8, 0];
+
+/** Ball and box differ only by `type` and their collider shape — one spawn path. */
+const spawn = (type: PhysicsBodyType) => {
+	sceneActions.setScene('demoScene');
+	const body: PhysicsBody = {
+		id: crypto.randomUUID(),
+		type,
+		position: spawnPosition(),
+		color: randomColor(),
+		restitution: physicsState.spawnRestitution,
+		friction: physicsState.spawnFriction,
+		linearDamping: physicsState.spawnLinearDamping,
+		angularDamping: physicsState.spawnAngularDamping,
+		gravityScale: physicsState.spawnGravityScale,
+		ccd: physicsState.spawnCcd,
+		canSleep: physicsState.spawnCanSleep
+	};
+	// Oldest out, newest in — see MAX_BODIES.
+	if (physicsState.bodies.length >= MAX_BODIES) physicsState.bodies.shift();
+	physicsState.bodies.push(body);
+	logPhysics.info(`Spawned ${type}:`, body.id, `(${physicsState.bodies.length}/${MAX_BODIES})`);
+};
 
 export const physicsActions: PhysicsActions = {
 	setGravityX(v) {
@@ -132,40 +170,10 @@ export const physicsActions: PhysicsActions = {
 		Object.assign(physicsState, ATTRACTOR_DEFAULTS);
 	},
 	spawnBall() {
-		sceneActions.setScene('demoScene');
-		const body: PhysicsBody = {
-			id: crypto.randomUUID(),
-			type: 'ball',
-			position: spawnPosition(),
-			color: randomColor(),
-			restitution: physicsState.spawnRestitution,
-			friction: physicsState.spawnFriction,
-			linearDamping: physicsState.spawnLinearDamping,
-			angularDamping: physicsState.spawnAngularDamping,
-			gravityScale: physicsState.spawnGravityScale,
-			ccd: physicsState.spawnCcd,
-			canSleep: physicsState.spawnCanSleep
-		};
-		physicsState.bodies.push(body);
-		logPhysics.info('Spawned ball:', body.id);
+		spawn('ball');
 	},
 	spawnBox() {
-		sceneActions.setScene('demoScene');
-		const body: PhysicsBody = {
-			id: crypto.randomUUID(),
-			type: 'box',
-			position: spawnPosition(),
-			color: randomColor(),
-			restitution: physicsState.spawnRestitution,
-			friction: physicsState.spawnFriction,
-			linearDamping: physicsState.spawnLinearDamping,
-			angularDamping: physicsState.spawnAngularDamping,
-			gravityScale: physicsState.spawnGravityScale,
-			ccd: physicsState.spawnCcd,
-			canSleep: physicsState.spawnCanSleep
-		};
-		physicsState.bodies.push(body);
-		logPhysics.info('Spawned box:', body.id);
+		spawn('box');
 	},
 	clearBodies() {
 		physicsState.bodies = [];

@@ -10,7 +10,7 @@ in `$extensions/scene` (see its `CLAUDE.md`, including the planned per-scene
 MainMenu/  MainMenu.svelte, MainMenuHud.svelte, SettingsHud.svelte (tabs: General, Audio,
            Controls, System — System reads capabilityState + telemetryState)
 DemoScene/ DemoScene.svelte, DemoSceneHud.svelte, DemoPhysicsBodies.svelte,
-           mirrorFloor.ts, demoQuality.ts
+           SpawnedBodies.svelte, mirrorFloor.ts, demoQuality.ts
 ```
 
 ## DemoScene specifics
@@ -19,6 +19,18 @@ DemoScene/ DemoScene.svelte, DemoSceneHud.svelte, DemoPhysicsBodies.svelte,
   material out while they render. Read it before touching either file.
 - **`demoQuality.ts`** — the low/high preset table for this scene (reflection
   resolution, cube capture size + rate, geometry segments, spawn shadows).
+- **`SpawnedBodies.svelte`** — the spawned physics bodies: N Rapier bodies, **two
+  instanced draw calls**. Read its header before adding anything else that spawns
+  repeatedly. Two things generalise beyond this scene:
+  - **Count draw calls per FRAME, not per object.** This scene renders itself up to
+    five times a frame (main, shadow, mirror-floor reflector, and two cube captures at
+    30/15 Hz), so one mesh per body cost ~7.5 draw calls per frame per body — the
+    100-call budget was gone at fourteen balls.
+  - **`<InstancedMesh>` from `@threlte/extras` would break on-demand rendering.** Its
+    Api task calls `invalidate()` unconditionally whenever it syncs (`update` defaults
+    to `true`), and scenes here are keep-alive — one mounted anywhere pins the render
+    loop at full rate forever, in every scene. Drive `InstancedMesh` from a task that
+    invalidates only when a matrix actually changed.
 
 ## Adding a scene
 

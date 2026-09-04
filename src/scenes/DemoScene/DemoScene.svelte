@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { T, useThrelte } from '@threlte/core/webgpu';
-	import { RigidBody, Collider, Debug, Attractor, useRapier } from '@threlte/rapier';
+	import { Collider, Debug, Attractor, useRapier } from '@threlte/rapier';
 	import * as THREE from 'three/webgpu';
 	import { reflector } from 'three/tsl';
 	import { physicsState } from '$extensions/physics';
 	import PhysicsController from '$extensions/physics/PhysicsController.svelte';
 	import { logPhysics } from '$extensions/logger';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
+	import SpawnedBodies from './SpawnedBodies.svelte';
 	import { registerMirrorFloor, unregisterMirrorFloor } from './mirrorFloor';
 	import { DEMO_QUALITY } from './demoQuality';
 	import { settingsState } from '$extensions/settings';
@@ -62,23 +63,6 @@
 		invalidate();
 	});
 
-	// One geometry per spawned-body shape instead of one per body: `<T.SphereGeometry>`
-	// inside the {#each} below built (and uploaded) a fresh buffer for every spawn.
-	// Materials stay per body — their colour is random per spawn.
-	// The ball is rebuilt when the preset changes; the box has no segment count worth
-	// scaling (12 triangles either way).
-	const spawnBallGeometry = $derived(
-		new THREE.SphereGeometry(0.4, quality.spawnBallSegments, quality.spawnBallSegments)
-	);
-	$effect(() => {
-		const geometry = spawnBallGeometry;
-		// Disposes the PREVIOUS geometry when the preset changes, and the last one on
-		// unmount. Threlte never disposes a geometry passed as a prop (its disposal is
-		// ref-counted over the objects it manages), so this is the only owner.
-		return () => geometry.dispose();
-	});
-	const spawnBoxGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-
 	const sceneMountId = crypto.randomUUID().slice(0, 8);
 	const { world, rigidBodyObjects, colliderObjects } = useRapier();
 
@@ -112,7 +96,6 @@
 		reflection.target.removeFromParent();
 		floorMaterial.dispose();
 		floorCaptureMaterial.dispose();
-		spawnBoxGeometry.dispose();
 	});
 </script>
 
@@ -148,56 +131,8 @@
 
 <DemoPhysicsBodies />
 
-<!-- Spawned physics bodies -->
-{#each physicsState.bodies as body (body.id)}
-	<T.Group position={body.position} userData={{ selectable: false, hideInTree: true }}>
-		<RigidBody
-			type="dynamic"
-			ccd={body.ccd}
-			canSleep={body.canSleep}
-			linearDamping={body.linearDamping}
-			angularDamping={body.angularDamping}
-			gravityScale={body.gravityScale}
-			userData={{ selectable: false, hideInTree: true }}
-			oncreate={(rigidBody) => {
-				logPhysics.info(`Spawned body create [${sceneMountId}]`, {
-					id: body.id,
-					type: body.type,
-					initialPosition: body.position,
-					handle: rigidBody.handle
-				});
-			}}
-			onsleep={() => {
-				logPhysics.info(`Spawned body sleep [${sceneMountId}]`, { id: body.id });
-			}}
-			onwake={() => {
-				logPhysics.info(`Spawned body wake [${sceneMountId}]`, { id: body.id });
-			}}
-		>
-			{#if body.type === 'ball'}
-				<Collider
-					shape="ball"
-					args={[0.4]}
-					restitution={body.restitution}
-					friction={body.friction}
-				/>
-				<T.Mesh castShadow={quality.spawnShadows} geometry={spawnBallGeometry}>
-					<T.MeshStandardMaterial color={body.color} flatShading />
-				</T.Mesh>
-			{:else}
-				<Collider
-					shape="cuboid"
-					args={[0.4, 0.4, 0.4]}
-					restitution={body.restitution}
-					friction={body.friction}
-				/>
-				<T.Mesh castShadow={quality.spawnShadows} geometry={spawnBoxGeometry}>
-					<T.MeshStandardMaterial color={body.color} flatShading />
-				</T.Mesh>
-			{/if}
-		</RigidBody>
-	</T.Group>
-{/each}
+<!-- Spawned physics bodies — one InstancedMesh per shape, see SpawnedBodies.svelte -->
+<SpawnedBodies mountId={sceneMountId} />
 
 {#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 	{#await import('$extensions/gltf-viewer/GltfViewerScene.svelte') then { default: GltfViewerScene }}

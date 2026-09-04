@@ -23,41 +23,41 @@ renders wrong), `RAPIER.md` (physics), and the per-area `CLAUDE.md` files.
 
 ## 1. Already handled — do not re-apply
 
-| Tips | Handled by | Where |
-| ---- | ---------- | ----- |
-| 1, 2 | `WebGPURenderer` + WebGL2 auto-fallback; Threlte's WebGPU `<Canvas>` awaits `renderer.init()` before mounting the scene, so nothing renders against an uninitialized backend | `App.svelte` `createRenderer`, `@threlte/core/webgpu/Canvas.svelte` |
-| 3, 10, 48, 49, 50 | TSL / node materials / `Fn` are the house style | `core/postprocessing/effects/*.ts`, `core/skybox/layers/*` |
-| 4, 5 | GPU-persistent particle state: `instancedArray` storage driven by two `renderer.compute()` passes | `core/skybox/layers/fauna/Birds.svelte` |
-| 6, 7, 8, 9 | Already on WebGPU with auto-fallback; the boot probe decides the tier. Migration/support-matrix advice is moot | `core/utils/capabilities.svelte.ts` |
-| 11 | **Deprecated advice** — see §2.1. Compute→render ordering is handled by task constraints, not by an async render | `Birds.svelte`, `core/utils/Renderer.svelte` |
-| 14 | Feature detection by a successful `requestAdapter()`, not by `navigator.gpu` existing | `core/utils/capabilities.svelte.ts` |
-| 17 | Physics is Rapier (CPU/WASM, fixed-step); GPU compute is reserved for layer-local sims like Birds | `@threlte/rapier`, `Birds.svelte` |
-| 28, 29 | Draco + Meshopt + KTX2 decoders wired into every `useGltf`, fetched on demand from jsdelivr and pinned to the installed `REVISION` | `extensions/gltf-viewer/GltfViewerInstance.svelte` |
-| 31 (sky) | Every particle layer is one instanced quad + per-instance attributes — was `count * 4` duplicated vertices (Rain 1.52 → 0.25 MB, Snow 2.20 → 0.40, Stars 0.64 → 0.12). **Game content is a separate story — see §3.2** | `core/skybox/layers/skyLayer.ts` `instancedQuad` |
-| 36 | Frustum culling is three's default; the hard case — pinned sky layers that must NOT be culled — is codified | `core/skybox/layers/CLAUDE.md` (`pinFarPlane`, `frustumCulled={false}`) |
-| 37, 41, 42 | Disposal: Threlte auto-disposes `<T>`-created objects; script-owned objects dispose in `$effect` cleanup; pipeline nodes via `ctx.track` | `core/skybox/Sky.svelte`, `core/postprocessing/types.ts` |
-| 43 | `mediump`/`highp` are GLSL qualifiers; TSL → WGSL abstracts precision away | — |
-| 57 | Shadow map size per quality preset (high 2048² / low 1024²), runtime-changeable | `core/skybox/Skybox.svelte` `SHADOW_MAP_SIZE` |
-| 58 | R3F-only library | — |
-| 59 | Environment lighting baked from the procedural sky via CubeCamera/CubeRenderTarget; modes procedural \| HDR \| cube | `core/skybox/Sky.svelte`, `core/skybox/environment/` |
-| 60 | Shadow camera frustum fitted to the scene (ortho half-extent, near/far, `updateProjectionMatrix`) | `core/skybox/SkyLight.svelte` |
-| 61 | One shadow render per frame: `shadow.autoUpdate = false`, `needsUpdate` armed once; extra cameras/override passes suspend shadows explicitly | `core/skybox/SkyLight.svelte`, `layers/precipitation/HeightField.svelte` |
-| 63–72 | Whole section is R3F-specific. The Threlte equivalents are engine rules: frame tasks mutate three objects directly (no per-frame reactive state), pre-allocate (no `new` in tasks), `delta` is SCENE time via `engineClock`, `renderMode` on-demand with one `invalidate()` owner per reason, the scene router toggles `visible` instead of remounting, perf overlay is StatsExtension | `src/CLAUDE.md` "Frame tasks", `Scene.svelte`, `extensions/stats` |
-| 73, 75, 81 | pmndrs/postprocessing-specific; this engine uses three's native TSL pipeline, which already folds effects into one graph with a single output transform | `core/utils/Renderer.svelte`, `core/postprocessing/` |
-| 74 | `antialias: false`, `powerPreference: 'high-performance'` — the latter is **fixed on purpose**, `'low-power'` can hand you a dying adapter (`webgpu-notes.md` §8) | `App.svelte` `createRenderer` |
-| 76 | ⚠️ **Following this tip would break the engine.** Tone mapping has exactly one owner (Threlte's `<Canvas toneMapping>`, AgX default). The pipeline READS `renderer.toneMapping`, never writes it — two owners caused real bugs | `src/CLAUDE.md`, `core/postprocessing/build.ts` |
-| 77 | Selective bloom already exists: bloom `mode: 1` reads the **`emissive` MRT attachment** instead of scene luminance, and the MRT set is provisioned only when that mode is on | `core/postprocessing/effects/bloom.ts` |
-| 78 | AA at pipeline end: FXAA / SMAA / SSAA effects in the registry | `core/postprocessing/effects/` |
-| 79 | Effect params are live-tweakable via uniform writes in place (no graph rebuild) | `core/utils/Renderer.svelte`, `extensions/postprocessing` |
-| 80 | Render scale is the `dpr` knob from the quality preset; **low quality bypasses the pipeline entirely** — no base-pass render target is allocated at all | `App.svelte`, `core/utils/Renderer.svelte` (`bypass`) |
-| 82 | Native TSL post-processing IS this engine (`RenderPipeline` + TSL nodes) | `core/utils/Renderer.svelte`, `core/postprocessing/` |
-| 83, 85, 89 | Scenes mount on first visit (keep-alive) and the boot warmup sweep renders every scene behind the loading screen — lazy-load/placeholder patterns for content sites do not apply to a full-canvas app | `Scene.svelte`, `core/utils/boot.svelte.ts`, `Loader.svelte` |
-| 84 | Studio + every extension panel are dynamically imported behind `VITE_GAME_ENGINE` and never ship; three itself is needed at boot | `App.svelte` |
-| 90 | R3F-specific (Svelte: `{#await}` / loaded flags) | — |
-| 91, 97 | stats-gl integrated, including the WebGPU timestamp-query resolution gotcha (stats-gl never resolves the queries itself on a three `WebGPURenderer`) | `extensions/stats/StatsExtension.svelte` |
-| 92 | Live tweaking via svelte-tweakpane-ui + Studio panels | `extensions/*`, `@threlte/studio` |
-| 94 | `renderer.info` sampled after the pipeline draws — draw calls, triangles, geometries, textures, programs, plus fps/loopHz to tell "on-demand skipped the render" from "the frame got slower" | `core/utils/Telemetry.svelte` → Settings ▸ System |
-| 100 | Threlte's scheduler owns the loop (`autoRender={false}` + explicitly ordered tasks) | `src/CLAUDE.md` "Frame tasks" |
+| Tips              | Handled by                                                                                                                                                                                                                                                                                                                                                                             | Where                                                                                     |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 1, 2              | `WebGPURenderer` + WebGL2 auto-fallback; Threlte's WebGPU `<Canvas>` awaits `renderer.init()` before mounting the scene, so nothing renders against an uninitialized backend                                                                                                                                                                                                           | `App.svelte` `createRenderer`, `@threlte/core/webgpu/Canvas.svelte`                       |
+| 3, 10, 48, 49, 50 | TSL / node materials / `Fn` are the house style                                                                                                                                                                                                                                                                                                                                        | `core/postprocessing/effects/*.ts`, `core/skybox/layers/*`                                |
+| 4, 5              | GPU-persistent particle state: `instancedArray` storage driven by two `renderer.compute()` passes                                                                                                                                                                                                                                                                                      | `core/skybox/layers/fauna/Birds.svelte`                                                   |
+| 6, 7, 8, 9        | Already on WebGPU with auto-fallback; the boot probe decides the tier. Migration/support-matrix advice is moot                                                                                                                                                                                                                                                                         | `core/utils/capabilities.svelte.ts`                                                       |
+| 11                | **Deprecated advice** — see §2.1. Compute→render ordering is handled by task constraints, not by an async render                                                                                                                                                                                                                                                                       | `Birds.svelte`, `core/utils/Renderer.svelte`                                              |
+| 14                | Feature detection by a successful `requestAdapter()`, not by `navigator.gpu` existing                                                                                                                                                                                                                                                                                                  | `core/utils/capabilities.svelte.ts`                                                       |
+| 17                | Physics is Rapier (CPU/WASM, fixed-step); GPU compute is reserved for layer-local sims like Birds                                                                                                                                                                                                                                                                                      | `@threlte/rapier`, `Birds.svelte`                                                         |
+| 28, 29            | Draco + Meshopt + KTX2 decoders wired into every `useGltf`, fetched on demand from jsdelivr and pinned to the installed `REVISION`                                                                                                                                                                                                                                                     | `extensions/gltf-viewer/GltfViewerInstance.svelte`                                        |
+| 31, 33            | **Sky:** every particle layer is one instanced quad + per-instance attributes — was `count * 4` duplicated vertices (Rain 1.52 → 0.25 MB, Snow 2.20 → 0.40, Stars 0.64 → 0.12). **Game content:** spawned physics bodies are two `InstancedMesh`es sharing one material, colour per instance — measured at 500 bodies, +3 draw calls total (§3.2)                                      | `core/skybox/layers/skyLayer.ts` `instancedQuad`, `scenes/DemoScene/SpawnedBodies.svelte` |
+| 36                | Frustum culling is three's default; the hard case — pinned sky layers that must NOT be culled — is codified                                                                                                                                                                                                                                                                            | `core/skybox/layers/CLAUDE.md` (`pinFarPlane`, `frustumCulled={false}`)                   |
+| 37, 41, 42        | Disposal: Threlte auto-disposes `<T>`-created objects; script-owned objects dispose in `$effect` cleanup; pipeline nodes via `ctx.track`                                                                                                                                                                                                                                               | `core/skybox/Sky.svelte`, `core/postprocessing/types.ts`                                  |
+| 43                | `mediump`/`highp` are GLSL qualifiers; TSL → WGSL abstracts precision away                                                                                                                                                                                                                                                                                                             | —                                                                                         |
+| 57                | Shadow map size per quality preset (high 2048² / low 1024²), runtime-changeable                                                                                                                                                                                                                                                                                                        | `core/skybox/Skybox.svelte` `SHADOW_MAP_SIZE`                                             |
+| 58                | R3F-only library                                                                                                                                                                                                                                                                                                                                                                       | —                                                                                         |
+| 59                | Environment lighting baked from the procedural sky via CubeCamera/CubeRenderTarget; modes procedural \| HDR \| cube                                                                                                                                                                                                                                                                    | `core/skybox/Sky.svelte`, `core/skybox/environment/`                                      |
+| 60                | Shadow camera frustum fitted to the scene (ortho half-extent, near/far, `updateProjectionMatrix`)                                                                                                                                                                                                                                                                                      | `core/skybox/SkyLight.svelte`                                                             |
+| 61                | One shadow render per frame: `shadow.autoUpdate = false`, `needsUpdate` armed once; extra cameras/override passes suspend shadows explicitly                                                                                                                                                                                                                                           | `core/skybox/SkyLight.svelte`, `layers/precipitation/HeightField.svelte`                  |
+| 63–72             | Whole section is R3F-specific. The Threlte equivalents are engine rules: frame tasks mutate three objects directly (no per-frame reactive state), pre-allocate (no `new` in tasks), `delta` is SCENE time via `engineClock`, `renderMode` on-demand with one `invalidate()` owner per reason, the scene router toggles `visible` instead of remounting, perf overlay is StatsExtension | `src/CLAUDE.md` "Frame tasks", `Scene.svelte`, `extensions/stats`                         |
+| 73, 75, 81        | pmndrs/postprocessing-specific; this engine uses three's native TSL pipeline, which already folds effects into one graph with a single output transform                                                                                                                                                                                                                                | `core/utils/Renderer.svelte`, `core/postprocessing/`                                      |
+| 74                | `antialias: false`, `powerPreference: 'high-performance'` — the latter is **fixed on purpose**, `'low-power'` can hand you a dying adapter (`webgpu-notes.md` §8)                                                                                                                                                                                                                      | `App.svelte` `createRenderer`                                                             |
+| 76                | ⚠️ **Following this tip would break the engine.** Tone mapping has exactly one owner (Threlte's `<Canvas toneMapping>`, AgX default). The pipeline READS `renderer.toneMapping`, never writes it — two owners caused real bugs                                                                                                                                                         | `src/CLAUDE.md`, `core/postprocessing/build.ts`                                           |
+| 77                | Selective bloom already exists: bloom `mode: 1` reads the **`emissive` MRT attachment** instead of scene luminance, and the MRT set is provisioned only when that mode is on                                                                                                                                                                                                           | `core/postprocessing/effects/bloom.ts`                                                    |
+| 78                | AA at pipeline end: FXAA / SMAA / SSAA effects in the registry                                                                                                                                                                                                                                                                                                                         | `core/postprocessing/effects/`                                                            |
+| 79                | Effect params are live-tweakable via uniform writes in place (no graph rebuild)                                                                                                                                                                                                                                                                                                        | `core/utils/Renderer.svelte`, `extensions/postprocessing`                                 |
+| 80                | Render scale is the `dpr` knob from the quality preset; **low quality bypasses the pipeline entirely** — no base-pass render target is allocated at all                                                                                                                                                                                                                                | `App.svelte`, `core/utils/Renderer.svelte` (`bypass`)                                     |
+| 82                | Native TSL post-processing IS this engine (`RenderPipeline` + TSL nodes)                                                                                                                                                                                                                                                                                                               | `core/utils/Renderer.svelte`, `core/postprocessing/`                                      |
+| 83, 85, 89        | Scenes mount on first visit (keep-alive) and the boot warmup sweep renders every scene behind the loading screen — lazy-load/placeholder patterns for content sites do not apply to a full-canvas app                                                                                                                                                                                  | `Scene.svelte`, `core/utils/boot.svelte.ts`, `Loader.svelte`                              |
+| 84                | Studio + every extension panel are dynamically imported behind `VITE_GAME_ENGINE` and never ship; three itself is needed at boot                                                                                                                                                                                                                                                       | `App.svelte`                                                                              |
+| 90                | R3F-specific (Svelte: `{#await}` / loaded flags)                                                                                                                                                                                                                                                                                                                                       | —                                                                                         |
+| 91, 97            | stats-gl integrated, including the WebGPU timestamp-query resolution gotcha (stats-gl never resolves the queries itself on a three `WebGPURenderer`)                                                                                                                                                                                                                                   | `extensions/stats/StatsExtension.svelte`                                                  |
+| 92                | Live tweaking via svelte-tweakpane-ui + Studio panels                                                                                                                                                                                                                                                                                                                                  | `extensions/*`, `@threlte/studio`                                                         |
+| 94                | `renderer.info` sampled after the pipeline draws — draw calls, triangles, geometries, textures, programs, plus fps/loopHz to tell "on-demand skipped the render" from "the frame got slower"                                                                                                                                                                                           | `core/utils/Telemetry.svelte` → Settings ▸ System                                         |
+| 100               | Threlte's scheduler owns the loop (`autoRender={false}` + explicitly ordered tasks)                                                                                                                                                                                                                                                                                                    | `src/CLAUDE.md` "Frame tasks"                                                             |
 
 **58 of 100.** The still-relevant essentials from the rest: draw calls under 100/frame,
 bake what you can, pool spawned entities, profile before optimizing.
@@ -84,7 +84,7 @@ synchronized compute against rendering. Same deprecation on `clearAsync`,
 `<Canvas>` already awaits `init()` before the scene mounts, so **the whole tip is a
 no-op here**.
 
-Compute→render ordering is a *task ordering* problem in this engine, not a promise
+Compute→render ordering is a _task ordering_ problem in this engine, not a promise
 problem: Birds' compute runs from a `{ before: autoRenderTask }` task, the pipeline
 draws from `{ after: autoRenderTask }`. Whoever writes must register before whoever
 reads. `computeAsync()` is **not** deprecated, but its only job is `if (!initialized)
@@ -99,8 +99,8 @@ The article's `storageTexture(w, h)` does not exist. The real API:
 import { StorageTexture } from 'three/webgpu';
 import { textureStore, uvec2, vec4 } from 'three/tsl';
 
-const target = new StorageTexture(width, height);   // class, from three/webgpu
-textureStore(target, uvec2(x, y), color);           // node, from three/tsl
+const target = new StorageTexture(width, height); // class, from three/webgpu
+textureStore(target, uvec2(x, y), color); // node, from three/tsl
 ```
 
 (`storageTexture3D` does exist, for the 3D case.) `workgroupArray` /
@@ -115,18 +115,24 @@ import { IndirectStorageBufferAttribute } from 'three/webgpu';
 // 'uint' type argument.
 const indirect = new IndirectStorageBufferAttribute(4, 1);
 
-geometry.setIndirect(indirect);         // → geometry.indirect / geometry.indirectOffset
+geometry.setIndirect(indirect); // → geometry.indirect / geometry.indirectOffset
 // indirectOffset may be an array: multiple indirect draws from one buffer.
 ```
 
 WebGPU backend only. `renderer.compute(node, indirectAttribute)` takes an
-`IndirectStorageBufferAttribute` for indirect *dispatch* too.
+`IndirectStorageBufferAttribute` for indirect _dispatch_ too.
 
 ### 2.4 `mx_fractal_noise_float` signature [51]
 
 ```js
-mx_noise_float(texcoord = uv(), amplitude = 1, pivot = 0)
-mx_fractal_noise_float(position = uv(), octaves = 3, lacunarity = 2, diminish = 0.5, amplitude = 1)
+mx_noise_float((texcoord = uv()), (amplitude = 1), (pivot = 0));
+mx_fractal_noise_float(
+	(position = uv()),
+	(octaves = 3),
+	(lacunarity = 2),
+	(diminish = 0.5),
+	(amplitude = 1)
+);
 ```
 
 The article's fourth argument "gain" is `diminish`, and it misses the fifth.
@@ -164,7 +170,38 @@ light.shadow.shadowNode = new CSMShadowNode(light, { cascades: 4, maxFar: 1000 }
 Untested here. `SkyLight.svelte`'s fitted single cascade is the current design and is
 correct for the demo's scale.
 
-### 2.7 `webglcontextlost` is the wrong hook [98]
+### 2.7 `<InstancedMesh>` from `@threlte/extras` breaks on-demand rendering [31]
+
+The declarative `<InstancedMesh>` / `<Instance>` pair is the obvious answer to tip 31 and
+it is the wrong one here. Its `Api.svelte` runs a `useTask` that calls `invalidate()`
+unconditionally every time it syncs instances, and `update` defaults to `true`:
+
+```js
+// @threlte/extras 9.21.1, Instancing/Api.svelte
+function updateInstances() {
+	/* … */ invalidate();
+}
+useTask(
+	() => {
+		if (update || !initialUpdateDone) updateInstances();
+	},
+	{ autoInvalidate: false }
+);
+```
+
+`autoInvalidate: false` is set, which looks correct, and then the body invalidates
+anyway. Since this engine's scenes are **keep-alive** — mounted on first visit and never
+unmounted — one `<InstancedMesh>` anywhere pins the render loop to full rate forever, in
+every scene, including the main menu.
+
+`update={false}` plus your own matrix sync works, or hand-roll the `InstancedMesh`;
+`scenes/DemoScene/SpawnedBodies.svelte` does the latter and invalidates only when a
+matrix actually changed. Note also that extras components resolve `<T.X>` against the
+plain `three` catalogue, not `three/webgpu` — fine for core classes like
+`InstancedBufferAttribute` (identical objects, both re-exported from `Three.Core.js`),
+but `<T.MeshStandardNodeMaterial>` does not exist there. Pass node materials in as props.
+
+### 2.8 `webglcontextlost` is the wrong hook [98]
 
 See §3.1 — three already owns the listener and exposes overridable callbacks.
 
@@ -172,7 +209,7 @@ See §3.1 — three already owns the listener and exposes overridable callbacks.
 
 ## 3. Open gaps — the actual work queue
 
-Ranked by (value × how cheap). Each has been verified as *not currently done*.
+Ranked by (value × how cheap). Each has been verified as _not currently done_.
 
 ### 3.1 Device loss is unhandled (cheap, high value)
 
@@ -198,30 +235,52 @@ laptops that sleep, on driver updates, and after a GPU hang from a bad shader.
 Do **not** add DOM `webglcontextlost` listeners — that only fires on the WebGL fallback
 path and duplicates a listener three already installs.
 
-### 3.2 Spawned physics bodies: N draw calls, N materials [31, 33, 39]
+### 3.2 Spawned physics bodies — DONE, and the numbers are worth keeping [31, 33, 39]
 
-`DemoScene.svelte:152` renders `physicsState.bodies` as one `<T.Mesh>` per body inside
-`{#each}`. Geometry is shared (`spawnBallGeometry` / `spawnBoxGeometry` — good), but
-each body constructs its own `<T.MeshStandardMaterial color={body.color} flatShading />`,
-and `physicsActions.spawnBall/spawnBox` push unboundedly with no cap and no reuse
-(`clearBodies()` drops the whole array).
+_(Closed. Kept because the measurement is the useful part.)_
 
-So the spawn button is a linear draw-call and material-allocation generator, and it is
-the one place in the repo where the article's three most-cited tips all land at once:
+Every spawned body used to be its own `<T.Mesh>` with its own `MeshStandardMaterial`
+(colour is random per spawn), pushed unboundedly by `spawnBall`/`spawnBox`.
 
-1. **Instance them.** `<InstancedMesh>` + `<Instance>` from `@threlte/extras` is the
-   declarative form — one draw call per shape, per-instance colour built in. Rapier
-   still needs one body per instance; only the *rendering* collapses.
-2. **Share the material.** Colour becomes a per-instance attribute rather than a
-   material property. Materials differing only by uniform still share a compiled
-   pipeline, so the win here is allocation and disposal churn, not program count — but
-   `telemetryState.programs` is the number to watch if that assumption ever breaks.
-3. **Pool them.** Cap the pool, recycle the oldest instead of growing — the classic
-   `acquire()`/`release()` pair, pre-warmed at load so no allocation happens mid-session.
+**The trap was counting draw calls per object instead of per frame.** DemoScene renders
+itself up to five times per frame — main, shadow, mirror-floor reflector, mirror-sphere
+cube capture (6 faces @ 30 Hz) and corner-ball cube capture (6 faces @ 15 Hz) — so one
+mesh per body cost roughly **7.5 draw calls per frame per body**. The 100-call budget
+was gone at about fourteen balls.
 
-Note that the sky layers already solve exactly this problem, one level lower: fixed
-instance counts, recycled slots, per-instance attributes (`skyLayer.ts`,
-`Meteors.svelte`). Game content should reuse the shape of that solution, not reinvent it.
+Now: one `InstancedMesh` per shape, **one material shared by both**, colour via
+`instanceColor` (`NodeMaterial` multiplies it into the material colour, so the base must
+be white), and a hard `MAX_BODIES = 500` cap that evicts the oldest.
+
+Measured headless on the WebGPU backend (`telemetryState`, and the exact method in §6):
+
+| State               | Draw calls | Triangles |
+| ------------------- | ---------- | --------- |
+| baseline, 0 bodies  | 66         | 91 030    |
+| +60 balls +60 boxes | 72         | 179 590   |
+| 500 balls (at cap)  | 69         | 811 030   |
+| after clear         | 66         | 91 030    |
+
+Read that table carefully, because both columns are load-bearing:
+
+- **Draw calls +6 for 120 bodies, +3 for 500.** Not +2 and +2, because a frame contains
+  several passes and the meshes appear in each — the +3 case is 500 balls in three
+  passes with the (now empty) box mesh switched off by `visible = count > 0`. The
+  pre-change equivalent would have been +360 and +1500.
+- **Triangles prove they're actually drawn.** 60 × 480 + 60 × 12 = 29 520 per pass,
+  × 3 = 88 560 — exactly the observed delta. A draw-call count alone cannot tell
+  "instanced successfully" from "rendering nothing", which is the failure mode to fear
+  here. Triangles also confirm the cap: 500 × 480 × 3 = 720 000, exactly the delta.
+
+Rapier is untouched — every body still needs its own `<RigidBody>` and collider, and the
+cap bounds the _simulation_, not the rendering. The transform path is a plain `Map` of
+anchor `Object3D`s (never `physicsState.bodies`, whose proxy reads would be paid 60×/s)
+synced from a `{ before: autoRenderTask }` task, which sits after Rapier's
+synchronization stage, so it gets the interpolated pose.
+
+The sky layers had already solved the same problem one level lower — fixed instance
+counts, recycled slots, per-instance attributes (`skyLayer.ts`, `Meteors.svelte`). New
+spawning content should follow one of those two shapes rather than inventing a third.
 
 ### 3.3 No texture cache [40]
 
@@ -344,7 +403,7 @@ The engine core is tuned. These are the constraints on what gets added on top.
 ## 5. Asset pipeline [21–27]
 
 Runtime decoding of all of these is already wired (Draco + Meshopt + KTX2). This section
-is about *producing* the assets — a 50 MB GLTF ruins load time no matter how good the
+is about _producing_ the assets — a 50 MB GLTF ruins load time no matter how good the
 rendering code is.
 
 ```bash
@@ -386,7 +445,7 @@ Profile before optimizing; the bottleneck is rarely where it feels like it is.
 4. **DevTools Performance tab** on a real session, not a synthetic loop: long frames, GC
    pauses, blocking JS. Task markers show which registered task owns the time.
 5. **`src/__debug/`** — the probe harness. Headless Firefox with console piped to stdout,
-   canvas readback instead of trusting the console, reading the *served* bytes rather than
+   canvas readback instead of trusting the console, reading the _served_ bytes rather than
    the source (`webgpu-notes.md` §5).
 6. When a suspicion needs a number, wrap the suspect task in timing rather than guessing —
    ordered tasks make that unambiguous.
@@ -399,7 +458,7 @@ Reference-grade notes for when they become relevant. APIs verified against 0.185
 
 - **Compute shaders beyond particles** [17, 18]. Birds is the template: `instancedArray`
   storage, two `renderer.compute()` passes from a `{ before: autoRenderTask }` task, a
-  `computeAsync` warm-up for the pre-init frame with *two* flags (issued-synchronously
+  `computeAsync` warm-up for the pre-init frame with _two_ flags (issued-synchronously
   vs settled — one flag doing both jobs was a real bug), and a backend gate that goes
   dormant on WebGL2 rather than erroring. GPU terrain generation would follow the same
   shape with a `StorageTexture` output (§2.2).
