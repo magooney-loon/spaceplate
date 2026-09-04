@@ -24,7 +24,7 @@
 	const BEAM_PITCH = -0.045; // radians, negative dips the aim slightly down
 
 	const BEAM_LENGTH = 7; // car-local meters, narrow→wide away from the lamp
-	const BEAM_NEAR_RADIUS = 0.16;
+	const BEAM_NEAR_RADIUS = 0.05; // matches the 0.07 lens — a wider base reads as a giant lamp
 	const BEAM_FAR_RADIUS = 1.5;
 	const BEAM_STRENGTH = 0.55; // additive beam brightness
 
@@ -36,7 +36,7 @@
 	const LIGHT_CAST_SHADOW = false; // two shadowed spots over the track trimesh is pricey
 
 	const LENS_SIZE = 0.07; // circular lens diameter (car-local meters)
-	const LENS_HEAT = 4; // HDR multiplier — tone-maps to white-hot, feeds bloom
+	const LENS_HEAT = 3; // HDR multiplier — tone-maps hot, feeds bloom; higher reads as a bigger glow
 
 	const WARM_WHITE = new THREE.Color(1.0, 0.93, 0.82);
 
@@ -71,7 +71,7 @@
 	lensMaterial.name = 'HeadlightLens';
 	{
 		const radial = uv().sub(0.5).length(); // 0 centre → 0.5 at edge midpoints
-		const disc = radial.smoothstep(0.32, 0.5).oneMinus(); // 1 centre → 0 rim
+		const disc = radial.smoothstep(0.38, 0.5).oneMinus(); // tighter core, less halo
 		lensMaterial.colorNode = vec4(color(1.0, 0.93, 0.82).mul(LENS_HEAT), disc);
 	}
 
