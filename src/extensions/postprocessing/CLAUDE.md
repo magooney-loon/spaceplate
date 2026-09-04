@@ -45,7 +45,7 @@ model is lit from the inside by the whole sky. Off by default — read its secti
   weather.
 - Param drags are **hot** (uniform writes, no rebuild) except structural params
   (`motionBlur.numSamples`, `lut.lut`, `bloom.mode`, `bloom.lensflare`,
-  `bloom.ghostSamples`, `ao.resolutionScale`) which rebuild the graph — `bloom.mode`
+  `bloom.ghostSamples`, `ao.aoBufferScale`) which rebuild the graph — `bloom.mode`
   because it changes the MRT set, not just the graph.
 - `bloom` has a **mode** toggle: Global (colour buffer) vs Material (`emissive`
   attachment — selective emissive bloom, `requiresValues` on the def). It also

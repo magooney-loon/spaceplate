@@ -214,7 +214,12 @@ daylight (`core/skybox/model/CLAUDE.md`).
   `setup()` is lazy and reads `this.radius` & co. then, so assignment after a build
   silently does nothing. Same rule as "never pass a raw number to a node factory", for a
   node with nowhere to pass them.
-- `resolutionScale` is a plain property, not a uniform → the one `structural` param.
+- `aoBufferScale` is a plain property on the node, not a uniform → the one `structural`
+  param. Named that way rather than three's `resolutionScale` because it **multiplies on
+  top of** `settingsState.graphics.renderScale`: GTAONode sizes itself from
+  `renderer.getDrawingBufferSize()`, which is already `devicePixelRatio × renderScale`
+  (App.svelte's `dpr`). Three scales in this app are one word apart — the third is
+  DemoScene's reflector.
 - **Heavy weather degrades it**, via the no-blending rule below: `RainLens`/`SnowLens`
   are screen-filling quads inside the scene pass and overwrite the whole normal buffer.
   Motion blur has the same exposure on `velocity`. The prePass question under "Removed

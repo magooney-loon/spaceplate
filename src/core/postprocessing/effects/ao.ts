@@ -44,8 +44,19 @@ export type AoParams = {
 	distanceExponent: number;
 	/** How fast occlusion decays with distance. Lower = larger-looking AO. */
 	distanceFallOff: number;
-	/** AO buffer resolution as a fraction of the canvas. Structural — resizes the RT. */
-	resolutionScale: number;
+	/**
+	 * AO render-target size as a fraction of the DRAWING BUFFER. Structural — resizes
+	 * the RT, and the node reads it as a plain property, not a uniform.
+	 *
+	 * **It multiplies on top of Settings ▸ Render Scale, it does not replace it.**
+	 * GTAONode sizes itself from `renderer.getDrawingBufferSize()`, which is already
+	 * `devicePixelRatio × settingsState.graphics.renderScale` (App.svelte's `dpr`). So
+	 * the AO buffer is `canvas × dpr × renderScale × this`, and 0.5 on both knobs
+	 * computes AO at a sixteenth of native. Named `aoBufferScale` rather than three's
+	 * `resolutionScale` for exactly that reason — there are three near-identically
+	 * named scales in this app (the third is DemoScene's mirror-floor reflector).
+	 */
+	aoBufferScale: number;
 };
 
 export const aoEffect: EffectDef<AoParams> = {
@@ -62,15 +73,15 @@ export const aoEffect: EffectDef<AoParams> = {
 		thickness: 1,
 		distanceExponent: 1,
 		distanceFallOff: 1,
-		resolutionScale: 0.5
+		aoBufferScale: 0.5
 	}),
 	// Off by default: it is a real per-frame cost on a frame that already renders the
 	// scene up to five times (DOCS/best-practices.md), and it changes the look of every
 	// existing scene. Opt in from the panel.
 	defaultEnabled: false,
-	// `resolutionScale` is a plain property on the node, not a uniform() — the only way
+	// `aoBufferScale` is a plain property on the node, not a uniform() — the only way
 	// to change it is to rebuild. Everything else below is hot.
-	structural: ['resolutionScale'],
+	structural: ['aoBufferScale'],
 	ranges: {
 		radius: { min: 0.05, max: 5, step: 0.05 },
 		scale: { min: 0.1, max: 4, step: 0.05 },
@@ -78,9 +89,9 @@ export const aoEffect: EffectDef<AoParams> = {
 		thickness: { min: 0.05, max: 5, step: 0.05 },
 		distanceExponent: { min: 1, max: 2, step: 0.05 },
 		distanceFallOff: { min: 0, max: 1, step: 0.05 },
-		resolutionScale: { min: 0.25, max: 1, step: 0.25 }
+		aoBufferScale: { min: 0.25, max: 1, step: 0.25 }
 	},
-	note: 'Occludes the sky ambient that lights closed interiors from the inside. Radius is in world units — raise it for big models, lower it for a contact-shadow look. Half resolution is usually indistinguishable at a quarter of the cost.',
+	note: 'Occludes the sky ambient that lights closed interiors from the inside. Radius is in world units — raise it for big models, lower it for a contact-shadow look. AO Buffer Scale multiplies ON TOP of Settings ▸ Render Scale; half is usually indistinguishable at a quarter of the cost.',
 	build: (ctx, u) => {
 		const aoNode = ctx.track(ao(ctx.depth, ctx.normal, ctx.camera));
 
@@ -97,7 +108,7 @@ export const aoEffect: EffectDef<AoParams> = {
 		aoNode.thickness = u.thickness;
 		aoNode.distanceExponent = u.distanceExponent;
 		aoNode.distanceFallOff = u.distanceFallOff;
-		aoNode.resolutionScale = u.resolutionScale.value;
+		aoNode.resolutionScale = u.aoBufferScale.value;
 
 		// `.r` EXPLICITLY. The AO target is RedFormat, but a pass texture node is vec4
 		// whatever was written into it, and TSL's promotion rule ("use the greater length
