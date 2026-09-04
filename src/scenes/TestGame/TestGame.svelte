@@ -249,7 +249,7 @@
 <svelte:window onkeydown={onKeydown} onkeyup={onKeyup} onblur={resetCarInput} />
 
 {#if $city}
-	<T.Group name="City" scale={1} position={[ 101.4641, 8.7, -102.459 ]} rotation={[ 0, -1.0472, 0 ]}>
+	<T.Group name="City" scale={1} position={[ 165.7624, 8.7, -206.0916 ]} rotation={[ 0, -1.0472, 0 ]}>
 		<!-- Trimesh per mesh (the GLB is ~22 named building/prop/road meshes): exact
 		     collision for a drivable city, fixed bodies by AutoColliders' default. -->
 		<AutoColliders shape="trimesh">
