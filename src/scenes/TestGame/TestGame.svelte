@@ -2,7 +2,12 @@
 	import { T } from '@threlte/core/webgpu';
 	import { useGltf, useDraco, useKtx2, useMeshopt } from '@threlte/extras';
 	import { AutoColliders, Collider, RigidBody, usePhysicsTask } from '@threlte/rapier';
-	import type { RigidBody as RapierRigidBody, Rotation, Vector } from '@dimforge/rapier3d-compat';
+	import {
+		CoefficientCombineRule,
+		type RigidBody as RapierRigidBody,
+		type Rotation,
+		type Vector
+	} from '@dimforge/rapier3d-compat';
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';
 	import { BASE_URL } from '$extensions/settings';
@@ -286,9 +291,24 @@
 			<!-- Chassis: ONE box instead of per-mesh hulls (the model is dozens of
 			     meshes — seats, glass, engine — each a silly collider). Args are
 			     half-extents in model meters, scaled by the parent group to match the
-			     visual; offset to the car's centre height (model Y spans 0..1.31). -->
+			     visual; offset to the car's centre height (model Y spans 0..1.31).
+			     FRICTIONLESS (Min rule → min(0, μ_road) = 0) on purpose: the chassis is
+			     one box, so contact friction is STATIC friction against the COM drive
+			     force — at real gravity (gravityScale 2.5) the cap is μ·m·g ≈ 0.65 ·
+			     31 600 ≈ 20 500 world units, above the drivetrain's entire range
+			     (launch ≈ 3 800, traction limit ≈ 15 600), and every Newton of throttle
+			     was cancelled — the car could not move at all. Grip belongs to the
+			     drivetrain (rear-axle traction clip, rolling resistance, brakes) and
+			     the lateral velocity damp; contacts keep their normal impulses only
+			     (ground, kerbs, walls). Verified against rapier in isolation. -->
 			<T.Group position={[0, 1.53, 0]} scale={2.5}>
-				<Collider shape="cuboid" args={[0.95, 0.55, 2.1]} mass={GR86.mass} friction={0.6} />
+				<Collider
+					shape="cuboid"
+					args={[0.95, 0.55, 2.1]}
+					mass={GR86.mass}
+					friction={0}
+					frictionCombineRule={CoefficientCombineRule.Min}
+				/>
 			</T.Group>
 
 			<!-- What the chase camera looks at. An empty inside the RigidBody rather than

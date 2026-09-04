@@ -63,6 +63,17 @@ TestGame/  TestGame.svelte, TestGameHud.svelte, CarCluster.svelte, ChaseCamera.s
   the shared `<World>` pulls at 9.8 *units*/s², which in this city is 3.9 m/s². Validated
   against the real GR86: 0-60 mph 5.7 s (6.1 published), 140 mph governed, redline in 1st at
   ~50 km/h.
+- **The gearbox is fully manual** — Q/E walk R ↔ N ↔ 1…6 with no auto-engage and no auto-drop
+  to 1st; the only refusals are physical: reverse above 1 m/s forward (and vice versa), and
+  money-shift downshifts that would pass the limiter. You can slot any gear while standing.
+- **The chassis collider is FRICTIONLESS** (`friction={0}` + `CoefficientCombineRule.Min` →
+  min(0, μ) with anything). A one-box car applies its drive force at the centre of mass, so
+  contact friction is static friction against it — at real gravity the cap (≈0.65·m·g ≈ 20 500
+  world units) sits ABOVE the drivetrain's entire force range (launch ≈ 3 800, traction limit
+  ≈ 15 600) and every Newton was cancelled: the car could not move at all. All grip —
+  longitudinal AND lateral — is modelled in the drivetrain/task; contacts keep normal impulses
+  only. Trade-off: a parked car can creep on slopes steeper than rolling resistance holds
+  (~0.75°); hold Space (handbrake force) or a brake key if that ever matters.
 - **`carTelemetry.svelte.ts` is the plain-object / `$state`-mirror split** the sky uses:
   `carSim` is written every physics step (200 Hz) and read by `CarWheels`; `carHud` is
   quantised and published at 30 Hz for `CarCluster.svelte`. The HUD must never read `carSim` —

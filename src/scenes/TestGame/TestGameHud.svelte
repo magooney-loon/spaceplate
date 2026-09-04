@@ -19,7 +19,7 @@
 
 	<!-- Controls hint -->
 	<div class="info">
-		<p>↑ throttle · ↓ brake (hold stopped for reverse) · Space handbrake · Q/E shift</p>
+		<p>↑ throttle · ↓ brake · Space handbrake · Q/E shift</p>
 		<p>Drag to tilt · right-drag to raise/lower · wheel to zoom</p>
 	</div>
 

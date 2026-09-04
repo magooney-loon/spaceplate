@@ -78,8 +78,6 @@ export const GR86 = {
 	efficiency: 0.9,
 	/** s — clutch-out time per shift. Torque is cut for the whole window. */
 	shiftTime: 0.28,
-	/** s — how long ↓ must be held at a standstill before reverse engages. */
-	autoReverseHold: 0.35,
 
 	// ── Tyres & brakes ───────────────────────────────────────────────────────
 	/** Longitudinal grip coefficient — what the rear axle can put down. */

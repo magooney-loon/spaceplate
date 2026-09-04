@@ -87,7 +87,6 @@ export function createDrivetrain() {
 
 	let shiftTimer = 0;
 	let cutTimer = 0;
-	let reverseHold = 0;
 	/** Rising-edge latches for Q/E — the scene passes held booleans. */
 	let prevUp = false;
 	let prevDown = false;
@@ -129,27 +128,7 @@ export function createDrivetrain() {
 		prevUp = input.shiftUp;
 		prevDown = input.shiftDown;
 
-		// Arcade convenience on top of the manual box: hold the key you'd expect
-		// to move you that way while stopped, and the right gear selects itself.
-		if (rolling < 0.8) {
-			const wantsReverse = input.backward && state.gear >= 0;
-			const wantsForward = input.forward && state.gear < 0;
-			if (wantsReverse || wantsForward) {
-				reverseHold += dt;
-				if (reverseHold >= GR86.autoReverseHold) {
-					engage(wantsReverse ? -1 : 1);
-					reverseHold = 0;
-				}
-			} else {
-				reverseHold = 0;
-			}
-			// Rolling to a stop in 4th shouldn't strand you there.
-			if (state.gear > 1 && rolling < 0.6) engage(1);
-		} else {
-			reverseHold = 0;
-		}
-
-		// ── Pedals ───────────────────────────────────────────────────────────
+		// ── Pedals ───────────────────────────────────────────────────────────────
 		const reversing = state.gear < 0;
 		const throttle = (reversing ? input.backward : input.forward) ? 1 : 0;
 		const braking = (reversing ? input.forward : input.backward) ? 1 : 0;
@@ -276,7 +255,6 @@ export function createDrivetrain() {
 		state.shifted = false;
 		shiftTimer = 0;
 		cutTimer = 0;
-		reverseHold = 0;
 		prevUp = false;
 		prevDown = false;
 		prevDrive = 0;
