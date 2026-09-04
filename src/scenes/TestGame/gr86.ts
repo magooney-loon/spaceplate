@@ -99,15 +99,17 @@ export const GR86 = {
 	/** m/s — 140 mph. The real car is electronically limited here, and so is this one. */
 	topSpeed: 62.6,
 
-	// ── Steering ─────────────────────────────────────────────────────────────
-	/** rad — full lock at the front wheels (≈24°), matches CarWheels' visual lock. */
-	maxSteerAngle: 0.42,
+	// ── Steering ────────────────────────────────────────────────────────────────
+	/** rad — full lock at the front wheels (≈29°, a touch more than the real 24°:
+	 * the demo favours tight turns). CarWheels renders this same value, so the
+	 * visual lock IS the physics lock. */
+	maxSteerAngle: 0.7,
 	/** Fraction of lock still available at `steerFalloffSpeed` — slow hands at speed. */
-	steerHighSpeedFactor: 0.38,
+	steerHighSpeedFactor: 0.82,
 	/** m/s at which the falloff above has fully taken effect. */
-	steerFalloffSpeed: 38,
+	steerFalloffSpeed: 1.8,
 	/** 1/s — how fast the steering rack follows the key. */
-	steerResponse: 6.5,
+	steerResponse: 7,
 	/** 1/s — how fast the body's yaw rate chases the steering target. */
 	yawResponse: 9
 } as const;

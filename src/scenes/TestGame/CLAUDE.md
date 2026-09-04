@@ -23,10 +23,12 @@ cityColliders.ts        — hand-rolled static trimesh colliders for the track G
 
 ## Controls
 
-Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up. The keys
-are chosen so Studio's dev-mode shortcuts (w a s z t r c v m) never fight the car.
-Input is this scene's own `svelte:window` keymap (`carInput.svelte.ts`), not the
-shared keymapper — that needs a per-scene rework first.
+Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up. Reverse is
+a GEAR, not a pedal: Q past 1st through N into R, then pull away on ↑ — the pedals
+never swap meaning, ↓ is only ever the brake. The keys are chosen so Studio's
+dev-mode shortcuts (w a s z t r c v m) never fight the car. Input is this scene's
+own `svelte:window` keymap (`carInput.svelte.ts`), not the shared keymapper —
+that needs a per-scene rework first.
 
 ## The driving model
 
@@ -54,9 +56,10 @@ the car cannot tip sideways; pitch survives for slopes.
   never a "fraction kept per step" — the latter silently retunes the car whenever
   the physics framerate moves.
 - **The gearbox is fully manual** — Q/E walk R ↔ N ↔ 1…6 with no auto-engage and
-  no auto-drop to 1st; the only refusals are physical: reverse above 1 m/s
-  forward (and vice versa), and money-shift downshifts that would pass the
-  limiter. You can slot any gear while standing.
+  no auto-drop to 1st. You can slot any gear while standing, and a 3 m/s grace
+  window lets you shift R/N ↔ 1st while still creeping (dead stop not required);
+  the only other refusals are physical: reverse above 3 m/s forward (and vice
+  versa), and money-shift downshifts that would pass the limiter.
 - **The engine feel is in the numbers on purpose**: a torque CURVE through GEARS
   (acceleration falls off and snaps back on every upshift), a clutch fully OPEN
   for the length of a shift (0.28 s torque cut), a slipping clutch below

@@ -33,9 +33,9 @@ import {
 
 /** Raw driver intent for one step. Shift flags are LEVEL, not edges — see `step`. */
 export interface DriveInput {
-	/** ↑ held. Throttle in a forward gear, brake in reverse. */
+	/** ↑ held. Throttle — drives the car forwards, or backwards in R. */
 	forward: boolean;
-	/** ↓ held. Brake in a forward gear, throttle in reverse. */
+	/** ↓ held. Brake — only ever the brake, in every gear. */
 	backward: boolean;
 	handbrake: boolean;
 	shiftUp: boolean;
@@ -103,10 +103,14 @@ export function createDrivetrain() {
 	function requestShift(dir: number, speedMs: number): void {
 		const next = state.gear + dir;
 		if (next > TOP_GEAR || next < -1) return;
-		// Reverse only while stopped or already rolling back; forward gears only
-		// while stopped or already rolling forward. Neutral is always available.
-		if (next < 0 && speedMs > 1) return;
-		if (next > 0 && speedMs < -1) return;
+		// Reverse only while (nearly) stopped or already rolling back; forward
+		// gears only while (nearly) stopped or already rolling forward. The 3 m/s
+		// grace window lets you slot 1st from R/N (or R from 1st) while still
+		// creeping instead of waiting for a dead stop; the money-shift guard
+		// below still refuses anything that would over-rev. Neutral is always
+		// available.
+		if (next < 0 && speedMs > 3) return;
+		if (next > 0 && speedMs < -3) return;
 		// Money-shift guard: refuse a downshift that would slam past the limiter.
 		if (next > 0 && rpmInGear(next, speedMs) > GR86.limiterRpm) return;
 		engage(next);
@@ -129,9 +133,11 @@ export function createDrivetrain() {
 		prevDown = input.shiftDown;
 
 		// ── Pedals ───────────────────────────────────────────────────────────────
-		const reversing = state.gear < 0;
-		const throttle = (reversing ? input.backward : input.forward) ? 1 : 0;
-		const braking = (reversing ? input.forward : input.backward) ? 1 : 0;
+		// No pedal swapping in reverse: ↑ is ALWAYS throttle, ↓ is ALWAYS brake.
+		// In R the throttle simply drives the car backwards — you slot R with Q
+		// and pull away on the same key as everywhere else.
+		const throttle = input.forward ? 1 : 0;
+		const braking = input.backward ? 1 : 0;
 		state.throttle = throttle;
 		state.brake = braking;
 

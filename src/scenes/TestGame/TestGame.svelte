@@ -319,7 +319,7 @@
 			     (ground, kerbs, walls). Verified against rapier in isolation.
 			     (Wheel-contact balls at the measured pivots were tried on top of this
 			     and reverted — see git history before revisiting.) -->
-			<T.Group position={[0, 1.53, 0]} scale={2.5}>
+			<T.Group position={[0, 1.23, 0]} scale={2.5}>
 				<Collider
 					shape="roundCuboid"
 					args={[0.95 - 0.18, 0.55 - 0.18, 2.1 - 0.18, 0.18]}
