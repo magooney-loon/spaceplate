@@ -203,7 +203,7 @@
 			     meshes — seats, glass, engine — each a silly collider). Args are
 			     half-extents in model meters, scaled by the parent group to match the
 			     visual; offset to the car's centre height (model Y spans 0..1.31). -->
-			<T.Group position={[0, 0.65, 0]} scale={2.5}>
+			<T.Group position={[0, 1.5, 0]} scale={2.5}>
 				<Collider shape="cuboid" args={[0.95, 0.55, 2.1]} mass={CHASSIS_MASS} friction={0.6} />
 			</T.Group>
 		</RigidBody>
