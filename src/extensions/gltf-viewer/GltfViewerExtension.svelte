@@ -84,6 +84,12 @@
 						on:change={() => gltfViewerActions.setCastShadows(model.id, !model.castShadows)}
 					/>
 					<Checkbox
+						label="Receive Shadows"
+						value={model.receiveShadows}
+						on:change={() =>
+							gltfViewerActions.setReceiveShadows(model.id, !model.receiveShadows)}
+					/>
+					<Checkbox
 						label="Auto Rotate"
 						value={model.autoRotate}
 						on:change={() => gltfViewerActions.setAutoRotate(model.id, !model.autoRotate)}

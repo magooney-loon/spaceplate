@@ -16,6 +16,7 @@ export type GltfViewerModel = {
 	visible: boolean;
 	showRig: boolean; // SkeletonHelper overlay — needs visible model with bones
 	castShadows: boolean;
+	receiveShadows: boolean;
 	autoRotate: boolean;
 	autoRotateSpeed: number; // rad/s
 	colliderEnabled: boolean;

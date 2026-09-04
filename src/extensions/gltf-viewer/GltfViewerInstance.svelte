@@ -87,15 +87,19 @@
 		};
 	});
 
-	// Shadow casting — flips castShadow on every mesh of the loaded scene
+	// Shadow casting/receiving — flips castShadow/receiveShadow on every mesh of the loaded scene
 	$effect(() => {
 		const gltfScene = $gltf?.scene;
 		if (!gltfScene) return;
 
 		const cast = model.castShadows;
+		const receive = model.receiveShadows;
 		gltfScene.traverse((obj) => {
 			const mesh = obj as Mesh;
-			if (mesh.isMesh) mesh.castShadow = cast;
+			if (mesh.isMesh) {
+				mesh.castShadow = cast;
+				mesh.receiveShadow = receive;
+			}
 		});
 	});
 

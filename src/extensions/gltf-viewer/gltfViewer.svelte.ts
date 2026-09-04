@@ -18,6 +18,7 @@ const makeModel = (name: string, url: string, isBlobUrl: boolean): GltfViewerMod
 	visible: true,
 	showRig: false,
 	castShadows: false,
+	receiveShadows: false,
 	autoRotate: false,
 	autoRotateSpeed: 0.5,
 	colliderEnabled: false,
@@ -149,6 +150,11 @@ export const gltfViewerActions = {
 	setCastShadows(id: string, cast: boolean) {
 		const m = find(id);
 		if (m) m.castShadows = cast;
+	},
+
+	setReceiveShadows(id: string, receive: boolean) {
+		const m = find(id);
+		if (m) m.receiveShadows = receive;
 	},
 
 	setAutoRotate(id: string, enabled: boolean) {
