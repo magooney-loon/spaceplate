@@ -47,7 +47,7 @@
 </script>
 
 {#if $city}
-	<T.Group name="City" scale={0.01}>
+	<T.Group name="City" scale={0.01} position={[ 170.1, 0, 110.5 ]}>
 		<!-- Trimesh per mesh (the GLB is ~22 named building/prop/road meshes): exact
 		     collision for a drivable city, fixed bodies by AutoColliders' default. -->
 		<AutoColliders shape="trimesh">
@@ -58,7 +58,7 @@
 
 <!-- Player car — scale/position deliberately left as-authored, tuned by hand. -->
 {#if $car}
-	<T.Group name="GR86" scale={2}>
+	<T.Group name="GR86" scale={2} rotation={[ 3.1416, -1.0472, 3.1416 ]}>
 		<T is={$car.scene} />
 	</T.Group>
 {/if}
