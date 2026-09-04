@@ -31,6 +31,9 @@ importers:
       '@types/three':
         specifier: ^0.185.4
         version: 0.185.4
+      camera-controls:
+        specifier: ^3.1.2
+        version: 3.1.2(three@0.185.1(patch_hash=dd4ffd178340026d0f79462efd4754dea6df42fef77f8830fc9544575576fa0b))
       mediabunny:
         specifier: ^1.55.5
         version: 1.55.5

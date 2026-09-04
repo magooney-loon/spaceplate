@@ -21,6 +21,7 @@
 		"@threlte/rapier": "^3.5.0",
 		"@threlte/studio": "^0.4.3",
 		"@types/three": "^0.185.4",
+		"camera-controls": "^3.1.2",
 		"mediabunny": "^1.55.5",
 		"spacetimedb": "^2.8.3",
 		"stats-gl": "^4.2.3",

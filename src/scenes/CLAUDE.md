@@ -11,8 +11,9 @@ MainMenu/  MainMenu.svelte, MainMenuHud.svelte, SettingsHud.svelte (tabs: Genera
            Controls, System — System reads capabilityState + telemetryState)
 DemoScene/ DemoScene.svelte, DemoSceneHud.svelte, DemoPhysicsBodies.svelte,
            SpawnedBodies.svelte, mirrorFloor.ts, demoQuality.ts
-TestGame/   TestGame.svelte, TestGameHud.svelte (driving prototype — currently empty
-           scene + HUD with controls hint)
+TestGame/  TestGame.svelte, TestGameHud.svelte, ChaseCamera.svelte, CarWheels.svelte,
+           CarHeadlights.svelte, carInput.svelte.ts (driving prototype: city trimesh +
+           GR86 on one arcade chassis body)
 ```
 
 ## DemoScene specifics
@@ -33,6 +34,29 @@ TestGame/   TestGame.svelte, TestGameHud.svelte (driving prototype — currently
     to `true`), and scenes here are keep-alive — one mounted anywhere pins the render
     loop at full rate forever, in every scene. Drive `InstancedMesh` from a task that
     invalidates only when a matrix actually changed.
+
+## TestGame specifics
+
+- **`ChaseCamera.svelte` BORROWS the app camera** (`core/Camera.svelte` — the one holding
+  the AudioListener) via `<CameraControls>` + `useFollow` from `@threlte/extras`, rather
+  than mounting a second `makeDefault` camera. One camera keeps the listener, the sky's
+  framing and the post-processing pipeline pointed at what is on screen (`Renderer.svelte`
+  rebuilds the whole pipeline on a camera swap). Two rules come with borrowing:
+  - **Save the pose on entry, restore it on exit.** `Camera.svelte` sets its vantage once,
+    in `oncreate`, and never re-asserts it — leave the camera at the car and every other
+    scene inherits that framing.
+  - **Gate on the scene AND on Studio's editor camera.** `useFollow`'s task `invalidate()`s
+    whenever it does work, so ungated it pins the on-demand render loop at full rate from
+    every scene; and `CameraControls.update()` writes position + `lookAt` unconditionally,
+    so it must stand down when `camera.current` is Studio's editor camera
+    (`userData.editorCamera`) — the collision `extensions/flypath/FlyPath.svelte` documents.
+- **Physics runs at a fixed 200 Hz** (`physicsState.framerate`), so a `usePhysicsTask` runs
+  0..n times per rendered frame. Every damping constant in the driving model is therefore a
+  RATE in 1/s applied as `exp(-rate * delta)`, never a "fraction kept per step" — the latter
+  silently retunes the car whenever the physics framerate moves.
+- **`CarWheels.svelte` deforms vertices in `positionNode`**, so it also writes
+  `positionPrevious` — a vertex-deforming material owns both ends of the velocity buffer or
+  motion blur smears it against its own rest pose. Applies to any future deforming material.
 
 ## Adding a scene
 

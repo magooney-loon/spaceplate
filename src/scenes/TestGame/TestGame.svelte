@@ -10,6 +10,7 @@
 	import { logGltf } from '$extensions/logger';
 	import CarHeadlights from './CarHeadlights.svelte';
 	import CarWheels from './CarWheels.svelte';
+	import ChaseCamera from './ChaseCamera.svelte';
 	import { CAR_INPUT_KEYS, carInput, resetCarInput } from './carInput.svelte';
 
 	// Test Game 3D scene — driving prototype.
@@ -91,11 +92,19 @@
 	const MIN_STEER_SPEED = 0.5;
 	const STEER_SPEED_REF = 10; // full authority at this forward speed
 	const STEER_RESPONSE = 10;
-	const KEEP_LATERAL_GRIP = 0.1; // fraction of lateral velocity kept per step (grippy)
-	const KEEP_LATERAL_HANDBRAKE = 0.85; // loose — this is the drift
-	const HANDBRAKE_BRAKE = 0.04; // forward speed bled per step while Space is held
+	// Damping RATES, in 1/s — `exp(-rate * delta)` is the fraction kept. Per-STEP fractions
+	// (what these were) are a lie the moment the physics framerate moves, and it moved:
+	// the world runs a fixed 200 Hz now, so the old "0.85 kept per step" drift would have
+	// been applied 200×/s instead of 60 and the handbrake would have stopped drifting
+	// altogether. Each rate below is the old constant converted at 60 Hz (-ln(keep) * 60),
+	// so the car drives exactly as it did — it just keeps driving that way at any rate.
+	const GRIP_RATE = 138; // lateral velocity bleed (grippy) — was 0.1 kept/step
+	const HANDBRAKE_GRIP_RATE = 9.7; // loose — this is the drift — was 0.85 kept/step
+	const HANDBRAKE_BRAKE_RATE = 2.45; // forward speed bled while Space is held — was 0.04/step
 
 	let carBody = $state.raw<RapierRigidBody>();
+	/** What ChaseCamera follows — an empty parented to the chassis body, see below. */
+	let chaseAnchor = $state.raw<THREE.Object3D>();
 
 	// Tasks never allocate (core/utils/CLAUDE.md) — every per-step scratch lives here,
 	// and the rapier getter methods fill their target instead of returning fresh objects.
@@ -157,9 +166,11 @@
 
 		// Grip — bleed the lateral velocity (drift on handbrake), bleed some forward
 		// speed while braking. Vertical motion (gravity, slopes) passes through.
-		const keepLateral = handbrake ? KEEP_LATERAL_HANDBRAKE : KEEP_LATERAL_GRIP;
+		const keepLateral = Math.exp(-(handbrake ? HANDBRAKE_GRIP_RATE : GRIP_RATE) * delta);
 		_vel.addScaledVector(_right, -vLateral * (1 - keepLateral));
-		if (handbrake) _vel.addScaledVector(_forward, -vForward * HANDBRAKE_BRAKE);
+		if (handbrake) {
+			_vel.addScaledVector(_forward, -vForward * (1 - Math.exp(-HANDBRAKE_BRAKE_RATE * delta)));
+		}
 		body.setLinvel({ x: _vel.x, y: _vel.y, z: _vel.z }, true);
 	});
 </script>
@@ -206,6 +217,17 @@
 			<T.Group position={[0, 1.53, 0]} scale={2.5}>
 				<Collider shape="cuboid" args={[0.95, 0.55, 2.1]} mass={CHASSIS_MASS} friction={0.6} />
 			</T.Group>
+
+			<!-- What the chase camera looks at. An empty inside the RigidBody rather than
+			     the visual group: this level is UNSCALED, so the offset is world units and
+			     stays put if the ×2.5 ever changes; and its world transform is the body's
+			     own pose, which is what the camera should track (the visual group carries
+			     the model's offsets). ~1.6 up = the car's middle, not its floor. -->
+			<T.Object3D name="ChaseAnchor" position={[0, 1.6, 0]} bind:ref={chaseAnchor} />
 		</RigidBody>
 	</T.Group>
+
+	<!-- Borrows the app camera while this scene is current and hands it back on the way
+	     out — see ChaseCamera.svelte. Outside the car's group: it is a rig, not cargo. -->
+	<ChaseCamera target={chaseAnchor} />
 {/if}

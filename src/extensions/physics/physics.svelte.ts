@@ -39,7 +39,12 @@ const WORLD_DEFAULTS = {
 	gravityX: 0,
 	gravityY: -9.8,
 	gravityZ: 0,
-	framerate: 60 as PhysicsFramerate,
+	// 200 Hz fixed, not 'varying': fixed steps are the deterministic ones (same input,
+	// same result, whatever the monitor refresh), and Threlte interpolates the visual
+	// transform back to render time so the extra substeps cost simulation, not smoothness.
+	// Anything integrating PER STEP rather than per second changes feel when this moves —
+	// see the rate constants in scenes/TestGame/TestGame.svelte.
+	framerate: 200 as PhysicsFramerate,
 	debug: false
 };
 
