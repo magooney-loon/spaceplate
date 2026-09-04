@@ -41,8 +41,37 @@ export const SKY_LAYER_USERDATA = { hideInTree: true, selectable: false };
  * layer of re-sampled, wrong-viewport garbage that reads as blown-out bloom. Lens meshes
  * are moved onto this layer and the ACTIVE camera (`camera.subscribe`) enables it, so
  * every internal camera — which all use the default layer-0 mask — stops seeing them.
+ *
+ * **A CLONED CAMERA IS NOT A FRESH ONE.** That "default layer-0 mask" argument holds for
+ * every internal camera that is CONSTRUCTED (the cube faces, the HeightField ortho) and
+ * fails for one that is COPIED: `ReflectorNode.getVirtualCamera()` returns
+ * `camera.clone()`, and `Object3D.copy` copies `layers.mask` (three 0.185,
+ * `Object3D.js:1615`). The floor reflector's virtual camera therefore inherited this bit
+ * from the active camera and reflected the lens quads — measured `mask=3` at runtime, so
+ * the failure above was live, not theoretical. `DemoScene.svelte` strips the bit back off
+ * on the way out of `getVirtualCamera`. **Any new reflector owes the same.**
  */
 export const LENS_LAYER = 1;
+
+/**
+ * The layer the precipitation particle fields (Rain, its two splash layers, Snow) render
+ * on.
+ *
+ * PURELY A COST GATE — unlike LENS_LAYER, drawing these from another camera is correct,
+ * just ruinously expensive. Rain is 12 000 instances across three meshes and Snow 11 000,
+ * and the two cube captures in `DemoScene` render the whole scene **six times each** at
+ * 30 Hz and 15 Hz. That put ~270 extra scene-renders' worth of precipitation instances
+ * through the pipeline every second, all of it landing in 128²/96² cube faces where a
+ * 0.05-world-unit flake is comfortably sub-pixel. It is the periodic-hitch shape the
+ * frame budget could least afford.
+ *
+ * So: the active camera enables this layer, freshly-constructed internal cameras do not,
+ * and the precipitation disappears from the cube captures. **The floor reflector keeps
+ * it** — deliberately, and for free, via the same clone-inherits-the-mask behaviour
+ * described above. Rain in the mirror floor is a foot away and reads; rain in a 128²
+ * cube face does not.
+ */
+export const PRECIPITATION_LAYER = 2;
 
 // ── Geometry ───────────────────────────────────────────────────────────────────
 

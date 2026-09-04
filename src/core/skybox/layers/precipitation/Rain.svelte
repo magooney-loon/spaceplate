@@ -83,6 +83,7 @@
 		skyLayerMaterial,
 		streakClip,
 		HEAD_ANCHORED_QUAD,
+		PRECIPITATION_LAYER,
 		SKY_LAYER_USERDATA
 	} from '../skyLayer';
 
@@ -807,6 +808,17 @@
 			burstMaterial.dispose();
 		};
 	});
+
+	// Keep 12 000 instances out of the cube captures, which render the whole scene six
+	// times each. The floor reflector still gets them — its virtual camera is a clone of
+	// the active one, so it inherits the bit. See PRECIPITATION_LAYER in skyLayer.ts.
+	$effect(() => {
+		streaks?.layers.set(PRECIPITATION_LAYER);
+		rings?.layers.set(PRECIPITATION_LAYER);
+		bursts?.layers.set(PRECIPITATION_LAYER);
+	});
+
+	$effect(() => camera.subscribe((cam) => cam.layers.enable(PRECIPITATION_LAYER)));
 </script>
 
 <T.Mesh

@@ -144,7 +144,20 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   material invalidates its cache key.
 - Rain/Snow animate entirely in the vertex node (a `fract()` sawtooth through a
   camera-anchored box, zero CPU per particle) — that design is why the height field
-  exists as a texture rather than geometry queries.
+  exists as a texture rather than geometry queries. **This is why compute shaders are not
+  the answer to precipitation cost**, three's `webgpu_compute_particles_rain/snow`
+  notwithstanding: those examples compute because their drops carry persistent state
+  (velocity, ripple timers, collision response). Ours are closed-form in `time`, which is
+  strictly cheaper than a dispatch, and their cost is FILL RATE — shaded, blended
+  fragments — which no amount of compute reduces. Compute here would buy features (real
+  bouncing, accumulation), not frames. `Birds` is the layer where the argument does hold.
+- **Precipitation is on `PRECIPITATION_LAYER`, purely as a cost gate** (skyLayer.ts).
+  Rain is 12 000 instances across three meshes and Snow 11 000, and DemoScene's two cube
+  captures each render the whole scene **six times** at 30/15 Hz — the periodic-hitch
+  shape. Measured per-frame triangles before/after excluding them from those captures:
+  rain median 600k → 312k and its p99 spike frames 1.06M → 478k; snow median 392k → 260k,
+  p99 696k → 430k; clear unchanged (the control). The floor reflector still gets them,
+  because its virtual camera is a clone and inherits the bit — see LENS_LAYER's note.
 - **Every axis of that motion is a self-accumulated distance, never `elapsed × rate`.**
   Same rule as CloudDeck's scroll — an unbounded elapsed term multiplied by a
   uniform that moves displaces the whole field by `elapsed × Δrate`. Rain's fall

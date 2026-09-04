@@ -201,7 +201,32 @@ plain `three` catalogue, not `three/webgpu` — fine for core classes like
 `InstancedBufferAttribute` (identical objects, both re-exported from `Three.Core.js`),
 but `<T.MeshStandardNodeMaterial>` does not exist there. Pass node materials in as props.
 
-### 2.8 `webglcontextlost` is the wrong hook [98]
+### 2.8 A cloned camera is not a fresh one — layer masks are inherited
+
+Layer masks are the standard way to keep an internal camera from drawing something it
+shouldn't (this engine uses `LENS_LAYER` for the screen-space lens quads and
+`PRECIPITATION_LAYER` as a pure cost gate). The usual reasoning — "every internal camera
+uses the default layer-0 mask, so it won't see the tagged meshes" — holds for cameras
+that are **constructed** (`new CubeCamera(...)`, `new OrthographicCamera()`) and fails
+for one that is **copied**:
+
+```js
+// three 0.185, ReflectorNode.js
+getVirtualCamera( camera ) { … virtualCamera = camera.clone(); … }
+// three 0.185, Object3D.js:1615
+this.layers.mask = source.layers.mask;
+```
+
+Measured live here: the active camera's mask was `3`, and so was the mirror floor's
+virtual camera — it was drawing the fullscreen `viewportMipTexture` lens quads into the
+reflection every frame. Strip the bit in the reflector's owner
+(`scenes/DemoScene/DemoScene.svelte`), and check any new reflector for the same.
+
+The inheritance is not purely a hazard — it is also usable. `PRECIPITATION_LAYER` is
+inherited on purpose, which is what keeps rain and snow in the floor's reflection while
+the freshly-constructed cube cameras skip them.
+
+### 2.9 `webglcontextlost` is the wrong hook [98]
 
 See §3.1 — three already owns the listener and exposes overridable callbacks.
 
@@ -331,6 +356,56 @@ Not a problem at the current load, and moving Rapier off-thread would fight
 non-interactive: heightfield/terrain generation, mesh or texture preprocessing, and
 anything that would otherwise produce a visible hitch at scene entry. Vite supports
 `import Worker from './x?worker'` with no config.
+
+**Precipitation is not one of them.** Rain and Snow are closed-form in the vertex node —
+no CPU per particle, nothing to offload — and their cost is fill rate. Neither a worker
+nor a compute shader reduces shaded fragments. See §3.6.
+
+### 3.6 Precipitation fill rate — partly closed, and the rest is a look decision
+
+Reported symptom: snow at ~24fps steadily, rain hitching, and rain still slow for a while
+after snow. Three distinct causes, and separating them mattered more than any one fix.
+
+**Diagnosis method worth reusing.** Headless Firefox is vsync-capped at 1366×682, so
+every state read 16.7ms — which _was_ the finding: a cost that vanishes at low resolution
+is fill rate, not CPU, not draw calls. Confirmed by the user's own A/B: the low preset
+(dpr 1, no post-processing, reflection at 0.3) fixes it entirely. For the periodic
+hitches, the useful metric is per-frame triangles at the **tail** (p99/max), not the
+median — spikes are frames where a cube capture ran.
+
+**Closed (measured, before → after):**
+
+|        | rain median | rain p99  | snow median | snow p99 |
+| ------ | ----------- | --------- | ----------- | -------- |
+| before | 599 982     | 1 059 650 | 391 990     | 695 658  |
+| after  | 311 982     | 477 698   | 259 986     | 429 670  |
+
+Clear weather was unchanged, as the control. Two fixes, both layer-mask work:
+
+1. **Precipitation excluded from the cube captures** (`PRECIPITATION_LAYER`). Each
+   capture renders the whole scene six times, at 30 Hz and 15 Hz, into 128²/96² faces
+   where a 0.05-unit flake is sub-pixel. That was the hitch.
+2. **The lens quads excluded from the floor reflector** (§2.8) — a second fullscreen
+   `viewportMipTexture` pass per frame, and a rendering bug besides.
+
+**Still open, and it is a look decision, not a bug.** The main-pass overdraw is
+untouched: 11 000 alpha-blended square billboards with `depthWrite = false`, every
+fragment blended whether it contributes or not. Snow costs more than rain despite fewer
+particles because rain's quads are thin streaks and snow's are squares, and snow's
+fragment shader is the heavier one. The knobs, in order of effect:
+
+- **dpr.** `App.svelte` gives the high preset `window.devicePixelRatio` uncapped; at dpr 2
+  that is 4× the fragments of low. Capping at 1.5 is the single biggest lever and costs
+  only sharpness.
+- **Count.** `PRECIPITATION` in `Skybox.svelte` — the doc's own note that count is "the
+  ONE knob that moves cost" is right, and it thins the snowfall visibly.
+- **Quad area.** Snow's speck falloff reaches zero at the inscribed circle, so ~21% of
+  every flake's fragments are provably zero-contribution corners.
+
+`SnowLens` also keeps drawing for ≈30s after snow stops (`meltSeconds = 6` decaying to a
+`growth > 0.002` cutoff) — by design, "frost is a temperature", but it is a fullscreen
+pass evaluating the crystal field three times per pixel the whole time. Now paid once per
+frame instead of twice.
 
 ---
 

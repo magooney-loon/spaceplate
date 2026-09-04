@@ -9,6 +9,7 @@
 	import { logPhysics } from '$extensions/logger';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
 	import SpawnedBodies from './SpawnedBodies.svelte';
+	import { LENS_LAYER } from '$core/skybox/layers/skyLayer';
 	import { registerMirrorFloor, unregisterMirrorFloor } from './mirrorFloor';
 	import { DEMO_QUALITY } from './demoQuality';
 	import { settingsState } from '$extensions/settings';
@@ -34,6 +35,27 @@
 	reflection.target.rotateX(-Math.PI / 2);
 	reflection.target.userData = { selectable: false, hideInTree: true };
 	scene.add(reflection.target);
+
+	// THE REFLECTOR'S VIRTUAL CAMERA IS A CLONE, SO IT INHERITS THE LAYER MASK.
+	// `ReflectorNode.getVirtualCamera()` is `camera.clone()`, and `Object3D.copy` copies
+	// `layers.mask` (three 0.185, Object3D.js:1615) — so unlike the cube cameras, which
+	// are constructed fresh with the default layer-0 mask, this one arrives with every
+	// bit the active camera has enabled. Measured `mask=3` at runtime: bit 1 is
+	// LENS_LAYER, so the floor was reflecting the screen-space rain/frost lens quads —
+	// the "re-sampled, wrong-viewport garbage that reads as blown-out bloom" that
+	// skyLayer.ts's LENS_LAYER comment exists to prevent, plus a second fullscreen
+	// `viewportMipTexture` read per frame for the privilege.
+	//
+	// Stripping it here rather than in the lens layers is deliberate: the inheritance is
+	// a property of THIS reflector, and PRECIPITATION_LAYER (bit 2) is inherited on
+	// purpose — that is what keeps rain and snow in the floor's reflection while the cube
+	// captures skip them.
+	const baseGetVirtualCamera = reflection.reflector.getVirtualCamera.bind(reflection.reflector);
+	reflection.reflector.getVirtualCamera = (camera: THREE.Camera) => {
+		const virtual = baseGetVirtualCamera(camera);
+		virtual.layers.disable(LENS_LAYER);
+		return virtual;
+	};
 
 	const floorMaterial = new THREE.MeshStandardNodeMaterial();
 	floorMaterial.color.set('gray');

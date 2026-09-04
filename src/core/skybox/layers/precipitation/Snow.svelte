@@ -61,6 +61,7 @@
 		instancedVec3,
 		instancedVec4,
 		skyLayerMaterial,
+		PRECIPITATION_LAYER,
 		SKY_LAYER_USERDATA
 	} from '../skyLayer';
 
@@ -398,6 +399,15 @@
 			material.dispose();
 		};
 	});
+
+	// Keep 11 000 instances out of the cube captures, which render the whole scene six
+	// times each. The floor reflector still gets them — its virtual camera is a clone of
+	// the active one, so it inherits the bit. See PRECIPITATION_LAYER in skyLayer.ts.
+	$effect(() => {
+		mesh?.layers.set(PRECIPITATION_LAYER);
+	});
+
+	$effect(() => camera.subscribe((cam) => cam.layers.enable(PRECIPITATION_LAYER)));
 </script>
 
 <!-- renderOrder 3, as Rain: a near-camera layer drawing over the sky (1-2.6) and under
