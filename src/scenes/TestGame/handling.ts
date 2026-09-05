@@ -230,26 +230,35 @@ export const HANDLING_TUNES = {
 		// on/off from a keyboard, so this doubles as the "tap ↓ to set the car" input.
 		brakeLoose: 0.8,
 
-		// More lock, held further up the speed range, moved faster: all three are
-		// countersteer authority. Grip's rack falls to 35% by motorway speed, which is
-		// fine for lane changes and useless for catching a slide.
-		maxSteerAngle: 0.62,
-		steerHighSpeedFactor: 0.55,
+		// A LITTLE more lock than Grip, held a little further up the speed range — just
+		// enough countersteer authority to catch a slide (Grip's rack falls to 35% by
+		// motorway speed, which is fine for lane changes and useless for catching
+		// anything). These were 0.62 / 0.55 / 8, and that rack was most of what read as
+		// punchy: from a keyboard the only thing smoothing a binary key press is
+		// `steerResponse`, and at 8/s a 0.2 s tap already had 80% of a bigger lock in.
+		maxSteerAngle: 0.55,
+		steerHighSpeedFactor: 0.45,
 		steerFalloffSpeed: 42,
-		steerResponse: 8,
-		// Same as Grip. It was 6.5 for a while, for "yaw inertia" — all that actually
-		// did was put lag between the counter-steer and the catch.
-		yawResponse: 7,
+		steerResponse: 5.5,
+		// A shade under Grip's 7, so the body eases into its rotation instead of
+		// snapping to it. Much lower than this and the lag starts eating countersteer.
+		yawResponse: 5.5,
 
 		// Small: the handbrake already sets looseness to 1, so it collects the whole of
-		// `powerYawBoost`. 1.25 × 2.8 = 3.5 is the real flick multiplier.
+		// `powerYawBoost`. 1.25 × 2.6 = 3.25 is the real flick multiplier.
 		handbrakeYawBoost: 1.25,
-		powerYawBoost: 4.5,
+		// Was 4.5, which put the yaw cap at ~94°/s the instant you touched the wheel on
+		// the throttle at 90 km/h — nearly 3× Grip, and the main source of "punchy".
+		// 2.6 lands at ~39°/s against Grip's 32, i.e. 1.35× rather than 1.7×, and the
+		// drift builds over ~0.5 s instead of snapping in.
+		powerYawBoost: 2.6,
 		driftAlign: 3.6,
-		// ≈49°. Steady state lands ~46° on the throttle in 2nd, ~59° off the brake,
-		// ~52° in a donut, and only ~4° coasting. The handbrake held at full lock spins
-		// the car out to fully sideways, which is what that input should do.
-		maxDriftAngle: 0.85
+		// ≈34°, down from 49°. This is the knob for "slidy": it is the angle the boost
+		// has fully faded at, so it sets where the drift settles. Steady state now
+		// lands ~32° on the throttle in 2nd, ~43° off the brake, ~54° in a donut, and
+		// only ~2° coasting. The handbrake held at full lock still spins the car out to
+		// fully sideways, which is what that input should do.
+		maxDriftAngle: 0.6
 	}
 } as const satisfies Record<string, HandlingTune>;
 

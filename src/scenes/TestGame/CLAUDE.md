@@ -95,7 +95,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   - **`looseBase` must stay SMALL** (0.1). It was 0.6, and that was the floatiness:
     the car ran **32° of slip angle just coasting through a gentle corner**, so it
     was permanently sideways with no contrast between planted and provoked. The
-    ratio that makes the tune feel good is **4° coasting against 46° on the
+    ratio that makes the tune feel good is **2° coasting against 32° on the
     throttle** — looseness has to be EARNED by an input, never baked into the tyre.
     It also caps `driftAlign`, so raising it loosens the car twice over.
   - `throttleLoose` (0.55) is **the friction circle and the main drift control** —
@@ -103,8 +103,9 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
     drive force is spending. A tyre has one budget; grip spent pushing the car
     along is not available to hold it sideways, and that is true well before the
     tyre spins. This is why the throttle works in gears that never light the rears
-    up (46° in 2nd, ~14° in 4th) and why lifting catches the slide — off throttle
-    `powerLoad` is just engine braking, ~0.1.
+    up (32° in 2nd, ~10° in 4th) and why lifting catches the slide — off throttle
+    `powerLoad` is just engine braking, ~0.1, and a 32° drift closes to 8° in half
+    a second.
   - **Keying the slide off wheelspin alone was the trap.** Only 1st and 2nd ever
     reach the traction limit, so getting sideways in 4th needed the handbrake, and
     dropping `tireMuLong` far enough to fix that cost 2.4 s off 0-60. The friction
@@ -112,17 +113,30 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
     against Grip's 5.7.
   - `brakeLoose` (0.8) is **trail-braking oversteer and the deliberate entry** —
     braking moves ~2 100 N (a third of the static rear load) off the rear axle. Tap
-    ↓ into the corner to set the car, then ↑ to hold the angle; measured, that
-    settles ~59°.
+    ↓ into the corner to set the car, then ↑ to hold the angle; measured, a 0.4 s
+    tap peaks at 23° and holds ~20° while the car drives out of it.
 - **Drift's `latGripGain` is the SAME as Grip's** (1.3). With `looseBase` near
   zero the boost is ≈1 and the yaw cap matches what the bleed can service, so a
   coasting Drift car corners exactly like a Grip one. Running it lower to "add
   slide" just made everything vague — the contrast is the feel, not the baseline.
 - **`maxDriftAngle` fades the boost out, and that is what makes a drift settle**
   instead of spinning: the boost shrinks with slip angle while `driftAlign` grows,
-  so they cross. Measured on the real per-step math: **4°** coasting, **46°** on
-  the throttle in 2nd, **59°** off the brake, **52°** in a donut — all stable, and
-  centring the wheel unwinds to zero with no overshoot.
+  so they cross. **`maxDriftAngle` is therefore the knob for "too slidy"** — it
+  sets where the drift settles. Measured on the real per-step math: **2°**
+  coasting, **32°** on the throttle in 2nd, **43°** off the brake, **54°** in a
+  donut — all stable, and centring the wheel unwinds to zero with no overshoot.
+- **`powerYawBoost` is the knob for "too punchy"**, because the yaw cap is what
+  binds the moment you touch the wheel. At 4.5 it put the cap at ~94°/s on the
+  throttle at 90 km/h — nearly 3× Grip — and the slide snapped in rather than
+  building. At 2.6 that is ~39°/s against Grip's 32 (1.35×, not 1.7×) and the
+  drift develops over ~0.5 s. Peak yaw across the speed range, Drift vs Grip:
+  114 / 77 / 39 °/s against 83 / 57 / 32 at 30 / 50 / 90 km/h.
+- **Drift's steering rack is only slightly quicker than Grip's**, and that is
+  deliberate. It was 0.62 rad of lock at `steerResponse` 8, which was most of the
+  punchiness: input is a keyboard, so a binary key press has nothing smoothing it
+  but `steerResponse`, and at 8/s a 0.2 s tap was already at 80% of a bigger lock.
+  0.55 rad at 5.5 keeps enough countersteer authority to catch a slide without the
+  car darting on every tap.
 - **`driftAlign` is the auto-catch, and it MUST scale with rear grip** — the scene
   applies `driftAlign × (1 − loose)`. A spinning tyre aligns nothing, so the
   aligning moment has to fade exactly as the rear lets go. As a constant it did the
