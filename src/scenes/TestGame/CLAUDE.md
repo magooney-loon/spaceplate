@@ -47,8 +47,17 @@ is a real drivetrain — torque curve → clutch → gearbox → traction limit 
 rear axle (`drivetrain.ts`, all SI, GR86 numbers in `gr86.ts`). Steering is
 DIRECT yaw-rate control — the target is the lesser of what the front wheels
 geometrically point at (v·tan δ / wheelbase) and what the tyres can hold
-(μ·g / v). Roll is disabled on the body (`enabledRotations`), so the car cannot
-tip sideways; pitch survives for slopes.
+(μ·g / v). Pitch AND roll are both disabled on the body
+(`enabledRotations={[false, true, false]}`) — only yaw is free. **Rapier's
+`enabledRotations` locks WORLD axes, not the body's own** (it rotates the local
+inertia tensor into world space first, then zeroes the chosen world axis), so a
+lock picked for the spawn heading stops protecting the car's actual roll axis the
+moment it yaws away from that heading. World Y (yaw) is the only axis that's
+heading-independent, so it's the only one that can be left free while the other
+two stay a real, always-on guarantee. (This used to be `[true, true, false]` —
+roll-only — which is why the car could occasionally tip up onto two wheels, and
+once tipped over nothing gated the drivetrain on the chassis being upright, so a
+flipped car could still drive.)
 
 ### Two setups, one car
 

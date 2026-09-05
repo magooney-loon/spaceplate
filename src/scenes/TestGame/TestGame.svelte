@@ -115,8 +115,20 @@
 	// box → traction limit at the rear axle (drivetrain.ts, all SI, GR86 numbers in
 	// gr86.ts). Grip stays a lateral-velocity damp per step, and the drivetrain hands
 	// back how much of it is left — the handbrake takes it all, wheelspin takes a
-	// chunk (power oversteer). Roll is disabled on the body (enabledRotations) so the
-	// car cannot tip sideways; pitch survives for slopes.
+	// chunk (power oversteer). Pitch AND roll are both disabled on the body
+	// (enabledRotations={[false, true, false]}) — only yaw is free. Rapier's
+	// `enabledRotations` locks WORLD axes, not the body's own: it zeroes the
+	// EFFECTIVE INERTIA on that world axis after rotating the local tensor into
+	// world space, so a lock chosen for the spawn heading (nose along -Z) silently
+	// stopped protecting the car's actual roll axis the moment it yawed away from
+	// that heading — the car could tip at some headings and not others, and once
+	// tipped, nothing gated the drivetrain on being upright, so a car on its roof
+	// could still drive. World Y (yaw) is the one axis that's heading-independent
+	// (it's always "up"), so locking both of the OTHER world axes is the only way
+	// to make "cannot tip" true regardless of which way the car is facing. The
+	// trade is the pitch-on-slopes flavour the single-box model had — the box
+	// still climbs bumps and grades fine translationally, it just no longer
+	// visually noses up/down doing it.
 	//
 	// UNITS: the sim thinks in metres, the world is 2.5 units to the metre. Forces
 	// and velocities convert at this boundary and nowhere else — see gr86.ts.
@@ -429,14 +441,16 @@
 		     counted twice (it was also what capped the old top speed). gravityScale is
 		     UNITS_PER_METER because the shared <World> pulls at 9.8 units/s², which in
 		     this 2.5-units-to-the-metre city is 3.9 m/s² — moon gravity, and a car that
-		     floats over every kerb. Scene-local: the global value belongs to DemoScene too. -->
+		     floats over every kerb. Scene-local: the global value belongs to DemoScene too.
+		     enabledRotations: only yaw (world Y) is free — see the header comment above
+		     `usePhysicsTask` for why pitch had to be locked too, not just roll. -->
 		<RigidBody
 			bind:rigidBody={carBody}
 			type="dynamic"
 			linearDamping={0}
 			angularDamping={1.5}
 			gravityScale={UNITS_PER_METER}
-			enabledRotations={[true, true, false]}
+			enabledRotations={[false, true, false]}
 			ccd={true}
 		>
 			<T.Group scale={2.5}>
