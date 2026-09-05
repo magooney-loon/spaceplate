@@ -14,6 +14,7 @@
 	import { sceneState } from '$extensions/scene';
 	import { logGltf } from '$extensions/logger';
 	import CarHeadlights from './CarHeadlights.svelte';
+	import CarExhaustFlames from './CarExhaustFlames.svelte';
 	import CarWheels from './CarWheels.svelte';
 	import ChaseCamera from './ChaseCamera.svelte';
 	import {
@@ -461,6 +462,9 @@
 				<CarWheels scene={$car.scene} visualScale={2.5} />
 				<!-- Car-local units on purpose (nose is -Z — see CarHeadlights.svelte). -->
 				<CarHeadlights />
+				<!-- Exhaust pops on downshifts/limiter — tips measured from the GLB, see
+				     CarExhaustFlames.svelte. Car-local model metres like its siblings. -->
+				<CarExhaustFlames />
 			</T.Group>
 
 			<!-- Chassis: ONE rounded box instead of per-mesh hulls (the model is dozens

@@ -12,6 +12,8 @@ TestGame.svelte         — the scene: city + car + the driving physics task
 TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart)
 CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed)
 CarWheels.svelte        — per-vertex steering/rolling wheel deformation (TSL)
+CarExhaustFlames.svelte — downshift/limiter exhaust pops (TSL, from the three.js
+                         webgpu_tsl_vfx_flames example)
 CarHeadlights.svelte    — car-local lights (nose is -Z)
 ChaseCamera.svelte      — chase cam; borrows the app camera (rules below)
 carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E) + the latched
@@ -276,10 +278,27 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   invalidations/second per field for a needle nobody can follow.
 - **`CarWheels.svelte` deforms vertices in `positionNode`**, so it also writes
   `positionPrevious` — a vertex-deforming material owns both ends of the
-  velocity buffer or motion blur smears it against its own rest pose. Its steer
+  velocity buffer or motion blur smears it against its rest pose. Its steer
   angle and roll rate come from `carSim`, not from raw key state — the rack is
   speed-sensitive, so re-deriving it here would show full lock while the physics
   used a third.
+- **`CarExhaustFlames.svelte` pops fire on downshifts and limiter bangs**
+  (adapted from three's `webgpu_tsl_vfx_flames`). The exhaust tips are
+  MEASURED, not placed by hand: the GLB's Draco `Nickel_Smooth` mesh decoded
+  offline (node + the draco wasm from `node_modules/three`), rear-most
+  vertices clustered — two rings at model (±0.446, 0.293, 2.053), nose −Z.
+  `DEBUG_TIPS` draws wireframe cones there until you trust the numbers; the
+  constants move with a model swap. Mount is car-local (inside the ×2.5 group,
+  model metres). Each tip is additive crossed quads + a rear-facing blob (a
+  chase cam sees crossed quads edge-on), sharing two MeshBasicNodeMaterials —
+  no billboarding, the jet shoots REARWARD with the car, and no extra light:
+  the scene is at the three-light cap (sky key + two headlight spots). The
+  trigger is the physics task watching `carSim.gear` drops into ≥1 (N/R never
+  pop) sized by rpm, plus `limiting` rising edges; while a pop is visible the
+  component owns an `invalidate()` reason (stationary rev-match case — driving
+  is already covered by the chase camera). Noise textures:
+  `public/textures/noises/{voronoi,perlin}.png`, copied from the vendored
+  three.js-dev example assets.
 - **`ChaseCamera.svelte` BORROWS the app camera** (`core/Camera.svelte` — the one
   holding the AudioListener) via `<CameraControls>` + `useFollow` from
   `@threlte/extras`, rather than mounting a second `makeDefault` camera. One
