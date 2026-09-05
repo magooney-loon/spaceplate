@@ -7,6 +7,8 @@
 // The state is $state (not plain) so a future HUD can show gear/input reactively;
 // the driving task itself just polls it per physics step.
 
+import { HANDLING_MODES, type HandlingMode } from './handling';
+
 export const carInput = $state({
 	up: false,
 	down: false,
@@ -50,18 +52,44 @@ export const carLights = $state({
 	high: false
 });
 
-export type CarToggleAction = 'lights' | 'highBeam';
+/**
+ * The selected setup — Grip (the validated road car) or Drift (a loose rear axle
+ * and real oversteer). See handling.ts for what actually changes. A switch, not a
+ * pedal: it survives `resetCarInput` and the Restart button, and the scene reads
+ * `HANDLING_TUNES[mode]` fresh every physics step, so flipping it mid-corner is
+ * legal and instant.
+ */
+export const carHandling = $state({ mode: 'grip' as HandlingMode });
 
-/** e.code → switch. L and H are free of both Studio's binds and Ctrl+H (UI toggle). */
+export const setHandlingMode = (mode: HandlingMode): void => {
+	carHandling.mode = mode;
+};
+
+export const cycleHandlingMode = (): void => {
+	const next = (HANDLING_MODES.indexOf(carHandling.mode) + 1) % HANDLING_MODES.length;
+	carHandling.mode = HANDLING_MODES[next];
+};
+
+export type CarToggleAction = 'lights' | 'highBeam' | 'handling';
+
+/**
+ * e.code → switch. L, H and G are free of both Studio's dev binds (w a s z t r c v m)
+ * and the engine's own Ctrl+H (UI toggle).
+ */
 export const CAR_TOGGLE_KEYS: Record<string, CarToggleAction> = {
 	KeyL: 'lights',
-	KeyH: 'highBeam'
+	KeyH: 'highBeam',
+	KeyG: 'handling'
 };
 
 /** Edge-triggered: call once per keydown, never on auto-repeat. */
 export const applyCarToggle = (action: CarToggleAction): void => {
 	if (action === 'lights') {
 		carLights.on = !carLights.on;
+		return;
+	}
+	if (action === 'handling') {
+		cycleHandlingMode();
 		return;
 	}
 	// Flicking to main beam turns the lamps on — a dead key with the lights off is

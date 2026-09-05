@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { GR86 } from './gr86';
 	import { carHud } from './carTelemetry.svelte';
+	import { carHandling } from './carInput.svelte';
+	import { HANDLING_TUNES } from './handling';
 
 	// Bottom-right instrument cluster: tacho ring, gear, speed.
 	//
@@ -55,6 +57,10 @@
 		)
 	);
 	const spinning = $derived(carHud.slip > 0.15);
+	const setup = $derived(HANDLING_TUNES[carHandling.mode].label);
+	// A few degrees of slip angle is just a car cornering. Past ~10° it is a slide, and
+	// the number is worth watching: it is what the Drift tune's two yaw terms balance.
+	const sliding = $derived(carHud.driftDeg >= 10);
 </script>
 
 <div class="cluster" class:limiting={carHud.limiting}>
@@ -98,6 +104,8 @@
 		<div class="bar throttle"><span style:height="{carHud.throttle * 100}%"></span></div>
 		<div class="bar brake"><span style:height="{carHud.brake * 100}%"></span></div>
 		<div class="flags">
+			<span class="flag setup">{setup}</span>
+			<span class="flag drift" class:on={sliding}>{carHud.driftDeg}°</span>
 			<span class="flag hand" class:on={carHud.handbrake}>HAND</span>
 			<span class="flag slip" class:on={spinning}>TC</span>
 		</div>
@@ -272,12 +280,14 @@
 		background: #ff4e4e;
 	}
 
+	/* 2×2 — four chips do not fit the pedals' height in one column. Row-major, so it
+	   reads setup / drift angle on top, handbrake / traction under it. */
 	.flags {
-		display: flex;
-		flex-direction: column;
+		display: grid;
+		grid-template-columns: repeat(2, auto);
 		gap: 0.2rem;
 		margin-left: auto;
-		align-items: flex-end;
+		justify-items: end;
 	}
 
 	.flag {
@@ -287,6 +297,21 @@
 		border-radius: 0.15rem;
 		border: 1px solid rgba(255, 255, 255, 0.15);
 		color: rgba(255, 255, 255, 0.25);
+	}
+
+	/* Always lit — this one is a label, not a warning light. */
+	.flag.setup {
+		color: rgba(255, 255, 255, 0.7);
+		border-color: rgba(74, 144, 217, 0.6);
+	}
+
+	.flag.drift {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.flag.drift.on {
+		color: #4ad9d1;
+		border-color: #4ad9d1;
 	}
 
 	.flag.hand.on {

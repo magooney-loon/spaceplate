@@ -14,9 +14,10 @@ CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, s
 CarWheels.svelte        — per-vertex steering/rolling wheel deformation (TSL)
 CarHeadlights.svelte    — car-local lights (nose is -Z)
 ChaseCamera.svelte      — chase cam; borrows the app camera (rules below)
-carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E) + the
-                         HUD → scene restart signal (token; the scene resets the car's pose)
-gr86.ts                 — the real car's numbers, pure SI (metres/kg/newtons/seconds)
+carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E) + the latched
+                         switches (lights, handling tune) + the HUD → scene restart signal
+gr86.ts                 — the real car's HARDWARE, pure SI (metres/kg/newtons/seconds)
+handling.ts             — the two SETUPS (Grip / Drift): tyre μ, steering rack, oversteer
 drivetrain.ts           — pure engine → clutch → 6MT → rear-axle traction step
 carTelemetry.svelte.ts  — carSim (200 Hz plain object) / carHud (30 Hz $state mirror)
 cityColliders.ts        — hand-rolled static trimesh colliders for the track GLB
@@ -25,17 +26,18 @@ cityColliders.ts        — hand-rolled static trimesh colliders for the track G
 ## Controls
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, L
-headlights, H main beam. Reverse is a GEAR, not a pedal: Q past 1st through N into
-R, then pull away on ↑ — the pedals never swap meaning, ↓ is only ever the brake.
-The keys are chosen so Studio's dev-mode shortcuts (w a s z t r c v m) never fight
-the car, and L/H also dodge the engine's own Ctrl+H. Input is this scene's own
-`svelte:window` keymap (`carInput.svelte.ts`), not the shared keymapper — that
-needs a per-scene rework first.
+headlights, H main beam, G handling setup. Reverse is a GEAR, not a pedal: Q past
+1st through N into R, then pull away on ↑ — the pedals never swap meaning, ↓ is
+only ever the brake. The keys are chosen so Studio's dev-mode shortcuts
+(w a s z t r c v m) never fight the car, and L/H/G also dodge the engine's own
+Ctrl+H. Input is this scene's own `svelte:window` keymap (`carInput.svelte.ts`),
+not the shared keymapper — that needs a per-scene rework first.
 
 Held keys and switches are separate in that module: `carInput` is polled per
-physics step, while `carLights` (`on` / `high`) LATCHES on the keydown edge,
-ignores auto-repeat, and survives `resetCarInput` — blur and scene exit release
-the pedals, not the lights.
+physics step, while the latched switches — `carLights` (`on` / `high`) and
+`carHandling` (`mode`) — flip on the keydown edge, ignore auto-repeat, and survive
+`resetCarInput` and Restart. Blur and scene exit release the pedals, not the
+lights or the setup.
 
 ## The driving model
 
@@ -47,32 +49,78 @@ geometrically point at (v·tan δ / wheelbase) and what the tyres can hold
 (μ·g / v). Roll is disabled on the body (`enabledRotations`), so the car cannot
 tip sideways; pitch survives for slopes.
 
+### Two setups, one car
+
+`gr86.ts` is the HARDWARE (engine, gearbox, mass, aero, brakes) and never varies.
+`handling.ts` is the SETUP — tyre μ, the steering rack, and the oversteer terms —
+and there are two, picked by `carHandling.mode` (G, or the HUD switch). The scene
+and `drivetrain.step()` read `HANDLING_TUNES[mode]` **fresh every physics step**;
+nothing caches a tune, so switching mid-corner is legal.
+
+- **Grip** is the car as validated (0-60 in 5.7 s, 140 mph governed). Every number
+  in it is what used to be hard-coded in `gr86.ts` / `TestGame.svelte`, so it is a
+  no-op against the old behaviour.
+- **Drift** is not the real car. It trades the drag strip away — the rear axle is
+  traction-limited to ~3 600 N, so 0-60 goes to about 10 s — for a rear end that
+  will actually let go.
+- **A drift needs yaw the steering did not ask for.** This is the one that is
+  structural, not a number: the base yaw target is `v·tan δ / L` clamped to
+  `μ·g / v`, a pure function of the steering angle, so the car can never rotate
+  faster than the wheels point and centring the wheel stops the rotation dead. No
+  grip value can produce a slide out of that. Drift adds two terms on top, both
+  **zero in Grip**: `oversteerYaw` (rotation a loose rear adds, scaled by
+  wheelspin/handbrake, faded to zero as the slip angle reaches `maxDriftAngle` so
+  a slide is not a spin) and `driftAlign` (the rear tyres pulling the nose back
+  toward the direction of travel, per radian of slip angle). They balance at a
+  held slip angle — ~28° on full throttle in 2nd — and **the throttle moves the
+  balance**, because lifting decays `slip` in ~0.2 s and collapses the first term.
+- **Which way the tail is out is the SLIDE's sign, not the steering's**, past
+  `DRIFT_SEED_ANGLE` (~7°) — otherwise opposite lock would flip the power moment
+  to the other side of the car and deepen the drift instead of catching it. Below
+  that angle there is no slide yet, so the steering seeds it; the two crossfade.
+- **The yaw CAP runs on the full lateral μ, the sideways bleed on the reduced
+  one.** The fronts are never the axle that lets go, and it is the fronts that set
+  how fast a car can rotate — capping rotation with the _rear's_ lost grip makes
+  the car unable to turn at exactly the moment it should be sliding.
+- **Grip's numbers are not close to drifting, and it is worth knowing by how
+  much**: `tireMuLong` 1.05 means only 1st gear ever beats rear traction, and
+  `slipGripLoss` 0.55 leaves 45% of the lateral tyre under _total_ wheelspin
+  (μ never below 0.88 — more grip than most road cars have at their best).
+- **Full lock is per-tune, so `carSim.steerAngle` is published in radians** and
+  `CarWheels` renders that. Re-deriving `steer × maxSteerAngle` at the consumer
+  would show the Grip lock while Drift steered at 0.62 rad.
+
+### The rest of the cornering model
+
 - **Cornering is the μ, not the damp rate.** Sideways velocity is bled off each
   step, but the bleed is CAPPED at μ·g — that cap is the entire cornering model,
   and the exponential under it only settles the last little bit. μ runs from
-  `handbrakeMuLat` (rears locked) to `tireMuLat × LAT_GRIP_GAIN`, interpolated
-  across the drivetrain's `gripFactor`, so the handbrake slides and wheelspin
-  steps the back out. Without the cap the bleed is an infinitely strong
+  `handbrakeMuLat` (rears locked) to `latMu(tune)` = `tireMuLat × latGripGain`,
+  interpolated across the drivetrain's `gripFactor`, so the handbrake slides and
+  wheelspin steps the back out. Without the cap the bleed is an infinitely strong
   constraint (~70 g at `GRIP_RATE`) that snaps the car straight no matter what
   `gripFactor` says, and the handbrake becomes a turn-tighter button.
-- **The yaw cap and the bleed cap must use the same μ.** Holding the yaw cap
-  costs exactly v·ω = μ·g of bleed per second, so they cancel and a planted car
-  never slides. Raise one without the other and the car understeers out of every
-  corner. `LAT_GRIP_GAIN` (in `TestGame.svelte`) scales both; it is the one knob
-  for "the car won't turn at speed", and 1 is the real car.
+- **On a PLANTED car the yaw cap and the bleed cap must use the same μ.** Holding
+  the yaw cap costs exactly v·ω = μ·g of bleed per second, so they cancel and a
+  planted car never slides. Raise one without the other and the car understeers
+  out of every corner. `latGripGain` scales both; it is the one knob for "the car
+  won't turn at speed", and 1 is the real car. They deliberately diverge once the
+  rear lets go — see the yaw-cap bullet above.
 - **Speed-sensitive rack:** `steerFalloffSpeed` has to span the speeds the car is
   actually driven at. It was 1.8 m/s once, i.e. fully applied by walking pace,
   which made it a no-op and left `maxSteerAngle` (then 40°, not the ≈29° its own
   comment claimed) as the low-speed feel — that pair was the twitchiness.
 
-- **The model is SI; the world is not.** `gr86.ts` holds the real car's numbers
-  (torque curve, 6MT ratios, tyre μ, drag) in metres/kg/newtons, and
+- **The model is SI; the world is not.** `gr86.ts` and `handling.ts` hold the
+  numbers (torque curve, 6MT ratios, tyre μ, drag) in metres/kg/newtons, and
   `TestGame.svelte` converts at exactly one boundary: `UNITS_PER_METER = 2.5`, the
   same 2.5 the car's visual group is scaled by (the city is authored at 2.5
   units/metre). Forces and velocities scale by it, rad/s does not. The car's
   `gravityScale` is that constant too — the shared `<World>` pulls at 9.8
-  _units_/s², which in this city is 3.9 m/s². Validated against the real GR86:
-  0-60 mph 5.7 s (6.1 published), 140 mph governed, redline in 1st at ~50 km/h.
+  _units_/s², which in this city is 3.9 m/s². Validated against the real GR86 **on
+  the Grip tune**: 0-60 mph 5.7 s (6.1 published), 140 mph governed, redline in
+  1st at ~50 km/h. Drift is a setup, not a claim about the car — don't re-validate
+  against it.
 - **Physics runs at a fixed 200 Hz** (`physicsState.framerate`), so a
   `usePhysicsTask` runs 0..n times per rendered frame. Every damping constant in
   the driving model is therefore a RATE in 1/s applied as `exp(-rate * delta)`,

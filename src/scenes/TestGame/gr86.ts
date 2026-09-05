@@ -79,15 +79,9 @@ export const GR86 = {
 	/** s — clutch-out time per shift. Torque is cut for the whole window. */
 	shiftTime: 0.28,
 
-	// ── Tyres & brakes ───────────────────────────────────────────────────────
-	/** Longitudinal grip coefficient — what the rear axle can put down. */
-	tireMuLong: 1.05,
-	/** Lateral grip. Caps cornering yaw rate at muLat·g / v, and caps how fast
-	 *  sideways velocity can be bled back off. TestGame.svelte scales it by its own
-	 *  `LAT_GRIP_GAIN` — this stays the real car's number. */
-	tireMuLat: 1.1,
-	/** Lateral grip with the rears locked — the drift end of the same bleed. */
-	handbrakeMuLat: 0.42,
+	// ── Brakes ───────────────────────────────────────────────────────────────
+	// Tyre μ and the whole steering rack are NOT here — they are the setup, not the
+	// car, and they differ between the Grip and Drift tunes. See handling.ts.
 	/** N — all four discs at full pedal, ≈0.9 g → 100-0 km/h in ~2.9 s. */
 	brakeForce: 11400,
 	/** N — the handbrake's own (rear-only) retardation. */
@@ -99,30 +93,7 @@ export const GR86 = {
 	/** N — rolling resistance, ≈0.013·m·g. */
 	rollingResistance: 165,
 	/** m/s — 140 mph. The real car is electronically limited here, and so is this one. */
-	topSpeed: 62.6,
-
-	// ── Steering ────────────────────────────────────────────────────────────────
-	/** rad — full lock at the front wheels (28.6°, a touch more than the real 24°:
-	 * the demo favours tight turns). Turn radius at full lock is wheelbase/tan(δ) =
-	 * 4.7 m against the real car's 5.4. CarWheels renders this same value, so the
-	 * visual lock IS the physics lock.
-	 *
-	 * This was 0.7 rad — 40°, not the ≈29° the line claimed — which is a 3.0 m radius
-	 * and 94°/s of yaw at 18 km/h. That is where the low-speed twitchiness came from. */
-	maxSteerAngle: 0.5,
-	/** Fraction of lock still available at `steerFalloffSpeed` — slow hands at speed. */
-	steerHighSpeedFactor: 0.35,
-	/**
-	 * m/s at which the falloff above has fully taken effect. Has to span the speeds
-	 * the car is actually driven at: this was 1.8 m/s (6.5 km/h), so the rack was
-	 * already clipped to its high-speed fraction at walking pace and the falloff did
-	 * nothing whatsoever from there to 140 mph.
-	 */
-	steerFalloffSpeed: 42,
-	/** 1/s — how fast the steering rack follows the key. */
-	steerResponse: 5.5,
-	/** 1/s — how fast the body's yaw rate chases the steering target. */
-	yawResponse: 7
+	topSpeed: 62.6
 } as const;
 
 /** Signed ratio for a gear index: -1 reverse, 0 neutral, 1…6 forward. */

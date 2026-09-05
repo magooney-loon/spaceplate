@@ -16,7 +16,7 @@
 	} from 'three/tsl';
 	import { sceneState } from '$extensions/scene';
 	import { logGltf } from '$extensions/logger';
-	import { GR86, UNITS_PER_METER } from './gr86';
+	import { UNITS_PER_METER } from './gr86';
 	import { carSim } from './carTelemetry.svelte';
 
 	// Steerable + rolling wheels for the GR86.
@@ -77,11 +77,18 @@
 
 		// Measure the four wheels from the baked positions: overall bounds → split
 		// axes, then per-quadrant bounds → pivots + radius.
-		let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+		let minX = Infinity,
+			maxX = -Infinity,
+			minY = Infinity,
+			maxY = -Infinity,
+			minZ = Infinity,
+			maxZ = -Infinity;
 		for (const { geometry } of baked) {
 			const pos = geometry.getAttribute('position');
 			for (let i = 0; i < pos.count; i++) {
-				const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+				const x = pos.getX(i),
+					y = pos.getY(i),
+					z = pos.getZ(i);
 				if (x < minX) minX = x;
 				if (x > maxX) maxX = x;
 				if (y < minY) minY = y;
@@ -94,15 +101,45 @@
 		const splitZ = (minZ + maxZ) / 2;
 
 		const quad = [
-			{ minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity },
-			{ minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity },
-			{ minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity },
-			{ minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity }
+			{
+				minX: Infinity,
+				maxX: -Infinity,
+				minY: Infinity,
+				maxY: -Infinity,
+				minZ: Infinity,
+				maxZ: -Infinity
+			},
+			{
+				minX: Infinity,
+				maxX: -Infinity,
+				minY: Infinity,
+				maxY: -Infinity,
+				minZ: Infinity,
+				maxZ: -Infinity
+			},
+			{
+				minX: Infinity,
+				maxX: -Infinity,
+				minY: Infinity,
+				maxY: -Infinity,
+				minZ: Infinity,
+				maxZ: -Infinity
+			},
+			{
+				minX: Infinity,
+				maxX: -Infinity,
+				minY: Infinity,
+				maxY: -Infinity,
+				minZ: Infinity,
+				maxZ: -Infinity
+			}
 		]; // FL, FR, RL, RR
 		for (const { geometry } of baked) {
 			const pos = geometry.getAttribute('position');
 			for (let i = 0; i < pos.count; i++) {
-				const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+				const x = pos.getX(i),
+					y = pos.getY(i),
+					z = pos.getZ(i);
 				const q = quad[(z < splitZ ? 0 : 2) + (x < splitX ? 0 : 1)];
 				if (x < q.minX) q.minX = x;
 				if (x > q.maxX) q.maxX = x;
@@ -122,20 +159,17 @@
 			z: (q.minZ + q.maxZ) / 2
 		}));
 
-		const measured = [
-			...centres.flatMap((c) => [c.x, c.y, c.z]),
-			wheelRadius,
-			splitX,
-			splitZ
-		];
+		const measured = [...centres.flatMap((c) => [c.x, c.y, c.z]), wheelRadius, splitX, splitZ];
 		const rigOK = measured.every(Number.isFinite);
 		if (!rigOK) logGltf.warn('CarWheels: non-finite wheel measurements — wheels stay static');
 
 		// The vertex rotation. step+oneMinus+mix are the branchless selects
 		// (webgpu-notes.md §1.2). Built lazily: on a measurement failure the baked meshes
 		// still render, just without steer/roll — never leave the car wheel-less.
-		let wheelNodes: { position: ReturnType<typeof buildWheelNodes>['position']; normal: ReturnType<typeof buildWheelNodes>['normal'] } | null =
-			null;
+		let wheelNodes: {
+			position: ReturnType<typeof buildWheelNodes>['position'];
+			normal: ReturnType<typeof buildWheelNodes>['normal'];
+		} | null = null;
 		function buildWheelNodes() {
 			const [FL, FR, RL, RR] = centres.map((c) => vec3(c.x, c.y, c.z));
 			const p = positionLocal.toVar();
@@ -156,11 +190,7 @@
 			// geometry spins, which reads as mush.
 			// (`any` throughout: node-graph plumbing, per postprocessing/CLAUDE.md.)
 			const spin = (v: any) => {
-				const rolled = vec3(
-					v.x,
-					v.y.mul(cr).sub(v.z.mul(sr)),
-					v.y.mul(sr).add(v.z.mul(cr))
-				);
+				const rolled = vec3(v.x, v.y.mul(cr).sub(v.z.mul(sr)), v.y.mul(sr).add(v.z.mul(cr)));
 				const steered = vec3(
 					rolled.x.mul(cs).add(rolled.z.mul(ss)),
 					rolled.y,
@@ -240,7 +270,10 @@
 	usePhysicsTask((delta) => {
 		if (sceneState.currentScene !== 'testGame') return;
 
-		uSteer.value = carSim.steer * GR86.maxSteerAngle;
+		// Already in radians — the rack fraction AND the tune's full lock are both the
+		// physics task's, so multiplying them out here again would show the Grip lock
+		// while the Drift tune was steering at 0.62 rad.
+		uSteer.value = carSim.steerAngle;
 
 		// Roll from road speed, plus whatever the rear tyres are spinning past it —
 		// the same slip term the drivetrain feeds the tacho, so wheelspin looks like

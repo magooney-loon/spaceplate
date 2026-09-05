@@ -19,6 +19,11 @@
 //   flooring 1st spins the wheels instead of teleporting the car forward. The
 //   leftover torque becomes `slip`, which the scene turns into lost lateral grip
 //   — power oversteer, for free.
+//
+// Everything above is the CAR and is fixed. The two numbers that are the SETUP —
+// how much the rear axle can put down, and how much lateral grip wheelspin costs —
+// come in per step as a `HandlingTune` (handling.ts), because the player can switch
+// tunes mid-corner and nothing here may cache them.
 
 import {
 	G,
@@ -30,6 +35,7 @@ import {
 	rpmInGear,
 	totalRatio
 } from './gr86';
+import type { HandlingTune } from './handling';
 
 /** Raw driver intent for one step. Shift flags are LEVEL, not edges — see `step`. */
 export interface DriveInput {
@@ -121,8 +127,9 @@ export function createDrivetrain() {
 	 *
 	 * @param dt      step length, seconds
 	 * @param speedMs road speed along the nose, signed, m/s
+	 * @param tune    the selected setup — read fresh every step, never cached
 	 */
-	function step(dt: number, speedMs: number, input: DriveInput): DriveOutput {
+	function step(dt: number, speedMs: number, input: DriveInput, tune: HandlingTune): DriveOutput {
 		state.shifted = false;
 		const rolling = Math.abs(speedMs);
 
@@ -204,7 +211,7 @@ export function createDrivetrain() {
 			0,
 			GR86.mass * G * GR86.rearWeightBias + (prevDrive * GR86.cogHeight) / GR86.wheelbase
 		);
-		const traction = input.handbrake ? 0 : GR86.tireMuLong * rearLoad;
+		const traction = input.handbrake ? 0 : tune.tireMuLong * rearLoad;
 
 		let slipTarget = 0;
 		if (Math.abs(driveForce) > traction) {
@@ -233,8 +240,10 @@ export function createDrivetrain() {
 
 		// ── Lateral grip left over for the cornering model ───────────────────
 		// The handbrake takes it all the way to the drift end; wheelspin takes a
-		// chunk of it, which is how a rear-drive car steps out under power.
-		const gripFactor = input.handbrake ? 0 : 1 - 0.55 * state.slip;
+		// chunk of it, which is how a rear-drive car steps out under power. How big
+		// a chunk is the setup's call — 0.55 (Grip) leaves 45% of the tyre under
+		// total wheelspin, which is not loose enough to slide on power alone.
+		const gripFactor = input.handbrake ? 0 : 1 - tune.slipGripLoss * state.slip;
 
 		return { driveForce, resistForce: resist, gripFactor };
 	}

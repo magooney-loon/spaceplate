@@ -20,11 +20,13 @@
 		CAR_INPUT_KEYS,
 		CAR_TOGGLE_KEYS,
 		applyCarToggle,
+		carHandling,
 		carInput,
 		carRestart,
 		resetCarInput
 	} from './carInput.svelte';
 	import { G, GR86, UNITS_PER_METER } from './gr86';
+	import { HANDLING_TUNES, latMu } from './handling';
 	import { createDrivetrain } from './drivetrain';
 	import { buildCityColliders } from './cityColliders';
 	import { carSim, publishCarHud, resetCarTelemetry } from './carTelemetry.svelte';
@@ -118,34 +120,36 @@
 	// UNITS: the sim thinks in metres, the world is 2.5 units to the metre. Forces
 	// and velocities convert at this boundary and nowhere else — see gr86.ts.
 	//
-	// Steering is DIRECT yaw-rate control, not torque, and the target is the smaller of
-	// two real limits rather than a speed ramp: what the front wheels GEOMETRICALLY
+	// Steering is DIRECT yaw-rate control, not torque, and the base target is the smaller
+	// of two real limits rather than a speed ramp: what the front wheels GEOMETRICALLY
 	// point at (v·tan δ / wheelbase, an Ackermann bicycle) and what the tyres can HOLD
-	// (μ·g / v). Below ~25 km/h the geometry binds and you get a 4.7 m turning radius;
+	// (μ·g / v). Below ~25 km/h the geometry binds and you get a tight turning radius;
 	// above it grip binds and the same key press is a lane change. Nothing turns on the
 	// spot: yaw falls out of speed. The two are wired to the same μ as the sideways
-	// bleed below — see LAT_GRIP_GAIN, which is the knob for cornering at speed.
+	// bleed below — see `latMu`, which is the knob for cornering at speed.
+	//
+	// On top of that base, the OVERSTEER pair (handling.ts) is what makes a slide
+	// possible at all, and it is zero in the Grip tune. The base alone is a pure
+	// function of the steering angle, so the car can only ever rotate as fast as the
+	// front wheels point and centring the wheel stops the rotation dead — that model
+	// cannot express a drift no matter how the grip numbers are set.
+	//
+	// Every tuneable number lives in HANDLING_TUNES and is read FRESH each step: the
+	// player can flip Grip ↔ Drift mid-corner and nothing here may cache it.
 	const YAW_MIN_SPEED = 1.5; // m/s floor under the grip cap, so it can't divide by ~0
-	/**
-	 * Lateral grip the CORNERING model runs on, over the tyre's honest μ. The real
-	 * 1.1 g needs 148 m of road to turn at 40 m/s, and this is a tight city driven on
-	 * a keyboard — so the demo buys some back. **This is the knob for "the car won't
-	 * turn at speed"**; 1 is the real car. It feeds BOTH the yaw cap and the sideways
-	 * bleed, which have to agree: a cap that asks for more cornering than the bleed can
-	 * service means the car slides a little in every corner.
-	 */
-	const LAT_GRIP_GAIN = 1.3;
-	const LAT_MU = GR86.tireMuLat * LAT_GRIP_GAIN;
-	// The flick. A locked rear axle lets the car rotate faster than the tyres can hold,
-	// so this scales the yaw DEMAND as well as the cap — boosting the cap alone did
-	// nothing below ~25 km/h, where the geometric term is the binding one, i.e. at
-	// exactly the speeds anyone yanks a handbrake.
-	const HANDBRAKE_YAW_BOOST = 2.2;
 	// 1/s — how fast leftover sideways velocity settles once it is back inside what the
 	// tyres can pull. A RATE, not a per-step fraction: the latter silently retunes the
 	// car whenever the physics framerate moves, and the world runs a fixed 200 Hz. The
 	// grip LIMIT below is what makes a slide a slide; this is only the last little bit.
 	const GRIP_RATE = 138;
+	// rad — below this much slip angle there is no slide to follow yet, so the STEERING
+	// seeds which way the tail is going; past it the slide itself owns that sign.
+	const DRIFT_SEED_ANGLE = 0.12;
+	// m/s — the oversteer pair fades in across `1 → 1 + this`. Forwards only, above
+	// walking pace: under it the slip angle is numerical noise, and in reverse it reads
+	// inverted. A ramp rather than an `if`, because a step here is a kick in the wheel.
+	const DRIFT_GATE_SPEED = 1;
+	const DRIFT_GATE_RAMP = 2;
 
 	let carBody = $state.raw<RapierRigidBody>();
 	/** What ChaseCamera follows — an empty parented to the chassis body, see below. */
@@ -194,6 +198,10 @@
 			spawnRot.w = r.w;
 		}
 
+		// The selected setup, re-read every step — switching tunes is a live change.
+		const tune = HANDLING_TUNES[carHandling.mode];
+		const latGrip = latMu(tune);
+
 		const steerKey = (carInput.left ? 1 : 0) - (carInput.right ? 1 : 0);
 		const handbrake = carInput.handbrake;
 
@@ -215,8 +223,11 @@
 		// physics used. Lock bleeds off with speed so the keyboard stops being a
 		// switch between "straight" and "spin" on the motorway.
 		const lockFraction =
-			1 - (1 - GR86.steerHighSpeedFactor) * clamp(absSpeed / GR86.steerFalloffSpeed, 0, 1);
-		carSim.steer += (steerKey * lockFraction - carSim.steer) * damp(GR86.steerResponse, delta);
+			1 - (1 - tune.steerHighSpeedFactor) * clamp(absSpeed / tune.steerFalloffSpeed, 0, 1);
+		carSim.steer += (steerKey * lockFraction - carSim.steer) * damp(tune.steerResponse, delta);
+		// Published in RADIANS, because full lock is now a per-tune number and CarWheels
+		// must render the angle the physics used, not one it re-derived from a constant.
+		carSim.steerAngle = carSim.steer * tune.maxSteerAngle;
 
 		// Parked and untouched → hands off, so the body can sleep. resetForces(false)
 		// first: rapier forces persist until cleared, and waking the body to clear them
@@ -236,6 +247,7 @@
 			carSim.rpm = drivetrain.state.rpm;
 			carSim.gear = drivetrain.state.gear;
 			carSim.slip = 0;
+			carSim.drift = 0;
 			carSim.throttle = 0;
 			carSim.brake = 0;
 			carSim.handbrake = false;
@@ -244,13 +256,18 @@
 			return;
 		}
 
-		const out = drivetrain.step(delta, speedMs, {
-			forward: carInput.up,
-			backward: carInput.down,
-			handbrake,
-			shiftUp: carInput.shiftUp,
-			shiftDown: carInput.shiftDown
-		});
+		const out = drivetrain.step(
+			delta,
+			speedMs,
+			{
+				forward: carInput.up,
+				backward: carInput.down,
+				handbrake,
+				shiftUp: carInput.shiftUp,
+				shiftDown: carInput.shiftDown
+			},
+			tune
+		);
 
 		// Longitudinal — one force along the nose. Newtons → world (a_world = a_si·UPM).
 		const longitudinal = (out.driveForce + out.resistForce) * UNITS_PER_METER;
@@ -264,17 +281,52 @@
 			true
 		);
 
-		// Yaw — the lesser of the geometric and the grip-limited rate. Signed by
-		// `speedMs`, so reversing steers backwards like a real car, and zero at rest.
-		// The handbrake scales both: the demand, so the flick exists at low speed where
-		// the geometry binds, and the cap, so it survives at speed where grip binds.
-		const flick = handbrake ? HANDBRAKE_YAW_BOOST : 1;
-		const steerAngle = carSim.steer * GR86.maxSteerAngle;
-		const yawDemand = ((speedMs * Math.tan(steerAngle)) / GR86.wheelbase) * flick;
-		const yawCap = (LAT_MU * flick * G) / Math.max(absSpeed, YAW_MIN_SPEED);
-		const targetYaw = clamp(yawDemand, -yawCap, yawCap);
+		// ── Yaw, part 1: the planted car ─────────────────────────────────────
+		// The lesser of the geometric and the grip-limited rate. Signed by `speedMs`,
+		// so reversing steers backwards like a real car, and zero at rest. The
+		// handbrake scales both: the demand, so the flick exists at low speed where the
+		// geometry binds, and the cap, so it survives at speed where grip binds. The cap
+		// runs on the FULL lateral μ, not the reduced one below — the fronts are never
+		// the axle that lets go, and it is the fronts that set how fast a car can rotate.
+		const flick = handbrake ? tune.handbrakeYawBoost : 1;
+		const yawDemand = ((speedMs * Math.tan(carSim.steerAngle)) / GR86.wheelbase) * flick;
+		const yawCap = (latGrip * flick * G) / Math.max(absSpeed, YAW_MIN_SPEED);
+		let targetYaw = clamp(yawDemand, -yawCap, yawCap);
+
+		// ── Yaw, part 2: the slide ───────────────────────────────────────────
+		// Slip angle at the CG — the angle between where the nose points and where the
+		// car is actually going. A drift IS a large, HELD value here, and the pair of
+		// terms below is what holds it: one adds rotation the steering never asked for,
+		// the other takes it away again. Both are zero in the Grip tune, which is
+		// exactly why Grip is unchanged and why it could never drift.
+		const beta = Math.atan2(vLateral, Math.max(Math.abs(vForward), 1e-3));
+		const driftGate = clamp((speedMs - DRIFT_GATE_SPEED) / DRIFT_GATE_RAMP, 0, 1);
+		// Reported through the same gate the physics uses, or the readout flashes 60° every
+		// time the car is shuffled around a parking space at half a metre per second.
+		carSim.drift = driftGate > 0 ? beta : 0;
+		if (driftGate > 0) {
+			// Which way the tail is out. Below a few degrees there is no slide to follow
+			// yet, so the steering seeds the sign; past it the SLIDE owns it — opposite
+			// lock must not flip the power moment over to the other side of the car,
+			// or countersteering would deepen the drift instead of catching it.
+			const settled = clamp(Math.abs(beta) / DRIFT_SEED_ANGLE, 0, 1);
+			const driftDir = settled * Math.sign(beta) + (1 - settled) * Math.sign(yawDemand);
+			// A loose rear axle rotates the car PAST what the fronts point at. Scaled by
+			// wheelspin (or 1 with the rears locked), and faded out as the slide reaches
+			// `maxDriftAngle` — without that fade the moment never stops and every slide
+			// is a spin. Throttle is therefore the drift's main control: lift and `slip`
+			// decays in ~0.2 s, this collapses, and the aligning term below wins.
+			const loose = handbrake ? 1 : drivetrain.state.slip;
+			const reach = clamp(Math.abs(beta) / tune.maxDriftAngle, 0, 1);
+			targetYaw += driftGate * tune.oversteerYaw * loose * driftDir * (1 - reach);
+			// And the rear tyres pull the nose back toward the direction of travel,
+			// harder the further out it is. This is what ends a slide when you lift, and
+			// what opposite lock is helping against.
+			targetYaw -= driftGate * tune.driftAlign * beta;
+		}
+
 		const ang = body.angvel(_ang);
-		ang.y += (targetYaw - ang.y) * damp(GR86.yawResponse, delta);
+		ang.y += (targetYaw - ang.y) * damp(tune.yawResponse, delta);
 		body.setAngvel(ang, true);
 
 		// Grip — bleed the sideways velocity, but never faster than the tyres could
@@ -290,7 +342,7 @@
 		// sideways bleed per second, so a planted car never runs out and never slides.
 		// Vertical motion (gravity, slopes) passes through untouched.
 		const muLat =
-			GR86.handbrakeMuLat + (LAT_MU - GR86.handbrakeMuLat) * clamp(out.gripFactor, 0, 1);
+			tune.handbrakeMuLat + (latGrip - tune.handbrakeMuLat) * clamp(out.gripFactor, 0, 1);
 		const settle = vLateral * damp(GRIP_RATE, delta);
 		const bleedLimit = muLat * G * UNITS_PER_METER * delta; // m/s² → world units/s this step
 		_vel.addScaledVector(_right, -clamp(settle, -bleedLimit, bleedLimit));

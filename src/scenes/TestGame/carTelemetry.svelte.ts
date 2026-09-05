@@ -19,9 +19,17 @@ export const carSim = {
 	gear: 1,
 	/** 0…1 wheelspin. */
 	slip: 0,
-	/** Steering rack, -1…1, left-positive. CarWheels renders this so the visual
-	 *  lock matches the speed-sensitive angle the physics actually used. */
+	/** Steering rack, -1…1, left-positive — the fraction of lock the rack is at. */
 	steer: 0,
+	/** rad — `steer` × the SELECTED TUNE's full lock. CarWheels renders this rather
+	 *  than re-deriving it, because full lock is a per-tune number now (Drift runs
+	 *  more of it) and the visual lock has to be the one the physics steered at. */
+	steerAngle: 0,
+	/** rad — slip angle at the CG: the angle between where the nose points and where
+	 *  the car is actually going. Positive = travelling to the car's RIGHT, i.e. the
+	 *  tail is out in a left-hand slide. Zero when planted; a drift IS a big held
+	 *  value here. Written in both tunes; only Drift can hold much of it. */
+	drift: 0,
 	throttle: 0,
 	brake: 0,
 	handbrake: false,
@@ -37,6 +45,8 @@ export const carHud = $state({
 	rpm: GR86.idleRpm as number,
 	gear: 1,
 	slip: 0,
+	/** Slip angle in whole DEGREES, unsigned — the drift readout. */
+	driftDeg: 0,
 	throttle: 0,
 	brake: 0,
 	handbrake: false,
@@ -58,12 +68,14 @@ export function publishCarHud(dt: number): void {
 	// 20 rpm buckets: ~370 steps across the dial, far finer than a needle reads.
 	const rpm = Math.round(carSim.rpm / 20) * 20;
 	const slip = Math.round(carSim.slip * 20) / 20;
+	const driftDeg = Math.round(Math.abs(carSim.drift) * (180 / Math.PI));
 
 	if (carHud.kmh !== kmh) carHud.kmh = kmh;
 	if (carHud.mph !== mph) carHud.mph = mph;
 	if (carHud.rpm !== rpm) carHud.rpm = rpm;
 	if (carHud.gear !== carSim.gear) carHud.gear = carSim.gear;
 	if (carHud.slip !== slip) carHud.slip = slip;
+	if (carHud.driftDeg !== driftDeg) carHud.driftDeg = driftDeg;
 	if (carHud.throttle !== carSim.throttle) carHud.throttle = carSim.throttle;
 	if (carHud.brake !== carSim.brake) carHud.brake = carSim.brake;
 	if (carHud.handbrake !== carSim.handbrake) carHud.handbrake = carSim.handbrake;
@@ -77,6 +89,8 @@ export function resetCarTelemetry(): void {
 	carSim.gear = 1;
 	carSim.slip = 0;
 	carSim.steer = 0;
+	carSim.steerAngle = 0;
+	carSim.drift = 0;
 	carSim.throttle = 0;
 	carSim.brake = 0;
 	carSim.handbrake = false;
