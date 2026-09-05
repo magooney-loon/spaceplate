@@ -117,20 +117,34 @@
 	// UNITS: the sim thinks in metres, the world is 2.5 units to the metre. Forces
 	// and velocities convert at this boundary and nowhere else — see gr86.ts.
 	//
-	// Steering is DIRECT yaw-rate control, not torque, and the target is now the
-	// smaller of two real limits rather than a speed ramp: what the front wheels
-	// GEOMETRICALLY point at (v·tan δ / wheelbase, an Ackermann bicycle) and what
-	// the tyres can HOLD (μ·g / v). Below ~30 km/h you get the GR86's real 5.5 m
-	// turning circle; at 150 km/h the same key press is a lane change, because 1.1 g
-	// is all there is. Nothing turns on the spot: yaw falls out of speed.
+	// Steering is DIRECT yaw-rate control, not torque, and the target is the smaller of
+	// two real limits rather than a speed ramp: what the front wheels GEOMETRICALLY
+	// point at (v·tan δ / wheelbase, an Ackermann bicycle) and what the tyres can HOLD
+	// (μ·g / v). Below ~25 km/h the geometry binds and you get a 4.7 m turning radius;
+	// above it grip binds and the same key press is a lane change. Nothing turns on the
+	// spot: yaw falls out of speed. The two are wired to the same μ as the sideways
+	// bleed below — see LAT_GRIP_GAIN, which is the knob for cornering at speed.
 	const YAW_MIN_SPEED = 1.5; // m/s floor under the grip cap, so it can't divide by ~0
-	const HANDBRAKE_YAW_BOOST = 2.2; // the cap the tyres can't hold — this is the flick
-	// Grip damping RATES, in 1/s — `exp(-rate * delta)` is the fraction kept. Per-STEP
-	// fractions are a lie the moment the physics framerate moves, and it moved (the world
-	// runs a fixed 200 Hz). These two are the endpoints the drivetrain's `gripFactor`
-	// interpolates between: 1 = planted, 0 = the handbrake's drift.
+	/**
+	 * Lateral grip the CORNERING model runs on, over the tyre's honest μ. The real
+	 * 1.1 g needs 148 m of road to turn at 40 m/s, and this is a tight city driven on
+	 * a keyboard — so the demo buys some back. **This is the knob for "the car won't
+	 * turn at speed"**; 1 is the real car. It feeds BOTH the yaw cap and the sideways
+	 * bleed, which have to agree: a cap that asks for more cornering than the bleed can
+	 * service means the car slides a little in every corner.
+	 */
+	const LAT_GRIP_GAIN = 1.3;
+	const LAT_MU = GR86.tireMuLat * LAT_GRIP_GAIN;
+	// The flick. A locked rear axle lets the car rotate faster than the tyres can hold,
+	// so this scales the yaw DEMAND as well as the cap — boosting the cap alone did
+	// nothing below ~25 km/h, where the geometric term is the binding one, i.e. at
+	// exactly the speeds anyone yanks a handbrake.
+	const HANDBRAKE_YAW_BOOST = 2.2;
+	// 1/s — how fast leftover sideways velocity settles once it is back inside what the
+	// tyres can pull. A RATE, not a per-step fraction: the latter silently retunes the
+	// car whenever the physics framerate moves, and the world runs a fixed 200 Hz. The
+	// grip LIMIT below is what makes a slide a slide; this is only the last little bit.
 	const GRIP_RATE = 138;
-	const HANDBRAKE_GRIP_RATE = 9.7;
 
 	let carBody = $state.raw<RapierRigidBody>();
 	/** What ChaseCamera follows — an empty parented to the chassis body, see below. */
@@ -230,20 +244,34 @@
 
 		// Yaw — the lesser of the geometric and the grip-limited rate. Signed by
 		// `speedMs`, so reversing steers backwards like a real car, and zero at rest.
+		// The handbrake scales both: the demand, so the flick exists at low speed where
+		// the geometry binds, and the cap, so it survives at speed where grip binds.
+		const flick = handbrake ? HANDBRAKE_YAW_BOOST : 1;
 		const steerAngle = carSim.steer * GR86.maxSteerAngle;
-		const yawGeometric = (speedMs * Math.tan(steerAngle)) / GR86.wheelbase;
-		const latMu = GR86.tireMuLat * (handbrake ? HANDBRAKE_YAW_BOOST : 1);
-		const yawCap = (latMu * G) / Math.max(absSpeed, YAW_MIN_SPEED);
-		const targetYaw = clamp(yawGeometric, -yawCap, yawCap);
+		const yawDemand = ((speedMs * Math.tan(steerAngle)) / GR86.wheelbase) * flick;
+		const yawCap = (LAT_MU * flick * G) / Math.max(absSpeed, YAW_MIN_SPEED);
+		const targetYaw = clamp(yawDemand, -yawCap, yawCap);
 		const ang = body.angvel(_ang);
 		ang.y += (targetYaw - ang.y) * damp(GR86.yawResponse, delta);
 		body.setAngvel(ang, true);
 
-		// Grip — bleed the lateral velocity. Vertical motion (gravity, slopes) passes
-		// through untouched; braking is a force now, not a velocity haircut.
-		const gripRate =
-			HANDBRAKE_GRIP_RATE + (GRIP_RATE - HANDBRAKE_GRIP_RATE) * clamp(out.gripFactor, 0, 1);
-		_vel.addScaledVector(_right, -vLateral * damp(gripRate, delta));
+		// Grip — bleed the sideways velocity, but never faster than the tyres could
+		// actually pull it back. That LIMIT is the whole cornering model: the bleed used
+		// to be a bare exponential, which is an infinitely strong constraint (at
+		// GRIP_RATE it removes ~70 g), so even the drift end still snapped the car
+		// straight inside a tenth of a second and the handbrake read as a turn-tighter
+		// button rather than a slide. μ is what a slide IS — full grip when planted,
+		// `handbrakeMuLat` with the rears locked, interpolated across the drivetrain's
+		// `gripFactor` so wheelspin steps the back out too.
+		//
+		// The two agree by construction: holding the yaw cap costs exactly v·ω = μ·g of
+		// sideways bleed per second, so a planted car never runs out and never slides.
+		// Vertical motion (gravity, slopes) passes through untouched.
+		const muLat =
+			GR86.handbrakeMuLat + (LAT_MU - GR86.handbrakeMuLat) * clamp(out.gripFactor, 0, 1);
+		const settle = vLateral * damp(GRIP_RATE, delta);
+		const bleedLimit = muLat * G * UNITS_PER_METER * delta; // m/s² → world units/s this step
+		_vel.addScaledVector(_right, -clamp(settle, -bleedLimit, bleedLimit));
 		body.setLinvel({ x: _vel.x, y: _vel.y, z: _vel.z }, true);
 
 		// Instruments — plain object at 200 Hz, $state mirror at 30 (carTelemetry).

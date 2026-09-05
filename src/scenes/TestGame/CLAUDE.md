@@ -40,13 +40,29 @@ the pedals, not the lights.
 
 ONE dynamic body for the chassis (no per-wheel suspension). The longitudinal half
 is a real drivetrain — torque curve → clutch → gearbox → traction limit at the
-rear axle (`drivetrain.ts`, all SI, GR86 numbers in `gr86.ts`). Grip is a
-lateral-velocity damp per step, and the drivetrain hands back how much of it is
-left (`gripFactor`): the handbrake takes it all, wheelspin takes a chunk (power
-oversteer). Steering is DIRECT yaw-rate control — the target is the lesser of
-what the front wheels geometrically point at (v·tan δ / wheelbase) and what the
-tyres can hold (μ·g / v). Roll is disabled on the body (`enabledRotations`), so
-the car cannot tip sideways; pitch survives for slopes.
+rear axle (`drivetrain.ts`, all SI, GR86 numbers in `gr86.ts`). Steering is
+DIRECT yaw-rate control — the target is the lesser of what the front wheels
+geometrically point at (v·tan δ / wheelbase) and what the tyres can hold
+(μ·g / v). Roll is disabled on the body (`enabledRotations`), so the car cannot
+tip sideways; pitch survives for slopes.
+
+- **Cornering is the μ, not the damp rate.** Sideways velocity is bled off each
+  step, but the bleed is CAPPED at μ·g — that cap is the entire cornering model,
+  and the exponential under it only settles the last little bit. μ runs from
+  `handbrakeMuLat` (rears locked) to `tireMuLat × LAT_GRIP_GAIN`, interpolated
+  across the drivetrain's `gripFactor`, so the handbrake slides and wheelspin
+  steps the back out. Without the cap the bleed is an infinitely strong
+  constraint (~70 g at `GRIP_RATE`) that snaps the car straight no matter what
+  `gripFactor` says, and the handbrake becomes a turn-tighter button.
+- **The yaw cap and the bleed cap must use the same μ.** Holding the yaw cap
+  costs exactly v·ω = μ·g of bleed per second, so they cancel and a planted car
+  never slides. Raise one without the other and the car understeers out of every
+  corner. `LAT_GRIP_GAIN` (in `TestGame.svelte`) scales both; it is the one knob
+  for "the car won't turn at speed", and 1 is the real car.
+- **Speed-sensitive rack:** `steerFalloffSpeed` has to span the speeds the car is
+  actually driven at. It was 1.8 m/s once, i.e. fully applied by walking pace,
+  which made it a no-op and left `maxSteerAngle` (then 40°, not the ≈29° its own
+  comment claimed) as the low-speed feel — that pair was the twitchiness.
 
 - **The model is SI; the world is not.** `gr86.ts` holds the real car's numbers
   (torque curve, 6MT ratios, tyre μ, drag) in metres/kg/newtons, and
@@ -54,7 +70,7 @@ the car cannot tip sideways; pitch survives for slopes.
   same 2.5 the car's visual group is scaled by (the city is authored at 2.5
   units/metre). Forces and velocities scale by it, rad/s does not. The car's
   `gravityScale` is that constant too — the shared `<World>` pulls at 9.8
-  *units*/s², which in this city is 3.9 m/s². Validated against the real GR86:
+  _units_/s², which in this city is 3.9 m/s². Validated against the real GR86:
   0-60 mph 5.7 s (6.1 published), 140 mph governed, redline in 1st at ~50 km/h.
 - **Physics runs at a fixed 200 Hz** (`physicsState.framerate`), so a
   `usePhysicsTask` runs 0..n times per rendered frame. Every damping constant in
