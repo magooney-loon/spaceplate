@@ -128,11 +128,12 @@
 	// spot: yaw falls out of speed. The two are wired to the same μ as the sideways
 	// bleed below — see `latMu`, which is the knob for cornering at speed.
 	//
-	// On top of that base, the OVERSTEER pair (handling.ts) is what makes a slide
-	// possible at all, and it is zero in the Grip tune. The base alone is a pure
-	// function of the steering angle, so the car can only ever rotate as fast as the
-	// front wheels point and centring the wheel stops the rotation dead — that model
-	// cannot express a drift no matter how the grip numbers are set.
+	// On top of that base, `powerYawBoost` scales the yaw AUTHORITY when the rear is
+	// loose and `driftAlign` pulls the nose back toward the direction of travel
+	// (handling.ts). They are 1 and 0 in the Grip tune, which collapses everything back
+	// to the base — a pure function of the steering angle, where the car can only ever
+	// rotate as fast as the front wheels point and centring the wheel stops the
+	// rotation dead. That model cannot express a drift however the grip numbers are set.
 	//
 	// Every tuneable number lives in HANDLING_TUNES and is read FRESH each step: the
 	// player can flip Grip ↔ Drift mid-corner and nothing here may cache it.
@@ -142,12 +143,9 @@
 	// car whenever the physics framerate moves, and the world runs a fixed 200 Hz. The
 	// grip LIMIT below is what makes a slide a slide; this is only the last little bit.
 	const GRIP_RATE = 138;
-	// rad — below this much slip angle there is no slide to follow yet, so the STEERING
-	// seeds which way the tail is going; past it the slide itself owns that sign.
-	const DRIFT_SEED_ANGLE = 0.12;
-	// m/s — the oversteer pair fades in across `1 → 1 + this`. Forwards only, above
-	// walking pace: under it the slip angle is numerical noise, and in reverse it reads
-	// inverted. A ramp rather than an `if`, because a step here is a kick in the wheel.
+	// m/s — the slip angle fades in across `1 → 1 + this`. Forwards only, above walking
+	// pace: under it the angle is numerical noise, and in reverse it reads inverted. A
+	// ramp rather than an `if`, because a step here is a kick in the steering.
 	const DRIFT_GATE_SPEED = 1;
 	const DRIFT_GATE_RAMP = 2;
 
@@ -281,49 +279,71 @@
 			true
 		);
 
-		// ── Yaw, part 1: the planted car ─────────────────────────────────────
-		// The lesser of the geometric and the grip-limited rate. Signed by `speedMs`,
-		// so reversing steers backwards like a real car, and zero at rest. The
-		// handbrake scales both: the demand, so the flick exists at low speed where the
-		// geometry binds, and the cap, so it survives at speed where grip binds. The cap
-		// runs on the FULL lateral μ, not the reduced one below — the fronts are never
-		// the axle that lets go, and it is the fronts that set how fast a car can rotate.
-		const flick = handbrake ? tune.handbrakeYawBoost : 1;
-		const yawDemand = ((speedMs * Math.tan(carSim.steerAngle)) / GR86.wheelbase) * flick;
-		const yawCap = (latGrip * flick * G) / Math.max(absSpeed, YAW_MIN_SPEED);
-		let targetYaw = clamp(yawDemand, -yawCap, yawCap);
-
-		// ── Yaw, part 2: the slide ───────────────────────────────────────────
-		// Slip angle at the CG — the angle between where the nose points and where the
-		// car is actually going. A drift IS a large, HELD value here, and the pair of
-		// terms below is what holds it: one adds rotation the steering never asked for,
-		// the other takes it away again. Both are zero in the Grip tune, which is
-		// exactly why Grip is unchanged and why it could never drift.
-		const beta = Math.atan2(vLateral, Math.max(Math.abs(vForward), 1e-3));
+		// ── Yaw ──────────────────────────────────────────────────────────────
+		// Slip angle at the CG: the angle between where the nose points and where the
+		// car is actually going. A drift IS a large, HELD value here. Gated to
+		// forwards-and-above-walking-pace — under that it is numerical noise, and in
+		// reverse it reads inverted.
+		//
+		// NOTHING below depends on the SIGN of this angle except `driftAlign`, and that
+		// is the whole stability argument. An earlier version added an oversteer moment
+		// pointed along sign(beta): its gradient at beta → 0 was ~5× the aligning
+		// term's, so every bump fed back into more rotation than anything could remove
+		// and the car could not be held in a straight line. Yaw AUTHORITY is safe
+		// because it multiplies the steering — no steering, no yaw, straight is straight.
 		const driftGate = clamp((speedMs - DRIFT_GATE_SPEED) / DRIFT_GATE_RAMP, 0, 1);
-		// Reported through the same gate the physics uses, or the readout flashes 60° every
-		// time the car is shuffled around a parking space at half a metre per second.
-		carSim.drift = driftGate > 0 ? beta : 0;
-		if (driftGate > 0) {
-			// Which way the tail is out. Below a few degrees there is no slide to follow
-			// yet, so the steering seeds the sign; past it the SLIDE owns it — opposite
-			// lock must not flip the power moment over to the other side of the car,
-			// or countersteering would deepen the drift instead of catching it.
-			const settled = clamp(Math.abs(beta) / DRIFT_SEED_ANGLE, 0, 1);
-			const driftDir = settled * Math.sign(beta) + (1 - settled) * Math.sign(yawDemand);
-			// A loose rear axle rotates the car PAST what the fronts point at. Scaled by
-			// wheelspin (or 1 with the rears locked), and faded out as the slide reaches
-			// `maxDriftAngle` — without that fade the moment never stops and every slide
-			// is a spin. Throttle is therefore the drift's main control: lift and `slip`
-			// decays in ~0.2 s, this collapses, and the aligning term below wins.
-			const loose = handbrake ? 1 : drivetrain.state.slip;
-			const reach = clamp(Math.abs(beta) / tune.maxDriftAngle, 0, 1);
-			targetYaw += driftGate * tune.oversteerYaw * loose * driftDir * (1 - reach);
-			// And the rear tyres pull the nose back toward the direction of travel,
-			// harder the further out it is. This is what ends a slide when you lift, and
-			// what opposite lock is helping against.
-			targetYaw -= driftGate * tune.driftAlign * beta;
-		}
+		const beta =
+			driftGate > 0 ? Math.atan2(vLateral, Math.max(Math.abs(vForward), 1e-3)) * driftGate : 0;
+		carSim.drift = beta;
+
+		// How loose the rear is right now, 0…1. Whichever source is loosest wins; they
+		// do NOT stack, or brake-and-power would simply pin the boost at maximum.
+		//   handbrake  — all of it.
+		//   brake      — trail-braking oversteer, the deliberate way in.
+		//   powerLoad  — the friction circle: grip spent driving the car along is not
+		//                available to hold it sideways. THE drift control, and the
+		//                reason the throttle works in gears that never spin the rears.
+		//   slip       — actual wheelspin, which only 1st and 2nd ever reach.
+		//   looseBase  — a floor, deliberately SMALL: the car has to be planted until
+		//                something provokes it, or the whole tune reads floaty.
+		// Faded back out as the slide reaches `maxDriftAngle` — that fade is what makes
+		// the drift SETTLE at an angle rather than carry on into a spin, because the
+		// aligning term below grows while this one shrinks.
+		const loose = handbrake
+			? 1
+			: Math.max(
+					tune.looseBase,
+					drivetrain.state.slip,
+					tune.brakeLoose * drivetrain.state.brake,
+					tune.throttleLoose * out.powerLoad
+				);
+		const reach = clamp(Math.abs(beta) / tune.maxDriftAngle, 0, 1);
+		const flick = handbrake ? tune.handbrakeYawBoost : 1;
+		const boost = flick * (1 + (tune.powerYawBoost - 1) * loose * (1 - reach));
+
+		// The planted car: the lesser of the geometric and the grip-limited rate, both
+		// scaled by the boost. Signed by `speedMs`, so reversing steers backwards like a
+		// real car, and zero at rest. The boost has to scale BOTH — lifting the cap
+		// alone does nothing below ~25 km/h, where the geometric term is the binding
+		// one, i.e. at exactly the speeds anyone yanks a handbrake. The cap runs on the
+		// full lateral μ, not the reduced one below: the fronts are never the axle that
+		// lets go, and it is the fronts that set how fast a car can rotate.
+		const yawDemand = ((speedMs * Math.tan(carSim.steerAngle)) / GR86.wheelbase) * boost;
+		const yawCap = (latGrip * boost * G) / Math.max(absSpeed, YAW_MIN_SPEED);
+		// …minus the rear tyres pulling the nose back toward the direction of travel —
+		// SCALED BY HOW MUCH REAR GRIP IS LEFT TO DO IT WITH. A spinning tyre aligns
+		// nothing, so the aligning moment has to fade exactly as the rear lets go.
+		// As a constant it did the opposite: the harder you loosened the rear, the
+		// harder the car fought you, and full lock plus full throttle at walking pace
+		// produced a 130 m circle instead of a donut. With the scaling that same input
+		// settles into a 7-14 m circle at ~33°/s.
+		//
+		// Zero in Grip. Elsewhere it is the auto-catch: it ends a slide when you lift
+		// (looseness drops back to `looseBase`, so this roughly doubles), it is what
+		// opposite lock is helping, and it is what makes the straight line
+		// self-correcting instead of merely uneventful.
+		const align = tune.driftAlign * (1 - loose);
+		const targetYaw = clamp(yawDemand, -yawCap, yawCap) - align * beta;
 
 		const ang = body.angvel(_ang);
 		ang.y += (targetYaw - ang.y) * damp(tune.yawResponse, delta);

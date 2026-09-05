@@ -50,10 +50,15 @@
 		{/each}
 	</div>
 
-	<!-- Controls hint -->
+	<!-- Controls hint. The Drift line is the technique, not the keys — the brake is the
+	     entry and the throttle holds the angle, which is not guessable from a keymap. -->
 	<div class="info">
 		<p>↑ throttle · ↓ brake · Space handbrake · Q/E shift · L lights · H main beam</p>
-		<p>G setup (Grip / Drift) · drag to tilt · right-drag to raise/lower · wheel to zoom</p>
+		{#if carHandling.mode === 'drift'}
+			<p class="technique">Tap ↓ into the corner to set the car, then ↑ to hold the angle</p>
+		{:else}
+			<p>G setup (Grip / Drift) · drag to tilt · right-drag to raise/lower · wheel to zoom</p>
+		{/if}
 	</div>
 
 	<!-- Speed / gear / rpm — bottom right. -->
@@ -143,5 +148,9 @@
 
 	.info p {
 		font-size: 0.875rem;
+	}
+
+	.info p.technique {
+		color: #4ad9d1;
 	}
 </style>

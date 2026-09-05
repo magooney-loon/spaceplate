@@ -7,30 +7,47 @@
 // GRIP is the car as it was validated — 0-60 mph in 5.7 s, 140 mph governed,
 // ~1.4 g of cornering. Every number in it is the one that used to live in
 // `gr86.ts` / `TestGame.svelte`, so selecting GRIP is a no-op against the old
-// behaviour, including the two oversteer terms below, which are zero.
+// behaviour: `looseBase` and `driftAlign` are zero and `powerYawBoost` is 1, which
+// collapses every term below back to the original model exactly.
 //
-// DRIFT is NOT the real car and does not pretend to be. Three things have to be
-// true for a rear-drive car to slide, and GRIP had none of them:
+// DRIFT is NOT the real car and is not trying to be. It is an ARCADE tune — the
+// car rotates roughly where you point it, the velocity vector lags behind, and an
+// assist pulls the nose back so a slide is something you hold rather than
+// something you survive. Four things make that work, and GRIP has none of them:
 //
-//   1. A rear axle that runs out of grip in more than 1st gear. At `tireMuLong`
-//      1.05 the rears hold ~6 250 N; 2nd gear only ever asks ~6 300 N, so `slip`
-//      never left zero above about 30 km/h.
-//   2. Lateral grip that actually LEAVES when the rears spin. `slipGripLoss` was
-//      0.55, so full wheelspin still kept 45% of the tyre — μ never fell below
-//      0.88, which is more grip than most road cars have at their best.
-//   3. Yaw that is not a pure function of the steering angle. GRIP's yaw target is
-//      `v·tan δ / L` clamped to `μ·g / v`: the car can only ever rotate as fast as
-//      the front wheels point, and centring the wheel stops the rotation dead.
-//      A slide is rotation the steering did NOT ask for, held against something
-//      that wants to end it. Those are `oversteerYaw` (the power/handbrake moment
-//      that takes the tail out) and `driftAlign` (the rear tyres pulling the nose
-//      back toward where the car is actually going). They balance at roughly
-//      `maxDriftAngle`, and the throttle is what moves the balance — which is why
-//      DRIFT is modulated on ↑ and caught on the arrows, like the real thing.
+//   1. A rear axle that runs out of grip in more than 1st gear (`tireMuLong`). At
+//      1.05 the rears hold ~6 250 N and 2nd gear only ever asks ~6 300 N, so
+//      `slip` never left zero above about 30 km/h.
+//   2. Lateral grip that actually LEAVES (`slipGripLoss`, `looseBase`,
+//      `brakeLoose`). At 0.55, full wheelspin still kept 45% of the tyre — μ never
+//      fell below 0.88, more grip than most road cars have at their best. And
+//      requiring wheelspin at all makes getting sideways a throttle-precision
+//      exercise, which is the opposite of arcade: `looseBase` is a permanent
+//      looseness Drift carries everywhere, and `brakeLoose` is the deliberate
+//      ENTRY — brake into the corner to set the car, throttle to hold the angle.
+//   3. More yaw AUTHORITY when the rear is loose (`powerYawBoost`) — not more yaw.
+//      GRIP's yaw target is `v·tan δ / L` clamped to `μ·g / v`, and the boost
+//      scales what the steering may ask for, both terms. It cannot rotate the car
+//      on its own, which is the entire stability argument (see below).
+//   4. Something that ENDS a slide (`driftAlign`) — the rear tyres pulling the nose
+//      back toward the direction of travel, per radian of slip angle. This is the
+//      auto-catch, and it is also what makes a straight line self-correcting.
 //
-// The cost of #1 is real and deliberate: DRIFT is traction-limited to ~3 600 N off
-// the line, so 0-60 goes from 5.7 s to about 10. A drift tune trades the drag strip
-// away; that is the trade, not a bug.
+// #3 and #4 balance at a held slip angle, faded in by `maxDriftAngle`, so the drift
+// settles instead of spinning: ~25° on the throttle, ~35° off a handbrake flick.
+//
+// ── The stability rule, learned the hard way ────────────────────────────────────
+// NOTHING here may depend on the SIGN of the slip angle except `driftAlign`.
+// An earlier version added an oversteer moment pointed along `sign(beta)`, scaled
+// by wheelspin. Its gradient at beta → 0 was ~12 rad/s per rad against
+// `driftAlign`'s 2.4, so every bump's slip angle fed back into five times more
+// rotation than the aligning term could remove — beta = 0 was a DIVERGENT
+// equilibrium and the car could not be driven in a straight line. Yaw authority is
+// safe because it multiplies the steering: no steering, no yaw, straight is straight.
+//
+// The cost of #1 is real and deliberate: Drift is traction-limited to ~5 550 N off
+// the line, so 0-60 goes from 5.7 s to about 7.5. A drift tune gives some of the
+// drag strip away; that is the trade, not a bug.
 
 /** The knobs that differ between setups. Everything else is `GR86` in gr86.ts. */
 export interface HandlingTune {
@@ -48,13 +65,49 @@ export interface HandlingTune {
 	 * so the demo buys some back. **This is the knob for "the car won't turn at
 	 * speed"**; 1 is the real car. It feeds BOTH the yaw cap and the sideways bleed,
 	 * which have to agree — a cap asking for more cornering than the bleed can
-	 * service means the car slides a little in every corner.
+	 * service means the car slides a little in every corner. (Which is exactly what
+	 * Drift wants, and why its value is the LOWER of the two.)
 	 */
 	latGripGain: number;
 	/** Lateral grip with the rears locked — the drift end of the same bleed. */
 	handbrakeMuLat: number;
 	/** How much of the lateral tyre full wheelspin costs, 0…1. Applied in drivetrain.ts. */
 	slipGripLoss: number;
+	/**
+	 * Permanent looseness, 0…1 — the floor under everything else, and a flat cut to
+	 * lateral grip in drivetrain.ts. Keep it SMALL. At 0.6 the car ran 32° of slip
+	 * angle just coasting through a gentle corner: permanently sideways, no contrast
+	 * between planted and provoked, which reads as floaty rather than fun. Looseness
+	 * should be EARNED by an input — that is what the three knobs below are for.
+	 */
+	looseBase: number;
+	/**
+	 * Looseness at full drive load, 0…1 — the FRICTION CIRCLE, scaled by the
+	 * drivetrain's `powerLoad` (how much of the rear's grip budget the drive force is
+	 * spending). A tyre has one friction budget: grip spent pushing the car along is
+	 * not available to hold it sideways, and that is true well before the tyre
+	 * actually spins.
+	 *
+	 * This is what makes the throttle the drift control in EVERY gear. Keying the
+	 * slide off wheelspin alone meant only 1st and 2nd could break traction, so
+	 * getting sideways in 4th was impossible without the handbrake — and dropping
+	 * `tireMuLong` far enough to fix that cost two seconds off 0-60. This costs
+	 * nothing: the car keeps its acceleration and gains a throttle that steers.
+	 */
+	throttleLoose: number;
+	/**
+	 * Looseness the BRAKE is worth at full pedal, 0…1 — trail-braking oversteer, and
+	 * the deliberate way into a drift. Physically this is load transfer: ~0.9 g of
+	 * braking moves `m·a·h/L` ≈ 2 100 N off the rear axle, roughly a third of its
+	 * static load, and a rear tyre carrying a third less weight has a third less
+	 * lateral grip to give. Brake into the corner to set the car, then throttle to
+	 * hold the angle — the two ends of the same slide.
+	 *
+	 * Safe under the stability rule for the same reason `looseBase` is: it feeds
+	 * LOOSENESS, which only ever multiplies the steering's authority. Standing on the
+	 * brakes in a straight line still asks for no yaw and so produces none.
+	 */
+	brakeLoose: number;
 
 	// ── Steering ─────────────────────────────────────────────────────────────
 	/** rad — full lock at the front wheels. Turn radius at lock is `wheelbase / tan δ`. */
@@ -78,27 +131,37 @@ export interface HandlingTune {
 	 * The flick. A locked rear axle lets the car rotate faster than the tyres can
 	 * hold, so this scales the yaw DEMAND as well as the cap — boosting the cap alone
 	 * did nothing below ~25 km/h, where the geometric term is the binding one, i.e.
-	 * at exactly the speeds anyone yanks a handbrake.
+	 * at exactly the speeds anyone yanks a handbrake. Multiplies with
+	 * `powerYawBoost`, which the handbrake already gets in full (it sets looseness
+	 * to 1), so Drift's value is small — it is a top-up, not the whole flick.
 	 */
 	handbrakeYawBoost: number;
 	/**
-	 * rad/s — peak rotation a fully loose rear axle adds ON TOP of what the front
-	 * wheels point at, scaled by wheelspin (or 1 on the handbrake) and faded out as
-	 * the slide reaches `maxDriftAngle`. 0 = no oversteer term at all, i.e. yaw is a
-	 * pure function of the steering angle and a slide cannot exist.
+	 * Yaw AUTHORITY multiplier at full looseness — it scales what the steering may
+	 * ask for (demand and cap alike), and is faded back to 1 as the slip angle
+	 * reaches `maxDriftAngle`. 1 = no boost at all, i.e. yaw is exactly the Grip
+	 * model. Never a term added to the yaw target: see the stability rule above.
 	 */
-	oversteerYaw: number;
+	powerYawBoost: number;
 	/**
 	 * 1/s — how hard the rear tyres pull the nose back toward the direction of
-	 * travel, per radian of slip angle. This is what ends a slide when you lift, and
-	 * what opposite lock is fighting. Too low and every slide is a spin; too high and
-	 * the car snaps straight before you can hold it.
+	 * travel, per radian of slip angle, AT FULL REAR GRIP. The scene scales it by
+	 * `1 - loose`, because a spinning tyre aligns nothing: the aligning moment has to
+	 * fade exactly as the rear lets go, or the harder you loosen the rear the harder
+	 * the car fights you. (As a constant it made donuts impossible — full lock and
+	 * full throttle at walking pace gave a 130 m circle.)
+	 *
+	 * The auto-catch: what ends a slide when you lift, what opposite lock is helping,
+	 * and what keeps a straight line straight. Too low and every slide is a spin; too
+	 * high and the car snaps straight before you can hold it. Because of the scaling
+	 * this wants to be considerably larger than it looks — at Drift's `looseBase` of
+	 * 0.6 only 40% of it is ever applied off the throttle.
 	 */
 	driftAlign: number;
 	/**
-	 * rad — the slip angle the two terms above balance at under steady throttle.
-	 * `oversteerYaw` fades linearly to zero across it, so past this angle only the
-	 * aligning moment is left and the car recovers instead of spinning.
+	 * rad — the slip angle `powerYawBoost` has fully faded out at, so past it only
+	 * the aligning moment is left and the car recovers instead of spinning. The
+	 * steady-state drift angle lands a little under this.
 	 */
 	maxDriftAngle: number;
 }
@@ -112,6 +175,9 @@ export const HANDLING_TUNES = {
 		latGripGain: 1.3,
 		handbrakeMuLat: 0.42,
 		slipGripLoss: 0.55,
+		looseBase: 0,
+		throttleLoose: 0,
+		brakeLoose: 0,
 
 		// 28.6°, a touch more than the real car's 24°: the demo favours tight turns.
 		// Radius at full lock is 4.7 m against the real 5.4. This was 0.7 rad — 40°,
@@ -124,48 +190,66 @@ export const HANDLING_TUNES = {
 		yawResponse: 7,
 
 		handbrakeYawBoost: 2.2,
-		// Zero on purpose — GRIP is the kinematic model, unchanged.
-		oversteerYaw: 0,
+		// 1 and 0 — Grip is the original kinematic model, untouched.
+		powerYawBoost: 1,
 		driftAlign: 0,
 		maxDriftAngle: 0.75
 	},
 	drift: {
 		label: 'Drift',
 
-		// The rear axle now holds ~3 600 N: 1st and 2nd light it up at full throttle,
-		// 3rd is marginal, 4th and up can't reach it. That IS the drift window — you
-		// pick the gear that puts the slide where you want it.
-		tireMuLong: 0.55,
+		// The rears hold ~5 550 N: 1st lights up hard, 2nd steps out, 3rd and up hook
+		// back in. High enough to keep the car properly quick — 0-60 in 6.2 s, near
+		// Grip's 5.7 — because `throttleLoose` below, not wheelspin, is what gets the
+		// car sideways. Trying to make wheelspin the trigger meant dropping this to
+		// 0.6 and paying two and a half seconds for it.
+		tireMuLong: 0.8,
 		tireMuLat: 1.1,
-		// Slightly less than GRIP's 1.3: the yaw CAP runs on this (the fronts are never
-		// the axle that lets go), and too much of it just drags the nose back in line.
-		latGripGain: 1.25,
-		// Half of GRIP's. This is the μ a fully committed slide bleeds at — at 0.42 the
-		// handbrake shed 4.1 m/s² sideways and the car was straight again in a tenth of
-		// a second, which is why it read as a turn-tighter button.
-		handbrakeMuLat: 0.22,
-		// Wheelspin nearly wipes the lateral tyre, so power alone steps the tail out.
+		// The SAME as Grip. A coasting car should have a coasting car's grip: with
+		// `looseBase` near zero, boost ≈ 1 and the yaw cap matches what the bleed can
+		// service, so Drift corners exactly like Grip until something provokes it.
+		// That contrast IS the feel — running this lower just made everything vague.
+		latGripGain: 1.3,
+		// A third of Grip's. This is the μ a fully committed slide bleeds at — at 0.42
+		// the handbrake shed 4.1 m/s² sideways and the car was straight again in a
+		// tenth of a second, which is why it read as a turn-tighter button.
+		handbrakeMuLat: 0.15,
+		// Wheelspin nearly wipes the lateral tyre, so power deepens a slide sharply.
 		slipGripLoss: 0.95,
+		// Just a hint — the car is essentially planted when you are not asking for
+		// anything. 4° of slip angle coasting through a corner against 46° on the
+		// throttle: that ratio is the whole feel.
+		looseBase: 0.1,
+		// The main drift control. Full throttle spends the rear's whole grip budget, so
+		// power alone takes the tail out in any gear — 46° in 2nd, ~14° in 4th — and
+		// lifting drops it to engine braking's ~0.1, which is what catches the slide.
+		throttleLoose: 0.55,
+		// Between `throttleLoose` and the handbrake's 1: the brake is the deliberate
+		// entry, so it has to be decisively looser than power, without being the full
+		// flick. Braking is worth ~0.9 g of load transfer, and the brake pedal is
+		// on/off from a keyboard, so this doubles as the "tap ↓ to set the car" input.
+		brakeLoose: 0.8,
 
 		// More lock, held further up the speed range, moved faster: all three are
-		// countersteer authority. GRIP's rack falls to 35% by motorway speed, which is
+		// countersteer authority. Grip's rack falls to 35% by motorway speed, which is
 		// fine for lane changes and useless for catching a slide.
 		maxSteerAngle: 0.62,
-		steerHighSpeedFactor: 0.62,
+		steerHighSpeedFactor: 0.55,
 		steerFalloffSpeed: 42,
 		steerResponse: 8,
-		// A little more yaw inertia than GRIP, so the car keeps rotating for a moment
-		// after the input stops — without it the slide is still a function of the key.
-		yawResponse: 6.5,
+		// Same as Grip. It was 6.5 for a while, for "yaw inertia" — all that actually
+		// did was put lag between the counter-steer and the catch.
+		yawResponse: 7,
 
-		// Lower than GRIP's: the flick no longer has to do the whole job on its own,
-		// `oversteerYaw` is under it.
-		handbrakeYawBoost: 1.8,
-		oversteerYaw: 1.6,
-		driftAlign: 2.4,
-		// ≈43°. Full throttle in 2nd settles around 28°; the rest is headroom for a
-		// deliberate flick before the aligning moment wins.
-		maxDriftAngle: 0.75
+		// Small: the handbrake already sets looseness to 1, so it collects the whole of
+		// `powerYawBoost`. 1.25 × 2.8 = 3.5 is the real flick multiplier.
+		handbrakeYawBoost: 1.25,
+		powerYawBoost: 4.5,
+		driftAlign: 3.6,
+		// ≈49°. Steady state lands ~46° on the throttle in 2nd, ~59° off the brake,
+		// ~52° in a donut, and only ~4° coasting. The handbrake held at full lock spins
+		// the car out to fully sideways, which is what that input should do.
+		maxDriftAngle: 0.85
 	}
 } as const satisfies Record<string, HandlingTune>;
 

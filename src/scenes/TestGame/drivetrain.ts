@@ -56,6 +56,13 @@ export interface DriveOutput {
 	/** Lateral grip left, 0…1: 1 = the tyre's full bite, 0 = the handbrake's drift
 	 *  limit. The scene interpolates its two tuned grip rates across this. */
 	gripFactor: number;
+	/** How much of the rear axle's grip budget the drive force is spending, 0…1 —
+	 *  the FRICTION CIRCLE. A tyre has one budget; grip spent pushing the car along
+	 *  is not available to hold it sideways, and that is true well before the tyre
+	 *  actually spins. The scene turns this into looseness (`throttleLoose`), which
+	 *  is what lets the throttle provoke a slide in a gear that never lights the
+	 *  rears up — without it, only 1st and 2nd could ever break traction. */
+	powerLoad: number;
 }
 
 export interface DrivetrainState {
@@ -225,6 +232,11 @@ export function createDrivetrain() {
 		// Fast to break traction, slower to hook back up.
 		state.slip += (slipTarget - state.slip) * damp(slipTarget > state.slip ? 14 : 5, dt);
 		prevDrive = driveForce;
+		// Friction circle: the share of the rear's budget the drive force is using, AFTER
+		// the clip (so it saturates at 1 exactly when the tyre lets go). Off throttle
+		// this is just engine braking, a tenth or so — which is the point, because it is
+		// what makes lifting a real input rather than a no-op.
+		const powerLoad = traction > 0 ? clamp(Math.abs(driveForce) / traction, 0, 1) : 0;
 
 		// ── Brakes, aero, rolling resistance ─────────────────────────────────
 		let resist = 0;
@@ -243,9 +255,24 @@ export function createDrivetrain() {
 		// chunk of it, which is how a rear-drive car steps out under power. How big
 		// a chunk is the setup's call — 0.55 (Grip) leaves 45% of the tyre under
 		// total wheelspin, which is not loose enough to slide on power alone.
-		const gripFactor = input.handbrake ? 0 : 1 - tune.slipGripLoss * state.slip;
+		// `looseBase` is a small flat cut, `brakeLoose` is trail-braking oversteer
+		// (braking moves load off the rear axle, and a lighter rear tyre has less
+		// lateral grip to give), and `throttleLoose` is the friction circle above. All
+		// zero in Grip. They compound, so brake-and-power together is the loosest the
+		// car gets short of the handbrake.
+		//
+		// `looseBase` deliberately stays SMALL. At 0.6 the car ran 32° of slip angle
+		// just coasting through a gentle corner — permanently sideways, no contrast
+		// between planted and provoked, which reads as floaty rather than fun. The
+		// looseness wants to be earned by an input, not baked into the tyre.
+		const gripFactor = input.handbrake
+			? 0
+			: (1 - tune.slipGripLoss * state.slip) *
+				(1 - tune.looseBase) *
+				(1 - tune.brakeLoose * braking) *
+				(1 - tune.throttleLoose * powerLoad);
 
-		return { driveForce, resistForce: resist, gripFactor };
+		return { driveForce, resistForce: resist, gripFactor, powerLoad };
 	}
 
 	/** Called when the car is parked and the scene stops touching the body. */
