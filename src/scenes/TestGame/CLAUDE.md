@@ -23,12 +23,18 @@ cityColliders.ts        — hand-rolled static trimesh colliders for the track G
 
 ## Controls
 
-Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up. Reverse is
-a GEAR, not a pedal: Q past 1st through N into R, then pull away on ↑ — the pedals
-never swap meaning, ↓ is only ever the brake. The keys are chosen so Studio's
-dev-mode shortcuts (w a s z t r c v m) never fight the car. Input is this scene's
-own `svelte:window` keymap (`carInput.svelte.ts`), not the shared keymapper —
-that needs a per-scene rework first.
+Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, L
+headlights, H main beam. Reverse is a GEAR, not a pedal: Q past 1st through N into
+R, then pull away on ↑ — the pedals never swap meaning, ↓ is only ever the brake.
+The keys are chosen so Studio's dev-mode shortcuts (w a s z t r c v m) never fight
+the car, and L/H also dodge the engine's own Ctrl+H. Input is this scene's own
+`svelte:window` keymap (`carInput.svelte.ts`), not the shared keymapper — that
+needs a per-scene rework first.
+
+Held keys and switches are separate in that module: `carInput` is polled per
+physics step, while `carLights` (`on` / `high`) LATCHES on the keydown edge,
+ignores auto-repeat, and survives `resetCarInput` — blur and scene exit release
+the pedals, not the lights.
 
 ## The driving model
 

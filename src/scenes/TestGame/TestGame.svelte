@@ -16,17 +16,23 @@
 	import CarHeadlights from './CarHeadlights.svelte';
 	import CarWheels from './CarWheels.svelte';
 	import ChaseCamera from './ChaseCamera.svelte';
-	import { CAR_INPUT_KEYS, carInput, resetCarInput } from './carInput.svelte';
+	import {
+		CAR_INPUT_KEYS,
+		CAR_TOGGLE_KEYS,
+		applyCarToggle,
+		carInput,
+		resetCarInput
+	} from './carInput.svelte';
 	import { G, GR86, UNITS_PER_METER } from './gr86';
 	import { createDrivetrain } from './drivetrain';
 	import { buildCityColliders } from './cityColliders';
 	import { carSim, publishCarHud, resetCarTelemetry } from './carTelemetry.svelte';
 
 	// Test Game 3D scene — driving prototype.
-	// Controls: arrows drive, Space handbrake, Q/E shift down/up — deliberately keys
-	// Studio doesn't bind (w a s z t r c v m), so dev-mode shortcuts don't fight the
-	// car. Input is this scene's own svelte:window keymap (carInput.svelte.ts), not
-	// the shared keymapper — that needs a per-scene rework first.
+	// Controls: arrows drive, Space handbrake, Q/E shift down/up, L lights, H main beam
+	// — deliberately keys Studio doesn't bind (w a s z t r c v m), so dev-mode shortcuts
+	// don't fight the car. Input is this scene's own svelte:window keymap
+	// (carInput.svelte.ts), not the shared keymapper — that needs a per-scene rework first.
 
 	// Both models are draco + KTX2 compressed, so the decoders must be handed to useGltf
 	// (same setup as the gltf-viewer extension: DRACO/KTX2 fetch their decoder binaries
@@ -84,7 +90,18 @@
 		carInput[action] = value;
 	}
 
-	const onKeydown = (e: KeyboardEvent) => setKey(e, true);
+	// Switches (headlights) latch on the keydown EDGE, so auto-repeat has to be dropped
+	// or holding L strobes the car. Ctrl is left alone — Ctrl+H is the engine's UI toggle.
+	function onKeydown(e: KeyboardEvent): void {
+		const toggle = CAR_TOGGLE_KEYS[e.code];
+		if (toggle && !e.repeat && !e.ctrlKey && !e.metaKey && !isTypingTarget(e.target)) {
+			e.preventDefault();
+			applyCarToggle(toggle);
+			return;
+		}
+		setKey(e, true);
+	}
+
 	const onKeyup = (e: KeyboardEvent) => setKey(e, false);
 
 	// ── Driving ──────────────────────────────────────────────────────────────────
@@ -162,8 +179,7 @@
 		// physics used. Lock bleeds off with speed so the keyboard stops being a
 		// switch between "straight" and "spin" on the motorway.
 		const lockFraction =
-			1 -
-			(1 - GR86.steerHighSpeedFactor) * clamp(absSpeed / GR86.steerFalloffSpeed, 0, 1);
+			1 - (1 - GR86.steerHighSpeedFactor) * clamp(absSpeed / GR86.steerFalloffSpeed, 0, 1);
 		carSim.steer += (steerKey * lockFraction - carSim.steer) * damp(GR86.steerResponse, delta);
 
 		// Parked and untouched → hands off, so the body can sleep. resetForces(false)
@@ -256,7 +272,7 @@
 <svelte:window onkeydown={onKeydown} onkeyup={onKeyup} onblur={resetCarInput} />
 
 {#if $city}
-	<T.Group name="City" scale={1.5} position={[ 101.4641, 8.7, -102.459 ]} rotation={[ 0, -1.0472, 0 ]}>
+	<T.Group name="City" scale={1.5} position={[101.4641, 8.7, -102.459]} rotation={[0, -1.0472, 0]}>
 		<!-- The track GLB: Ground/Asphalt planes, Metal barriers, trees, decals — one
 		     trimesh per mesh, transforms baked (cityColliders.ts). Bare <Collider>s
 		     attach to an implicit fixed body, exactly like AutoColliders did. -->
@@ -271,7 +287,7 @@
      world transform at creation); scale 2.5 lives on the children so the BODY speaks
      world units while the collider args below stay in model meters. -->
 {#if $car}
-	<T.Group name="GR86" rotation={[ -0.0079, -2.5, -0.0197 ]} position={[ 1.4599, 8.661, -3.4031 ]}>
+	<T.Group name="GR86" rotation={[-0.0079, -2.5, -0.0197]} position={[1.4599, 8.661, -3.4031]}>
 		<!-- linearDamping is 0 on purpose: aero drag and rolling resistance are in the
 		     drivetrain now, and a blanket damping term on top of them is the same loss
 		     counted twice (it was also what capped the old top speed). gravityScale is

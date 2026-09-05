@@ -35,3 +35,37 @@ export const resetCarInput = (): void => {
 		carInput[key] = false;
 	}
 };
+
+// --- Switches -----------------------------------------------------------------
+//
+// Held keys above, LATCHED ones here: a headlight is a switch, not a pedal, so it
+// flips once per keydown and `resetCarInput` (blur, scene exit) must not touch it —
+// coming back to the scene with the lights you left on is the point.
+
+/** Read by CarHeadlights.svelte, which owns what low vs high beam actually means. */
+export const carLights = $state({
+	/** Master switch. Off is fully dark — no pool, no beams, no lit lens. */
+	on: true,
+	/** High beam: no cutoff, aimed level, longer and brighter throw. */
+	high: false
+});
+
+export type CarToggleAction = 'lights' | 'highBeam';
+
+/** e.code → switch. L and H are free of both Studio's binds and Ctrl+H (UI toggle). */
+export const CAR_TOGGLE_KEYS: Record<string, CarToggleAction> = {
+	KeyL: 'lights',
+	KeyH: 'highBeam'
+};
+
+/** Edge-triggered: call once per keydown, never on auto-repeat. */
+export const applyCarToggle = (action: CarToggleAction): void => {
+	if (action === 'lights') {
+		carLights.on = !carLights.on;
+		return;
+	}
+	// Flicking to main beam turns the lamps on — a dead key with the lights off is
+	// just a bug report waiting to happen. Dipping again leaves them on, as in a car.
+	carLights.high = !carLights.high;
+	if (carLights.high) carLights.on = true;
+};

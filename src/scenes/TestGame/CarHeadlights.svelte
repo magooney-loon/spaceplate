@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { T } from '@threlte/core/webgpu';
+	import { T, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import {
 		Fn,
@@ -13,11 +13,13 @@
 		positionView,
 		positionViewDirection,
 		positionWorld,
+		uniform,
 		uv,
 		vec2,
 		vec3,
 		vec4
 	} from 'three/tsl';
+	import { carLights } from './carInput.svelte';
 
 	// Front headlight rig for the GR86. Mounts INSIDE the car group, so it inherits the
 	// hand-tuned scale/rotation/position and lives in car-local units (metres — measured
@@ -40,6 +42,10 @@
 	// ray-marches a VolumeNodeMaterial in its own quarter-res pipeline pass. That is
 	// engine work — this rig is scene content, so the volume stays faked in-scene.
 	//
+	// L toggles the lamps, H toggles main beam (`carLights` in carInput.svelte.ts). The
+	// two modes are one table (DIPPED / MAIN) whose every field is a three property, a
+	// Threlte prop or a `uniform()` — switching writes values, it never recompiles.
+	//
 	// All numbers are tweak-me constants; nothing here is load-bearing elsewhere.
 
 	// ---------------------------------------------------------------- placement
@@ -58,7 +64,6 @@
 	// halogen look use (1.0, 0.93, 0.82) here and in the beam/emitter colours below.
 	const LAMP_COLOR = new THREE.Color(0.88, 0.93, 1.0);
 
-	const LIGHT_INTENSITY = 420;
 	const LIGHT_DISTANCE = 420; // world units, not scaled by the group's 2.5
 	const LIGHT_ANGLE = 0.46; // VERTICAL half-angle of the frustum (rad)
 	const LIGHT_ASPECT = 2.3; // width/height — a headlight is wide and short
@@ -68,23 +73,13 @@
 	const LIGHT_DECAY = 1.35;
 	const LIGHT_CAST_SHADOW = false; // two shadowed lights over the track trimesh is pricey
 
-	// The light aims lower than the visible beam: its own drop over `AIM_DISTANCE`, on
-	// top of the group's BEAM_PITCH. atan(1.62/8) ≈ 0.20 rad, so the axis sits ≈ 0.245
-	// rad down and the frustum covers the road from ~0.8 m ahead of the bumper outward.
-	// The cones must NOT follow it down there — they would plunge into the tarmac.
+	// The light aims independently of the visible cones, by moving its target: `aim` is
+	// the drop over AIM_DISTANCE, ON TOP of the group's BEAM_PITCH. A negative `aim`
+	// therefore lifts the axis back toward level. The cones must NOT follow a dipped
+	// beam down — they would plunge into the tarmac — which is why the two are separate.
 	const AIM_DISTANCE = 8;
-	const AIM_DROP = 1.62;
 
-	// Pattern coordinates are the projected frustum remapped to -1..1, x right, y up.
-	const CUTOFF_Y = 0.46; // the cutoff line ≈ 0.025 rad below horizontal → lands ~26 m out
-	const CUTOFF_KICK = 0.24; // kerb-side step up (right-hand traffic — see the note below)
 	const CUTOFF_SOFT = 0.055;
-	const HOTSPOT_Y = 0.4; // peak sits immediately UNDER the cutoff, as on a real lamp
-	const HOTSPOT_W = 0.4;
-	const HOTSPOT_H = 0.3;
-	const HOTSPOT_GAIN = 1.7;
-	const WASH_BASE = 0.18; // dim fill everywhere below the cutoff
-	const WASH_GAIN = 0.55; // extra fill in the middle of the width
 	const FRINGE_COLOR = color(0.25, 0.45, 1.0);
 	const FRINGE_GAIN = 0.35;
 	const FRINGE_WIDTH = 0.05;
@@ -97,15 +92,74 @@
 	const BEAM_DUST_SCALE = 2.5; // world-space noise frequency (see the note on `dust`)
 	// How much of the cone survives when you are looking INTO the beam (see `phase`).
 	const BEAM_HEADON = 0.16;
+	// Width of the top-arc fade, below `roof` (which is where that fade ENDS).
+	const BEAM_ROOF_SPAN = 0.85;
 	const BEAM_NEAR_COLOR = color(0.9, 0.95, 1.0);
 	const BEAM_FAR_COLOR = color(0.6, 0.74, 1.0);
 
-	const WASH_LENGTH = 9; // car-local metres
-	const WASH_HALF_WIDTH = 1.8; // half-extents at the far end
-	const WASH_HALF_HEIGHT = 0.5;
-	const CORE_LENGTH = 11;
-	const CORE_HALF_WIDTH = 0.8;
-	const CORE_HALF_HEIGHT = 0.3;
+	// ------------------------------------------------------------------- modes
+	//
+	// Dipped vs main beam. Everything that differs lives here, and everything here is
+	// either a plain three property, a Threlte prop, or a `uniform()` — so switching
+	// modes writes values and never rebuilds a shader (`applyMode` below).
+	type BeamMode = {
+		/** Candela. 0 is not a mode — the master switch handles off. */
+		intensity: number;
+		/** Extra drop over AIM_DISTANCE; negative lifts the axis toward level. */
+		aim: number;
+		/** Cutoff height in frustum coords (-1..1). Above 1 = no cutoff at all. */
+		cutoff: number;
+		/** Kerb-side step up in the cutoff. */
+		cutoffKick: number;
+		/** Hot spot: [centre y, half width, half height] in frustum coords. */
+		hotspot: [number, number, number];
+		hotspotGain: number;
+		/** Fill below the cutoff: [everywhere, extra in the middle of the width]. */
+		wash: [number, number];
+		/** Multiplier on both cones. */
+		beamGain: number;
+		/** Where the cones' top-arc fade ends: -1 is the very top, 0 the sides. */
+		roof: number;
+		/** Radians the cones are lifted out of BEAM_PITCH (main beam runs level). */
+		coneLift: number;
+		/** [half width, length, half height], car-local metres. */
+		washSize: [number, number, number];
+		coreSize: [number, number, number];
+		/** Multiplier on the lens card. */
+		emitterGain: number;
+	};
+
+	const DIPPED: BeamMode = {
+		intensity: 420,
+		aim: 1.62, // ≈ 0.245 rad down in total — the pool starts ~0.8 m off the bumper
+		cutoff: 0.46, // ≈ 0.025 rad below horizontal → the cutoff lands ~26 m out
+		cutoffKick: 0.24,
+		hotspot: [0.4, 0.4, 0.3], // peak sits immediately UNDER the cutoff, as on a real lamp
+		hotspotGain: 1.7,
+		wash: [0.18, 0.55],
+		beamGain: 1,
+		roof: -0.05,
+		coneLift: 0,
+		washSize: [1.8, 9, 0.5],
+		coreSize: [0.8, 11, 0.3],
+		emitterGain: 1
+	};
+
+	const MAIN: BeamMode = {
+		intensity: 900,
+		aim: -0.26, // ≈ 0.012 rad down — the axis runs out to ~52 m before it meets the road
+		cutoff: 2, // off the top of the frustum: `below` is 1 everywhere, no cutoff, no fringe
+		cutoffKick: 0,
+		hotspot: [-0.05, 0.32, 0.36], // round and centred on the axis, not a wide blade
+		hotspotGain: 2.6,
+		wash: [0.1, 0.45], // a main beam is a spot, so it leans on the hot spot instead
+		beamGain: 1.7,
+		roof: -0.6, // the cones keep their top: no cutoff to imply
+		coneLift: 0.045, // cancels BEAM_PITCH, so the shafts run level and stay off the road
+		washSize: [2.2, 14, 1.0],
+		coreSize: [1.0, 22, 0.55],
+		emitterGain: 1.5
+	};
 
 	// ------------------------------------------------------------- emitter card
 
@@ -129,22 +183,36 @@
 	/** @types/three exports no `ShaderNodeObject`, so borrow the type off a builtin. */
 	type Node3 = ReturnType<typeof vec3>;
 
+	// The mode-dependent half of the shader. Uniforms, not constants, so dipping and
+	// flashing writes numbers instead of recompiling — and both lamps read the same
+	// ones, because both lamps are always in the same mode.
+	const uCutoff = uniform(DIPPED.cutoff);
+	const uCutoffKick = uniform(DIPPED.cutoffKick);
+	const uHotspot = uniform(new THREE.Vector3(...DIPPED.hotspot));
+	const uHotspotGain = uniform(DIPPED.hotspotGain);
+	const uWash = uniform(new THREE.Vector2(...DIPPED.wash));
+	const uBeamGain = uniform(DIPPED.beamGain);
+	const uRoof = uniform(DIPPED.roof);
+	const uEmitterGain = uniform(DIPPED.emitterGain);
+
 	/**
-	 * The low beam's projected pattern, called once per light with its frustum UV.
+	 * The projected beam pattern, called once per light with its frustum UV.
 	 *
 	 * u > 0.5 is the car's RIGHT: the shadow camera looks down the car's -Z with +Y up,
 	 * so its +X is the car's +X. The cutoff is therefore kicked up on the right, which
-	 * is the right-hand-traffic convention (mirror `CUTOFF_KICK`'s smoothstep for LHT).
+	 * is the right-hand-traffic convention (mirror `uCutoffKick`'s smoothstep for LHT).
 	 *
 	 * Every smoothstep here is ascending + `oneMinus()` — the descending form is
 	 * undefined, not reversed (webgpu-notes.md §1.2).
 	 */
-	const lowBeamPattern = Fn(([projectorUV]: [Node3]) => {
+	const beamPattern = Fn(([projectorUV]: [Node3]) => {
 		const p = projectorUV.xy.sub(0.5).mul(2).toVar();
 		const x = p.x;
 		const y = p.y;
 
-		const cutoff = float(CUTOFF_Y).add(x.smoothstep(0.02, 0.34).mul(CUTOFF_KICK));
+		// On main beam `uCutoff` sits above the frustum, so `below` is 1 everywhere and
+		// `fringe` — which tracks the same line — falls outside the pattern with it.
+		const cutoff = uCutoff.add(x.smoothstep(0.02, 0.34).mul(uCutoffKick));
 		const below = y.smoothstep(cutoff.sub(CUTOFF_SOFT), cutoff.add(CUTOFF_SOFT)).oneMinus();
 
 		// Wide fill, tapering to the sides and pulled off the bottom edge so the frustum
@@ -153,11 +221,11 @@
 			.abs()
 			.smoothstep(0.3, 1)
 			.oneMinus()
-			.mul(WASH_GAIN)
-			.add(WASH_BASE)
+			.mul(uWash.y)
+			.add(uWash.x)
 			.mul(y.smoothstep(-1, -0.55));
 
-		const hot = vec2(x.div(HOTSPOT_W), y.sub(HOTSPOT_Y).div(HOTSPOT_H))
+		const hot = vec2(x.div(uHotspot.y), y.sub(uHotspot.x).div(uHotspot.z))
 			.length()
 			.smoothstep(0.25, 1)
 			.oneMinus();
@@ -171,7 +239,7 @@
 			.oneMinus()
 			.mul(x.abs().smoothstep(0.55, 1).oneMinus());
 
-		const lit = wash.add(hot.mul(HOTSPOT_GAIN)).mul(below);
+		const lit = wash.add(hot.mul(uHotspotGain)).mul(below);
 
 		return vec3(lit).add(FRINGE_COLOR.mul(fringe).mul(FRINGE_GAIN));
 	});
@@ -226,11 +294,13 @@
 		// come through with negated normals.
 		const thickness = normalView.dot(positionViewDirection).abs().pow(o.body);
 
-		// Cross-section profile. The top arc fades out completely (that soft upper edge
-		// IS the cutoff, seen side-on) and the bottom arc is held back, both so the beam
-		// reads as a flat blade and so the line where the cone cuts the road is faint.
+		// Cross-section profile. On dipped beam the top arc fades out completely (that
+		// soft upper edge IS the cutoff, seen side-on) and the bottom arc is held back,
+		// so the beam reads as a flat blade and the line where the cone cuts the road
+		// stays faint. `uRoof` walks the top fade back for main beam, which has no
+		// cutoff to imply and wants a rounder shaft.
 		const profile = cross.y
-			.smoothstep(-0.9, -0.05)
+			.smoothstep(uRoof.sub(BEAM_ROOF_SPAN), uRoof)
 			.mul(cross.y.smoothstep(0.45, 1).oneMinus().mul(0.65).add(0.35));
 
 		// Airborne dust, sampled in WORLD space: driving sweeps the beam through a static
@@ -256,6 +326,7 @@
 		const nearCamera = positionView.length().smoothstep(BEAM_CAMERA_FADE * 0.3, BEAM_CAMERA_FADE);
 
 		const strength = float(o.strength)
+			.mul(uBeamGain)
 			.mul(axial)
 			.mul(emerge)
 			.mul(thickness)
@@ -332,7 +403,7 @@
 		const flare = bar.add(spike.mul(0.5)).mul(FLARE_HEAT).mul(facing.pow(4));
 
 		emitterMaterial.colorNode = vec4(
-			LENS_CORE_COLOR.mul(core.add(flare)).add(LENS_GLOW_COLOR.mul(glow)),
+			LENS_CORE_COLOR.mul(core.add(flare)).add(LENS_GLOW_COLOR.mul(glow)).mul(uEmitterGain),
 			1
 		);
 	}
@@ -354,7 +425,7 @@
 	const makeLamp = (side: 'L' | 'R') => {
 		const light = new THREE.ProjectorLight(
 			LAMP_COLOR,
-			LIGHT_INTENSITY,
+			DIPPED.intensity,
 			LIGHT_DISTANCE,
 			LIGHT_ANGLE,
 			LIGHT_PENUMBRA,
@@ -362,7 +433,7 @@
 		) as PatternLight;
 		light.name = `HeadlightLamp${side}`;
 		light.aspect = LIGHT_ASPECT;
-		light.colorNode = lowBeamPattern;
+		light.colorNode = beamPattern;
 		light.castShadow = LIGHT_CAST_SHADOW;
 		// The projection is only applied between the shadow camera's near and far planes,
 		// whether or not the light casts shadows; pull near in so nothing right at the
@@ -379,6 +450,40 @@
 	const lampL = makeLamp('L');
 	const lampR = makeLamp('R');
 
+	// ------------------------------------------------------------------ switches
+
+	const { invalidate } = useThrelte();
+
+	const mode = $derived(carLights.high ? MAIN : DIPPED);
+
+	// The master switch dims the LIGHTS to zero rather than hiding them: an invisible
+	// light leaves the scene's light list, which changes every lit material's cache key
+	// and recompiles the lot on each flick. The additive meshes are plain geometry and
+	// carry no such cost, so those really are hidden (`visible` on each mesh below).
+	//
+	// This effect writes only to three objects and uniform values, never back into
+	// `carLights` — the read-and-write-the-same-state loop of webgpu-notes.md §3.1.
+	$effect(() => {
+		const on = carLights.on;
+		const m = mode;
+
+		lampL.light.intensity = on ? m.intensity : 0;
+		lampR.light.intensity = on ? m.intensity : 0;
+
+		uCutoff.value = m.cutoff;
+		uCutoffKick.value = m.cutoffKick;
+		uHotspot.value.set(...m.hotspot);
+		uHotspotGain.value = m.hotspotGain;
+		uWash.value.set(...m.wash);
+		uBeamGain.value = m.beamGain;
+		uRoof.value = m.roof;
+		uEmitterGain.value = m.emitterGain;
+
+		// Rendering is on-demand: a uniform write moves nothing on its own, so flicking
+		// the lights while parked would otherwise not show until something else did.
+		invalidate();
+	});
+
 	onDestroy(() => {
 		washMaterial.dispose();
 		coreMaterial.dispose();
@@ -392,34 +497,43 @@
 
 {#snippet lamp({ light, target }: { light: PatternLight; target: THREE.Object3D })}
 	<T is={light} />
-	<T is={target} position={[0, -AIM_DROP, -AIM_DISTANCE]} />
+	<T is={target} position={[0, -mode.aim, -AIM_DISTANCE]} />
 
 	<!-- The cones: rotation.x = +π/2 maps +Y → +Z, so the narrow top (uv.y = 1) sits at
 	     the lamp (z = 0) and the cone widens toward −Z (forward). With −π/2 it inverts —
 	     a narrow bright tip out in front and the wide end at the lamp, which reads as the
 	     beam shining INTO the car. Scale is [width, length, height]: the mesh's local Y
-	     is the length and its local Z becomes the vertical after the rotation. -->
-	<T.Mesh
-		geometry={beamGeometry}
-		material={washMaterial}
-		position={[0, 0, -WASH_LENGTH / 2]}
-		rotation={[Math.PI / 2, 0, 0]}
-		scale={[WASH_HALF_WIDTH, WASH_LENGTH, WASH_HALF_HEIGHT]}
-		userData={{ selectable: false, hideInTree: true }}
-	/>
-	<T.Mesh
-		geometry={beamGeometry}
-		material={coreMaterial}
-		position={[0, 0, -CORE_LENGTH / 2]}
-		rotation={[Math.PI / 2, 0, 0]}
-		scale={[CORE_HALF_WIDTH, CORE_LENGTH, CORE_HALF_HEIGHT]}
-		userData={{ selectable: false, hideInTree: true }}
-	/>
+	     is the length and its local Z becomes the vertical after the rotation.
+
+	     `coneLift` is a GROUP rotation, not part of the mesh's: it has to pivot about the
+	     lamp, and a mesh whose origin sits half a beam-length down the shaft would swing
+	     its tip out of the lamp instead (0.3 m at main-beam length). -->
+	<T.Group rotation={[mode.coneLift, 0, 0]}>
+		<T.Mesh
+			geometry={beamGeometry}
+			material={washMaterial}
+			visible={carLights.on}
+			position={[0, 0, -mode.washSize[1] / 2]}
+			rotation={[Math.PI / 2, 0, 0]}
+			scale={mode.washSize}
+			userData={{ selectable: false, hideInTree: true }}
+		/>
+		<T.Mesh
+			geometry={beamGeometry}
+			material={coreMaterial}
+			visible={carLights.on}
+			position={[0, 0, -mode.coreSize[1] / 2]}
+			rotation={[Math.PI / 2, 0, 0]}
+			scale={mode.coreSize}
+			userData={{ selectable: false, hideInTree: true }}
+		/>
+	</T.Group>
 
 	<!-- Emitter, a hair in front of the lens. Plane faces +Z by default → flip to -Z. -->
 	<T.Mesh
 		geometry={emitterGeometry}
 		material={emitterMaterial}
+		visible={carLights.on}
 		position={[0, 0, -0.01]}
 		rotation={[0, Math.PI, 0]}
 		userData={{ selectable: false, hideInTree: true }}
