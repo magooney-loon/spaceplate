@@ -9,12 +9,13 @@ scene via `Scene.svelte` / `SceneHud.svelte`.
 
 ```
 TestGame.svelte         — the scene: city + car + the driving physics task
-TestGameHud.svelte      — HUD shell (controls hint, back-to-menu)
+TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart)
 CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed)
 CarWheels.svelte        — per-vertex steering/rolling wheel deformation (TSL)
 CarHeadlights.svelte    — car-local lights (nose is -Z)
 ChaseCamera.svelte      — chase cam; borrows the app camera (rules below)
-carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E)
+carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E) + the
+                         HUD → scene restart signal (token; the scene resets the car's pose)
 gr86.ts                 — the real car's numbers, pure SI (metres/kg/newtons/seconds)
 drivetrain.ts           — pure engine → clutch → 6MT → rear-axle traction step
 carTelemetry.svelte.ts  — carSim (200 Hz plain object) / carHud (30 Hz $state mirror)

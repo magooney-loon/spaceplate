@@ -69,3 +69,17 @@ export const applyCarToggle = (action: CarToggleAction): void => {
 	carLights.high = !carLights.high;
 	if (carLights.high) carLights.on = true;
 };
+
+// --- Restart ------------------------------------------------------------------
+//
+// The HUD's Restart button can't reach the scene's locals (HUD and scene are
+// siblings — SceneHud.svelte / Scene.svelte mount them separately), so it bumps
+// a token here and TestGame.svelte's $effect puts the car back at its spawn pose.
+// A token, not a flag, so it works twice in a row. Not a key in `carInput`: it is
+// an edge event, not a held pedal, and `resetCarInput` must not clear it.
+
+export const carRestart = $state({ token: 0 });
+
+export const requestCarRestart = (): void => {
+	carRestart.token++;
+};

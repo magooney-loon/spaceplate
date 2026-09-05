@@ -2,20 +2,30 @@
 	import { sceneActions } from '$extensions/scene';
 	import { soundActions } from '$core';
 	import CarCluster from './CarCluster.svelte';
+	import { requestCarRestart } from './carInput.svelte';
 </script>
 
 <!-- Test Game HUD -->
 <div class="hud">
-	<!-- Back Button -->
-	<button
-		onclick={() => {
-			soundActions.playClick();
-			sceneActions.goToMainMenu();
-		}}
-		class="back-button"
-	>
-		← Back to Menu
-	</button>
+	<!-- Back / Restart -->
+	<div class="buttons">
+		<button
+			onclick={() => {
+				soundActions.playClick();
+				sceneActions.goToMainMenu();
+			}}
+		>
+			← Back to Menu
+		</button>
+		<button
+			onclick={() => {
+				soundActions.playClick();
+				requestCarRestart();
+			}}
+		>
+			↻ Restart
+		</button>
+	</div>
 
 	<!-- Controls hint -->
 	<div class="info">
@@ -32,11 +42,16 @@
 		pointer-events: auto;
 	}
 
-	.back-button {
+	.buttons {
 		position: absolute;
-		bottom: 3.5rem;
+		bottom: 4.5rem;
 		left: 50%;
 		transform: translateX(-50%);
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.buttons button {
 		padding: 0.5rem 1rem;
 		background: rgba(0, 0, 0, 0.5);
 		color: #fff;
@@ -45,7 +60,7 @@
 		cursor: pointer;
 	}
 
-	.back-button:hover {
+	.buttons button:hover {
 		background: rgba(0, 0, 0, 0.6);
 	}
 

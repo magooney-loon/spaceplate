@@ -21,6 +21,7 @@
 		CAR_TOGGLE_KEYS,
 		applyCarToggle,
 		carInput,
+		carRestart,
 		resetCarInput
 	} from './carInput.svelte';
 	import { G, GR86, UNITS_PER_METER } from './gr86';
@@ -152,6 +153,13 @@
 
 	const drivetrain = createDrivetrain();
 
+	// Default pose for the Restart button — captured from the body itself on its
+	// first physics step (in the task below), so the authored spawn constants live
+	// only in the markup and this can never drift from them.
+	const spawnPos = { x: 0, y: 0, z: 0 };
+	const spawnRot = { x: 0, y: 0, z: 0, w: 1 };
+	let spawnCaptured = false;
+
 	// Tasks never allocate (core/utils/CLAUDE.md) — every per-step scratch lives here,
 	// and the rapier getter methods fill their target instead of returning fresh objects.
 	const _q = new THREE.Quaternion();
@@ -171,6 +179,20 @@
 		if (!body) return;
 		// Keep-alive: never drive the car from another scene's frames.
 		if (sceneState.currentScene !== 'testGame') return;
+
+		// First driven step = the spawn pose. Restart teleports the body back here.
+		if (!spawnCaptured) {
+			spawnCaptured = true;
+			const t = body.translation();
+			spawnPos.x = t.x;
+			spawnPos.y = t.y;
+			spawnPos.z = t.z;
+			const r = body.rotation();
+			spawnRot.x = r.x;
+			spawnRot.y = r.y;
+			spawnRot.z = r.z;
+			spawnRot.w = r.w;
+		}
 
 		const steerKey = (carInput.left ? 1 : 0) - (carInput.right ? 1 : 0);
 		const handbrake = carInput.handbrake;
@@ -284,6 +306,21 @@
 		carSim.handbrake = handbrake;
 		carSim.limiting = drivetrain.state.limiting;
 		publishCarHud(delta);
+	});
+
+	// Restart button: pose and motion back to the captured spawn, nothing else —
+	// gear/lights/instruments are left alone and self-correct from the body next
+	// step. No scene gate here on purpose: gating would re-run this on every scene
+	// re-entry after the first restart.
+	$effect(() => {
+		if (carRestart.token === 0) return;
+		const body = carBody;
+		if (!body) return;
+		body.setTranslation(spawnPos, true);
+		body.setRotation(spawnRot, true);
+		body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+		body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+		body.resetForces(true);
 	});
 
 	// Leaving the scene parks the instruments — the HUD unmounts with them, but the
