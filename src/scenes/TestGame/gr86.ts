@@ -42,6 +42,19 @@ export const GR86 = {
 	/** m — 215/40R18: 18" rim (0.2286) + 40% of 215 mm sidewall. */
 	wheelRadius: 0.315,
 
+	// ── Rotating inertia ─────────────────────────────────────────────────────
+	// What the engine has to spin up before the car moves, and what keeps spinning
+	// once the rears let go. `drivetrain.ts` turns these into an equivalent MASS at
+	// the contact patch (I / r²), which is what wheelspin accelerates.
+	/** kg·m² — crank, flywheel, clutch and gearbox internals, measured at the CRANK.
+	 *  It reaches the road through `totalRatio²`, so 1st carries ~44 kg·m² of it and
+	 *  3rd only ~8: that ratio² is the physical reason low gears light the rears up
+	 *  instantly and high ones cannot spin them at all. */
+	engineInertia: 0.2,
+	/** kg·m² — both rear wheels, tyres, driveshafts and the diff together. All that
+	 *  is left once the clutch is open, which is why a shift hooks the car back up. */
+	wheelInertia: 1.4,
+
 	// ── Engine (FA24, 2.4 l naturally aspirated) ─────────────────────────────
 	idleRpm: 800,
 	/** Fuel cut. Redline on the dial is 7500; the ECU cuts just under it. */

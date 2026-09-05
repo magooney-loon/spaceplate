@@ -13,7 +13,12 @@
 // DRIFT is NOT the real car and is not trying to be. It is an ARCADE tune — the
 // car rotates roughly where you point it, the velocity vector lags behind, and an
 // assist pulls the nose back so a slide is something you hold rather than
-// something you survive. Four things make that work, and GRIP has none of them:
+// something you survive. Five things make that work, and GRIP has none of them:
+//
+//   0. No TRACTION CONTROL (`tractionControl`). Grip runs the real car's; Drift
+//      switches it off, so surplus torque spins the rears for real instead of being
+//      trimmed away — the revs follow the WHEELS, not the car, and a donut sits on
+//      the limiter. Everything below that mentions wheelspin depends on this.
 //
 //   1. A rear axle that runs out of grip in more than 1st gear (`tireMuLong`). At
 //      1.05 the rears hold ~6 250 N and 2nd gear only ever asks ~6 300 N, so
@@ -73,6 +78,24 @@ export interface HandlingTune {
 	handbrakeMuLat: number;
 	/** How much of the lateral tyre full wheelspin costs, 0…1. Applied in drivetrain.ts. */
 	slipGripLoss: number;
+	/**
+	 * TRACTION CONTROL — whether the ECU catches the rears when they run away. The
+	 * real GR86 has it and GRIP runs it; DRIFT switches it OFF, and that is what the
+	 * button on the real car's dash does too.
+	 *
+	 * It does NOT change how much force the tyre can put down — that is `tireMuLong`
+	 * and it is the same limit either way, so switching this costs nothing off the
+	 * line. What it changes is where the SURPLUS goes. With TC on, the ECU trims it
+	 * away and the rears never run more than a couple of m/s past the road; with it
+	 * off the surplus spins the wheels for real, the revs follow the wheels rather
+	 * than the car, and the limiter is the only thing that stops them.
+	 *
+	 * That is the difference between a donut sitting at ~2 900 rpm with the throttle
+	 * pinned and one screaming on the limiter with the rears fully lit — and it is
+	 * also what makes `slipGripLoss` (0.95 here) reachable at all, since it needs
+	 * wheelspin the TC would otherwise never allow.
+	 */
+	tractionControl: boolean;
 	/**
 	 * Permanent looseness, 0…1 — the floor under everything else, and a flat cut to
 	 * lateral grip in drivetrain.ts. Keep it SMALL. At 0.6 the car ran 32° of slip
@@ -175,6 +198,10 @@ export const HANDLING_TUNES = {
 		latGripGain: 1.3,
 		handbrakeMuLat: 0.42,
 		slipGripLoss: 0.55,
+		// On, like the real car. The rears are caught at 2 m/s of overspeed, which is
+		// where Grip's wheelspin always effectively sat — 1st still lights the TC lamp
+		// off the line and nothing else in the tune notices.
+		tractionControl: true,
 		looseBase: 0,
 		throttleLoose: 0,
 		brakeLoose: 0,
@@ -216,6 +243,14 @@ export const HANDLING_TUNES = {
 		handbrakeMuLat: 0.15,
 		// Wheelspin nearly wipes the lateral tyre, so power deepens a slide sharply.
 		slipGripLoss: 0.95,
+		// OFF. Nothing trims the surplus torque, so the rears spin up for real: 1st is
+		// on the limiter in a blink, 2nd builds over a couple of seconds of held
+		// throttle, 3rd and up still cannot out-pull the tyre. A donut now sits at the
+		// limiter with the rears lit instead of at 2 900 rpm, which is the whole reason
+		// this switch exists. It costs no acceleration — the tyre's limit is unchanged
+		// — but under power in 1st and 2nd `slip` now reaches 1, so `driftAlign` fades
+		// right out and the car is genuinely on its own until you lift.
+		tractionControl: false,
 		// Just a hint — the car is essentially planted when you are not asking for
 		// anything. 4° of slip angle coasting through a corner against 46° on the
 		// throttle: that ratio is the whole feel.

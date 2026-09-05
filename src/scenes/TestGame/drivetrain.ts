@@ -17,13 +17,30 @@
 //   shift without a HUD.
 // - A traction limit at the driven (rear) axle including load transfer, so
 //   flooring 1st spins the wheels instead of teleporting the car forward. The
-//   leftover torque becomes `slip`, which the scene turns into lost lateral grip
-//   — power oversteer, for free.
+//   leftover torque becomes WHEEL SPEED (`spin`), which the revs follow and the
+//   scene turns into lost lateral grip — power oversteer, for free.
+// - TRACTION CONTROL, as a per-setup switch. The real car has it and Grip runs it;
+//   Drift turns it off, and that is what lets the rears run away to the limiter.
 //
-// Everything above is the CAR and is fixed. The two numbers that are the SETUP —
-// how much the rear axle can put down, and how much lateral grip wheelspin costs —
-// come in per step as a `HandlingTune` (handling.ts), because the player can switch
-// tunes mid-corner and nothing here may cache them.
+// Everything above is the CAR and is fixed. The three numbers that are the SETUP —
+// how much the rear axle can put down, how much lateral grip wheelspin costs, and
+// whether the ECU intervenes — come in per step as a `HandlingTune` (handling.ts),
+// because the player can switch tunes mid-corner and nothing here may cache them.
+//
+// ── Wheelspin is a SPEED, not a ratio ──────────────────────────────────────────
+// `spin` is how much faster the rear tyre's contact patch is running than the road,
+// in m/s, integrated against the rotating inertia in `gr86.ts`. It used to be a
+// force ratio clamped to 0…1 that scaled road speed by at most 1.8×, and that had
+// two consequences worth remembering:
+//   - **The revs could not run away.** A donut at 4 m/s pinned in 1st sat at about
+//     2 900 rpm however hard the tyres were spinning, because the "wheel speed" was
+//     road speed times a number that saturated. Now the surplus force accelerates
+//     the wheels for real and the limiter is what stops it — a burnout screams.
+//   - **The limiter used to BRAKE the car mid-wheelspin.** Its fuel cut turns crank
+//     torque negative, and the drive force followed it straight to −2 100 N. A
+//     spinning tyre hands the road full μ in the direction the wheels are turning,
+//     whatever the engine is doing, so the force is now +traction throughout and
+//     bouncing off the limiter no longer stops the slide.
 
 import {
 	G,
@@ -71,8 +88,13 @@ export interface DrivetrainState {
 	rpm: number;
 	/** 0 = clutch on the floor (mid-shift), 1 = fully home. */
 	clutch: number;
-	/** 0…1 — how far past the rear axle's traction limit the engine is asking. */
+	/** 0…1 — how LIT the rears are: wheel overspeed over `FULL_SLIP`, so 1 is a tyre
+	 *  doing nothing but smoke. Feeds lateral grip here, looseness in the scene, and
+	 *  the cluster's TC lamp. */
 	slip: number;
+	/** m/s — how much faster the rear contact patch is running than the road, signed
+	 *  along the nose. The state `slip` is a normalised view of; the revs read it. */
+	spin: number;
 	throttle: number;
 	brake: number;
 	/** Fuel cut is active (limiter bouncing or top speed reached). */
@@ -84,6 +106,26 @@ export interface DrivetrainState {
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 const damp = (rate: number, dt: number): number => 1 - Math.exp(-rate * dt);
 
+/**
+ * m/s of wheel overspeed that reads as TOTAL wheelspin — `slip` = 1, and the tyre
+ * has given up whatever `slipGripLoss` says it gives up. Sized off what the gearing
+ * can actually reach: 1st tops out ~12 m/s of spin at the limiter, 2nd ~10 after a
+ * long pull, 3rd cannot spin at all. So 1st goes fully lit and 2nd only gets there
+ * if you hold it, which is the contrast the tune wants.
+ */
+const FULL_SLIP = 10;
+/**
+ * m/s of overspeed the TRACTION CONTROL tolerates. Modelled as a ceiling on slip
+ * rather than a torque-cut loop — the outcome is what matters, and a real ECU trims
+ * torque precisely to stop the number here from growing. Deliberately generous: at
+ * 2 m/s Grip's launch lands at `slip` 0.2, which is what its old force-ratio slip
+ * peaked at, so Grip loses the same ~11% of lateral tyre off the line it always did
+ * and the cluster's TC lamp (`slip > 0.15`) still lights when the ECU is working.
+ */
+const TC_SLIP = 2;
+/** m/s under which the tyre is gripping rather than sliding. Noise floor. */
+const HOOKED = 0.05;
+
 export type Drivetrain = ReturnType<typeof createDrivetrain>;
 
 export function createDrivetrain() {
@@ -92,6 +134,7 @@ export function createDrivetrain() {
 		rpm: GR86.idleRpm,
 		clutch: 1,
 		slip: 0,
+		spin: 0,
 		throttle: 0,
 		brake: 0,
 		limiting: false,
@@ -158,6 +201,7 @@ export function createDrivetrain() {
 		// ── Clutch & engine speed ────────────────────────────────────────────
 		shiftTimer = Math.max(0, shiftTimer - dt);
 		const ratio = gearRatio(state.gear);
+		const total = totalRatio(state.gear);
 		const connected = ratio !== 0 && shiftTimer === 0;
 
 		if (!connected) {
@@ -170,13 +214,15 @@ export function createDrivetrain() {
 		} else {
 			// Slip the clutch off the line so a launch holds revs instead of bogging.
 			// Scaled by gear: 1st is home by 4.5 m/s, 6th would never slip anyway.
-			const homeAt = GR86.launchSpeed * (totalRatio(1) / totalRatio(state.gear));
+			const homeAt = GR86.launchSpeed * (totalRatio(1) / total);
 			const coupling = clamp(rolling / homeAt, 0, 1);
 			state.clutch = coupling;
 
-			// `slip` feeds back here: spinning wheels turn faster than the road, so
-			// the revs climb even though the car is not.
-			const gearRpm = rpmInGear(state.gear, speedMs * (1 + state.slip * 0.8));
+			// `spin` feeds back here: spinning wheels turn faster than the road, so the
+			// revs climb even though the car is not. It is a real wheel speed, so this
+			// is just the gearing — a donut on the limiter is 12 m/s of spin over a
+			// 4 m/s car, and the tacho says so.
+			const gearRpm = rpmInGear(state.gear, speedMs + state.spin);
 			const slipping = GR86.idleRpm + throttle * (GR86.launchRpm - GR86.idleRpm);
 			const target = Math.max(
 				GR86.idleRpm,
@@ -208,8 +254,8 @@ export function createDrivetrain() {
 		// against the real GR86's 6.1. It is also what stops the car lurching when you
 		// blip the throttle at walking pace.
 		const clutchTorque = GR86.clutchMinBite + (1 - GR86.clutchMinBite) * state.clutch;
-		const reduction = (totalRatio(state.gear) * GR86.efficiency) / GR86.wheelRadius;
-		let driveForce = crankTorque * clutchTorque * reduction * Math.sign(ratio || 1);
+		const reduction = (total * GR86.efficiency) / GR86.wheelRadius;
+		const requested = crankTorque * clutchTorque * reduction * Math.sign(ratio || 1);
 
 		// ── Traction at the rear axle ────────────────────────────────────────
 		// Static rear load plus longitudinal transfer (m·a·h/L, and m·a is just
@@ -220,18 +266,43 @@ export function createDrivetrain() {
 		);
 		const traction = input.handbrake ? 0 : tune.tireMuLong * rearLoad;
 
-		let slipTarget = 0;
-		if (Math.abs(driveForce) > traction) {
-			// Only powering the wheels loose counts as wheelspin — engine braking
-			// past the limit is a locked-diff shove, not smoke.
-			if (crankTorque > 0 && traction > 0) {
-				slipTarget = clamp((Math.abs(driveForce) - traction) / traction, 0, 1);
-			}
-			driveForce = Math.sign(driveForce) * traction;
-		}
-		// Fast to break traction, slower to hook back up.
-		state.slip += (slipTarget - state.slip) * damp(slipTarget > state.slip ? 14 : 5, dt);
+		// What the tyre hands the road. Gripping, it passes the engine's request up to
+		// the limit. SLIDING, it gives full μ along the way the wheels are turning and
+		// the engine has no say at all — which is why a burnout keeps pulling through
+		// the limiter's fuel cut instead of braking the car (see the header).
+		const sliding = Math.abs(state.spin) > HOOKED;
+		const driveForce = sliding
+			? Math.sign(state.spin) * traction
+			: clamp(requested, -traction, traction);
+
+		// Everything the engine asked for beyond what the tyre took goes into WHEEL
+		// SPEED. The rotating assembly resists that as an equivalent mass at the
+		// contact patch, I/r², with the engine's own inertia reflected through the
+		// gearing squared: ~460 kg in 1st against ~95 in 3rd. That single number is
+		// why 1st lights up in a blink, 2nd builds over a couple of seconds, and 3rd
+		// (which cannot out-pull the tyre anyway) never spins.
+		const spinMass =
+			((connected ? GR86.engineInertia * total * total : 0) + GR86.wheelInertia) /
+			(GR86.wheelRadius * GR86.wheelRadius);
+		const wasSpin = state.spin;
+		state.spin += ((requested - driveForce) / spinMass) * dt;
+		// Never let a decaying spin cross zero inside one step — that is the wheels
+		// grabbing and dragging the car the other way.
+		if (wasSpin * state.spin < 0) state.spin = 0;
+		// The handbrake holds the rears still: locked, not lit.
+		if (input.handbrake) state.spin = 0;
+		// TRACTION CONTROL, the setup's call. Grip runs the real car's, so the rears
+		// are caught the moment they step out. Drift has none — the whole point, and
+		// the only reason a donut can sit on the limiter.
+		if (tune.tractionControl) state.spin = clamp(state.spin, -TC_SLIP, TC_SLIP);
+
 		prevDrive = driveForce;
+		// No filter on `slip` any more: `spin` carries the real rotating inertia, which
+		// is the smooth thing the old asymmetric damping was faking. It is also why
+		// lifting still catches the slide — off throttle the surplus goes sharply
+		// negative (engine braking pulling one way, the sliding tyre the other), so a
+		// lit 1st gear hooks back up in about 0.7 s and 2nd in a quarter of that.
+		state.slip = clamp(Math.abs(state.spin) / FULL_SLIP, 0, 1);
 		// Friction circle: the share of the rear's budget the drive force is using, AFTER
 		// the clip (so it saturates at 1 exactly when the tyre lets go). Off throttle
 		// this is just engine braking, a tenth or so — which is the point, because it is
@@ -280,6 +351,7 @@ export function createDrivetrain() {
 		state.throttle = 0;
 		state.brake = 0;
 		state.slip = 0;
+		state.spin = 0;
 		state.limiting = false;
 		state.shifted = false;
 		state.rpm += (GR86.idleRpm - state.rpm) * damp(GR86.freeDropRate, dt);
@@ -291,6 +363,7 @@ export function createDrivetrain() {
 		state.rpm = GR86.idleRpm;
 		state.clutch = 1;
 		state.slip = 0;
+		state.spin = 0;
 		state.throttle = 0;
 		state.brake = 0;
 		state.limiting = false;
