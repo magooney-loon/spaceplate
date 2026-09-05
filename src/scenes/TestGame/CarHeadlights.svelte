@@ -6,6 +6,7 @@
 		Fn,
 		color,
 		float,
+		modelViewMatrix,
 		mx_fractal_noise_float,
 		normalView,
 		positionLocal,
@@ -43,8 +44,8 @@
 
 	// ---------------------------------------------------------------- placement
 
-	const LAMP_X = 0.62; // per-side |x| — outer lamp cluster
-	const LAMP_Y = 0.65; // lamp height
+	const LAMP_X = 0.65; // per-side |x| — outer lamp cluster
+	const LAMP_Y = 0.66; // lamp height
 	// Just AHEAD of the lamp glass (which ends at z ≈ -1.95), not behind it. Everything
 	// in this rig is additive and depth-TESTED, so a beam that starts inside the
 	// bodywork gets clipped by the bumper and shows a hard edge where it breaks out.
@@ -94,22 +95,29 @@
 	const BEAM_EMERGE = 0.965; // the last stretch at the lamp fades into the emitter glow
 	const BEAM_CAMERA_FADE = 4; // world units — nothing solid when the chase cam swings in
 	const BEAM_DUST_SCALE = 2.5; // world-space noise frequency (see the note on `dust`)
+	// How much of the cone survives when you are looking INTO the beam (see `phase`).
+	const BEAM_HEADON = 0.16;
 	const BEAM_NEAR_COLOR = color(0.9, 0.95, 1.0);
 	const BEAM_FAR_COLOR = color(0.6, 0.74, 1.0);
 
 	const WASH_LENGTH = 9; // car-local metres
-	const WASH_HALF_WIDTH = 2.3; // half-extents at the far end
+	const WASH_HALF_WIDTH = 1.8; // half-extents at the far end
 	const WASH_HALF_HEIGHT = 0.5;
 	const CORE_LENGTH = 11;
-	const CORE_HALF_WIDTH = 0.9;
+	const CORE_HALF_WIDTH = 0.8;
 	const CORE_HALF_HEIGHT = 0.3;
 
 	// ------------------------------------------------------------- emitter card
 
-	const CARD_W = 0.62; // the quad; the lit slot inside it is much smaller
-	const CARD_H = 0.34;
-	const LENS_HALF_U = 0.16; // lit slot, in card UV (-1..1) — ≈ 0.26 × 0.075 m
-	const LENS_HALF_V = 0.16;
+	// The card is the GLOW's reach, not the lamp's size: halo, bar and spike all run to
+	// its edges, so an oversized card throws light onto the fender either side of the
+	// lamp. Keep it square and tight, and size the lit slot in metres on top of it —
+	// the two used to be coupled, which is why widening the card smeared the glow.
+	const CARD_SIZE = 0.3; // square quad, car-local metres
+	const LENS_W = 0.1; // lit slot, metres — matches the model's projector element
+	const LENS_H = 0.055;
+	const LENS_HALF_U = LENS_W / CARD_SIZE; // …and the same slot in card UV (-1..1)
+	const LENS_HALF_V = LENS_H / CARD_SIZE;
 	const LENS_HEAT = 9; // HDR core: tone-maps to white, drives bloom
 	const HALO_HEAT = 1.1;
 	const FLARE_HEAT = 0.9;
@@ -230,6 +238,20 @@
 		// own invalidate() owner to animate under on-demand rendering.
 		const dust = mx_fractal_noise_float(positionWorld.mul(BEAM_DUST_SCALE), 2).mul(o.dust).add(1);
 
+		// Scatter phase — and this one is deliberately BACKWARDS from the physics. The
+		// cone's local -Y is the direction the light travels (+Y is the lamp), so
+		// `cosPhase` is +1 with the camera behind the car (back-scatter, the chase view
+		// the beams exist for) and -1 head-on (forward-scatter, which in reality is the
+		// strongest lobe by far). Rendered honestly, head-on fills the screen with flat
+		// milky sheets and washes the car out; the dazzle is already carried by the
+		// emitter's HDR core and bloom, so the shafts get pulled way back instead.
+		const beamAxis = modelViewMatrix
+			.mul(vec4(0, 1, 0, 0))
+			.xyz.normalize()
+			.negate();
+		const cosPhase = beamAxis.dot(positionView.normalize());
+		const phase = cosPhase.smoothstep(-0.75, 0.15).mix(BEAM_HEADON, 1);
+
 		// No wall of light when the camera ends up inside the cone.
 		const nearCamera = positionView.length().smoothstep(BEAM_CAMERA_FADE * 0.3, BEAM_CAMERA_FADE);
 
@@ -239,6 +261,7 @@
 			.mul(thickness)
 			.mul(profile)
 			.mul(dust)
+			.mul(phase)
 			.mul(nearCamera);
 
 		// colorNode, never fragmentNode (§1.5). Alpha stays 1: AdditiveBlending is
@@ -249,19 +272,23 @@
 		return material;
 	};
 
+	// `body` is the exponent on the view-facing term, i.e. how hard the shell falls off
+	// toward its own silhouette. Low values give a cone with a readable straight EDGE —
+	// which is what makes it look like a flat sheet rather than a volume — so both sit
+	// well above 1 and the strengths carry the brightness instead.
 	const washMaterial = makeBeamMaterial({
 		name: 'HeadlightBeamWash',
-		strength: 0.26,
+		strength: 0.34,
 		falloff: 1.9,
-		body: 1.25,
+		body: 2.1,
 		dust: 0.35
 	});
 
 	const coreMaterial = makeBeamMaterial({
 		name: 'HeadlightBeamCore',
-		strength: 0.45,
+		strength: 0.58,
 		falloff: 2.4,
-		body: 1.6,
+		body: 2.4,
 		dust: 0.18
 	});
 
@@ -315,7 +342,7 @@
 	// Unit cone: far radius 1, length 1, open-ended (a far cap would read as a glowing
 	// disc). Each mesh scales it into place, so one geometry serves all four cones.
 	const beamGeometry = new THREE.CylinderGeometry(BEAM_TIP, 1, 1, 28, 1, true);
-	const emitterGeometry = new THREE.PlaneGeometry(CARD_W, CARD_H);
+	const emitterGeometry = new THREE.PlaneGeometry(CARD_SIZE, CARD_SIZE);
 
 	/** `colorNode` is a WebGPU-only hook @types/three doesn't declare on lights. */
 	type PatternLight = THREE.ProjectorLight & { colorNode: unknown };
