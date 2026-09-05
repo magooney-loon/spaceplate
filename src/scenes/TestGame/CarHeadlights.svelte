@@ -29,10 +29,10 @@
 	const BEAM_STRENGTH = 0.55; // additive beam brightness
 
 	const LIGHT_INTENSITY = 260;
-	const LIGHT_DISTANCE = 55; // world units, not scaled by the group's 2.5
-	const LIGHT_ANGLE = 0.38;
+	const LIGHT_DISTANCE = 420; // world units, not scaled by the group's 2.5
+	const LIGHT_ANGLE = 0.68;
 	const LIGHT_PENUMBRA = 0.55;
-	const LIGHT_DECAY = 1.7;
+	const LIGHT_DECAY = 1.4;
 	const LIGHT_CAST_SHADOW = false; // two shadowed spots over the track trimesh is pricey
 
 	const LENS_SIZE = 0.07; // circular lens diameter (car-local meters)
