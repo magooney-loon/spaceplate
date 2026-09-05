@@ -236,13 +236,13 @@ export const HANDLING_TUNES = {
 		// anything). These were 0.62 / 0.55 / 8, and that rack was most of what read as
 		// punchy: from a keyboard the only thing smoothing a binary key press is
 		// `steerResponse`, and at 8/s a 0.2 s tap already had 80% of a bigger lock in.
-		maxSteerAngle: 0.55,
-		steerHighSpeedFactor: 0.45,
-		steerFalloffSpeed: 42,
-		steerResponse: 5.5,
+		maxSteerAngle: 0.95,
+		steerHighSpeedFactor: 0.95,
+		steerFalloffSpeed: 92,
+		steerResponse: 1.5,
 		// A shade under Grip's 7, so the body eases into its rotation instead of
 		// snapping to it. Much lower than this and the lag starts eating countersteer.
-		yawResponse: 5.5,
+		yawResponse: 2.5,
 
 		// Small: the handbrake already sets looseness to 1, so it collects the whole of
 		// `powerYawBoost`. 1.25 × 2.6 = 3.25 is the real flick multiplier.
@@ -252,13 +252,13 @@ export const HANDLING_TUNES = {
 		// 2.6 lands at ~39°/s against Grip's 32, i.e. 1.35× rather than 1.7×, and the
 		// drift builds over ~0.5 s instead of snapping in.
 		powerYawBoost: 2.6,
-		driftAlign: 3.6,
+		driftAlign: 1.6,
 		// ≈34°, down from 49°. This is the knob for "slidy": it is the angle the boost
 		// has fully faded at, so it sets where the drift settles. Steady state now
 		// lands ~32° on the throttle in 2nd, ~43° off the brake, ~54° in a donut, and
 		// only ~2° coasting. The handbrake held at full lock still spins the car out to
 		// fully sideways, which is what that input should do.
-		maxDriftAngle: 0.6
+		maxDriftAngle: 0.9
 	}
 } as const satisfies Record<string, HandlingTune>;
 
