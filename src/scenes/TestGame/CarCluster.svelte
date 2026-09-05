@@ -4,9 +4,12 @@
 	import { carHandling } from './carInput.svelte';
 	import { HANDLING_TUNES } from './handling';
 
-	// Bottom-right instrument cluster: tacho ring, gear, speed.
+	// Bottom-right instrument cluster: tacho ring, gear, speed — styled after an
+	// aftermarket gauge pod (ice-blue numerals, red needle/redline, backlit LCD
+	// speed readout, small Boost/N2O gauges bracketing the tacho). Boost and N2O
+	// are DECORATIVE — the GR86 has neither, see the comment by MINI_CX below.
 	//
-	// Everything is driven by `carHud`, the 30 Hz quantised mirror in
+	// Everything real is driven by `carHud`, the 30 Hz quantised mirror in
 	// carTelemetry.svelte.ts — never `carSim`, which changes 200×/s. No CSS or
 	// Svelte transitions anywhere (repo convention): the needle moves because the
 	// number moved, and at 30 Hz with 20 rpm buckets that already reads smooth.
@@ -26,20 +29,45 @@
 	const SHIFT_LIGHTS = 5;
 
 	const polar = (rpm: number) => A0 + (SWEEP * Math.min(rpm, GR86.maxRpm)) / GR86.maxRpm;
-	const point = (angleDeg: number, radius: number) => {
-		const a = (angleDeg * Math.PI) / 180;
-		return [CX + radius * Math.cos(a), CY + radius * Math.sin(a)] as const;
-	};
+	const point = (angleDeg: number, radius: number) => polarPoint(CX, CY, angleDeg, radius);
 
-	function arc(fromDeg: number, toDeg: number, radius: number): string {
-		const [x0, y0] = point(fromDeg, radius);
-		const [x1, y1] = point(toDeg, radius);
+	// Shared by the main tacho and the two mini gauges below — parameterised on
+	// centre so the minis don't need their own copy of the trig.
+	function polarPoint(cx: number, cy: number, angleDeg: number, radius: number) {
+		const a = (angleDeg * Math.PI) / 180;
+		return [cx + radius * Math.cos(a), cy + radius * Math.sin(a)] as const;
+	}
+
+	function arcFrom(cx: number, cy: number, fromDeg: number, toDeg: number, radius: number): string {
+		const [x0, y0] = polarPoint(cx, cy, fromDeg, radius);
+		const [x1, y1] = polarPoint(cx, cy, toDeg, radius);
 		const large = toDeg - fromDeg > 180 ? 1 : 0;
 		return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${radius} ${radius} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
 	}
+	const arc = (fromDeg: number, toDeg: number, radius: number) =>
+		arcFrom(CX, CY, fromDeg, toDeg, radius);
 
 	const trackPath = arc(A0, A0 + SWEEP, R);
 	const redlinePath = arc(polar(GR86.redlineRpm), A0 + SWEEP, R);
+
+	// ── Boost / N2O — DECORATIVE. The GR86 is a naturally aspirated road car: no
+	// turbo, no nitrous, nothing to read. They exist because the reference cluster
+	// has them and a gauge cluster missing its corners looks broken — but rather
+	// than fake a signal, the needle just rests barely off the peg (what a real
+	// boost gauge does at idle) and the number is replaced with an honest "N/A".
+	const MINI_CX = 45;
+	const MINI_CY = 38;
+	const MINI_R = 27;
+	const MINI_TICKS = 6;
+	const miniTrackPath = arcFrom(MINI_CX, MINI_CY, A0, A0 + SWEEP, MINI_R);
+	const MINI_TICK_ANGLES = Array.from(
+		{ length: MINI_TICKS + 1 },
+		(_, i) => A0 + (SWEEP * i) / MINI_TICKS
+	);
+	const MINI_REST = 0.06; // a hair into the dial, not glued to the peg
+	const miniNeedleAngle = A0 + SWEEP * MINI_REST;
+	const miniNeedleTail = polarPoint(MINI_CX, MINI_CY, miniNeedleAngle, 7);
+	const miniNeedleTip = polarPoint(MINI_CX, MINI_CY, miniNeedleAngle, MINI_R - 6);
 
 	const rpm = $derived(carHud.rpm);
 	// A degenerate zero-length arc renders nothing at all with a round linecap, so the
@@ -70,35 +98,91 @@
 		{/each}
 	</div>
 
-	<svg viewBox="0 0 200 190" role="img" aria-label="{carHud.kmh} km/h, gear {gearLabel}, {rpm} rpm">
-		<path class="track" d={trackPath} />
-		<path class="redzone" d={redlinePath} />
-		<path class="sweep" class:hot={rpm >= GR86.redlineRpm} d={rpmPath} />
+	<div class="dials">
+		<!-- Boost / N2O — decorative, see the header comment. Same dial language as
+		     the tacho (270° sweep, gap at the bottom) at a smaller radius, needle
+		     parked, "N/A" where a real reading would go. -->
+		<div class="mini-dials" aria-hidden="true">
+			<div class="mini-gauge">
+				<svg class="mini-dial" viewBox="0 0 90 62">
+					<path class="mini-track" d={miniTrackPath} />
+					{#each MINI_TICK_ANGLES as a (a)}
+						{@const [ix, iy] = polarPoint(MINI_CX, MINI_CY, a, MINI_R - 4)}
+						{@const [ox, oy] = polarPoint(MINI_CX, MINI_CY, a, MINI_R - 8)}
+						<line class="mini-tick" x1={ix} y1={iy} x2={ox} y2={oy} />
+					{/each}
+					<line
+						class="mini-needle"
+						x1={miniNeedleTail[0]}
+						y1={miniNeedleTail[1]}
+						x2={miniNeedleTip[0]}
+						y2={miniNeedleTip[1]}
+					/>
+					<circle class="mini-hub" cx={MINI_CX} cy={MINI_CY} r="3" />
+				</svg>
+				<span class="mini-label">Boost</span>
+				<span class="mini-na">N/A</span>
+			</div>
+			<div class="mini-gauge">
+				<svg class="mini-dial" viewBox="0 0 90 62">
+					<path class="mini-track" d={miniTrackPath} />
+					{#each MINI_TICK_ANGLES as a (a)}
+						{@const [ix, iy] = polarPoint(MINI_CX, MINI_CY, a, MINI_R - 4)}
+						{@const [ox, oy] = polarPoint(MINI_CX, MINI_CY, a, MINI_R - 8)}
+						<line class="mini-tick" x1={ix} y1={iy} x2={ox} y2={oy} />
+					{/each}
+					<line
+						class="mini-needle"
+						x1={miniNeedleTail[0]}
+						y1={miniNeedleTail[1]}
+						x2={miniNeedleTip[0]}
+						y2={miniNeedleTip[1]}
+					/>
+					<circle class="mini-hub" cx={MINI_CX} cy={MINI_CY} r="3" />
+				</svg>
+				<span class="mini-label">N2O</span>
+				<span class="mini-na">N/A</span>
+			</div>
+		</div>
 
-		{#each TICKS as tick (tick)}
-			{@const a = polar(tick)}
-			{@const [ix, iy] = point(a, R - 15)}
-			{@const [ox, oy] = point(a, R - 21)}
-			{@const [lx, ly] = point(a, R - 32)}
-			<line class="tick" class:red={tick >= GR86.redlineRpm} x1={ix} y1={iy} x2={ox} y2={oy} />
-			<text class="tick-label" x={lx} y={ly}>{tick / 1000}</text>
-		{/each}
+		<svg
+			class="main-dial"
+			viewBox="0 0 200 190"
+			role="img"
+			aria-label="{carHud.kmh} km/h, gear {gearLabel}, {rpm} rpm"
+		>
+			<path class="track" d={trackPath} />
+			<path class="redzone" d={redlinePath} />
+			<path class="sweep" class:hot={rpm >= GR86.redlineRpm} d={rpmPath} />
 
-		<line
-			class="needle"
-			x1={needleTail[0]}
-			y1={needleTail[1]}
-			x2={needleTip[0]}
-			y2={needleTip[1]}
-		/>
-		<circle class="hub" cx={CX} cy={CY} r="6" />
+			{#each TICKS as tick (tick)}
+				{@const a = polar(tick)}
+				{@const [ix, iy] = point(a, R - 15)}
+				{@const [ox, oy] = point(a, R - 21)}
+				{@const [lx, ly] = point(a, R - 32)}
+				<line class="tick" class:red={tick >= GR86.redlineRpm} x1={ix} y1={iy} x2={ox} y2={oy} />
+				<text class="tick-label" class:red={tick >= GR86.redlineRpm} x={lx} y={ly}>
+					{tick / 1000}
+				</text>
+			{/each}
 
-		<text class="gear" class:reverse={carHud.gear < 0} x={CX} y="84">{gearLabel}</text>
-		<text class="rpm" x={CX} y="103">{rpm} rpm</text>
+			<line
+				class="needle"
+				x1={needleTail[0]}
+				y1={needleTail[1]}
+				x2={needleTip[0]}
+				y2={needleTip[1]}
+			/>
+			<circle class="hub" cx={CX} cy={CY} r="6" />
 
-		<text class="speed" x={CX} y="152">{carHud.kmh}</text>
-		<text class="unit" x={CX} y="168">km/h · {carHud.mph} mph</text>
-	</svg>
+			<text class="gear" class:reverse={carHud.gear < 0} x={CX} y="84">{gearLabel}</text>
+			<text class="rpm" x={CX} y="103">{rpm} rpm</text>
+
+			<rect class="lcd" x={CX - 46} y="130" width="92" height="44" rx="6" />
+			<text class="speed" x={CX} y="155">{carHud.kmh}</text>
+			<text class="unit" x={CX} y="169">km/h · {carHud.mph} mph</text>
+		</svg>
+	</div>
 
 	<div class="pedals">
 		<div class="bar throttle"><span style:height="{carHud.throttle * 100}%"></span></div>
@@ -122,7 +206,7 @@
 		align-items: center;
 		gap: 0.35rem;
 		padding: 0.5rem 0.65rem 0.6rem;
-		width: 15rem;
+		width: 20rem;
 		background: rgba(0, 0, 0, 0.5);
 		border: 1px solid rgba(74, 144, 217, 0.45);
 		border-radius: 0.5rem;
@@ -160,10 +244,76 @@
 	}
 
 	/* ── Dial ─────────────────────────────────────────────────────────────── */
-	svg {
+	.dials {
+		display: flex;
+		align-items: stretch;
+		gap: 0.4rem;
 		width: 100%;
+	}
+
+	svg {
 		display: block;
 		overflow: visible;
+	}
+
+	.main-dial {
+		width: 100%;
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+
+	/* Boost/N2O flank the tacho, top and bottom, same as the reference pod. */
+	.mini-dials {
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		flex: 0 0 4.75rem;
+	}
+
+	.mini-gauge {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.mini-dial {
+		width: 100%;
+	}
+
+	.mini-track {
+		fill: none;
+		stroke: rgba(147, 197, 253, 0.25);
+		stroke-width: 5;
+		stroke-linecap: round;
+	}
+
+	.mini-tick {
+		stroke: rgba(147, 197, 253, 0.45);
+		stroke-width: 1.5;
+	}
+
+	.mini-needle {
+		stroke: #ff4e4e;
+		stroke-width: 2;
+		stroke-linecap: round;
+	}
+
+	.mini-hub {
+		fill: #ff4e4e;
+	}
+
+	.mini-label {
+		margin-top: -0.15rem;
+		font-size: 0.5625rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: rgba(147, 197, 253, 0.75);
+	}
+
+	.mini-na {
+		font-size: 0.5625rem;
+		font-weight: 700;
+		color: rgba(255, 255, 255, 0.35);
 	}
 
 	.track,
@@ -191,7 +341,7 @@
 	}
 
 	.tick {
-		stroke: rgba(255, 255, 255, 0.4);
+		stroke: rgba(147, 197, 253, 0.65);
 		stroke-width: 2;
 	}
 
@@ -200,10 +350,15 @@
 	}
 
 	.tick-label {
-		fill: rgba(255, 255, 255, 0.55);
+		fill: rgba(147, 197, 253, 0.9);
 		font-size: 11px;
+		font-weight: 600;
 		text-anchor: middle;
 		dominant-baseline: middle;
+	}
+
+	.tick-label.red {
+		fill: #ff4e4e;
 	}
 
 	.needle {
@@ -237,14 +392,23 @@
 		fill: rgba(255, 255, 255, 0.5);
 	}
 
+	/* Backlit LCD panel behind the speed readout, like the reference cluster's
+	   digital MPH window. */
+	.lcd {
+		fill: rgba(30, 64, 96, 0.55);
+		stroke: rgba(147, 197, 253, 0.4);
+		stroke-width: 1;
+	}
+
 	.speed {
 		font-size: 40px;
 		font-weight: 600;
+		fill: #cfe9ff;
 	}
 
 	.unit {
 		font-size: 11px;
-		fill: rgba(255, 255, 255, 0.55);
+		fill: rgba(147, 197, 253, 0.7);
 	}
 
 	/* ── Pedals + flags ───────────────────────────────────────────────────── */
