@@ -53,6 +53,7 @@ import {
 	totalRatio
 } from './gr86';
 import type { HandlingTune } from './handling';
+import { clamp, damp } from './carMath';
 
 /** Raw driver intent for one step. Shift flags are LEVEL, not edges — see `step`. */
 export interface DriveInput {
@@ -102,9 +103,6 @@ export interface DrivetrainState {
 	/** True for the frame a gear change starts — the scene can bark a sound off it. */
 	shifted: boolean;
 }
-
-const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
-const damp = (rate: number, dt: number): number => 1 - Math.exp(-rate * dt);
 
 /**
  * m/s of wheel overspeed that reads as TOTAL wheelspin — `slip` = 1, and the tyre
@@ -160,13 +158,13 @@ export function createDrivetrain() {
 		const next = state.gear + dir;
 		if (next > TOP_GEAR || next < -1) return;
 		// Reverse only while (nearly) stopped or already rolling back; forward
-		// gears only while (nearly) stopped or already rolling forward. The 3 m/s
-		// grace window lets you slot 1st from R/N (or R from 1st) while still
-		// creeping instead of waiting for a dead stop; the money-shift guard
-		// below still refuses anything that would over-rev. Neutral is always
-		// available.
-		if (next < 0 && speedMs > 3) return;
-		if (next > 0 && speedMs < -3) return;
+		// gears only while (nearly) stopped or already rolling forward. The 5 m/s
+		// grace window (up from 3, for friendlier shifting) lets you slot 1st from
+		// R/N (or R from 1st) while still creeping instead of waiting for a dead
+		// stop; the money-shift guard below still refuses anything that would
+		// over-rev. Neutral is always available.
+		if (next < 0 && speedMs > 5) return;
+		if (next > 0 && speedMs < -5) return;
 		// Money-shift guard: refuse a downshift that would slam past the limiter.
 		if (next > 0 && rpmInGear(next, speedMs) > GR86.limiterRpm) return;
 		engage(next);

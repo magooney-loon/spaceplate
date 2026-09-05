@@ -30,6 +30,7 @@
 	import { createDrivetrain } from './drivetrain';
 	import { buildCityColliders } from './cityColliders';
 	import { carSim, publishCarHud, resetCarTelemetry } from './carTelemetry.svelte';
+	import { clamp, damp } from './carMath';
 
 	// Test Game 3D scene — driving prototype.
 	// Controls: arrows drive, Space handbrake, Q/E shift down/up, L lights, H main beam
@@ -171,10 +172,6 @@
 	const _rot = { x: 0, y: 0, z: 0, w: 1 } as Rotation;
 	const _lin = { x: 0, y: 0, z: 0 } as Vector;
 	const _ang = { x: 0, y: 0, z: 0 } as Vector;
-
-	const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
-	/** Fraction of a `rate`-per-second exponential decay consumed in `dt`. */
-	const damp = (rate: number, dt: number) => 1 - Math.exp(-rate * dt);
 
 	usePhysicsTask((delta) => {
 		const body = carBody;

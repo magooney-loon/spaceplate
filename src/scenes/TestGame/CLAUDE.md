@@ -19,6 +19,7 @@ carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E) + t
 gr86.ts                 — the real car's HARDWARE, pure SI (metres/kg/newtons/seconds)
 handling.ts             — the two SETUPS (Grip / Drift): tyre μ, steering rack, oversteer
 drivetrain.ts           — pure engine → clutch → 6MT → rear-axle traction step
+carMath.ts              — `clamp` / `damp`, shared by drivetrain.ts and TestGame.svelte
 carTelemetry.svelte.ts  — carSim (200 Hz plain object) / carHud (30 Hz $state mirror)
 cityColliders.ts        — hand-rolled static trimesh colliders for the track GLB
 ```
@@ -57,10 +58,18 @@ and there are two, picked by `carHandling.mode` (G, or the HUD switch). The scen
 and `drivetrain.step()` read `HANDLING_TUNES[mode]` **fresh every physics step**;
 nothing caches a tune, so switching mid-corner is legal.
 
-- **Grip** is the car as validated (0-60 in 5.7 s, 140 mph governed). Every number
-  in it is what used to be hard-coded in `gr86.ts` / `TestGame.svelte`, and
-  `looseBase` / `driftAlign` are 0 with `powerYawBoost` 1, which collapses every
-  term below back to the original model — Grip is a no-op against the old behaviour.
+> Both tunes were revised for a friendlier, more arcade feel — more lateral grip,
+> quicker steering response, and an easier-to-trigger, easier-to-catch drift. The
+> exact numbers below are current; the specific MEASURED figures throughout this
+> section (peak yaw °/s, circle diameters, settle times) predate that revision and
+> haven't been re-measured — treat them as illustrating the mechanism, not as
+> current numbers. `handling.ts`'s own inline comments are the source of truth.
+
+- **Grip** is the car (0-60 in 5.7 s, 140 mph governed — both the drivetrain's,
+  unaffected by this file), tuned friendlier than the real car for cornering grip
+  and steering response. `looseBase` / `driftAlign` are still 0 with `powerYawBoost`
+  still 1, which collapses every term below back to the base kinematic model — Grip
+  never picks up a drift term, only its own numbers changed.
 - **Drift** is an ARCADE tune (the reference is NFS Underground 2), not the real
   car: it rotates roughly where you point it, the velocity vector lags behind, and
   an assist pulls the nose back so a slide is something you hold rather than
@@ -92,13 +101,13 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   safe under the stability rule, because looseness only ever multiplies the
   STEERING's authority — provoking the car dead straight asks for no yaw and
   produces none.
-  - **`looseBase` must stay SMALL** (0.1). It was 0.6, and that was the floatiness:
+  - **`looseBase` must stay SMALL** (0.15). It was 0.6, and that was the floatiness:
     the car ran **32° of slip angle just coasting through a gentle corner**, so it
     was permanently sideways with no contrast between planted and provoked. The
     ratio that makes the tune feel good is **2° coasting against 32° on the
     throttle** — looseness has to be EARNED by an input, never baked into the tyre.
     It also caps `driftAlign`, so raising it loosens the car twice over.
-  - `throttleLoose` (0.55) is **the friction circle and the main drift control** —
+  - `throttleLoose` (0.7) is **the friction circle and the main drift control** —
     scaled by the drivetrain's `powerLoad`, the share of the rear's grip budget the
     drive force is spending. A tyre has one budget; grip spent pushing the car
     along is not available to hold it sideways, and that is true well before the
@@ -111,11 +120,11 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
     dropping `tireMuLong` far enough to fix that cost 2.4 s off 0-60. The friction
     circle costs nothing: `tireMuLong` stays at 0.8 and Drift does 0-60 in 6.2 s
     against Grip's 5.7.
-  - `brakeLoose` (0.8) is **trail-braking oversteer and the deliberate entry** —
+  - `brakeLoose` (0.9) is **trail-braking oversteer and the deliberate entry** —
     braking moves ~2 100 N (a third of the static rear load) off the rear axle. Tap
     ↓ into the corner to set the car, then ↑ to hold the angle; measured, a 0.4 s
     tap peaks at 23° and holds ~20° while the car drives out of it.
-- **Drift's `latGripGain` is the SAME as Grip's** (1.3). With `looseBase` near
+- **Drift's `latGripGain` is the SAME as Grip's** (1.6). With `looseBase` near
   zero the boost is ≈1 and the yaw cap matches what the bleed can service, so a
   coasting Drift car corners exactly like a Grip one. Running it lower to "add
   slide" just made everything vague — the contrast is the feel, not the baseline.
@@ -153,13 +162,10 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   one.** The fronts are never the axle that lets go, and it is the fronts that set
   how fast a car can rotate — capping rotation with the _rear's_ lost grip makes
   the car unable to turn at exactly the moment it should be sliding.
-- **Drift's `latGripGain` is LOWER than Grip's** (1.05 vs 1.3), which is not a typo:
-  the cap and the bleed both run on it and Drift _wants_ them to disagree. A cap
-  that asks for more cornering than the bleed can service is precisely a slide.
 - **Grip's numbers are not close to drifting, and it is worth knowing by how
   much**: `tireMuLong` 1.05 means only 1st gear ever beats rear traction, and
-  `slipGripLoss` 0.55 leaves 45% of the lateral tyre under _total_ wheelspin
-  (μ never below 0.88 — more grip than most road cars have at their best).
+  `slipGripLoss` 0.35 leaves 65% of the lateral tyre under _total_ wheelspin —
+  Grip is built to shrug off wheelspin, not slide on it.
 - **Full lock is per-tune, so `carSim.steerAngle` is published in radians** and
   `CarWheels` renders that. Re-deriving `steer × maxSteerAngle` at the consumer
   would show the Grip lock while Drift steered at 0.62 rad.
@@ -203,9 +209,10 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   never a "fraction kept per step" — the latter silently retunes the car whenever
   the physics framerate moves.
 - **The gearbox is fully manual** — Q/E walk R ↔ N ↔ 1…6 with no auto-engage and
-  no auto-drop to 1st. You can slot any gear while standing, and a 3 m/s grace
-  window lets you shift R/N ↔ 1st while still creeping (dead stop not required);
-  the only other refusals are physical: reverse above 3 m/s forward (and vice
+  no auto-drop to 1st. You can slot any gear while standing, and a 5 m/s grace
+  window (up from 3, for friendlier shifting) lets you shift R/N ↔ 1st while still
+  creeping (dead stop not required); the only other refusals are physical: reverse
+  above 5 m/s forward (and vice
   versa), and money-shift downshifts that would pass the limiter.
 - **The engine feel is in the numbers on purpose**: a torque CURVE through GEARS
   (acceleration falls off and snaps back on every upshift), a clutch fully OPEN

@@ -4,11 +4,13 @@
 // let go. The scene reads one of these per physics step, so switching is instant
 // and carries no state (`carHandling` in carInput.svelte.ts owns the choice).
 //
-// GRIP is the car as it was validated — 0-60 mph in 5.7 s, 140 mph governed,
-// ~1.4 g of cornering. Every number in it is the one that used to live in
-// `gr86.ts` / `TestGame.svelte`, so selecting GRIP is a no-op against the old
-// behaviour: `looseBase` and `driftAlign` are zero and `powerYawBoost` is 1, which
-// collapses every term below back to the original model exactly.
+// GRIP is the car, tuned FRIENDLY rather than strictly real: 0-60 mph in 5.7 s,
+// 140 mph governed (both are the drivetrain's, unaffected by this file), ~1.8 g of
+// cornering — more than the real GR86's 1.1 g, because a tighter, more forgiving
+// turn-in reads as fun on a keyboard where a real car's understeer margin just
+// reads as "it won't turn". `looseBase` and `driftAlign` are still zero and
+// `powerYawBoost` is still 1, so GRIP stays the pure kinematic base model with no
+// drift terms added on top — only its own steering/grip numbers were loosened up.
 //
 // DRIFT is NOT the real car and is not trying to be. It is an ARCADE tune — the
 // car rotates roughly where you point it, the velocity vector lags behind, and an
@@ -195,9 +197,14 @@ export const HANDLING_TUNES = {
 
 		tireMuLong: 1.05,
 		tireMuLat: 1.1,
-		latGripGain: 1.3,
+		// Up from the real car's 1.3 — a friendlier, more forgiving cornering margin
+		// so a slightly hot entry still hooks up instead of running wide.
+		latGripGain: 1.6,
 		handbrakeMuLat: 0.42,
-		slipGripLoss: 0.55,
+		// Down from 0.55: wheelspin now only costs a third of the lateral tyre instead
+		// of nearly half, so mashing the throttle out of a corner doesn't step the
+		// back out as a side effect — that's DRIFT's job, not a Grip surprise.
+		slipGripLoss: 0.35,
 		// On, like the real car. The rears are caught at 2 m/s of overspeed, which is
 		// where Grip's wheelspin always effectively sat — 1st still lights the TC lamp
 		// off the line and nothing else in the tune notices.
@@ -211,10 +218,17 @@ export const HANDLING_TUNES = {
 		// not the ≈29° the old comment claimed — which is a 3.0 m radius and 94°/s of
 		// yaw at 18 km/h. That is where the low-speed twitchiness came from.
 		maxSteerAngle: 0.5,
-		steerHighSpeedFactor: 0.35,
-		steerFalloffSpeed: 42,
-		steerResponse: 5.5,
-		yawResponse: 7,
+		// Up from 0.35: the rack keeps half its lock at speed instead of a third, so
+		// the car doesn't go numb on the motorway.
+		steerHighSpeedFactor: 0.5,
+		// Up from 42: the falloff above stretches over a wider speed range, so it
+		// keeps feeling direct through more of the range instead of going flat early.
+		steerFalloffSpeed: 55,
+		// Up from 5.5: a keyboard tap reaches its target lock quicker — less input lag.
+		steerResponse: 7,
+		// Up from 7: the body catches up to the yaw target faster, which reads as a
+		// more eager, direct car.
+		yawResponse: 9,
 
 		handbrakeYawBoost: 2.2,
 		// 1 and 0 — Grip is the original kinematic model, untouched.
@@ -236,7 +250,7 @@ export const HANDLING_TUNES = {
 		// `looseBase` near zero, boost ≈ 1 and the yaw cap matches what the bleed can
 		// service, so Drift corners exactly like Grip until something provokes it.
 		// That contrast IS the feel — running this lower just made everything vague.
-		latGripGain: 1.3,
+		latGripGain: 1.6,
 		// A third of Grip's. This is the μ a fully committed slide bleeds at — at 0.42
 		// the handbrake shed 4.1 m/s² sideways and the car was straight again in a
 		// tenth of a second, which is why it read as a turn-tighter button.
@@ -251,19 +265,17 @@ export const HANDLING_TUNES = {
 		// — but under power in 1st and 2nd `slip` now reaches 1, so `driftAlign` fades
 		// right out and the car is genuinely on its own until you lift.
 		tractionControl: false,
-		// Just a hint — the car is essentially planted when you are not asking for
-		// anything. 4° of slip angle coasting through a corner against 46° on the
-		// throttle: that ratio is the whole feel.
-		looseBase: 0.1,
-		// The main drift control. Full throttle spends the rear's whole grip budget, so
-		// power alone takes the tail out in any gear — 46° in 2nd, ~14° in 4th — and
-		// lifting drops it to engine braking's ~0.1, which is what catches the slide.
-		throttleLoose: 0.55,
-		// Between `throttleLoose` and the handbrake's 1: the brake is the deliberate
-		// entry, so it has to be decisively looser than power, without being the full
-		// flick. Braking is worth ~0.9 g of load transfer, and the brake pedal is
-		// on/off from a keyboard, so this doubles as the "tap ↓ to set the car" input.
-		brakeLoose: 0.8,
+		// A little livelier than before — the car has a hint of playfulness even
+		// coasting, without giving up the planted-until-provoked contrast.
+		looseBase: 0.15,
+		// Up from 0.55: the throttle takes the tail out quicker and with less pedal
+		// precision — you don't have to bury it to feel the rear step out, which is
+		// the whole point of an easy drift control.
+		throttleLoose: 0.7,
+		// Up from 0.8, closer to the handbrake's 1: trail-braking into a corner
+		// triggers a slide more readily — an easier, more generous "tap ↓ to set the
+		// car" entry.
+		brakeLoose: 0.9,
 
 		// A LITTLE more lock than Grip, held a little further up the speed range — just
 		// enough countersteer authority to catch a slide (Grip's rack falls to 35% by
@@ -274,26 +286,30 @@ export const HANDLING_TUNES = {
 		maxSteerAngle: 0.95,
 		steerHighSpeedFactor: 0.95,
 		steerFalloffSpeed: 92,
-		steerResponse: 1.5,
-		// A shade under Grip's 7, so the body eases into its rotation instead of
-		// snapping to it. Much lower than this and the lag starts eating countersteer.
-		yawResponse: 2.5,
+		// Up from 1.5: countersteer answers the key quicker, which is what actually
+		// makes catching a slide feel controllable instead of laggy.
+		steerResponse: 2.2,
+		// Up from 2.5, still a shade under Grip's 9 so the body keeps some of its own
+		// inertia — but with the quicker steerResponse above, the whole catch-and-hold
+		// loop reacts faster than before.
+		yawResponse: 3.2,
 
-		// Small: the handbrake already sets looseness to 1, so it collects the whole of
-		// `powerYawBoost`. 1.25 × 2.6 = 3.25 is the real flick multiplier.
-		handbrakeYawBoost: 1.25,
-		// Was 4.5, which put the yaw cap at ~94°/s the instant you touched the wheel on
-		// the throttle at 90 km/h — nearly 3× Grip, and the main source of "punchy".
-		// 2.6 lands at ~39°/s against Grip's 32, i.e. 1.35× rather than 1.7×, and the
-		// drift builds over ~0.5 s instead of snapping in.
+		// Bigger flick: the handbrake already sets looseness to 1, so it collects the
+		// whole of `powerYawBoost`. 1.6 × 2.6 = 4.16 is the flick multiplier — a more
+		// dramatic handbrake turn.
+		handbrakeYawBoost: 1.6,
+		// Unchanged. This one was already tuned DOWN from a punchy 4.5 to 2.6 because
+		// more snap made the car harder, not easier, to hold — the easier-to-control
+		// direction here is a stronger `driftAlign` catch, not a bigger flick.
 		powerYawBoost: 2.6,
-		driftAlign: 1.6,
-		// ≈34°, down from 49°. This is the knob for "slidy": it is the angle the boost
-		// has fully faded at, so it sets where the drift settles. Steady state now
-		// lands ~32° on the throttle in 2nd, ~43° off the brake, ~54° in a donut, and
-		// only ~2° coasting. The handbrake held at full lock still spins the car out to
-		// fully sideways, which is what that input should do.
-		maxDriftAngle: 0.9
+		// Up from 1.6: a firmer auto-catch, so a slide is less likely to run away into
+		// a spin and opposite lock does more of the work for you.
+		driftAlign: 2.2,
+		// Up from 0.9: the drift can hold a bigger angle before the catch fully takes
+		// over, for a more dramatic slide before it settles. The handbrake held at full
+		// lock still spins the car out to fully sideways, which is what that input
+		// should do.
+		maxDriftAngle: 1.05
 	}
 } as const satisfies Record<string, HandlingTune>;
 
