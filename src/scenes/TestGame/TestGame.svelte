@@ -303,7 +303,9 @@
 		//   powerLoad  — the friction circle: grip spent driving the car along is not
 		//                available to hold it sideways. THE drift control, and the
 		//                reason the throttle works in gears that never spin the rears.
-		//   slip       — actual wheelspin, which only 1st and 2nd ever reach.
+		//   slip       — actual wheelspin. Only 1st and 2nd can ever out-pull the tyre,
+		//                but with Drift's traction control OFF they take it all the way
+		//                to 1, and at 1 the aligning term below is gone with it.
 		//   looseBase  — a floor, deliberately SMALL: the car has to be planted until
 		//                something provokes it, or the whole tune reads floaty.
 		// Faded back out as the slide reaches `maxDriftAngle` — that fade is what makes
