@@ -287,16 +287,23 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   MEASURED, not placed by hand: the GLB's Draco `Nickel_Smooth` mesh decoded
   offline (node + the draco wasm from `node_modules/three`), rear-most
   vertices clustered — two rings at model (±0.446, 0.293, 2.053), nose −Z.
-  `DEBUG_TIPS` draws wireframe cones there until you trust the numbers; the
-  constants move with a model swap. Mount is car-local (inside the ×2.5 group,
-  model metres). Each tip is additive crossed quads + a rear-facing blob (a
-  chase cam sees crossed quads edge-on), sharing two MeshBasicNodeMaterials —
-  no billboarding, the jet shoots REARWARD with the car, and no extra light:
-  the scene is at the three-light cap (sky key + two headlight spots). The
-  trigger is the physics task watching `carSim.gear` drops into ≥1 (N/R never
-  pop) sized by rpm, plus `limiting` rising edges; while a pop is visible the
-  component owns an `invalidate()` reason (stationary rev-match case — driving
-  is already covered by the chase camera). Noise textures:
+  `DEBUG_TIPS` (currently false) draws wireframe cones there; the constants
+  move with a model swap. Mount is car-local (inside the ×2.5 group, model
+  metres). Each tip is additive crossed quads + a rear-facing blob (a chase
+  cam sees crossed quads edge-on) with its OWN material instances — identical
+  node graphs, so one compiled program, but independent intensity/phase
+  uniforms, which is how one pipe can bang harder than the other. No
+  billboarding (the jet shoots REARWARD with the car) and no extra light (the
+  scene is at the three-light cap). The trigger is the physics task watching
+  `carSim.gear` drops into ≥1 (N/R never pop) sized by rpm, plus `limiting`
+  rising edges. NO TWO POPS ALIKE: every pop rolls a STYLE — CRACK (short,
+  sharp, can double-bang 60–130 ms later), BURN (long, lazy, slow noise) or
+  BALL (wide fireball, big white core, heavy embers) — driving amplitude,
+  decay, length, width, shader stretch/noise-speed/core-size via `uStyle`
+  (branchless step/mix selects), per-tip energy shares (≈18 % effectively
+  one-pipe) and per-tip noise phase. While a pop is visible the component owns
+  an `invalidate()` reason (stationary rev-match case — driving is already
+  covered by the chase camera). Noise textures:
   `public/textures/noises/{voronoi,perlin}.png`, copied from the vendored
   three.js-dev example assets.
 - **`ChaseCamera.svelte` BORROWS the app camera** (`core/Camera.svelte` — the one

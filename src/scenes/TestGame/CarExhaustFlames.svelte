@@ -7,6 +7,7 @@
 		Fn,
 		TWO_PI,
 		attribute,
+		float,
 		mix,
 		oneMinus,
 		saturate,
@@ -34,15 +35,26 @@
 	// MEASURED, not eyeballed: decode the GLB's Draco `Nickel_Smooth` mesh (the
 	// chrome exhaust) and cluster the rear-most vertices — two clean rings at
 	// (±0.446, 0.293, 2.053), symmetric about the centreline. Tweak TIP_L/TIP_R
-	// if the model is ever replaced; flip DEBUG_TIPS off once the cones line up.
+	// if the model is ever replaced; flip DEBUG_TIPS to see cones at the tips.
 	//
 	// SHAPE: per tip, one group of additive quads — a rear-facing blob (what
 	// the chase cam sees; crossed quads alone are edge-on from dead behind)
 	// plus two crossed quads along the jet axis for the side/top views, and a
-	// sparser ember layer (the example's flame 2) on the crossed pair. Both
-	// tips share the two materials; the whole group scales with intensity (the
-	// jet stretches rearward), so the physics task only touches group
-	// scale/visible — no per-vertex work after mount.
+	// sparser ember layer (the example's flame 2) on the crossed pair. The
+	// whole group scales with intensity (the jet stretches rearward), so the
+	// physics task only touches group scale/visible — no per-vertex work after
+	// mount. Each tip gets its OWN material instances (uniform values differ,
+	// the node graphs are identical, so both share one compiled program) —
+	// that is what lets one pipe bang harder than the other.
+	//
+	// NO TWO POPS ALIKE. Every pop rolls a STYLE, and style drives both the
+	// CPU side (amplitude, decay, length, width) and the shader via uStyle:
+	//   0 CRACK — short, sharp, narrow; fastest flicker; can double-bang
+	//   1 BURN  — lazier and longer, slower rolling noise
+	//   2 BALL  — fat fireball, wider than long, biggest white core + embers
+	// On top of that: per-pop random noise phase (uPhase, per tip), per-tip
+	// energy shares (≈18% of pops are effectively one-sided), and crack/ball
+	// can queue a second, smaller bang 60–130 ms later (anti-lag stutter).
 	//
 	// TRIGGER (physics task, reads carSim after TestGame's task wrote it — the
 	// same parent-first ordering CarWheels relies on):
@@ -50,9 +62,8 @@
 	//               pop). Burst size grows with rpm — a money downshift near
 	//               the limiter is a fireball, a lazy 6→5 is a hiccup.
 	//   limiter   — each fuel-cut bounce (rising edge of `limiting`) pops small.
-	// Energy decays at ~6.5/s: a burst reads as a 0.3–0.5 s flame, not a torch.
 
-	const DEBUG_TIPS = true;
+	const DEBUG_TIPS = false;
 
 	/** Model metres, measured from the GLB (see header). */
 	const TIP_L = new THREE.Vector3(-0.446, 0.293, 2.05);
@@ -63,9 +74,16 @@
 	const POP_RPM_GAIN = 0.45;
 	/** Pop size for each limiter fuel-cut bounce. */
 	const LIMITER_POP = 0.28;
-	/** 1/s — burst energy decay. */
-	const POP_DECAY = 6.5;
 	const ENERGY_CAP = 1.25;
+	/** Share of pops that are (effectively) one-pipe. */
+	const ONE_SIDED_CHANCE = 0.18;
+
+	// amplitude range, decay 1/s, jet length range, width scale, double-bang chance
+	const POP_STYLES = [
+		{ amp: [1.0, 1.3], decay: 9, len: [0.85, 1.15], w: 1.0, dbl: 0.3 }, // crack
+		{ amp: [0.8, 1.0], decay: 3.2, len: [1.25, 1.6], w: 0.95, dbl: 0 }, // burn
+		{ amp: [1.1, 1.45], decay: 5.5, len: [0.75, 1.0], w: 1.4, dbl: 0.35 } // ball
+	] as const;
 
 	const { invalidate } = useThrelte();
 
@@ -111,13 +129,24 @@
 		t.wrapT = THREE.RepeatWrapping;
 	}
 
-	// ── Shared uniforms + per-quad seed ─────────────────────────────────────────
-	// One uIntensity drives both layers; aSeed (per quad, baked into both
-	// geometries) offsets the noise so the crossed quads and the two tips never
-	// animate in lockstep.
+	// ── Uniforms ────────────────────────────────────────────────────────────────
+	// uTime/uStyle are global (one style per pop, shared by both pipes); each
+	// tip owns its own intensity + noise phase pair so the pipes never flame in
+	// lockstep. aSeed (per quad, baked into the geometry) offsets the noise
+	// within one tip.
 	const uTime = uniform(0);
-	const uIntensity = uniform(0);
+	const uStyle = uniform(0);
 	const aSeed = attribute<'float'>('aSeed');
+
+	type DynUniforms = {
+		// Pinned via a helper — `ReturnType<typeof uniform>` grabs the LAST
+		// overload (a vec3 one), and `uniform<number>` isn't a legal instantiation.
+		intensity: ReturnType<typeof numUniform>;
+		phase: ReturnType<typeof numUniform>;
+	};
+	function numUniform() {
+		return uniform(0);
+	}
 
 	// ── Geometry ────────────────────────────────────────────────────────────────
 	// Unit quads, jet growing +Z (rearward) from the tip:
@@ -191,9 +220,11 @@
 	// billboarding: the flame is car-local and shoots REARWARD, which a camera
 	// -facing sprite can't express. Additive: a pop should glow, not occlude.
 	// The .assign()s live inside Fn() — outside is silently dropped
-	// (webgpu-notes §1.3).
+	// (webgpu-notes §1.3). Style selects are branchless (step/mix, §1.2's
+	// neighbourhood): isBall/isBurn pick stretch, noise speed, core size and
+	// ember gain per pop.
 
-	function makeFlameMaterial() {
+	function makeFlameMaterial(dyn: DynUniforms) {
 		const material = new THREE.MeshBasicNodeMaterial({
 			transparent: true,
 			depthWrite: false,
@@ -201,18 +232,28 @@
 			side: THREE.DoubleSide
 		});
 		material.colorNode = Fn(() => {
+			const isBall = step(1.5, uStyle).toVar();
+			const isBurn = step(0.5, uStyle).mul(oneMinus(isBall)).toVar();
+			// CRACK: tall thin warp + fast noise. BURN: milder warp, slow roll.
+			// BALL: nearly round + a fat white core.
+			const stretchY = mix(mix(float(2.6), float(2.2), isBurn), float(1.3), isBall);
+			const noiseSpeed = mix(mix(float(1.6), float(0.6), isBurn), float(1), isBall);
+			const seed = aSeed.add(dyn.phase).toVar();
+
 			const mainUv = uv().toVar();
 			mainUv.assign(spherizeUV(mainUv, 10).mul(0.6).add(0.2));
-			mainUv.assign(mainUv.pow(vec2(1, 2)));
+			mainUv.assign(mainUv.pow(vec2(1, stretchY)));
 			mainUv.assign(mainUv.mul(2, 1).sub(vec2(0.5, 0)));
 
-			const gradient1 = sin(uTime.mul(10).sub(mainUv.y.mul(TWO_PI).mul(2))).toVar();
+			const gradient1 = sin(
+				uTime.mul(10).mul(noiseSpeed).sub(mainUv.y.mul(TWO_PI).mul(2))
+			).toVar();
 			const gradient2 = mainUv.y.smoothstep(0, 1).toVar();
 			mainUv.x.addAssign(gradient1.mul(gradient2).mul(0.2));
 
 			const cellularUv = mainUv
 				.mul(0.5)
-				.add(vec2(aSeed, uTime.negate().mul(0.5)))
+				.add(vec2(seed, uTime.negate().mul(0.5).mul(noiseSpeed)))
 				.mod(1);
 			const cellularNoise = texture(cellularTex, cellularUv, 0)
 				.r.oneMinus()
@@ -224,15 +265,16 @@
 			shape.assign(shape.sub(cellularNoise));
 
 			const gradientColor = texture(gradientTex, vec2(saturate(shape), 0));
-			const color = mix(gradientColor, vec3(1), shape.step(0.8));
-			const flicker = sin(uTime.mul(37).add(aSeed.mul(12))).mul(0.25).add(0.85);
-			const alpha = shape.smoothstep(0, 0.3).mul(uIntensity).mul(flicker);
+			const core = shape.step(float(0.8).sub(isBall.mul(0.18)));
+			const color = mix(gradientColor, vec3(1), core);
+			const flicker = sin(uTime.mul(37).add(seed.mul(12))).mul(0.25).add(0.85);
+			const alpha = shape.smoothstep(0, 0.3).mul(dyn.intensity).mul(flicker);
 			return vec4(color.rgb, alpha);
 		})();
 		return material;
 	}
 
-	function makeEmberMaterial() {
+	function makeEmberMaterial(dyn: DynUniforms) {
 		const material = new THREE.MeshBasicNodeMaterial({
 			transparent: true,
 			depthWrite: false,
@@ -240,21 +282,29 @@
 			side: THREE.DoubleSide
 		});
 		material.colorNode = Fn(() => {
+			const isBall = step(1.5, uStyle).toVar();
+			const isBurn = step(0.5, uStyle).mul(oneMinus(isBall)).toVar();
+			const noiseSpeed = mix(mix(float(1.6), float(0.6), isBurn), float(1), isBall);
+			const emberGain = mix(mix(float(0.55), float(0.95), isBurn), float(1.35), isBall);
+			const seed = aSeed.add(dyn.phase).toVar();
+
 			const mainUv = uv().toVar();
 			mainUv.assign(spherizeUV(mainUv, 10).mul(0.6).add(0.2));
 			mainUv.assign(mainUv.abs().pow(vec2(1, 3)).mul(mainUv.sign()));
 			mainUv.assign(mainUv.mul(2, 1).sub(vec2(0.5, 0)));
 
-			const perlinUv = mainUv.add(vec2(aSeed, uTime.negate())).mod(1);
+			const perlinUv = mainUv.add(vec2(seed, uTime.negate().mul(noiseSpeed))).mod(1);
 			const perlinNoise = texture(perlinTex, perlinUv, 0).sub(0.5);
 			mainUv.x.addAssign(perlinNoise.x.mul(0.5));
 
-			const gradient1 = sin(uTime.mul(10).sub(mainUv.y.mul(TWO_PI).mul(2)));
+			const gradient1 = sin(
+				uTime.mul(10).mul(noiseSpeed).sub(mainUv.y.mul(TWO_PI).mul(2))
+			);
 			const gradient2 = mainUv.y.smoothstep(0, 1);
 			const gradient3 = oneMinus(mainUv.y).smoothstep(0, 0.3);
 			mainUv.x.addAssign(gradient1.mul(gradient2).mul(0.2));
 
-			const cellularUv = mainUv.add(vec2(aSeed, uTime.negate().mul(1.5))).mod(1);
+			const cellularUv = mainUv.add(vec2(seed, uTime.negate().mul(1.5).mul(noiseSpeed))).mod(1);
 			const cellularNoise = texture(cellularTex, cellularUv, 0)
 				.r.oneMinus()
 				.smoothstep(0.25, 1);
@@ -266,27 +316,25 @@
 
 			// White-hot core with a warm rim, not the example's pure white.
 			const color = mix(vec3(1, 0.82, 0.55), vec3(1), shape);
-			const alpha = shape.mul(uIntensity).mul(0.8);
+			const alpha = shape.mul(dyn.intensity).mul(0.8).mul(emberGain);
 			return vec4(color, alpha);
 		})();
 		return material;
 	}
 
-	const flameMaterial = makeFlameMaterial();
-	const emberMaterial = makeEmberMaterial();
-
 	// ── Per-tip rigs ────────────────────────────────────────────────────────────
 
 	function makeTip(position: THREE.Vector3) {
+		const dyn: DynUniforms = { intensity: uniform(0), phase: uniform(0) };
 		const group = new THREE.Group();
 		group.position.copy(position);
 		group.visible = false; // the task shows it when a pop lands
-		const flame = new THREE.Mesh(flameGeometry, flameMaterial);
-		const ember = new THREE.Mesh(emberGeometry, emberMaterial);
+		const flame = new THREE.Mesh(flameGeometry, makeFlameMaterial(dyn));
+		const ember = new THREE.Mesh(emberGeometry, makeEmberMaterial(dyn));
 		flame.frustumCulled = false; // scaling quads from a task — never cull
 		ember.frustumCulled = false;
 		group.add(flame, ember);
-		return group;
+		return { group, dyn, materials: [flame.material, ember.material] as THREE.Material[] };
 	}
 
 	const tipL = makeTip(TIP_L);
@@ -307,55 +355,112 @@
 	// ── Trigger ─────────────────────────────────────────────────────────────────
 
 	let clock = 0;
-	let energy = 0;
+	let energyL = 0;
+	let energyR = 0;
 	let prevGear = 1;
 	let prevLimiting = false;
+	// Per-pop character (replaced every time a pop lands; a fresh pop mid-decay
+	// simply takes over, which is exactly what a limiter stutter looks like).
+	let decayRate = 6.5;
+	let lenMul = 1;
+	let wMul = 1;
+	// The queued second bang (anti-lag stutter): energy + countdown.
+	let pending = 0;
+	let pendingTimer = 0;
+
+	/** Roll a pop: style, per-tip shares, per-tip noise phase, maybe a bang-bang. */
+	function fire(amount: number): void {
+		const roll = Math.random();
+		const styleIdx = roll < 0.42 ? 0 : roll < 0.75 ? 1 : 2;
+		const style = POP_STYLES[styleIdx];
+		uStyle.value = styleIdx;
+
+		const amp = amount * (style.amp[0] + Math.random() * (style.amp[1] - style.amp[0]));
+		decayRate = style.decay * (0.85 + 0.3 * Math.random());
+		lenMul = style.len[0] + Math.random() * (style.len[1] - style.len[0]);
+		wMul = style.w * (0.9 + 0.2 * Math.random());
+
+		// Mostly both pipes, sometimes basically one — a real corner-car fires
+		// unevenly, and it reads better than a mirrored pair.
+		const oneSided = Math.random() < ONE_SIDED_CHANCE;
+		const bigSideRight = Math.random() < 0.5;
+		const shareL = oneSided ? (bigSideRight ? 0.12 + 0.1 * Math.random() : 1) : 0.55 + 0.45 * Math.random();
+		const shareR = oneSided ? (bigSideRight ? 1 : 0.12 + 0.1 * Math.random()) : 0.55 + 0.45 * Math.random();
+		energyL = Math.min(energyL + amp * shareL, ENERGY_CAP);
+		energyR = Math.min(energyR + amp * shareR, ENERGY_CAP);
+		tipL.dyn.phase.value = Math.random();
+		tipR.dyn.phase.value = Math.random();
+
+		if (style.dbl > 0 && Math.random() < style.dbl && pendingTimer <= 0) {
+			pending = amount * 0.55;
+			pendingTimer = 0.06 + 0.07 * Math.random();
+		}
+	}
 
 	usePhysicsTask((delta) => {
 		if (sceneState.currentScene !== 'testGame') {
-			energy = 0;
+			energyL = 0;
+			energyR = 0;
+			pending = 0;
+			pendingTimer = 0;
 			return;
 		}
 		clock += delta;
 		uTime.value = clock;
 
+		if (pendingTimer > 0) {
+			pendingTimer -= delta;
+			if (pendingTimer <= 0) {
+				pendingTimer = 0;
+				const bang = pending;
+				pending = 0;
+				fire(bang);
+			}
+		}
+
 		if (carSim.gear !== prevGear) {
 			if (carSim.gear >= 1 && prevGear > carSim.gear) {
-				energy += POP_BASE + POP_RPM_GAIN * clamp(carSim.rpm / GR86.limiterRpm, 0, 1);
+				fire(POP_BASE + POP_RPM_GAIN * clamp(carSim.rpm / GR86.limiterRpm, 0, 1));
 			}
 			prevGear = carSim.gear;
 		}
-		if (carSim.limiting && !prevLimiting) energy += LIMITER_POP;
+		if (carSim.limiting && !prevLimiting) fire(LIMITER_POP);
 		prevLimiting = carSim.limiting;
 
-		energy = Math.min(energy * Math.exp(-POP_DECAY * delta), ENERGY_CAP);
-		const i = clamp(energy, 0, 1);
-		uIntensity.value = i;
+		const decay = Math.exp(-decayRate * delta);
+		energyL *= decay;
+		energyR *= decay;
+		const iL = clamp(energyL, 0, 1);
+		const iR = clamp(energyR, 0, 1);
+		tipL.dyn.intensity.value = iL;
+		tipR.dyn.intensity.value = iR;
 
-		const show = i > 0.02;
-		tipL.visible = show;
-		tipR.visible = show;
-		if (!show) return;
+		tipL.group.visible = iL > 0.02;
+		tipR.group.visible = iR > 0.02;
 		// A visible flame is an animating visual — this component owns that
 		// invalidate reason while a pop is alive (the driving case is already
 		// covered by the chase camera; this covers a stationary rev-match).
-		invalidate();
+		if (tipL.group.visible || tipR.group.visible) invalidate();
+		if (!tipL.group.visible && !tipR.group.visible) return;
 
 		// Per-tip flicker at unrelated frequencies so the pair never pulses as
 		// one; the jet axis (z) stretches harder than the width.
 		const fL = 0.85 + 0.2 * Math.sin(clock * 53);
 		const fR = 0.85 + 0.2 * Math.sin(clock * 41 + 2.1);
-		const w = 0.55 + 0.6 * i;
-		const len = 0.35 + 1.15 * i;
-		tipL.scale.set(w * fL, w * fL, len * (0.9 + 0.2 * fL));
-		tipR.scale.set(w * fR, w * fR, len * (0.9 + 0.2 * fR));
+		const wL = (0.55 + 0.6 * iL) * wMul;
+		const wR = (0.55 + 0.6 * iR) * wMul;
+		const lenL = (0.35 + 1.15 * iL) * lenMul;
+		const lenR = (0.35 + 1.15 * iR) * lenMul;
+		tipL.group.scale.set(wL * fL, wL * fL, lenL * (0.9 + 0.2 * fL));
+		tipR.group.scale.set(wR * fR, wR * fR, lenR * (0.9 + 0.2 * fR));
 	});
 
 	onDestroy(() => {
 		flameGeometry.dispose();
 		emberGeometry.dispose();
-		flameMaterial.dispose();
-		emberMaterial.dispose();
+		for (const tip of [tipL, tipR]) {
+			for (const m of tip.materials) m.dispose();
+		}
 		gradientTex.dispose();
 		cellularTex.dispose();
 		perlinTex.dispose();
@@ -363,8 +468,8 @@
 	});
 </script>
 
-<T is={tipL} />
-<T is={tipR} />
+<T is={tipL.group} />
+<T is={tipR.group} />
 {#if DEBUG_TIPS}
 	<T is={tipCones[0]} />
 	<T is={tipCones[1]} />
