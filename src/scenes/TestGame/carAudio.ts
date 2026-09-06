@@ -6,9 +6,10 @@
 // shared keymapper: scene-owned until the audio layer grows per-scene needs.
 //
 // THE CONTRACT (weatherAudio.ts is the precedent): CarEngineAudio.svelte mounts the
-// <PositionalAudio> objects inside the car, hands them over via the attach
-// functions below, and its task calls `tickCarAudio(delta)` — never an `$effect`
-// (carSim is plain state; an effect would run once at mount and never again).
+// six <PositionalAudio> loops and the two pop one-shots inside the car, hands them
+// over via the attach functions below, and its task calls `tickCarAudio(delta)` —
+// never an `$effect` (carSim is plain state; an effect would run once at mount
+// and never again).
 //
 // WHY NO WEBGPU COMPUTE (the three.js webgpu_compute_audio example): that example
 // processes a WHOLE buffer offline — compute → getArrayBufferAsync → play the
@@ -81,10 +82,81 @@ export const attachEngineLayer = (index: number, audio: ThreePositionalAudio): v
 	layers[index] = audio;
 };
 
+// ── Exhaust pops ─────────────────────────────────────────────────────────────
+//
+// CarExhaustFlames rolls the VISUAL pop (style, per-tip shares, double-bangs);
+// this module voices it. Two takes: exhaustpop1 (mild) and exhaustpop2
+// (aggressive) — take choice follows the pop's energy through a FUZZY crossover
+// (never a hard threshold), and every hit is jittered in volume, rate and filter
+// cutoff so no two bangs sound alike (the thunder-clap contract, weatherAudio).
+// Polyphonic via clones parented at the pipe that fired: a double-bang overlaps
+// instead of restarting, and the sound comes from the dominant tip. The wavs
+// are PEAK-NORMALIZED to -3 dBFS offline (+6.03/+8.05 dB, pure gain, RMS now
+// matched at ~-22) — a bang is a transient: it must SLAM past the bed's
+// continuous RMS (-8.4 raw, ~-14 effective) or it simply doesn't exist — and
+// POP_GAIN adds the last stretch on top.
+
+/** Overall pop gain relative to the bed. 6.75 ≈ 5× the 1.35 that read as
+ * silent — the files peak at -3 dBFS, so hits above ~1 clip the mixer; that is
+ * the point (a bang that clips reads as a SLAM), but dial back toward ~3 if it
+ * turns to crunch. */
+const POP_GAIN = 14;
+/** Per-take trim — the takes are loudness-matched at the file level now, so no
+ * trim; kept as a knob in case one take should still read hotter. */
+const POP_TAKE_GAIN = [1.0, 1.0];
+/** The two mounted one-shot takes. Set by the component. */
+const popTakes: (ThreePositionalAudio | undefined)[] = new Array(2).fill(undefined);
+/** Live pop clones — pruned in the tick once spent. Rarely over 2–3. */
+const livePops: ThreePositionalAudio[] = [];
+
+export const attachPopAudio = (take: number, audio: ThreePositionalAudio): void => {
+	popTakes[take] = audio;
+};
+
+/**
+ * Voice one pop. `energy` 0..1 sizes it (downshift bursts big, limiter stutters
+ * small), `right` picks the pipe it speaks from (the visual pop's dominant tip).
+ * Called from CarExhaustFlames' physics task — already scene-gated there.
+ */
+export const triggerExhaustPop = (energy: number, right: boolean): void => {
+	const master = settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0;
+	if (master <= 0) return;
+	// Fuzzy crossover: mild below, aggressive above, a coin-flip zone between —
+	// never the same take for the same pop twice in a row.
+	const aggressive = energy > 0.55 + 0.25 * Math.random();
+	const take = aggressive ? 1 : 0;
+	const src = popTakes[take];
+	if (!src?.buffer || !src.parent) return;
+
+	const pop = src.clone() as ThreePositionalAudio;
+	// Same model-metre space the flames' TIP_L/TIP_R live in (the group is at the
+	// car's origin, inside the ×2.5 visual group).
+	pop.position.set((right ? 1 : -1) * 0.446, 0.293, 2.05);
+	pop.userData.hideInTree = true;
+	pop.userData.selectable = false;
+	src.parent.add(pop);
+
+	pop.setVolume(
+		POP_GAIN * POP_TAKE_GAIN[take] * (0.55 + 0.45 * energy) * (0.85 + 0.3 * Math.random()) * master
+	);
+	pop.setPlaybackRate(0.88 + 0.24 * Math.random());
+	// Filter jitter — a fresh BiquadFilterNode per clone (clone() shares the
+	// template's filter array by reference; weatherAudio's modulateClap note).
+	// Floor 1.8 kHz: the jitter must vary BRIGHTNESS, never muffle the crack.
+	const filter = pop.context.createBiquadFilter();
+	filter.type = 'lowpass';
+	filter.frequency.value = 1800 * 2 ** (Math.random() * 3);
+	pop.setFilters([filter]);
+	pop.play();
+	livePops.push(pop);
+};
+
 /** Drop every held instance — CarEngineAudio's teardown, so the module never
  * points at dead objects (the scene is keep-alive; this runs on real unmount). */
 export const detachCarAudio = (): void => {
 	layers.fill(undefined);
+	popTakes.fill(undefined);
+	livePops.length = 0;
 };
 
 /**
@@ -98,6 +170,13 @@ export const parkCarAudio = (): void => {
 	for (const audio of layers) {
 		if (audio?.isPlaying) audio.pause();
 	}
+	// A bang must not outlive its scene — clones are raw graph children, nothing
+	// else would stop them (the mounted takes unmount with the component).
+	for (const pop of livePops) {
+		pop.stop();
+		pop.parent?.remove(pop);
+	}
+	livePops.length = 0;
 };
 
 export const tickCarAudio = (delta: number): void => {
@@ -141,6 +220,16 @@ export const tickCarAudio = (delta: number): void => {
 			if (!audio.isPlaying) audio.play();
 		} else if (audio.isPlaying) {
 			audio.pause();
+		}
+	}
+
+	// Reap spent pop clones — they are raw graph children (not components), so
+	// this is the only cleanup path. A pop lives <1 s; the list stays tiny.
+	for (let i = livePops.length - 1; i >= 0; i--) {
+		const pop = livePops[i];
+		if (!pop.isPlaying) {
+			pop.parent?.remove(pop);
+			livePops.splice(i, 1);
 		}
 	}
 };

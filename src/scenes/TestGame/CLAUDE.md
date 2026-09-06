@@ -29,8 +29,9 @@ handling.ts             — the two SETUPS (Grip / Drift): tyre μ, steering rac
 drivetrain.ts           — pure engine → clutch → 6MT → rear-axle traction step
 carMath.ts              — `clamp` / `damp`, shared by drivetrain.ts and TestGame.svelte
 carTelemetry.svelte.ts  — carSim (200 Hz plain object) / carHud (30 Hz $state mirror)
-carAudio.ts             — the engine NOTE: rpm crossfade + pitch tracking + throttle
-                         load, ticked from carSim (weatherAudio contract — never $effect)
+carAudio.ts             — the engine NOTE + exhaust pops: rpm voice bands, rpm-driven
+                         loudness (never input), pop takes jittered per hit — ticked from
+                         carSim (weatherAudio contract — never $effect)
 cityColliders.ts        — hand-rolled static trimesh colliders for the track GLB
 ```
 
@@ -352,7 +353,20 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   level down at exactly the rate the tacho falls, and the pedals change nothing.
   LIFT-OFF IS THE BED ALONE: no
   one-shot sample — a recorded "release" carries its own pitch envelope and speaks
-  twice over a bed already tracking rpm down. The six wavs are
+  twice over a bed already tracking rpm down. EXHAUST POPS: `fire()` in
+  CarExhaustFlames also calls `triggerExhaustPop(energy, rightTip)` — every VISUAL
+  pop is voiced (downshift bursts sized by rpm, limiter stutters, anti-lag
+  double-bangs; N/R and the nitrous pilot jet never call fire, so they stay
+  silent). Take choice is a FUZZY crossover on the pop's energy (`exhaustpop1`
+  mild below ~0.55, `exhaustpop2` aggressive above ~0.8, coin-flip between) and
+  every hit is jittered — volume by energy × randomness, rate 0.88–1.12, a fresh
+  randomized lowpass per clone (thunder-clap contract: no two bangs alike). Pops
+  are CLONES parented at the dominant tip (model metres, same TIP_L/TIP_R space;
+  polyphonic, so double-bangs overlap), reaped in the tick when spent and stopped
+  by parkCarAudio on scene exit. The pop wavs are PEAK-NORMALIZED to -3 dBFS
+  offline (+6.03/+8.05 dB pure gain — a transient must slam past the bed's
+  continuous RMS or it's inaudible; their peaks originally sat AT the bed's
+  effective level, fully masked) on top of `POP_GAIN` at runtime. The six wavs are
   CUT FOR LOOPING (ffmpeg: self-crossfade construction — each file is the
   crossfade of itself, extracted so its last sample flows into its first;
   verified join-jump < p95 of normal sample deltas), HEAD-TRIMMED to their settled

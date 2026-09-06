@@ -7,6 +7,7 @@
 	import {
 		LAYER_FILES,
 		attachEngineLayer,
+		attachPopAudio,
 		detachCarAudio,
 		parkCarAudio,
 		tickCarAudio
@@ -82,4 +83,27 @@
 			oncreate={(a: ThreePositionalAudio) => attachEngineLayer(i, a)}
 		/>
 	{/each}
+</T.Group>
+
+<!-- The exhaust-pop one-shots. Mounted at the car's ORIGIN (not the engine-bay
+     group above): clones are positioned at the flames' TIP_L/TIP_R in the same
+     model-metre space, so the group must carry no offset of its own. The takes
+     themselves never play — every bang is a clone at the pipe that fired. -->
+<T.Group userData={{ hideInTree: true, selectable: false }}>
+	<PositionalAudio
+		src={ENGINE_URL + 'exhaustpop1.wav'}
+		autoplay={false}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachPopAudio(0, a)}
+	/>
+	<PositionalAudio
+		src={ENGINE_URL + 'exhaustpop2.wav'}
+		autoplay={false}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachPopAudio(1, a)}
+	/>
 </T.Group>

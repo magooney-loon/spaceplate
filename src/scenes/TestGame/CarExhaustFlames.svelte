@@ -26,6 +26,7 @@
 	import { GR86 } from './gr86';
 	import { clamp } from './carMath';
 	import { carSim } from './carTelemetry.svelte';
+	import { triggerExhaustPop } from './carAudio';
 
 	// Exhaust flames — pops and bangs on nasty downshifts (and limiter bangs),
 	// adapted from three.js's webgpu_tsl_vfx_flames example (TSL VFX, @cmzw_).
@@ -475,6 +476,10 @@
 		ageR = 0;
 		tipL.dyn.phase.value = Math.random();
 		tipR.dyn.phase.value = Math.random();
+
+		// Voice it — same energy roll, same dominant pipe, so the bang comes from
+		// the flame that reads loudest (carAudio picks/jitters the take).
+		triggerExhaustPop(clamp(amp, 0, 1), shareR >= shareL);
 
 		if (style.dbl > 0 && Math.random() < style.dbl && pendingTimer <= 0) {
 			pending = amount * 0.55;
