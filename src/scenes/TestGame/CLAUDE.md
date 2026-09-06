@@ -371,13 +371,13 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   are CLONES parented at the dominant tip (model metres, same TIP_L/TIP_R space;
   polyphonic, so double-bangs overlap), reaped in the tick when spent and stopped
   by parkCarAudio on scene exit. NITROUS: three voices — `nitrosstart` on ENGAGE
-  (flow crosses up through ~0.02), its REVERSE `nitrosend.wav` (made offline via
+  (flow crosses up through ~0.02), its REVERSE `nitrosend.opus` (made offline via
   ffmpeg `areverse` — buffer sources can't play backwards) on RELEASE (the first
   frame the flow falls while on; pedal lift and bottle-dry are both releases),
   and the `nitrosdrain` LOOP while spraying, volume following `carSim.nitrous`
   (the same flow the flames/camera/HUD read). One-shot semantics (clickAudio
   pattern): a re-engage mid-play cuts and restarts. IGNITION: M/N voice the
-  transitions (`turnon.wav` / `turnoff.wav`) and gate everything combustive — bed,
+  the transitions (`turnon.opus` / `turnoff.opus`) and gate everything combustive — bed,
   pops, nitrous all stop when the switch is off. M starts a realistic startup:
   the turnon sound cranks, RPM revs to ~2k then settles, and only when the sound
   ends does `carIgnition.ready` flip true and the idle bed fade in — throttle,

@@ -89,10 +89,10 @@
 		/>
 	{/each}
 	<!-- Nitrous voices: the drain loop rides the flow, start fires on engage and
-	     its REVERSE (nitrosend.wav, made offline via areverse) on release — one-shot
+	     its REVERSE (nitrosend.opus, made offline via areverse) on release — one-shot
 	     semantics live in carAudio.ts. Engine bay: the solenoids are up front. -->
 	<PositionalAudio
-		src={ENGINE_URL + 'nitrosdrain.wav'}
+		src={ENGINE_URL + 'nitrosdrain.opus'}
 		loop
 		autoplay={false}
 		volume={0}
@@ -102,7 +102,7 @@
 		oncreate={(a: ThreePositionalAudio) => attachNitroDrain(a)}
 	/>
 	<PositionalAudio
-		src={ENGINE_URL + 'nitrosstart.wav'}
+		src={ENGINE_URL + 'nitrosstart.opus'}
 		autoplay={false}
 		refDistance={REF_DISTANCE}
 		rolloffFactor={ROLLOFF}
@@ -110,7 +110,7 @@
 		oncreate={(a: ThreePositionalAudio) => attachNitroStart(a)}
 	/>
 	<PositionalAudio
-		src={ENGINE_URL + 'nitrosend.wav'}
+		src={ENGINE_URL + 'nitrosend.opus'}
 		autoplay={false}
 		refDistance={REF_DISTANCE}
 		rolloffFactor={ROLLOFF}
@@ -120,7 +120,7 @@
 	<!-- Ignition: M fires turnon, N fires turnoff (and kills the bed instantly so
 	     the shot lands over silence). -->
 	<PositionalAudio
-		src={ENGINE_URL + 'turnon.wav'}
+		src={ENGINE_URL + 'turnon.opus'}
 		autoplay={false}
 		refDistance={REF_DISTANCE}
 		rolloffFactor={ROLLOFF}
@@ -128,7 +128,7 @@
 		oncreate={(a: ThreePositionalAudio) => attachTurnOnSound(a)}
 	/>
 	<PositionalAudio
-		src={ENGINE_URL + 'turnoff.wav'}
+		src={ENGINE_URL + 'turnoff.opus'}
 		autoplay={false}
 		refDistance={REF_DISTANCE}
 		rolloffFactor={ROLLOFF}
@@ -143,7 +143,7 @@
      themselves never play — every bang is a clone at the pipe that fired. -->
 <T.Group userData={{ hideInTree: true, selectable: false }}>
 	<PositionalAudio
-		src={ENGINE_URL + 'exhaustpop1.wav'}
+		src={ENGINE_URL + 'exhaustpop1.opus'}
 		autoplay={false}
 		refDistance={REF_DISTANCE}
 		rolloffFactor={ROLLOFF}
@@ -151,7 +151,7 @@
 		oncreate={(a: ThreePositionalAudio) => attachPopAudio(0, a)}
 	/>
 	<PositionalAudio
-		src={ENGINE_URL + 'exhaustpop2.wav'}
+		src={ENGINE_URL + 'exhaustpop2.opus'}
 		autoplay={false}
 		refDistance={REF_DISTANCE}
 		rolloffFactor={ROLLOFF}

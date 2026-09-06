@@ -34,12 +34,12 @@ import { carIgnition } from './carInput.svelte';
  * Order matters — indices line up 1:1 with `LAYER_RPM` below.
  */
 export const LAYER_FILES = [
-	'idle.wav',
-	'rpm1.wav',
-	'rpm2.wav',
-	'rpm3.wav',
-	'rpm4.wav',
-	'rpm5.wav'
+	'idle.opus',
+	'rpm1.opus',
+	'rpm2.opus',
+	'rpm3.opus',
+	'rpm4.opus',
+	'rpm5.opus'
 ] as const;
 
 /**
@@ -49,7 +49,7 @@ export const LAYER_FILES = [
  * These are guesses at the wavs — dial them BY EAR: a wrong anchor is a layer
  * that speaks in the wrong octave while it holds the crossfade.
  */
-const LAYER_RPM = [1250, 2150, 3450, 4850, 6250, 7200];
+const LAYER_RPM = [1050, 1950, 3250, 4650, 6050, 7000];
 
 /** Safety clamps for the derived rates (idle dips and limiter overshoots). */
 const RATE_MIN = 0.7;
