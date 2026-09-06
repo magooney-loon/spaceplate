@@ -94,7 +94,11 @@
 			Math.ceil((SHIFT_LIGHTS * (rpm - SHIFT_LIGHT_FROM)) / (GR86.limiterRpm - SHIFT_LIGHT_FROM))
 		)
 	);
-	const spinning = $derived(carHud.slip > 0.15);
+	// TC lamps when the ECU is working — which it never is in Drift: the tune
+	// runs `tractionControl: false`, so wheelspin there is the SETUP, not a system
+	// intervening, and a blinking lamp would be a lie. Gate on the tune's own flag
+	// rather than the mode string — the tune is the truth.
+	const spinning = $derived(HANDLING_TUNES[carHandling.mode].tractionControl && carHud.slip > 0.15);
 	const setup = $derived(HANDLING_TUNES[carHandling.mode].label);
 	// A few degrees of slip angle is just a car cornering. Past ~10° it is a slide, and
 	// the number is worth watching: it is what the Drift tune's two yaw terms balance.

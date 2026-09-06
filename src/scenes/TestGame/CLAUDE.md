@@ -23,7 +23,8 @@ ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + th
 NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
                          boost from the nitrous flow (the lensState contract)
 carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E / Shift) +
-                         the latched switches (lights, handling tune) + the HUD → scene restart signal
+                         the latched switches (lights, ignition, handling tune) + the
+                         HUD → scene restart signal
 gr86.ts                 — the real car's HARDWARE, pure SI (metres/kg/newtons/seconds)
 handling.ts             — the two SETUPS (Grip / Drift): tyre μ, steering rack, oversteer
 drivetrain.ts           — pure engine → clutch → 6MT → rear-axle traction step
@@ -38,12 +39,16 @@ cityColliders.ts        — hand-rolled static trimesh colliders for the track G
 ## Controls
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
-Shift nitrous, L headlights, H main beam, G handling setup. Reverse is a GEAR,
+Shift nitrous, L headlights, K main beam, G handling setup, M/N ignition on/off
+(turnon/turnoff sounds + the whole engine bed gates on it; the driving model is
+NOT gated — arcade v1, the car coasts on silently). Reverse is a GEAR,
 not a pedal: Q past 1st through N into R, then pull away on ↑ — the pedals never
 swap meaning, ↓ is only ever the brake. The keys are chosen so Studio's
 dev-mode shortcuts (w a s z t r c v m) never fight the car (Shift is a modifier,
-invisible to those bare-letter binds), and L/H/G also dodge the engine's own
-Ctrl+H. Input is this scene's own `svelte:window` keymap (`carInput.svelte.ts`),
+invisible to those bare-letter binds), and L/K/G/N also dodge the engine's own
+Ctrl+H — EXCEPT M, which is in Studio's set: accepted because Studio is dev-only,
+rebind if it ever bites. Input is this scene's own `svelte:window` keymap
+(`carInput.svelte.ts`),
 not the shared keymapper — that needs a per-scene rework first.
 
 Either Shift is a wet nitrous kit on a throttle switch: it only sprays while held
@@ -369,7 +374,14 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   frame the flow falls while on; pedal lift and bottle-dry are both releases),
   and the `nitrosdrain` LOOP while spraying, volume following `carSim.nitrous`
   (the same flow the flames/camera/HUD read). One-shot semantics (clickAudio
-  pattern): a re-engage mid-play cuts and restarts. The pop wavs are PEAK-NORMALIZED to -3 dBFS
+  pattern): a re-engage mid-play cuts and restarts. IGNITION: M/N voice the
+  transitions (`turnon.wav` / `turnoff.wav`) and gate everything combustive — bed,
+  pops, nitrous all stop when the switch is off. The driving model is NOT gated
+  (arcade v1: the car coasts silently). Edge-triggered: the one-shot fires on the
+  keydown, the bed cuts instantly on turnoff so the shot lands over silence. TC
+  LAMP: the cluster's `spinning` indicator gates on the tune's `tractionControl`
+  flag — in Drift mode `tractionControl` is false, so wheelspin there is the setup,
+  not a system intervening, and the lamp stays off. The pop wavs are PEAK-NORMALIZED to -3 dBFS
   offline (+6.03/+8.05 dB pure gain — a transient must slam past the bed's
   continuous RMS or it's inaudible; their peaks originally sat AT the bed's
   effective level, fully masked) on top of `POP_GAIN` at runtime. The six wavs are

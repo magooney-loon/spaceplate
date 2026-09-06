@@ -27,6 +27,7 @@ import { sceneState } from '$extensions/scene';
 import { GR86 } from './gr86';
 import { clamp, damp } from './carMath';
 import { carSim } from './carTelemetry.svelte';
+import { carIgnition } from './carInput.svelte';
 
 /**
  * The six loop files, lowest first: the parked tickover, then the rising rpm bed.
@@ -150,13 +151,34 @@ export const attachNitroEnd = (audio: ThreePositionalAudio): void => {
 	nitroEnd = audio;
 };
 
-/** One-shot semantics (clickAudio pattern): a re-engage mid-play cuts and
- * restarts — that read is correct, the system just fired again. */
-const playNitroShot = (audio: ThreePositionalAudio | undefined, master: number): void => {
+/** One-shot semantics (clickAudio pattern): a re-fire mid-play cuts and
+ * restarts — that read is correct, the system just went again. */
+const playOneShot = (audio: ThreePositionalAudio | undefined, gain: number, master: number): void => {
 	if (!audio?.buffer) return;
 	if (audio.isPlaying) audio.stop();
-	audio.setVolume(NITRO_SHOT_GAIN * master);
+	audio.setVolume(gain * master);
 	audio.play();
+};
+
+// ── Ignition ─────────────────────────────────────────────────────────────────
+//
+// M on / N off (carInput's latched switch). The bed, pops and nitrous all gate
+// on it — no combustion, no noise — and the one-shots voice the transitions.
+// The DRIVING model is not gated (arcade v1): engine off = silent running.
+
+/** Turn-on/off one-shot level. Files peak near 0 dBFS as delivered. */
+const IGNITION_GAIN = 0.9;
+
+let turnOnSound: ThreePositionalAudio | undefined;
+let turnOffSound: ThreePositionalAudio | undefined;
+/** Previous tick's ignition — edge detect for the one-shots. */
+let ignPrev = carIgnition.on;
+
+export const attachTurnOnSound = (audio: ThreePositionalAudio): void => {
+	turnOnSound = audio;
+};
+export const attachTurnOffSound = (audio: ThreePositionalAudio): void => {
+	turnOffSound = audio;
 };
 
 /**
@@ -167,6 +189,9 @@ const playNitroShot = (audio: ThreePositionalAudio | undefined, master: number):
 export const triggerExhaustPop = (energy: number, right: boolean): void => {
 	const master = settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0;
 	if (master <= 0) return;
+	// No combustion, no bang — ignition off gates the pops too (the flames still
+	// pop visually; gating them is a flames-side change for another day).
+	if (!carIgnition.on) return;
 	// Fuzzy crossover: mild below, aggressive above, a coin-flip zone between —
 	// never the same take for the same pop twice in a row.
 	const aggressive = energy > 0.55 + 0.25 * Math.random();
@@ -209,6 +234,11 @@ export const detachCarAudio = (): void => {
 	nitroPrev = 0;
 	nitroOn = false;
 	nitroReleased = false;
+	turnOnSound = undefined;
+	turnOffSound = undefined;
+	// Sync, not reset — ignition is a latched switch and must survive remounts;
+	// syncing (not zeroing) is what stops a phantom turn-on shot at re-entry.
+	ignPrev = carIgnition.on;
 };
 
 /**
@@ -237,6 +267,11 @@ export const parkCarAudio = (): void => {
 	if (nitroDrain?.isPlaying) nitroDrain.pause();
 	if (nitroStart?.isPlaying) nitroStart.stop();
 	if (nitroEnd?.isPlaying) nitroEnd.stop();
+	// Ignition one-shots stop too, and the edge state syncs (not resets — the
+	// switch is latched, a phantom turn-on at re-entry would be a bug).
+	ignPrev = carIgnition.on;
+	if (turnOnSound?.isPlaying) turnOnSound.stop();
+	if (turnOffSound?.isPlaying) turnOffSound.stop();
 };
 
 export const tickCarAudio = (delta: number): void => {
@@ -247,7 +282,23 @@ export const tickCarAudio = (delta: number): void => {
 	if (sceneState.currentScene !== 'testGame') return;
 
 	const master = settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0;
-	const audible = master > 0;
+	// Ignition gates everything combustive — bed, pops, nitrous. The one-shots
+	// below still play through this (they ARE the transitions), so they take
+	// `master` directly, not `audible`.
+	const audible = master > 0 && carIgnition.on;
+
+	// ── Ignition edges: voice the transitions, bed handles the rest. ──────────
+	if (carIgnition.on !== ignPrev) {
+		ignPrev = carIgnition.on;
+		playOneShot(carIgnition.on ? turnOnSound : turnOffSound, IGNITION_GAIN, master);
+		if (!carIgnition.on) {
+			// Engine dies NOW, not after the shot — the turnoff recording expects a
+			// silent bed under it.
+			for (const audio of layers) {
+				if (audio?.isPlaying) audio.pause();
+			}
+		}
+	}
 
 	// Level from the TACHO: idle → limiter maps BED_IDLE → BED_REDLINE, one-pole
 	// so a shift's rpm jump can't click the gain. No input anywhere in this term.
@@ -288,12 +339,12 @@ export const tickCarAudio = (delta: number): void => {
 	if (!nitroOn && flow > NITRO_ON_FLOW) {
 		nitroOn = true;
 		nitroReleased = false;
-		playNitroShot(nitroStart, master);
+		playOneShot(nitroStart, NITRO_SHOT_GAIN, master);
 	} else if (nitroOn && !nitroReleased && nitroPrev > NITRO_ON_FLOW && flow < nitroPrev * 0.97) {
 		// The flow only falls while ON at the moment the pedal lifts or the bottle
 		// runs dry — one frame later than the physics knows it, close enough for ears.
 		nitroReleased = true;
-		playNitroShot(nitroEnd, master);
+		playOneShot(nitroEnd, NITRO_SHOT_GAIN, master);
 	}
 	if (nitroOn && flow <= NITRO_ON_FLOW) {
 		nitroOn = false;

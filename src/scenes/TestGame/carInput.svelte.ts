@@ -90,6 +90,16 @@ export const carLights = $state({
 });
 
 /**
+ * Ignition — M on, N off. A latched switch like the lights: it survives
+ * `resetCarInput` and the Restart button. The ENGINE AUDIO follows it (carAudio
+ * gates the bed/pops/nitrous and voices turnon/turnoff); the driving model does
+ * not (yet) — arcade v1, the car keeps driving silently, which reads as an EV
+ * mode more than a dead engine. Note: M collides with Studio's dev-mode bind
+ * (w a s z t r c v m) — accepted for now, Studio is dev-only.
+ */
+export const carIgnition = $state({ on: true });
+
+/**
  * The selected setup — Grip (the validated road car) or Drift (a loose rear axle
  * and real oversteer). See handling.ts for what actually changes. A switch, not a
  * pedal: it survives `resetCarInput` and the Restart button, and the scene reads
@@ -107,16 +117,19 @@ export const cycleHandlingMode = (): void => {
 	carHandling.mode = HANDLING_MODES[next];
 };
 
-export type CarToggleAction = 'lights' | 'highBeam' | 'handling';
+export type CarToggleAction = 'lights' | 'highBeam' | 'handling' | 'ignOn' | 'ignOff';
 
 /**
- * e.code → switch. L, H and G are free of both Studio's dev binds (w a s z t r c v m)
- * and the engine's own Ctrl+H (UI toggle).
+ * e.code → switch. L, K and G are free of both Studio's dev binds (w a s z t r c v m)
+ * and the engine's own Ctrl+H (UI toggle); M is IN Studio's set — see carIgnition's
+ * note; N is free.
  */
 export const CAR_TOGGLE_KEYS: Record<string, CarToggleAction> = {
 	KeyL: 'lights',
-	KeyH: 'highBeam',
-	KeyG: 'handling'
+	KeyK: 'highBeam',
+	KeyG: 'handling',
+	KeyM: 'ignOn',
+	KeyN: 'ignOff'
 };
 
 /** Edge-triggered: call once per keydown, never on auto-repeat. */
@@ -127,6 +140,14 @@ export const applyCarToggle = (action: CarToggleAction): void => {
 	}
 	if (action === 'handling') {
 		cycleHandlingMode();
+		return;
+	}
+	if (action === 'ignOn') {
+		carIgnition.on = true;
+		return;
+	}
+	if (action === 'ignOff') {
+		carIgnition.on = false;
 		return;
 	}
 	// Flicking to main beam turns the lamps on — a dead key with the lights off is

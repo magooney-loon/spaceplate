@@ -11,6 +11,8 @@
 		attachNitroEnd,
 		attachNitroStart,
 		attachPopAudio,
+		attachTurnOffSound,
+		attachTurnOnSound,
 		detachCarAudio,
 		parkCarAudio,
 		tickCarAudio
@@ -114,6 +116,24 @@
 		rolloffFactor={ROLLOFF}
 		maxDistance={MAX_DISTANCE}
 		oncreate={(a: ThreePositionalAudio) => attachNitroEnd(a)}
+	/>
+	<!-- Ignition: M fires turnon, N fires turnoff (and kills the bed instantly so
+	     the shot lands over silence). -->
+	<PositionalAudio
+		src={ENGINE_URL + 'turnon.wav'}
+		autoplay={false}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachTurnOnSound(a)}
+	/>
+	<PositionalAudio
+		src={ENGINE_URL + 'turnoff.wav'}
+		autoplay={false}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachTurnOffSound(a)}
 	/>
 </T.Group>
 
