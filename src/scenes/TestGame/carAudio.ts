@@ -163,24 +163,32 @@ const playOneShot = (audio: ThreePositionalAudio | undefined, gain: number, mast
 // ── Ignition ─────────────────────────────────────────────────────────────────
 //
 // M on / N off (carInput's latched switch). The bed, pops and nitrous all gate
-// on it — no combustion, no noise — and the one-shots voice the transitions.
-// The driving model is also gated: throttle, brake and shifting are dead with
-// the engine off, so the car coasts to a stop.
+// on `carIgnition.ready` — no combustion, no noise — and the one-shots voice
+// the transitions. M starts a realistic startup: the turnon sound cranks, the
+// physics task ramps RPM to ~2k then settles, and only when the sound ends does
+// `ready` flip true and the idle bed fade in. N cuts instantly: bed silences
+// under the turnoff shot, `ready` clears, the car coasts to a stop.
 
 /** Turn-on/off one-shot level. Files peak near 0 dBFS as delivered. */
 const IGNITION_GAIN = 0.9;
 
-let turnOnSound: ThreePositionalAudio | undefined;
-let turnOffSound: ThreePositionalAudio | undefined;
-/** Previous tick's ignition — edge detect for the one-shots. */
-let ignPrev = carIgnition.on;
+	let turnOnSound: ThreePositionalAudio | undefined;
+	let turnOffSound: ThreePositionalAudio | undefined;
+	/** Previous tick's ignition — edge detect for the one-shots. */
+	let ignPrev = carIgnition.on;
 
-export const attachTurnOnSound = (audio: ThreePositionalAudio): void => {
-	turnOnSound = audio;
-};
-export const attachTurnOffSound = (audio: ThreePositionalAudio): void => {
-	turnOffSound = audio;
-};
+	export const attachTurnOnSound = (audio: ThreePositionalAudio): void => {
+		turnOnSound = audio;
+		// When the crank recording ends, the startup sequence is done — the bed
+		// can fade in and the player can drive. Wired here (not in tick) because
+		// this runs once at mount, and the callback must not stack.
+		audio.onEnded = () => {
+			carIgnition.ready = true;
+		};
+	};
+	export const attachTurnOffSound = (audio: ThreePositionalAudio): void => {
+		turnOffSound = audio;
+	};
 
 /**
  * Voice one pop. `energy` 0..1 sizes it (downshift bursts big, limiter stutters
@@ -269,7 +277,8 @@ export const parkCarAudio = (): void => {
 	if (nitroStart?.isPlaying) nitroStart.stop();
 	if (nitroEnd?.isPlaying) nitroEnd.stop();
 	// Ignition one-shots stop too, and the edge state syncs (not resets — the
-	// switch is latched, a phantom turn-on at re-entry would be a bug).
+	// switch is latched, a phantom turn-on at re-entry would be a bug). Ready
+	// syncs too — if ignition was off at exit, stay off; if on, the bed comes back.
 	ignPrev = carIgnition.on;
 	if (turnOnSound?.isPlaying) turnOnSound.stop();
 	if (turnOffSound?.isPlaying) turnOffSound.stop();
@@ -285,8 +294,9 @@ export const tickCarAudio = (delta: number): void => {
 	const master = settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0;
 	// Ignition gates everything combustive — bed, pops, nitrous. The one-shots
 	// below still play through this (they ARE the transitions), so they take
-	// `master` directly, not `audible`.
-	const audible = master > 0 && carIgnition.on;
+	// `master` directly, not `audible`. The bed waits for `ready` (startup
+	// sequence complete) — it must not overlap the turnon recording.
+	const audible = master > 0 && carIgnition.ready;
 
 	// ── Ignition edges: voice the transitions, bed handles the rest. ──────────
 	if (carIgnition.on !== ignPrev) {
@@ -294,7 +304,11 @@ export const tickCarAudio = (delta: number): void => {
 		playOneShot(carIgnition.on ? turnOnSound : turnOffSound, IGNITION_GAIN, master);
 		if (!carIgnition.on) {
 			// Engine dies NOW, not after the shot — the turnoff recording expects a
-			// silent bed under it.
+			// silent bed under it. Also clear ready so the cluster dims instantly.
+			// Kill the turnon sound if it's still cranking — a mid-startup N press
+			// must not leave the onended callback dangling.
+			carIgnition.ready = false;
+			if (turnOnSound?.isPlaying) turnOnSound.stop();
 			for (const audio of layers) {
 				if (audio?.isPlaying) audio.pause();
 			}

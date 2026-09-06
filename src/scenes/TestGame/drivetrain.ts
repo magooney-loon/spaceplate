@@ -153,6 +153,8 @@ export function createDrivetrain() {
 	let prevDown = false;
 	/** Last step's drive force, for the load-transfer term. Chicken-and-egg, one step stale. */
 	let prevDrive = 0;
+	/** Phase accumulator for the idle wobble — organic fluctuation 800–900 rpm. */
+	let idlePhase = 0;
 
 	function engage(gear: number): void {
 		if (gear === state.gear) return;
@@ -361,7 +363,12 @@ export function createDrivetrain() {
 		state.spin = 0;
 		state.limiting = false;
 		state.shifted = false;
-		state.rpm += (GR86.idleRpm - state.rpm) * damp(GR86.freeDropRate, dt);
+		// Organic idle: slow sine wobble between 800–900 rpm. The two terms
+		// (1.5 Hz main + 0.4 Hz sub-harmonic) keep it from looking periodic.
+		idlePhase += dt;
+		const wobble =
+			Math.sin(idlePhase * 1.5) * 40 + Math.sin(idlePhase * 0.4) * 10;
+		state.rpm += (GR86.idleRpm + wobble - state.rpm) * damp(GR86.freeDropRate, dt);
 		prevDrive = 0;
 	}
 
@@ -380,6 +387,7 @@ export function createDrivetrain() {
 		prevUp = false;
 		prevDown = false;
 		prevDrive = 0;
+		idlePhase = 0;
 	}
 
 	return { state, step, idle, reset };

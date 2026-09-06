@@ -192,6 +192,8 @@
 	/** 0..1 — smoothed spray level. This is what reaches the drivetrain, the
 	 * flames (blue mix + pilot jet) and the HUD, never the raw key. */
 	let nitrousFlow = 0;
+	/** Seconds since ignition-on edge. Drives the startup RPM ramp (idle → 2k → idle). */
+	let startupTimer = 0;
 
 	let carBody = $state.raw<RapierRigidBody>();
 	/** What ChaseCamera follows — an empty parented to the chassis body, see below. */
@@ -245,9 +247,14 @@
 
 		// Ignition gates throttle, brake and shifting — engine off, no drive. Handbrake
 		// still works (safety), steering still works (rolling car must still steer).
+		// During startup (on but !ready), the startup sequence block below returns early.
 		const ignOn = carIgnition.on;
 		const throttle = ignOn && carInput.up;
 		const brake = ignOn && carInput.down;
+
+		// Reset the startup timer when ignition cuts — a mid-startup N press aborts
+		// the rev sequence instantly.
+		if (!ignOn) startupTimer = 0;
 
 		// The bottle. Runs BEFORE the idle early-return below so it regenerates while
 		// parked too, and so `nitrousFlow` is already honest when the idle branch
@@ -287,6 +294,43 @@
 		// must render the angle the physics used, not one it re-derived from a constant.
 		carSim.steerAngle = carSim.steer * tune.maxSteerAngle;
 
+		// ── Startup sequence ────────────────────────────────────────────────────
+		// Ignition on but the turnon sound hasn't finished yet: the RPM ramps to
+		// ~2000 (a realistic crank-and-fire) then settles back to idle. No drive
+		// force, no shifting — the car stays put until `ready`.
+		if (carIgnition.on && !carIgnition.ready) {
+			body.resetForces(false);
+			// Rev to 2000 over ~0.4 s, then decay back to idle over ~0.8 s.
+			// Using a simple timer that counts up from 0; the turnon sound is ~1.2 s.
+			startupTimer += delta;
+			const revPeak = 2000;
+			const peakTime = 0.4;
+			const decayRate = 4; // exp decay rate for the settle
+			let targetRpm: number;
+			if (startupTimer < peakTime) {
+				// Ramp up: idle → 2000
+				const t = startupTimer / peakTime;
+				targetRpm = GR86.idleRpm + (revPeak - GR86.idleRpm) * t;
+			} else {
+				// Settle: 2000 → idle
+				const t = startupTimer - peakTime;
+				targetRpm = GR86.idleRpm + (revPeak - GR86.idleRpm) * Math.exp(-decayRate * t);
+			}
+			carSim.rpm += (targetRpm - carSim.rpm) * damp(12, delta);
+			carSim.speedMs = 0;
+			carSim.gear = drivetrain.state.gear;
+			carSim.slip = 0;
+			carSim.drift = 0;
+			carSim.throttle = 0;
+			carSim.brake = 0;
+			carSim.handbrake = false;
+			carSim.limiting = false;
+			carSim.nitrous = 0;
+			carSim.nitrousTank = nitrousBottle;
+			publishCarHud(delta);
+			return;
+		}
+
 		// Parked and untouched → hands off, so the body can sleep. resetForces(false)
 		// first: rapier forces persist until cleared, and waking the body to clear them
 		// would defeat the point. Q/E count as input even though they move nothing —
@@ -300,9 +344,14 @@
 			!carInput.shiftDown;
 		if (idle && _vel.lengthSq() < 0.25) {
 			body.resetForces(false);
-			drivetrain.idle(delta);
+			if (ignOn) {
+				drivetrain.idle(delta);
+				carSim.rpm = drivetrain.state.rpm;
+			} else {
+				// Engine off — sharp drop to 0, not idling at 800.
+				carSim.rpm += (0 - carSim.rpm) * damp(GR86.freeDropRate * 1.5, delta);
+			}
 			carSim.speedMs = 0;
-			carSim.rpm = drivetrain.state.rpm;
 			carSim.gear = drivetrain.state.gear;
 			carSim.slip = 0;
 			carSim.drift = 0;
@@ -436,6 +485,10 @@
 		// Instruments — plain object at 200 Hz, $state mirror at 30 (carTelemetry).
 		carSim.speedMs = speedMs;
 		carSim.rpm = drivetrain.state.rpm;
+		// Engine off while moving — decay RPM to 0 (sharp but not instant).
+		if (!ignOn) {
+			carSim.rpm *= 1 - damp(GR86.freeDropRate * 1.5, delta);
+		}
 		carSim.gear = drivetrain.state.gear;
 		carSim.slip = drivetrain.state.slip;
 		carSim.throttle = drivetrain.state.throttle;
@@ -474,6 +527,7 @@
 			// itself while away).
 			nitrousBottle = 1;
 			nitrousFlow = 0;
+			startupTimer = 0;
 			resetCarTelemetry();
 		};
 	});

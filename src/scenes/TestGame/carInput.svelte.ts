@@ -93,11 +93,17 @@ export const carLights = $state({
  * Ignition — M on, N off. A latched switch like the lights: it survives
  * `resetCarInput` and the Restart button. The ENGINE AUDIO follows it (carAudio
  * gates the bed/pops/nitrous and voices turnon/turnoff); the driving model is
- * also gated — throttle, brake and shifting do nothing with the engine off, so
- * the car coasts to a stop. Note: M collides with Studio's dev-mode bind
- * (w a s z t r c v m) — accepted for now, Studio is dev-only.
+ * also gated — throttle, brake and shifting do nothing until `ready` is true.
+ *
+ * Sequence: M → `on = true`, `ready = false` (turnon sound plays, RPM revs to
+ * ~2k then settles). When the turnon sound ends, `ready = true` and the idle
+ * bed fades in — only then can the player drive. N → everything cuts instantly
+ * (`on = false`, `ready = false`, bed silences under the turnoff shot).
+ *
+ * Note: M collides with Studio's dev-mode bind (w a s z t r c v m) — accepted
+ * for now, Studio is dev-only.
  */
-export const carIgnition = $state({ on: true });
+export const carIgnition = $state({ on: true, ready: true });
 
 /**
  * The selected setup — Grip (the validated road car) or Drift (a loose rear axle
@@ -144,10 +150,12 @@ export const applyCarToggle = (action: CarToggleAction): void => {
 	}
 	if (action === 'ignOn') {
 		carIgnition.on = true;
+		carIgnition.ready = false;
 		return;
 	}
 	if (action === 'ignOff') {
 		carIgnition.on = false;
+		carIgnition.ready = false;
 		return;
 	}
 	// Flicking to main beam turns the lamps on — a dead key with the lights off is

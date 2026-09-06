@@ -37,7 +37,7 @@ export const MAX_BODIES = 500;
 
 const WORLD_DEFAULTS = {
 	gravityX: 0,
-	gravityY: -9.8,
+	gravityY: -30.0,
 	gravityZ: 0,
 	// 200 Hz fixed, not 'varying': fixed steps are the deterministic ones (same input,
 	// same result, whatever the monitor refresh), and Threlte interpolates the visual
