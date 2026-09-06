@@ -66,7 +66,7 @@ export interface DriveInput {
 	shiftUp: boolean;
 	shiftDown: boolean;
 	/** 0..1 — nitrous flow reaching the engine this step. The SCENE owns the
-	 * bottle and the throttle-switch gating (X alone does nothing); this is just
+	 * bottle and the throttle-switch gating (Shift alone does nothing); this is just
 	 * how much spray is in, multiplying wide-open-throttle torque. Sits INSIDE
 	 * the traction limit like any engine torque, so in the low gears a shot
 	 * becomes wheelspin rather than teleportation. */

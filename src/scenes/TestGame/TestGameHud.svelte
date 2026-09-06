@@ -53,7 +53,7 @@
 	<!-- Controls hint. The Drift line is the technique, not the keys — the brake is the
 	     entry and the throttle holds the angle, which is not guessable from a keymap. -->
 	<div class="info">
-		<p>↑ throttle · ↓ brake · Space handbrake · Q/E shift · X nitrous · L lights · H main beam</p>
+		<p>↑ throttle · ↓ brake · Space handbrake · Q/E shift · ⇧ nitrous · L lights · H main beam</p>
 		{#if carHandling.mode === 'drift'}
 			<p class="technique">Tap ↓ into the corner to set the car, then ↑ to hold the angle</p>
 		{:else}

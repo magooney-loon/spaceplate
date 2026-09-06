@@ -25,7 +25,8 @@
 		carHandling,
 		carInput,
 		carRestart,
-		resetCarInput
+		resetCarInput,
+		setCarInputKey
 	} from './carInput.svelte';
 	import { G, GR86, UNITS_PER_METER } from './gr86';
 	import { HANDLING_TUNES, latMu } from './handling';
@@ -35,11 +36,11 @@
 	import { clamp, damp } from './carMath';
 
 	// Test Game 3D scene — driving prototype.
-	// Controls: arrows drive, Space handbrake, Q/E shift down/up, X nitrous, L lights,
-	// H main beam — deliberately keys Studio doesn't bind (w a s z t r c v m), so
-	// dev-mode shortcuts don't fight the car. Input is this scene's own
-	// svelte:window keymap (carInput.svelte.ts), not the shared keymapper — that
-	// needs a per-scene rework first.
+	// Controls: arrows drive, Space handbrake, Q/E shift down/up, either Shift nitrous,
+	// L lights, H main beam — deliberately keys Studio doesn't bind (w a s z t r c v m —
+	// Shift is a modifier, invisible to its bare-letter binds), so dev-mode shortcuts
+	// don't fight the car. Input is this scene's own svelte:window keymap
+	// (carInput.svelte.ts), not the shared keymapper — that needs a per-scene rework first.
 
 	// Both models are draco + KTX2 compressed, so the decoders must be handed to useGltf
 	// (same setup as the gltf-viewer extension: DRACO/KTX2 fetch their decoder binaries
@@ -94,7 +95,9 @@
 		const action = CAR_INPUT_KEYS[e.code];
 		if (!action) return;
 		e.preventDefault();
-		carInput[action] = value;
+		// State change goes through the edge helper — nitrous is both Shift keys, and
+		// releasing one must not drop the pedal while the other is held.
+		setCarInputKey(e.code, value);
 	}
 
 	// Switches (headlights) latch on the keydown EDGE, so auto-repeat has to be dropped
@@ -165,8 +168,8 @@
 	const DRIFT_GATE_SPEED = 1;
 	const DRIFT_GATE_RAMP = 2;
 
-	// ── Nitrous (X) ──────────────────────────────────────────────────────────────
-	// A wet kit on a throttle switch: X alone does nothing — it sprays only while
+	// ── Nitrous (Shift) ──────────────────────────────────────────────────────
+	// A wet kit on a throttle switch: Shift alone does nothing — it sprays only while
 	// the throttle is open in a forward gear, and only while the bottle has anything
 	// left. The scene owns everything gameplay-shaped here (bottle, ramp); the one
 	// hardware number — what spray does to torque — is NITROUS_TORQUE_GAIN in gr86.ts,
@@ -240,7 +243,7 @@
 
 		// The bottle. Runs BEFORE the idle early-return below so it regenerates while
 		// parked too, and so `nitrousFlow` is already honest when the idle branch
-		// publishes it. Note the throttle switch reads the raw ↑ key: parked with X
+		// publishes it. Note the throttle switch reads the raw ↑ key: parked with Shift
 		// held but no throttle, nothing sprays (and the car may sleep).
 		const spraying =
 			carInput.nitrous && carInput.up && drivetrain.state.gear >= 1 && nitrousBottle > NITROUS_DRY;

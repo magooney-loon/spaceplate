@@ -1,7 +1,8 @@
 // TestGame's own keyboard state — deliberately NOT the shared keymapper
 // ($extensions/input): that system needs a rework for per-scene action maps, and
-// the chosen keys (arrows / Space / Q / E / X) exist precisely because Studio's
-// dev-mode shortcuts don't bind them (Studio binds bare w a s z t r c v m — see
+// the chosen keys (arrows / Space / Q / E / Shift) exist precisely because
+// Studio's dev-mode shortcuts don't bind them (Studio binds bare w a s z t r c v m
+// — Shift is a modifier, so its bare-letter binds never see it; see
 // CarHeadlights.svelte's sibling notes / TestGame.svelte).
 //
 // The state is $state (not plain) so a future HUD can show gear/input reactively;
@@ -17,15 +18,20 @@ export const carInput = $state({
 	handbrake: false,
 	shiftUp: false,
 	shiftDown: false,
-	/** X — held. A pedal, not a switch: nitrous only flows while it is down AND
-	 * the throttle is open in a forward gear (TestGame.svelte owns that gating and
-	 * the bottle itself). */
+	/** Either Shift key — held. A pedal, not a switch: nitrous only flows while
+	 * one is down AND the throttle is open in a forward gear (TestGame.svelte owns
+	 * that gating and the bottle itself). */
 	nitrous: false
 });
 
 export type CarInputAction = keyof typeof carInput;
 
-/** e.code → action. Everything not in here is ignored (and never preventDefaulted). */
+/**
+ * e.code → action. Everything not in here is ignored (and never preventDefaulted).
+ * Nitrous is BOTH Shift keys — one pedal, either side — which is why key edges go
+ * through `setCarInputKey` below: releasing one Shift must not drop the pedal
+ * while the other is still held.
+ */
 export const CAR_INPUT_KEYS: Record<string, CarInputAction> = {
 	ArrowUp: 'up',
 	ArrowDown: 'down',
@@ -34,13 +40,39 @@ export const CAR_INPUT_KEYS: Record<string, CarInputAction> = {
 	Space: 'handbrake',
 	KeyE: 'shiftUp',
 	KeyQ: 'shiftDown',
-	KeyX: 'nitrous'
+	ShiftLeft: 'nitrous',
+	ShiftRight: 'nitrous'
+};
+
+/** The reverse of the map above — which e.codes feed each action. Built once so
+ * key edges don't allocate. */
+const ACTION_CODES = {} as Record<CarInputAction, string[]>;
+for (const [code, action] of Object.entries(CAR_INPUT_KEYS)) {
+	(ACTION_CODES[action] ??= []).push(code);
+}
+
+/** Physically held codes. Cleared by `resetCarInput` — a Shift released while the
+ * window is blurred would otherwise keep the pedal stuck down after refocus. */
+const heldCodes = new Set<string>();
+
+/**
+ * Apply one key EDGE (keydown/keyup) by e.code. The scene's handlers own the DOM
+ * concerns (typing-target checks, preventDefault) and call this for the state
+ * change: the action stays down while ANY of its codes is held.
+ */
+export const setCarInputKey = (code: string, down: boolean): void => {
+	const action = CAR_INPUT_KEYS[code];
+	if (!action) return;
+	if (down) heldCodes.add(code);
+	else heldCodes.delete(code);
+	carInput[action] = ACTION_CODES[action].some((c) => heldCodes.has(c));
 };
 
 export const resetCarInput = (): void => {
 	for (const key of Object.keys(carInput) as CarInputAction[]) {
 		carInput[key] = false;
 	}
+	heldCodes.clear();
 };
 
 // --- Switches -----------------------------------------------------------------

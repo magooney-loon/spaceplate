@@ -20,8 +20,8 @@ ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + th
                          nitrous FOV kick
 NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
                          boost from the nitrous flow (the lensState contract)
-carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E / X) + the
-                         latched switches (lights, handling tune) + the HUD → scene restart signal
+carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E / Shift) +
+                         the latched switches (lights, handling tune) + the HUD → scene restart signal
 gr86.ts                 — the real car's HARDWARE, pure SI (metres/kg/newtons/seconds)
 handling.ts             — the two SETUPS (Grip / Drift): tyre μ, steering rack, oversteer
 drivetrain.ts           — pure engine → clutch → 6MT → rear-axle traction step
@@ -32,26 +32,30 @@ cityColliders.ts        — hand-rolled static trimesh colliders for the track G
 
 ## Controls
 
-Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, X
-nitrous, L headlights, H main beam, G handling setup. Reverse is a GEAR, not a
-pedal: Q past 1st through N into R, then pull away on ↑ — the pedals never swap
-meaning, ↓ is only ever the brake. The keys are chosen so Studio's dev-mode
-shortcuts (w a s z t r c v m) never fight the car, and L/H/G also dodge the
-engine's own Ctrl+H. Input is this scene's own `svelte:window` keymap
-(`carInput.svelte.ts`), not the shared keymapper — that needs a per-scene rework
-first.
+Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
+Shift nitrous, L headlights, H main beam, G handling setup. Reverse is a GEAR,
+not a pedal: Q past 1st through N into R, then pull away on ↑ — the pedals never
+swap meaning, ↓ is only ever the brake. The keys are chosen so Studio's
+dev-mode shortcuts (w a s z t r c v m) never fight the car (Shift is a modifier,
+invisible to those bare-letter binds), and L/H/G also dodge the engine's own
+Ctrl+H. Input is this scene's own `svelte:window` keymap (`carInput.svelte.ts`),
+not the shared keymapper — that needs a per-scene rework first.
 
-X is a wet nitrous kit on a throttle switch: it only sprays while held WITH ↑
-open in a forward gear (gear ≥ 1), and everything about it is owned by the
-scene's task — the bottle (4 s of full spray, ~14 s to refill, runs even while
-parked), the flow ramp (~0.13 s in, ~0.25 s out) and the telemetry publish. The
-one hardware number, `NITROUS_TORQUE_GAIN` in `gr86.ts` (+45% crank torque), is
-applied by the drivetrain INSIDE its traction limit — so a shot in 1st/2nd
-becomes wheelspin, 3rd+ is real thrust, and Drift + spray in 3rd lights the
-tyres. `carSim.nitrous` (flow) and `carSim.nitrousTank` (level) drive the blue
-flames, the cluster's N2O gauge, the chase camera's FOV kick and the afterimage
-smear (`NitrousAfterimage.svelte` easing `uAfterimageBoost` — the effect is
-default-enabled at damp 0, so the smear only exists while nitrous does).
+Either Shift is a wet nitrous kit on a throttle switch: it only sprays while held
+WITH ↑ open in a forward gear (gear ≥ 1). Both Shift keys are ONE pedal — key
+edges go through `setCarInputKey` (held-code tracking), so releasing one while
+the other is down keeps the pedal down, and `resetCarInput` clears the held set
+so a Shift released while blurred can't stick it. Everything else about the
+system is owned by the scene's task — the bottle (4 s of full spray, ~14 s to
+refill, runs even while parked), the flow ramp (~0.13 s in, ~0.25 s out) and the
+telemetry publish. The one hardware number, `NITROUS_TORQUE_GAIN` in `gr86.ts`
+(+45% crank torque), is applied by the drivetrain INSIDE its traction limit — so
+a shot in 1st/2nd becomes wheelspin, 3rd+ is real thrust, and Drift + spray in
+3rd lights the tyres. `carSim.nitrous` (flow) and `carSim.nitrousTank` (level)
+drive the blue flames, the cluster's N2O gauge, the chase camera's FOV kick and
+the afterimage smear (`NitrousAfterimage.svelte` easing `uAfterimageBoost` — the
+effect is default-enabled at damp 0, so the smear only exists while nitrous
+does).
 
 Held keys and switches are separate in that module: `carInput` is polled per
 physics step, while the latched switches — `carLights` (`on` / `high`) and
