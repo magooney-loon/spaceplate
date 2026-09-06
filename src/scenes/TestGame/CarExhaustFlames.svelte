@@ -37,15 +37,20 @@
 	// (±0.446, 0.293, 2.053), symmetric about the centreline. Tweak TIP_L/TIP_R
 	// if the model is ever replaced; flip DEBUG_TIPS to see cones at the tips.
 	//
-	// SHAPE: per tip, one group of additive quads — a rear-facing blob (what
-	// the chase cam sees; crossed quads alone are edge-on from dead behind)
-	// plus two crossed quads along the jet axis for the side/top views, and a
-	// sparser ember layer (the example's flame 2) on the crossed pair. The
-	// whole group scales with intensity (the jet stretches rearward), so the
-	// physics task only touches group scale/visible — no per-vertex work after
-	// mount. Each tip gets its OWN material instances (uniform values differ,
-	// the node graphs are identical, so both share one compiled program) —
-	// that is what lets one pipe bang harder than the other.
+	// SHAPE: three stacked layers per tip, all additive:
+	//   flame — THREE radial planes (0°/60°/120° about the jet axis — two
+	//           crossed planes read as a flat X from halfway angles) + a
+	//           rear-facing blob (what a chase cam dead behind sees)
+	//   ember — sparser white-hot tongues on two crossed planes
+	//   glow  — big soft radial halo that flashes on IGNITION and dies in
+	//           ~150 ms. The same flash value blows the flame's width up at
+	//           birth (width ×(1 + 0.5·flash)) — that initial expansion is
+	//           what makes a pop read as a BANG instead of a torch.
+	// The whole group scales with intensity (the jet stretches rearward), so
+	// the physics task only touches group scale/visible — no per-vertex work
+	// after mount. Each tip gets its OWN material instances (uniform values
+	// differ, the node graphs are identical, so they share compiled programs)
+	// — that is what lets one pipe bang harder than the other.
 	//
 	// NO TWO POPS ALIKE. Every pop rolls a STYLE, and style drives both the
 	// CPU side (amplitude, decay, length, width) and the shader via uStyle:
@@ -77,12 +82,14 @@
 	const ENERGY_CAP = 1.25;
 	/** Share of pops that are (effectively) one-pipe. */
 	const ONE_SIDED_CHANCE = 0.18;
+	/** 1/s — how fast the ignition flash (glow + width boost) dies. */
+	const FLASH_DECAY = 14;
 
 	// amplitude range, decay 1/s, jet length range, width scale, double-bang chance
 	const POP_STYLES = [
-		{ amp: [1.0, 1.3], decay: 9, len: [0.85, 1.15], w: 1.0, dbl: 0.3 }, // crack
-		{ amp: [0.8, 1.0], decay: 3.2, len: [1.25, 1.6], w: 0.95, dbl: 0 }, // burn
-		{ amp: [1.1, 1.45], decay: 5.5, len: [0.75, 1.0], w: 1.4, dbl: 0.35 } // ball
+		{ amp: [1.05, 1.35], decay: 9, len: [0.85, 1.15], w: 1.0, dbl: 0.3 }, // crack
+		{ amp: [0.85, 1.05], decay: 3.2, len: [1.25, 1.6], w: 1.0, dbl: 0 }, // burn
+		{ amp: [1.2, 1.5], decay: 5.5, len: [0.75, 1.0], w: 1.55, dbl: 0.35 } // ball
 	] as const;
 
 	const { invalidate } = useThrelte();
@@ -131,48 +138,51 @@
 
 	// ── Uniforms ────────────────────────────────────────────────────────────────
 	// uTime/uStyle are global (one style per pop, shared by both pipes); each
-	// tip owns its own intensity + noise phase pair so the pipes never flame in
-	// lockstep. aSeed (per quad, baked into the geometry) offsets the noise
-	// within one tip.
+	// tip owns its own intensity, flash and noise-phase uniforms so the pipes
+	// never flame in lockstep. aSeed (per quad, baked into the geometry)
+	// offsets the noise within one tip.
 	const uTime = uniform(0);
 	const uStyle = uniform(0);
 	const aSeed = attribute<'float'>('aSeed');
 
+	function numUniform() {
+		return uniform(0);
+	}
 	type DynUniforms = {
 		// Pinned via a helper — `ReturnType<typeof uniform>` grabs the LAST
 		// overload (a vec3 one), and `uniform<number>` isn't a legal instantiation.
 		intensity: ReturnType<typeof numUniform>;
 		phase: ReturnType<typeof numUniform>;
+		/** Ignition flash, 0..1 — drives the glow layer + the width blow-up. */
+		flash: ReturnType<typeof numUniform>;
 	};
-	function numUniform() {
-		return uniform(0);
-	}
 
 	// ── Geometry ────────────────────────────────────────────────────────────────
 	// Unit quads, jet growing +Z (rearward) from the tip:
-	//   top  — XZ plane, seen from above (the chase cam sits high)
-	//   side — the top quad stood up into the YZ plane (rotate about the flame
-	//          axis), seen from the sides
+	//   jet  — a plane THROUGH the jet axis, rolled `angle` about it; 0° lies
+	//          in the XZ plane (top view), π/2 stands it up (side view)
 	//   rear — plain XY quad facing +Z: the end-on blob for a camera directly
 	//          behind the car
-	// Merged by hand (≤24 verts) with a per-quad aSeed — BufferGeometryUtils
+	// Merged by hand (≤30 verts) with a per-quad aSeed — BufferGeometryUtils
 	// for this is heavier than the loop.
 
-	type QuadKind = 'top' | 'side' | 'rear';
+	type QuadSpec =
+		| { kind: 'jet'; width: number; length: number; angle?: number }
+		| { kind: 'rear'; width: number; length: number };
 
-	function makeLayer(specs: { kind: QuadKind; width: number; length: number }[]) {
+	function makeLayer(specs: QuadSpec[]) {
 		const parts: { pos: Float32Array; uvs: Float32Array; seed: number }[] = [];
 		let seed = 0;
 		for (const spec of specs) {
 			const plane = new THREE.PlaneGeometry(spec.width, spec.length);
-			if (spec.kind === 'rear') {
-				// Blob: centred on the opening, a touch behind it.
-				plane.translate(0, 0, spec.length * 0.35);
-			} else {
+			if (spec.kind === 'jet') {
 				// v axis (plane +Y) → +Z, v=0 edge anchored at the origin.
 				plane.rotateX(Math.PI / 2);
 				plane.translate(0, 0, spec.length / 2);
-				if (spec.kind === 'side') plane.rotateZ(Math.PI / 2);
+				if (spec.angle) plane.rotateZ(spec.angle);
+			} else {
+				// Blob: centred on the opening, a touch behind it.
+				plane.translate(0, 0, spec.length * 0.35);
 			}
 			const flat = plane.toNonIndexed();
 			parts.push({
@@ -203,26 +213,37 @@
 		return geometry;
 	}
 
-	// Flame layer: crossed jets + the rear blob. Ember layer: crossed jets only.
+	// Flame: THREE radial planes (two crossed read flat from halfway angles) +
+	// the rear blob. Embers: two crossed planes. Glow: big soft crossed pair +
+	// blob for the ignition halo.
 	const flameGeometry = makeLayer([
-		{ kind: 'top', width: 0.14, length: 0.42 },
-		{ kind: 'side', width: 0.14, length: 0.42 },
-		{ kind: 'rear', width: 0.22, length: 0.26 }
+		{ kind: 'jet', width: 0.2, length: 0.5 },
+		{ kind: 'jet', width: 0.2, length: 0.5, angle: Math.PI / 3 },
+		{ kind: 'jet', width: 0.2, length: 0.5, angle: (2 * Math.PI) / 3 },
+		{ kind: 'rear', width: 0.3, length: 0.32 }
 	]);
 	const emberGeometry = makeLayer([
-		{ kind: 'top', width: 0.1, length: 0.34 },
-		{ kind: 'side', width: 0.1, length: 0.34 }
+		{ kind: 'jet', width: 0.13, length: 0.44 },
+		{ kind: 'jet', width: 0.13, length: 0.44, angle: Math.PI / 2 }
+	]);
+	const glowGeometry = makeLayer([
+		{ kind: 'jet', width: 0.34, length: 0.44 },
+		{ kind: 'jet', width: 0.34, length: 0.44, angle: Math.PI / 2 },
+		{ kind: 'rear', width: 0.38, length: 0.4 }
 	]);
 
 	// ── Materials ───────────────────────────────────────────────────────────────
-	// Both adapted from the example's two flames; MeshBasicNodeMaterial rather
-	// than SpriteNodeMaterial because these are meshes, not sprites — and no
+	// Adapted from the example's two flames; MeshBasicNodeMaterial rather than
+	// SpriteNodeMaterial because these are meshes, not sprites — and no
 	// billboarding: the flame is car-local and shoots REARWARD, which a camera
 	// -facing sprite can't express. Additive: a pop should glow, not occlude.
 	// The .assign()s live inside Fn() — outside is silently dropped
-	// (webgpu-notes §1.3). Style selects are branchless (step/mix, §1.2's
-	// neighbourhood): isBall/isBurn pick stretch, noise speed, core size and
-	// ember gain per pop.
+	// (webgpu-notes §1.3). Style selects are branchless (step/mix): isBall/
+	// isBurn pick stretch, noise speed, core size and ember gain per pop.
+	//
+	// Fat by design: the shape warp compresses x only ×2.1 (was ×3 — that is
+	// what made the first cut read as a thin blade), exponents are lower, and
+	// the alpha edge is wider, so the flame body is gassy rather than cut out.
 
 	function makeFlameMaterial(dyn: DynUniforms) {
 		const material = new THREE.MeshBasicNodeMaterial({
@@ -236,12 +257,12 @@
 			const isBurn = step(0.5, uStyle).mul(oneMinus(isBall)).toVar();
 			// CRACK: tall thin warp + fast noise. BURN: milder warp, slow roll.
 			// BALL: nearly round + a fat white core.
-			const stretchY = mix(mix(float(2.6), float(2.2), isBurn), float(1.3), isBall);
+			const stretchY = mix(mix(float(2.1), float(1.8), isBurn), float(1.05), isBall);
 			const noiseSpeed = mix(mix(float(1.6), float(0.6), isBurn), float(1), isBall);
 			const seed = aSeed.add(dyn.phase).toVar();
 
 			const mainUv = uv().toVar();
-			mainUv.assign(spherizeUV(mainUv, 10).mul(0.6).add(0.2));
+			mainUv.assign(spherizeUV(mainUv, 10).mul(0.62).add(0.19));
 			mainUv.assign(mainUv.pow(vec2(1, stretchY)));
 			mainUv.assign(mainUv.mul(2, 1).sub(vec2(0.5, 0)));
 
@@ -261,14 +282,14 @@
 				.oneMinus();
 			cellularNoise.mulAssign(gradient2);
 
-			const shape = mainUv.sub(0.5).mul(vec2(3, 2)).length().oneMinus().toVar();
+			const shape = mainUv.sub(0.5).mul(vec2(2.1, 1.7)).length().oneMinus().toVar();
 			shape.assign(shape.sub(cellularNoise));
 
 			const gradientColor = texture(gradientTex, vec2(saturate(shape), 0));
-			const core = shape.step(float(0.8).sub(isBall.mul(0.18)));
+			const core = shape.step(float(0.74).sub(isBall.mul(0.24)));
 			const color = mix(gradientColor, vec3(1), core);
 			const flicker = sin(uTime.mul(37).add(seed.mul(12))).mul(0.25).add(0.85);
-			const alpha = shape.smoothstep(0, 0.3).mul(dyn.intensity).mul(flicker);
+			const alpha = shape.smoothstep(0, 0.42).mul(dyn.intensity).mul(flicker);
 			return vec4(color.rgb, alpha);
 		})();
 		return material;
@@ -285,7 +306,7 @@
 			const isBall = step(1.5, uStyle).toVar();
 			const isBurn = step(0.5, uStyle).mul(oneMinus(isBall)).toVar();
 			const noiseSpeed = mix(mix(float(1.6), float(0.6), isBurn), float(1), isBall);
-			const emberGain = mix(mix(float(0.55), float(0.95), isBurn), float(1.35), isBall);
+			const emberGain = mix(mix(float(0.6), float(1.0), isBurn), float(1.5), isBall);
 			const seed = aSeed.add(dyn.phase).toVar();
 
 			const mainUv = uv().toVar();
@@ -297,14 +318,14 @@
 			const perlinNoise = texture(perlinTex, perlinUv, 0).sub(0.5);
 			mainUv.x.addAssign(perlinNoise.x.mul(0.5));
 
-			const gradient1 = sin(
-				uTime.mul(10).mul(noiseSpeed).sub(mainUv.y.mul(TWO_PI).mul(2))
-			);
+			const gradient1 = sin(uTime.mul(10).mul(noiseSpeed).sub(mainUv.y.mul(TWO_PI).mul(2)));
 			const gradient2 = mainUv.y.smoothstep(0, 1);
 			const gradient3 = oneMinus(mainUv.y).smoothstep(0, 0.3);
 			mainUv.x.addAssign(gradient1.mul(gradient2).mul(0.2));
 
-			const cellularUv = mainUv.add(vec2(seed, uTime.negate().mul(1.5).mul(noiseSpeed))).mod(1);
+			const cellularUv = mainUv
+				.add(vec2(seed, uTime.negate().mul(1.5).mul(noiseSpeed)))
+				.mod(1);
 			const cellularNoise = texture(cellularTex, cellularUv, 0)
 				.r.oneMinus()
 				.smoothstep(0.25, 1);
@@ -316,7 +337,31 @@
 
 			// White-hot core with a warm rim, not the example's pure white.
 			const color = mix(vec3(1, 0.82, 0.55), vec3(1), shape);
-			const alpha = shape.mul(dyn.intensity).mul(0.8).mul(emberGain);
+			const alpha = shape.mul(dyn.intensity).mul(0.9).mul(emberGain);
+			return vec4(color, alpha);
+		})();
+		return material;
+	}
+
+	/** The ignition halo: no noise, just a soft hot centre that flares and dies. */
+	function makeGlowMaterial(dyn: DynUniforms) {
+		const material = new THREE.MeshBasicNodeMaterial({
+			transparent: true,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending,
+			side: THREE.DoubleSide
+		});
+		material.colorNode = Fn(() => {
+			const r = uv()
+				.sub(0.5)
+				.mul(vec2(2.0, 1.7))
+				.length()
+				.saturate()
+				.toVar();
+			const falloff = oneMinus(r).pow(2.4).toVar();
+			// Near-white hot centre falling off to deep orange.
+			const color = mix(vec3(1, 0.42, 0.15), vec3(1, 0.93, 0.82), falloff);
+			const alpha = falloff.mul(dyn.flash).mul(0.65);
 			return vec4(color, alpha);
 		})();
 		return material;
@@ -325,16 +370,18 @@
 	// ── Per-tip rigs ────────────────────────────────────────────────────────────
 
 	function makeTip(position: THREE.Vector3) {
-		const dyn: DynUniforms = { intensity: uniform(0), phase: uniform(0) };
+		const dyn: DynUniforms = { intensity: uniform(0), phase: uniform(0), flash: uniform(0) };
 		const group = new THREE.Group();
 		group.position.copy(position);
 		group.visible = false; // the task shows it when a pop lands
 		const flame = new THREE.Mesh(flameGeometry, makeFlameMaterial(dyn));
 		const ember = new THREE.Mesh(emberGeometry, makeEmberMaterial(dyn));
+		const glow = new THREE.Mesh(glowGeometry, makeGlowMaterial(dyn));
 		flame.frustumCulled = false; // scaling quads from a task — never cull
 		ember.frustumCulled = false;
-		group.add(flame, ember);
-		return { group, dyn, materials: [flame.material, ember.material] as THREE.Material[] };
+		glow.frustumCulled = false;
+		group.add(glow, flame, ember);
+		return { group, dyn, materials: [flame.material, ember.material, glow.material] as THREE.Material[] };
 	}
 
 	const tipL = makeTip(TIP_L);
@@ -367,6 +414,10 @@
 	// The queued second bang (anti-lag stutter): energy + countdown.
 	let pending = 0;
 	let pendingTimer = 0;
+	// Seconds since each tip last ignited — drives the flash (glow + width
+	// blow-up), which must lead the flame and die much faster than it.
+	let ageL = 99;
+	let ageR = 99;
 
 	/** Roll a pop: style, per-tip shares, per-tip noise phase, maybe a bang-bang. */
 	function fire(amount: number): void {
@@ -384,10 +435,20 @@
 		// unevenly, and it reads better than a mirrored pair.
 		const oneSided = Math.random() < ONE_SIDED_CHANCE;
 		const bigSideRight = Math.random() < 0.5;
-		const shareL = oneSided ? (bigSideRight ? 0.12 + 0.1 * Math.random() : 1) : 0.55 + 0.45 * Math.random();
-		const shareR = oneSided ? (bigSideRight ? 1 : 0.12 + 0.1 * Math.random()) : 0.55 + 0.45 * Math.random();
+		const shareL = oneSided
+			? bigSideRight
+				? 0.12 + 0.1 * Math.random()
+				: 1
+			: 0.55 + 0.45 * Math.random();
+		const shareR = oneSided
+			? bigSideRight
+				? 1
+				: 0.12 + 0.1 * Math.random()
+			: 0.55 + 0.45 * Math.random();
 		energyL = Math.min(energyL + amp * shareL, ENERGY_CAP);
 		energyR = Math.min(energyR + amp * shareR, ENERGY_CAP);
+		ageL = 0;
+		ageR = 0;
 		tipL.dyn.phase.value = Math.random();
 		tipR.dyn.phase.value = Math.random();
 
@@ -430,13 +491,20 @@
 		const decay = Math.exp(-decayRate * delta);
 		energyL *= decay;
 		energyR *= decay;
+		ageL += delta;
+		ageR += delta;
 		const iL = clamp(energyL, 0, 1);
 		const iR = clamp(energyR, 0, 1);
+		// The ignition flash leads the flame: full at birth, gone in ~150 ms.
+		const flashL = Math.exp(-ageL * FLASH_DECAY) * clamp(energyL * 1.6, 0, 1);
+		const flashR = Math.exp(-ageR * FLASH_DECAY) * clamp(energyR * 1.6, 0, 1);
 		tipL.dyn.intensity.value = iL;
 		tipR.dyn.intensity.value = iR;
+		tipL.dyn.flash.value = flashL;
+		tipR.dyn.flash.value = flashR;
 
-		tipL.group.visible = iL > 0.02;
-		tipR.group.visible = iR > 0.02;
+		tipL.group.visible = iL > 0.02 || flashL > 0.02;
+		tipR.group.visible = iR > 0.02 || flashR > 0.02;
 		// A visible flame is an animating visual — this component owns that
 		// invalidate reason while a pop is alive (the driving case is already
 		// covered by the chase camera; this covers a stationary rev-match).
@@ -444,13 +512,14 @@
 		if (!tipL.group.visible && !tipR.group.visible) return;
 
 		// Per-tip flicker at unrelated frequencies so the pair never pulses as
-		// one; the jet axis (z) stretches harder than the width.
+		// one; the jet axis (z) stretches harder than the width, and the flash
+		// BLOWS the width up at ignition — the bang.
 		const fL = 0.85 + 0.2 * Math.sin(clock * 53);
 		const fR = 0.85 + 0.2 * Math.sin(clock * 41 + 2.1);
-		const wL = (0.55 + 0.6 * iL) * wMul;
-		const wR = (0.55 + 0.6 * iR) * wMul;
-		const lenL = (0.35 + 1.15 * iL) * lenMul;
-		const lenR = (0.35 + 1.15 * iR) * lenMul;
+		const wL = (0.8 + 0.75 * iL) * wMul * (1 + flashL * 0.5);
+		const wR = (0.8 + 0.75 * iR) * wMul * (1 + flashR * 0.5);
+		const lenL = (0.4 + 1.25 * iL) * lenMul * (1 + flashL * 0.3);
+		const lenR = (0.4 + 1.25 * iR) * lenMul * (1 + flashR * 0.3);
 		tipL.group.scale.set(wL * fL, wL * fL, lenL * (0.9 + 0.2 * fL));
 		tipR.group.scale.set(wR * fR, wR * fR, lenR * (0.9 + 0.2 * fR));
 	});
@@ -458,6 +527,7 @@
 	onDestroy(() => {
 		flameGeometry.dispose();
 		emberGeometry.dispose();
+		glowGeometry.dispose();
 		for (const tip of [tipL, tipR]) {
 			for (const m of tip.materials) m.dispose();
 		}

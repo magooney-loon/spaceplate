@@ -289,9 +289,12 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   vertices clustered — two rings at model (±0.446, 0.293, 2.053), nose −Z.
   `DEBUG_TIPS` (currently false) draws wireframe cones there; the constants
   move with a model swap. Mount is car-local (inside the ×2.5 group, model
-  metres). Each tip is additive crossed quads + a rear-facing blob (a chase
-  cam sees crossed quads edge-on) with its OWN material instances — identical
-  node graphs, so one compiled program, but independent intensity/phase
+  metres). Each tip is additive THREE radial planes (0°/60°/120° about the
+  jet axis — two crossed read flat from halfway angles) + a rear-facing blob
+  (a chase cam sees the jets edge-on) + a soft GLOW halo that flares on
+  ignition (~150 ms) — the same flash value blows the flame width up at
+  birth, which is the bang. Per-tip material instances — identical node
+  graphs, so shared compiled programs, but independent intensity/flash/phase
   uniforms, which is how one pipe can bang harder than the other. No
   billboarding (the jet shoots REARWARD with the car) and no extra light (the
   scene is at the three-light cap). The trigger is the physics task watching
