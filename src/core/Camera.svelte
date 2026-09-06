@@ -12,7 +12,7 @@
 <T.PerspectiveCamera
 	fov={60}
 	near={1}
-	far={2000}
+	far={1000}
 	makeDefault
 	position={[24, 10, 0]}
 	oncreate={(ref) => {
