@@ -2,7 +2,7 @@
 	import { onDestroy } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
-	import { attribute, clamp, uniform, vec3 } from 'three/tsl';
+	import { attribute, clamp, smoothstep, uniform } from 'three/tsl';
 	import { sceneState } from '$extensions/scene';
 	import { GR86, UNITS_PER_METER } from './gr86';
 	import { carSim } from './carTelemetry.svelte';
@@ -55,33 +55,65 @@
 	const TOTAL_SEGS = SEGS_PER_WHEEL * 4;
 	const VERTS = TOTAL_SEGS * 6;
 	const positions = new Float32Array(VERTS * 3); // all-zero = degenerate = free
-	const marks = new Float32Array(VERTS * 2); // [birth, intensity] per vertex
+	// Normals are written ONCE: every mark lies on the ground plane, face up —
+	// the lighting below needs them, the laying never changes them.
+	const normals = new Float32Array(VERTS * 3);
+	for (let i = 0; i < VERTS; i++) normals[i * 3 + 1] = 1;
+	// [birth, intensity, edge, grain] per vertex — edge is the cross-width
+	// coordinate -1..+1 (what the shader feathers into a soft rim) and grain is
+	// LAY-TIME randomness interpolated along the strip: organic without any
+	// spatial noise pattern. The a-end of each segment carries the previous
+	// segment's intensity/grain so darkness flows instead of banding at joins.
+	const marks = new Float32Array(VERTS * 4);
 	const geometry = new THREE.BufferGeometry();
 	const posAttr = new THREE.BufferAttribute(positions, 3);
-	const markAttr = new THREE.BufferAttribute(marks, 2);
+	const markAttr = new THREE.BufferAttribute(marks, 4);
 	geometry.setAttribute('position', posAttr);
+	geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
 	geometry.setAttribute('aMark', markAttr);
 
-	// ── Material: darkness with a shader-side age fade ──────────────────────────
+	// ── Material: LIT rubber with a shader-side age fade ──────────────────────
+	// Standard, not Basic, on purpose — unlit was a real bug: a fixed dark gray
+	// lifted by the night exposure is LIGHTER than night asphalt, so marks read
+	// whitish-gray after dark. As a lit surface the rubber darkens with the
+	// environment (and takes fog) like the road does: darker than asphalt by
+	// day, near-black at night — always a mark, never chalk.
 	const uTime = uniform(0);
-	// `any`: AttributeNode's TS generics predate the swizzle helpers — .x/.y are
-	// real node ops (the same node-graph plumbing cast CarWheels makes).
-	const aMark = attribute('aMark', 'vec2') as any;
+	// `any`: AttributeNode's TS generics predate the swizzle helpers — .x/.y/.z/.w
+	// are real node ops (the same node-graph plumbing cast CarWheels makes).
+	const aMark = attribute('aMark', 'vec4') as any;
 	const age = uTime.sub(aMark.x);
-	const material = new THREE.MeshBasicNodeMaterial({
+	// Soft rim: full at the ribbon's core, feathered to nothing at the edge —
+	// no hard rectangle sides, and no noise pattern anywhere: the organic look
+	// comes from lay-time randomness (grain, width jitter, interpolated darkness).
+	const edgeSoft = smoothstep(0.55, 1.0, aMark.z.abs()).oneMinus();
+	// 0.6..1 — the per-segment deposit grain, interpolated down the strip.
+	const grain = aMark.w.mul(0.4).add(0.6);
+	const material = new THREE.MeshStandardNodeMaterial({
 		transparent: true,
 		depthWrite: false,
-		side: THREE.DoubleSide
+		side: THREE.DoubleSide,
+		metalness: 0,
+		roughness: 0.95
 	});
-	material.colorNode = vec3(0.05, 0.05, 0.055);
-	material.opacityNode = aMark
-		.y.mul(clamp(age.div(FADE_IN), 0, 1))
-		.mul(clamp(age.div(LIFETIME).oneMinus(), 0, 1));
+	material.color.setRGB(0.05, 0.05, 0.055); // albedo — the lighting owns the rest
+	material.opacityNode = clamp(
+		aMark
+			.y.mul(1.3) // the rim and grain thin the average — pay it back at the core
+			.mul(clamp(age.div(FADE_IN), 0, 1))
+			.mul(clamp(age.div(LIFETIME).oneMinus(), 0, 1))
+			.mul(edgeSoft)
+			.mul(grain),
+		0,
+		1
+	);
 
 	// ── Per-wheel state, all pre-allocated ──────────────────────────────────────
 	const last = new Float64Array(4 * 2); // last lay point, XZ
 	const lastY = new Float64Array(4); // its height (slopes)
 	const active = [false, false, false, false];
+	const prevI = [0, 0, 0, 0]; // previous segment's intensity — the strip's smoothing
+	const prevG = [0, 0, 0, 0]; // previous segment's grain — ditto
 	let head = 0; // ring cursor, shared — overwrite order is all that matters
 
 	// Scene clock — `delta` from the task, never performance.now() (banned in
@@ -100,17 +132,22 @@
 		bx: number,
 		by: number,
 		bz: number,
-		intensity: number
+		aInt: number,
+		bInt: number,
+		aGrain: number,
+		bGrain: number
 	): void => {
-		// Perpendicular to the segment in XZ, half a tyre width out.
+		// Perpendicular to the segment in XZ, half a tyre width out — jittered per
+		// segment, a hair either side of true; the soft rim masks the steps.
 		let px = -(bz - az);
 		let pz = bx - ax;
 		const len = Math.hypot(px, pz) || 1;
-		px = (px / len) * HALF_WIDTH;
-		pz = (pz / len) * HALF_WIDTH;
+		const hw = HALF_WIDTH * (0.88 + 0.24 * Math.random());
+		px = (px / len) * hw;
+		pz = (pz / len) * hw;
 
 		const pOff = head * 18;
-		const mOff = head * 12;
+		const mOff = head * 24;
 		// Two triangles: a-, b-, a+ / a-, b+, a+ — DoubleSide forgives winding.
 		// Written straight into the ring buffer: no temp arrays in the task body.
 		const p = positions;
@@ -132,12 +169,30 @@
 		p[pOff + 15] = ax + px;
 		p[pOff + 16] = ay + LIFT;
 		p[pOff + 17] = az + pz;
-		for (let i = 0; i < 6; i++) {
-			marks[mOff + i * 2] = now;
-			marks[mOff + i * 2 + 1] = intensity;
-		}
+		// aMark per vertex [birth, intensity, edge, grain]; verts aL, bL, aR, aL,
+		// bR, aR — the a-end carries the LAST segment's values so everything
+		// interpolates down the strip; a tail-off segment passes bInt 0 and tapers.
+		for (let i = 0; i < 6; i++) marks[mOff + i * 4] = now;
+		marks[mOff + 1] = aInt;
+		marks[mOff + 4 + 1] = bInt;
+		marks[mOff + 8 + 1] = aInt;
+		marks[mOff + 12 + 1] = aInt;
+		marks[mOff + 16 + 1] = bInt;
+		marks[mOff + 20 + 1] = bInt;
+		marks[mOff + 2] = -1;
+		marks[mOff + 4 + 2] = -1;
+		marks[mOff + 8 + 2] = 1;
+		marks[mOff + 12 + 2] = -1;
+		marks[mOff + 16 + 2] = 1;
+		marks[mOff + 20 + 2] = 1;
+		marks[mOff + 3] = aGrain;
+		marks[mOff + 4 + 3] = bGrain;
+		marks[mOff + 8 + 3] = aGrain;
+		marks[mOff + 12 + 3] = aGrain;
+		marks[mOff + 16 + 3] = bGrain;
+		marks[mOff + 20 + 3] = bGrain;
 		posAttr.addUpdateRange(pOff, 18);
-		markAttr.addUpdateRange(mOff, 12);
+		markAttr.addUpdateRange(mOff, 24);
 		head = (head + 1) % TOTAL_SEGS;
 	};
 
@@ -177,6 +232,14 @@
 				body.localToWorld(_v);
 
 				if (intensity < MARK_ON) {
+					// Tail-off: one last sliver fading to nothing where the slide ended,
+					// rather than a strip that simply stops.
+					const tdx = _v.x - last[w * 2];
+					const tdz = _v.z - last[w * 2 + 1];
+					if (Math.hypot(tdx, tdz) > SEG_MIN * 0.4) {
+						lay(last[w * 2], lastY[w], last[w * 2 + 1], _v.x, _v.y, _v.z, prevI[w], 0, prevG[w], Math.random());
+						laid = true;
+					}
 					active[w] = false;
 					continue;
 				}
@@ -185,6 +248,8 @@
 					last[w * 2] = _v.x;
 					last[w * 2 + 1] = _v.z;
 					lastY[w] = _v.y;
+					prevI[w] = 0; // the first segment tapers IN from nothing
+					prevG[w] = Math.random();
 					continue;
 				}
 
@@ -202,8 +267,11 @@
 					dz = _v.z - lz;
 				}
 				if (Math.hypot(dx, dz) >= SEG_MIN) {
-					lay(lx, lastY[w], lz, _v.x, _v.y, _v.z, intensity);
+					const g = Math.random();
+					lay(lx, lastY[w], lz, _v.x, _v.y, _v.z, prevI[w], intensity, prevG[w], g);
 					laid = true;
+					prevI[w] = intensity;
+					prevG[w] = g;
 					last[w * 2] = _v.x;
 					last[w * 2 + 1] = _v.z;
 					lastY[w] = _v.y;

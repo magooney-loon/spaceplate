@@ -355,15 +355,26 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   never a sum) minus the two sources that aren't actually sliding (cornering
   load sings but doesn't scrub; the launch chirp is the drop): rears get
   wheelspin/slide/handbrake/launch/brake, fronts slide/brake. Fading is
-  ENTIRELY in the shader — per-vertex `aMark` (birth, intensity) against a
-  `uTime` uniform, so a mark ages without a single attribute re-upload;
-  segments go out via `addUpdateRange`, only while laying. A stationary
-  burnout creeps its lay point along the nose (the patch grows and overlapping
-  quads darken — depthWrite off). Wheel offsets come from GR86 geometry ×2.5
-  (track half 0.775 m is the real car's — the GLB's measured pivots stay in
-  CarWheels); y=0 body space is the road at the car. On-demand: invalidate only
-  while laying or within the 15 s fade window. One draw call, DoubleSide,
-  LIFT 0.03 against z-fighting.
+  ENTIRELY in the shader — per-vertex `aMark` (birth, intensity, edge, grain)
+  against a `uTime` uniform, so a mark ages without a single attribute
+  re-upload; segments go out via `addUpdateRange`, only while laying. A
+  stationary burnout creeps its lay point along the nose (the patch grows and
+  overlapping quads darken — depthWrite off). Wheel offsets come from GR86
+  geometry ×2.5 (track half 0.775 m is the real car's — the GLB's measured
+  pivots stay in CarWheels); y=0 body space + LIFT 0.90 (tuned by eye to the
+  asphalt) is the road at the car. On-demand: invalidate only while laying or
+  within the 15 s fade window. One draw call, DoubleSide. THE MATERIAL IS LIT,
+  NOT UNLIT — MeshStandardNodeMaterial, albedo ~0.05, normals pinned up once
+  at init: a fixed unlit gray lifted by the night exposure is LIGHTER than
+  night asphalt, so marks read whitish-gray after dark; lit, they darken with
+  the environment (and take fog) like the road — darker than asphalt by day,
+  near-black at night. THE LOOK IS ORGANIC WITHOUT ANY NOISE PATTERN — all
+  randomness is LAY-TIME: the shader feathers the cross-width edge softly to
+  nothing (no hard rectangle rim), intensity + grain are written PER END of
+  each segment (the previous segment's values at a, this one's at b) so
+  darkness and grain interpolate down the strip, each segment's width jitters
+  ±12% under the soft rim, starts taper in from 0, and a slide's end lays one
+  tapering tail-off segment.
 - **`CarExhaustFlames.svelte` pops fire on downshifts and limiter bangs**
   (adapted from three's `webgpu_tsl_vfx_flames`). The exhaust tips are
   MEASURED, not placed by hand: the GLB's Draco `Nickel_Smooth` mesh decoded
