@@ -44,7 +44,7 @@
 	const HALF_WIDTH = 0.108 * UNITS_PER_METER; // 215 mm tyre
 	const MARK_ON = 0.3; // source intensity before rubber is laid
 	const SEG_MIN = 0.35; // world units between laid segments
-	const LIFT = 0.95; // above the road plane, against z-fighting
+	const LIFT = 0.90; // above the road plane, against z-fighting
 	const FADE_IN = 0.25; // s — a mark arrives at full darkness almost at once
 	const LIFETIME = 15; // s — then it is gone; keep in sync with the TSL below
 	const BURNOUT_ON = 0.55; // rear intensity + near-standstill = the burnout case
