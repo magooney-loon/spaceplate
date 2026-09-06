@@ -283,5 +283,7 @@ the live scene pass, pass B a cheap constant node; all the mask-texture machiner
 (wipes, dissolves) still works, only a genuine A→B crossfade doesn't. `mixRatio` is one
 `uniform()` eased by a task; the scene swap happens at `mixRatio === 1` — the covered
 midpoint, which is also where a scene's environment swap should land (see the plan in
-`src/extensions/scene/CLAUDE.md`). Today `transitionTo` is a two-phase `setTimeout`
-around `setScene` — nothing visual happens.
+`src/extensions/scene/CLAUDE.md`). Today the cover is the HTML veil in `Loader.svelte`
+(`sceneActions.transitionTo`) — opaque black over everything, with the swap and the
+shader-compilation grace hidden under it; the pipeline fade would make the same swap
+gradual instead.

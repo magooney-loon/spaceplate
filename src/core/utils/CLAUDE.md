@@ -14,8 +14,9 @@ capabilities.svelte.ts — Boot probe (WebGPU adapter / WebGL2 / WASM) awaited i
                         'webgpu' | 'webgl' | 'none' (+ adapter info, features, dGPU guess,
                         CPU/memory). Also seeds the graphics preset
 Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay
-                        unlock), armed once assets settle. Owns the two capability screens:
-                        the blocking unsupported screen and the dismissible WebGL-fallback badge
+                        unlock), armed once assets settle. Owns every full-screen cover:
+                        the blocking unsupported screen, the dismissible WebGL-fallback
+                        badge, and the scene-transition veil (sceneState.isTransitioning)
 Renderer.svelte       — RenderPipeline owner: structural rebuild + hot uniform effects + render
                         task
 Telemetry.svelte      — Draws nothing: samples renderer.info at 2 Hz into telemetryState.

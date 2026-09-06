@@ -18,9 +18,9 @@ index.ts            — barrel re-exports
 
 ## Key behavior
 
-- `setScene()` plays the swoosh sound, logs the transition, stores `previousScene`.
+- `setScene()` plays the swoosh sound, logs the transition, stores `previousScene`. Instant swap — boot, the Studio panel and other programmatic callers.
 - **Scene routing** (Scene.svelte): a plain `{#if}` on `currentScene` — exactly one scene is mounted at a time. Switching unmounts the outgoing scene (its components' teardown disposes their THREE resources and removes its Rapier bodies from the world), so a return trip re-pays mount and shader compilation.
-- `transitionTo(scene, ms)` splits the wait in half around `setScene` for a two-phase animation. Nothing visual happens today — it is two `setTimeout`s; the plan is a pipeline fade (see _Scene transitions_ in `$core/postprocessing/CLAUDE.md`).
+- **`transitionTo(scene)` — the per-scene warm swap ("bootloader")**: the `goTo*`/`goBack` actions (every HUD button) route through it. Cover → `setScene` under a full-screen veil (Loader.svelte, driven by `isTransitioning`) → two rAFs for the mount to flush and the new scene's **first rendered frame** — that frame goes through the real pipeline and kicks three's async shader compilation for the new scene's variants (the ones `renderer.compileAsync` cannot produce; see the shader-cache trap in `$core/postprocessing/CLAUDE.md`) → a fixed grace budget (`WARM_GRACE_MS`) → veil lifts. No warm frame is forced by hand — mount invalidations already draw it; this module lives outside the Canvas and has no Threlte context. Guards: same-scene and already-transitioning are no-ops. The boot scene needs none of this: it mounts at t=0 behind the Loader and compiles while assets stream.
 - The old preset-assignment layer (bundledPresets.ts, resolvers, localStorage maps, four actions) was deleted — it resolved to `null` for every input and held zero presets, and its `$effect` caused an infinite loop.
 
 ## Planned: per-scene `environment` block

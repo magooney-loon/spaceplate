@@ -22,5 +22,6 @@ export type ExtensionActions = {
 	goToDemoScene: () => void;
 	goToTestGame: () => void;
 	goBack: () => void;
-	transitionTo: (scene: SceneType, transitionDuration?: number) => Promise<void>;
+	/** Warm swap under the veil: cover → setScene → first rendered frame → grace. */
+	transitionTo: (scene: SceneType) => Promise<void>;
 };

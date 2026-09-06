@@ -4,6 +4,7 @@
 	import { useProgress } from '@threlte/extras';
 	import { logEngine } from '$extensions/logger';
 	import { audioActions } from '$extensions/settings';
+	import { sceneState } from '$extensions/scene';
 	import { capabilityState, isBlocked, WEBGPU_REPORT_URL } from './capabilities.svelte';
 
 	const { progress, active, item, loaded, total, errors } = useProgress();
@@ -169,6 +170,17 @@
 	</div>
 {/if}
 
+{#if sceneState.isTransitioning}
+	<!-- Scene-transition veil — the warm swap's cover (sceneActions.transitionTo lifts
+	     it once the new scene's first frame has rendered and its shader pipelines have
+	     had their grace budget). Lives here because this component owns every
+	     full-screen cover and never unmounts. z-index 150: over every HUD, under this
+	     loader (200) and the notice (210). Reuses .label for the text. -->
+	<div class="veil">
+		<p class="label">Loading</p>
+	</div>
+{/if}
+
 <style>
 	.loader {
 		position: absolute;
@@ -323,6 +335,17 @@
 
 	.report:hover {
 		opacity: 0.9;
+	}
+
+	.veil {
+		position: absolute;
+		inset: 0;
+		z-index: 150;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: #000;
+		color: #fff;
 	}
 
 	.notice {
