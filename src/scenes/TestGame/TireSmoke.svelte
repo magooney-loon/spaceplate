@@ -50,6 +50,7 @@
 	const SPAWN_GAIN = 8; // extra puffs/s at full intensity (burnout ≈ 10/s/wheel)
 	const ALPHA_PEAK = 0.3; // per puff — overlaps build the cloud's density
 	const POOL = 32;
+	const SMOKE_LIFT = 0.2; // above the road plane — same reason as SkidMarks' LIFT
 
 	// ── Textures (same vendored pair the flames/marks use) ─────────────────────
 	const { invalidate, camera } = useThrelte();
@@ -217,7 +218,7 @@
 
 				const puff = puffs[head];
 				head = (head + 1) % POOL;
-				_v.set(WHEELS[w][0], 0.1, WHEELS[w][1]);
+				_v.set(WHEELS[w][0], 0.1 + SMOKE_LIFT, WHEELS[w][1]);
 				body.localToWorld(_v);
 				const roll = w >= 2 ? 0.8 + 0.8 * Math.random() : 0.3;
 				puff.x = _v.x + (Math.random() - 0.5) * 0.4;
