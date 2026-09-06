@@ -348,7 +348,12 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   throttle-load term (fast attack, quicker release). LIFT-OFF IS THE BED ALONE: no
   one-shot sample — a recorded "release" carries its own pitch envelope and speaks
   twice over a bed already tracking rpm down, so the lift reads as the level
-  dropping (~250 ms) under engine-braking pitch decay instead. Deliberately NOT core/audio:
+  dropping (~250 ms) under engine-braking pitch decay instead. The six wavs are
+  CUT FOR LOOPING (ffmpeg: self-crossfade construction — each file is the
+  crossfade of itself, extracted so its last sample flows into its first;
+  verified join-jump < p95 of normal sample deltas) and loudness-matched to one
+  RMS (-8.4 dBFS) — a new take without that treatment will click on wrap and
+  pump the crossfade (rpm3 was 2.7 dB hot before); recover originals via git. Deliberately NOT core/audio:
   GlobalAudio/soundTriggers are for UI one-shots and weather beds, not a
   scene-local engine following the car's pose — same call as carInput vs the
   keymapper. The tick follows the weatherAudio contract: the component mounts
