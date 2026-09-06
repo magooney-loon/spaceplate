@@ -19,6 +19,7 @@
 	import CarWheels from './CarWheels.svelte';
 	import ChaseCamera from './ChaseCamera.svelte';
 	import SkidMarks from './SkidMarks.svelte';
+	import TireSmoke from './TireSmoke.svelte';
 	import NitrousAfterimage from './NitrousAfterimage.svelte';
 	import {
 		CAR_INPUT_KEYS,
@@ -656,6 +657,11 @@
 	     patches while the car slides (same anchor: its parent is the body, the space
 	     the wheel offsets live in). See SkidMarks.svelte. -->
 	<SkidMarks target={chaseAnchor} />
+
+	<!-- Tyre smoke — continuous puffs at the contact patches while a wheel
+	     slides (burnout / drift / hard brake / max cornering). World-anchored
+	     like the marks; same anchor trick. See TireSmoke.svelte. -->
+	<TireSmoke target={chaseAnchor} />
 
 	<!-- The nitrous → afterimage smear driver. Renders nothing — a task that writes
 	     the effect's runtime boost uniform from carSim (NitrousAfterimage.svelte). -->

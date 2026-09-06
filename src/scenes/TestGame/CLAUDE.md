@@ -16,6 +16,8 @@ CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, s
 CarWheels.svelte        — per-vertex steering/rolling wheel deformation (TSL)
 SkidMarks.svelte        — world-anchored ring buffer of rubber quads laid at the
                          tyre patches while the car slides; fades in-shader (TSL)
+TireSmoke.svelte        — continuous white smoke puffs at the contact patches
+                         while a wheel slides; LIT so it dims at night (TSL)
 CarExhaustFlames.svelte — downshift/limiter exhaust pops + the blue nitrous pilot
                          jet (TSL, from the three.js webgpu_tsl_vfx_flames example)
 CarHeadlights.svelte    — car-local lights (nose is -Z)
@@ -379,6 +381,24 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   from 0, and one SHORT tail-off segment where a slide ends (capped at
   TAIL_MAX). Enter/exit hysteresis (MARK_ON 0.3 / MARK_EXIT 0.22) stops
   threshold chatter laying confetti.
+- **`TireSmoke.svelte` is the squeal made visible** — a pool of 32 billboarded
+  quads (the exhaust puffs' architecture: per-puff material instances with dyn
+  uniforms, one node graph/one program), spawned CONTINUOUSLY at the contact
+  patches while a wheel slides: rate = 2 + 8×intensity puffs/s per wheel, so a
+  brief squeak is a wisp and a burnout builds a proper cloud. Intensity is the
+  squeal/marks TWIN with ALL SIX sources — cornering load included (max
+  banking sings hot enough to smoke a little): rears get
+  wheelspin/slide/handbrake/launch/brake/cornering, fronts
+  slide/brake/cornering. LIT, not unlit (the skid-marks lesson):
+  MeshStandardNodeMaterial, near-white albedo — bright gray against day
+  asphalt, dims with the environment at night instead of glowing; the
+  billboard quaternion (copied off the app camera per update) orients the
+  plane's +Z normal at the camera for free, so no normalNode. Velocity = lazy
+  rise + a LAGGED share of the car's motion (smoke trails behind a moving
+  car) + a small rearward roll off the spinning tyre (rears roll harder);
+  perlin roil + cellular clumps + soft radial rim, aging shader-side against
+  uTime. World-anchored at TestGame root (`target={chaseAnchor}`, same
+  body-space wheel offsets as SkidMarks); scene gate hides the pool.
 - **`CarExhaustFlames.svelte` pops fire on downshifts and limiter bangs**
   (adapted from three's `webgpu_tsl_vfx_flames`). The exhaust tips are
   MEASURED, not placed by hand: the GLB's Draco `Nickel_Smooth` mesh decoded
