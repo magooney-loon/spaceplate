@@ -95,8 +95,12 @@ export const GR86 = {
 	// ── Brakes ───────────────────────────────────────────────────────────────
 	// Tyre μ and the whole steering rack are NOT here — they are the setup, not the
 	// car, and they differ between the Grip and Drift tunes. See handling.ts.
-	/** N — all four discs at full pedal, ≈0.9 g → 100-0 km/h in ~2.9 s. */
-	brakeForce: 11400,
+	/** N — all four discs at full pedal: an aftermarket big-brake kit (the nitrous
+	 * precedent — emphatically not stock GR86 hardware). ≈1.23 g → 100-0 km/h in
+	 * ~2.3 s, up from the stock kit's 0.9 g / ~2.9 s. Braking has no lockup/ABS
+	 * channel here, so demand past the tyre's μ simply decelerates harder — the
+	 * surplus IS the felt upgrade. */
+	brakeForce: 15600,
 	/** N — the handbrake's own (rear-only) retardation. */
 	handbrakeForce: 4200,
 

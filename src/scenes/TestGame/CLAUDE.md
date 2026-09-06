@@ -165,8 +165,8 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
     circle costs nothing: `tireMuLong` stays at 0.8 and Drift does 0-60 in 6.2 s
     against Grip's 5.7.
   - `brakeLoose` (0.9) is **trail-braking oversteer and the deliberate entry** —
-    braking moves ~2 100 N (a third of the static rear load) off the rear axle. Tap
-    ↓ into the corner to set the car, then ↑ to hold the angle; measured, a 0.4 s
+    the big-brake kit moves ~2 800 N (nearly half the static rear load) off the
+    rear axle. Tap ↓ into the corner to set the car, then ↑ to hold the angle; measured, a 0.4 s
     tap peaks at 23° and holds ~20° while the car drives out of it.
 - **Drift's `latGripGain` is the SAME as Grip's** (1.6). With `looseBase` near
   zero the boost is ≈1 and the yaw cap matches what the bleed can service, so a
@@ -386,8 +386,10 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   keydown, the bed cuts instantly on turnoff so the shot lands over silence.
   TYRES: `tires_squal_loop.opus`, one voice under the car (axle height at the CG) —
   level = the LOOSEST of wheelspin (ramping from the TC lamp's own 0.15), |slip
-  angle| (8°–25°, speed-gated; the cluster's slide flag reads 10°) and
-  handbrake-at-speed; sources never sum (the looseness model's own rule). Attack
+  angle| (8°–25°, speed-gated; the cluster's slide flag reads 10°),
+  handbrake-at-speed and HARD BRAKE (the pedal at speed, fading below ~20 km/h
+  so stops don't end in a squeak); sources never sum (the looseness model's own
+  rule). Attack
   12/s vs release 4/s with a snap to 0 so the release asymptote can't hiss. Not
   gated on ignition — tyres aren't combustive. TC LAMP: the cluster's `spinning` indicator gates on the tune's `tractionControl`
   flag — in Drift mode `tractionControl` is false, so wheelspin there is the setup,

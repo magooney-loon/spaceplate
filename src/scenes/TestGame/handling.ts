@@ -122,9 +122,9 @@ export interface HandlingTune {
 	throttleLoose: number;
 	/**
 	 * Looseness the BRAKE is worth at full pedal, 0…1 — trail-braking oversteer, and
-	 * the deliberate way into a drift. Physically this is load transfer: ~0.9 g of
-	 * braking moves `m·a·h/L` ≈ 2 100 N off the rear axle, roughly a third of its
-	 * static load, and a rear tyre carrying a third less weight has a third less
+	 * the deliberate way into a drift. Physically this is load transfer: the
+	 * big-brake kit's ~1.23 g moves `m·a·h/L` ≈ 2 800 N off the rear axle, nearly
+	 * half its static load, and a rear tyre carrying half the weight has half the
 	 * lateral grip to give. Brake into the corner to set the car, then throttle to
 	 * hold the angle — the two ends of the same slide.
 	 *
