@@ -16,6 +16,8 @@ CarWheels.svelte        — per-vertex steering/rolling wheel deformation (TSL)
 CarExhaustFlames.svelte — downshift/limiter exhaust pops + the blue nitrous pilot
                          jet (TSL, from the three.js webgpu_tsl_vfx_flames example)
 CarHeadlights.svelte    — car-local lights (nose is -Z)
+CarEngineAudio.svelte   — the car's positional engine bed, mounted inside the ×2.5
+                         group; all mixing lives in carAudio.ts
 ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + the
                          nitrous FOV kick
 NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
@@ -27,6 +29,8 @@ handling.ts             — the two SETUPS (Grip / Drift): tyre μ, steering rac
 drivetrain.ts           — pure engine → clutch → 6MT → rear-axle traction step
 carMath.ts              — `clamp` / `damp`, shared by drivetrain.ts and TestGame.svelte
 carTelemetry.svelte.ts  — carSim (200 Hz plain object) / carHud (30 Hz $state mirror)
+carAudio.ts             — the engine NOTE: rpm crossfade + pitch tracking + throttle
+                         load, ticked from carSim (weatherAudio contract — never $effect)
 cityColliders.ts        — hand-rolled static trimesh colliders for the track GLB
 ```
 
@@ -337,6 +341,27 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   covered by the chase camera). Noise textures:
   `public/textures/noises/{voronoi,perlin}.png`, copied from the vendored
   three.js-dev example assets.
+- **`CarEngineAudio.svelte` + `carAudio.ts` are the engine NOTE, positional**. Six
+  loops (`public/sounds/engine/`: `idle` + `rpm1..5`) crossfaded by rpm — the two
+  layers bracketing the tacho blend while each plays at `rate = rpm/anchor`, so
+  pitch rises continuously instead of stepping at band edges — plus an asymmetric
+  throttle-load term (fast attack, quicker release). LIFT-OFF IS THE BED ALONE: no
+  one-shot sample — a recorded "release" carries its own pitch envelope and speaks
+  twice over a bed already tracking rpm down, so the lift reads as the level
+  dropping (~250 ms) under engine-braking pitch decay instead. Deliberately NOT core/audio:
+  GlobalAudio/soundTriggers are for UI one-shots and weather beds, not a
+  scene-local engine following the car's pose — same call as carInput vs the
+  keymapper. The tick follows the weatherAudio contract: the component mounts
+  `<PositionalAudio>` inside the car (the listener rides the camera), the module
+  mixes from `carSim` in a task, never `$effect`. NO WebGPU compute audio: the
+  three.js example is offline batch (process whole buffer → read back → play
+  once); live rpm needs per-frame pitch, which three's `setPlaybackRate`
+  (setTargetAtTime-smoothed resampling) already does on the audio thread with
+  zero readback latency. Keep-alive rules apply: the tick is scene-gated, the
+  scene-exit cleanup parks the loops (paused progress kept), and tab-hide parks
+  too (rAF stops, the AudioContext doesn't). `LAYER_RPM` anchors are guesses at
+  the wavs — tune by ear; if layers ever get compute-processed, `<PositionalAudio>`
+  `src` accepts a raw AudioBuffer at the mount site.
 - **`ChaseCamera.svelte` BORROWS the app camera** (`core/Camera.svelte` — the one
   holding the AudioListener) via `<CameraControls>` + `useFollow` from
   `@threlte/extras`, rather than mounting a second `makeDefault` camera. One

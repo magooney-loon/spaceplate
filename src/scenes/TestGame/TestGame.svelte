@@ -15,6 +15,7 @@
 	import { logGltf } from '$extensions/logger';
 	import CarHeadlights from './CarHeadlights.svelte';
 	import CarExhaustFlames from './CarExhaustFlames.svelte';
+	import CarEngineAudio from './CarEngineAudio.svelte';
 	import CarWheels from './CarWheels.svelte';
 	import ChaseCamera from './ChaseCamera.svelte';
 	import NitrousAfterimage from './NitrousAfterimage.svelte';
@@ -518,6 +519,9 @@
 				<!-- Exhaust pops on downshifts/limiter — tips measured from the GLB, see
 				     CarExhaustFlames.svelte. Car-local model metres like its siblings. -->
 				<CarExhaustFlames />
+				<!-- Engine audio — positional rpm bed + lift-off one-shot, task-ticked from
+				     carSim (CarEngineAudio.svelte / carAudio.ts). -->
+				<CarEngineAudio />
 			</T.Group>
 
 			<!-- Chassis: ONE rounded box instead of per-mesh hulls (the model is dozens
