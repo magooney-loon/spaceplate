@@ -194,7 +194,7 @@
 			<circle class="hub" cx={CX} cy={CY} r="6" />
 
 			<text class="gear" class:reverse={carHud.gear < 0} x={CX} y="84">{gearLabel}</text>
-			<text class="rpm" x={CX} y="103">{rpm} rpm</text>
+			<text class="rpm" x={CX} y="120">{rpm} rpm</text>
 
 			<rect class="lcd" x={CX - 46} y="130" width="92" height="44" rx="6" />
 			<text class="speed" x={CX} y="155">{carHud.kmh}</text>

@@ -90,14 +90,14 @@ export const carLights = $state({
 });
 
 /**
- * Ignition — M on, N off. A latched switch like the lights: it survives
+ * Ignition — M/N toggle. A latched switch like the lights: it survives
  * `resetCarInput` and the Restart button. The ENGINE AUDIO follows it (carAudio
  * gates the bed/pops/nitrous and voices turnon/turnoff); the driving model is
  * also gated — throttle, brake and shifting do nothing until `ready` is true.
  *
- * Sequence: M → `on = true`, `ready = false` (turnon sound plays, RPM revs to
+ * Sequence: toggle on → `on = true`, `ready = false` (turnon sound plays, RPM revs to
  * ~2k then settles). When the turnon sound ends, `ready = true` and the idle
- * bed fades in — only then can the player drive. N → everything cuts instantly
+ * bed fades in — only then can the player drive. Toggle off → everything cuts instantly
  * (`on = false`, `ready = false`, bed silences under the turnoff shot).
  *
  * Note: M collides with Studio's dev-mode bind (w a s z t r c v m) — accepted
@@ -123,19 +123,18 @@ export const cycleHandlingMode = (): void => {
 	carHandling.mode = HANDLING_MODES[next];
 };
 
-export type CarToggleAction = 'lights' | 'highBeam' | 'handling' | 'ignOn' | 'ignOff';
+export type CarToggleAction = 'lights' | 'highBeam' | 'handling' | 'ignition';
 
 /**
  * e.code → switch. L, K and G are free of both Studio's dev binds (w a s z t r c v m)
  * and the engine's own Ctrl+H (UI toggle); M is IN Studio's set — see carIgnition's
- * note; N is free.
+ * note. M alone flips the ignition.
  */
 export const CAR_TOGGLE_KEYS: Record<string, CarToggleAction> = {
 	KeyL: 'lights',
 	KeyK: 'highBeam',
 	KeyG: 'handling',
-	KeyM: 'ignOn',
-	KeyN: 'ignOff'
+	KeyM: 'ignition'
 };
 
 /** Edge-triggered: call once per keydown, never on auto-repeat. */
@@ -148,14 +147,14 @@ export const applyCarToggle = (action: CarToggleAction): void => {
 		cycleHandlingMode();
 		return;
 	}
-	if (action === 'ignOn') {
-		carIgnition.on = true;
-		carIgnition.ready = false;
-		return;
-	}
-	if (action === 'ignOff') {
-		carIgnition.on = false;
-		carIgnition.ready = false;
+	if (action === 'ignition') {
+		if (carIgnition.on) {
+			carIgnition.on = false;
+			carIgnition.ready = false;
+		} else {
+			carIgnition.on = true;
+			carIgnition.ready = false;
+		}
 		return;
 	}
 	// Flicking to main beam turns the lamps on — a dead key with the lights off is
