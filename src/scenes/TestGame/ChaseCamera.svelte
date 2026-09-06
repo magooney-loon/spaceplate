@@ -140,31 +140,37 @@
 
 	// The kick itself. Same borrow scope as the effect above (controls + target +
 	// active), so `fov`/`savedFov` are always the borrowed camera's before this
-	// runs. On-demand discipline: the task only invalidates on a frame where the
+	// runs. `autoInvalidate: false` is LOAD-BEARING — the option defaults to true,
+	// and a bare useTask invalidates every frame it runs, pinning the on-demand
+	// render loop at full rate forever (LensDriver/Renderer pass it for the same
+	// reason). On-demand discipline: the task only invalidates on a frame where the
 	// lens actually moved — settled at base with no spray is free, and while the
 	// car is spraying the flames' pilot jet is already pinning the render loop.
-	useTask((delta) => {
-		if (!active || !controls || !target) return;
-		const cam = camera.current;
-		if (!(cam instanceof THREE.PerspectiveCamera)) return;
-		const flow = clamp(carSim.nitrous, 0, 1);
-		const fovTarget = savedFov + NITROUS_FOV_KICK * flow;
-		if (Math.abs(fovTarget - fov) < 0.01) {
-			// Settled — snap exactly, and only touch the camera (and invalidate) if
-			// the snap is a change.
-			fov = fovTarget;
-			if (cam.fov !== fovTarget) {
-				cam.fov = fovTarget;
-				cam.updateProjectionMatrix();
-				invalidate();
+	useTask(
+		(delta) => {
+			if (!active || !controls || !target) return;
+			const cam = camera.current;
+			if (!(cam instanceof THREE.PerspectiveCamera)) return;
+			const flow = clamp(carSim.nitrous, 0, 1);
+			const fovTarget = savedFov + NITROUS_FOV_KICK * flow;
+			if (Math.abs(fovTarget - fov) < 0.01) {
+				// Settled — snap exactly, and only touch the camera (and invalidate) if
+				// the snap is a change.
+				fov = fovTarget;
+				if (cam.fov !== fovTarget) {
+					cam.fov = fovTarget;
+					cam.updateProjectionMatrix();
+					invalidate();
+				}
+				return;
 			}
-			return;
-		}
-		fov += (fovTarget - fov) * damp(FOV_RATE, delta);
-		cam.fov = fov;
-		cam.updateProjectionMatrix();
-		invalidate();
-	});
+			fov += (fovTarget - fov) * damp(FOV_RATE, delta);
+			cam.fov = fov;
+			cam.updateProjectionMatrix();
+			invalidate();
+		},
+		{ autoInvalidate: false }
+	);
 
 	// Right button is OURS. camera-controls binds it to TRUCK by default, which pans the
 	// orbit target — and useFollow writes that target back to the car every frame, so the

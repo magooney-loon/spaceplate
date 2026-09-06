@@ -59,6 +59,31 @@ mode param asks — `requiresValues` on the def) and `normal` (ao).
 `conflicts` enforced the same way; geometry consumers are dropped under a non-default
 base pass (verified combinations only).
 
+## Runtime-modulated effects (the shared-uniform driver pattern)
+
+Some effects are driven at runtime by scene code, not by panel params. The
+contract (established by the lenses, reused by afterimage): the shared values are
+`uniform()`s created at MODULE SCOPE in a state module (`lensState.svelte.ts` —
+or beside the effect itself, when there is exactly one) so their identity
+survives a pipeline rebuild, and there is ONE writer (a driver component's task)
+and one reader (the effect's `build`). Drivers hard-set their uniforms to rest
+on scene exit — keep-alive scenes never unmount, and the loop may never schedule
+the task again to decay them.
+
+- **`rainLens`/`snowLens`** — weather + camera speed, measured by
+  `LensDriver.svelte`; DRY effects leave the graph entirely via the
+  `lensActivity` structural latch, because a dry lens still evaluates the droplet
+  field three times per pixel, fullscreen.
+- **`afterimage`** — nitrous trails (TestGame's `NitrousAfterimage.svelte`
+  writes `uAfterimageBoost` from the car's spray flow). The OPPOSITE latch
+  decision: enabled by DEFAULT with `damp` 0 (a pure passthrough — the node is a
+  bright-pass feedback buffer, so damp 0 trails nothing), and the boost adds onto
+  the panel's floor inside the shader, clamped at 0.96. No structural latch,
+  because every flip is a graph rebuild and a rebuild per nitrous burst is a
+  hitch; the always-on cost is one fullscreen composite fetch, which is the price
+  of a hitch-free smear. Drivers ease the boost (asymmetric attack/release) so
+  trails bloom in and evaporate rather than cut with the bottle.
+
 ## Rebuild discipline
 
 **Never pass a raw number to a node factory — always a `uniform()` the pipeline owns.**

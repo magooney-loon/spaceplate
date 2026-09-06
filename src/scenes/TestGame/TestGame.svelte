@@ -17,6 +17,7 @@
 	import CarExhaustFlames from './CarExhaustFlames.svelte';
 	import CarWheels from './CarWheels.svelte';
 	import ChaseCamera from './ChaseCamera.svelte';
+	import NitrousAfterimage from './NitrousAfterimage.svelte';
 	import {
 		CAR_INPUT_KEYS,
 		CAR_TOGGLE_KEYS,
@@ -560,4 +561,8 @@
 	<!-- Borrows the app camera while this scene is current and hands it back on the way
 	     out — see ChaseCamera.svelte. Outside the car's group: it is a rig, not cargo. -->
 	<ChaseCamera target={chaseAnchor} />
+
+	<!-- The nitrous → afterimage smear driver. Renders nothing — a task that writes
+	     the effect's runtime boost uniform from carSim (NitrousAfterimage.svelte). -->
+	<NitrousAfterimage />
 {/if}

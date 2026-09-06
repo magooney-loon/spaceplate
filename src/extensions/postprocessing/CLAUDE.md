@@ -63,6 +63,12 @@ model is lit from the inside by the whole sky. Off by default — read its secti
 - `lut` and `fxaa` declare `displayColor`: the **builder** turns off
   `outputColorTransform` and folds in one `renderOutput()` for whoever asks. An effect
   must never do this itself — with two of them you would tone-map twice.
+- `afterimage` is the one effect that is DEFAULT-ENABLED with a zero look: `damp`
+  defaults 0 (a passthrough — the node trails only bright pixels), and runtime
+  drivers add a boost on top inside the shader (`uAfterimageBoost`; TestGame's
+  nitrous is the writer, via `NitrousAfterimage.svelte`). The panel `damp` is the
+  standing floor — see "Runtime-modulated effects" in
+  `$core/postprocessing/CLAUDE.md` for why it deliberately has no activity latch.
 - Params with `def.options` (the LUT choice, the bloom mode/lensflare) render as a
   `List`, not a `Slider`, and are written through `setParam` rather than `bind:` — that
   is the hook `def.paramDefaults` uses to re-seed siblings on a choice change. Sliders

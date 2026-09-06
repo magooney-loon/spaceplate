@@ -16,7 +16,10 @@ CarWheels.svelte        — per-vertex steering/rolling wheel deformation (TSL)
 CarExhaustFlames.svelte — downshift/limiter exhaust pops + the blue nitrous pilot
                          jet (TSL, from the three.js webgpu_tsl_vfx_flames example)
 CarHeadlights.svelte    — car-local lights (nose is -Z)
-ChaseCamera.svelte      — chase cam; borrows the app camera (rules below)
+ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + the
+                         nitrous FOV kick
+NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
+                         boost from the nitrous flow (the lensState contract)
 carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E / X) + the
                          latched switches (lights, handling tune) + the HUD → scene restart signal
 gr86.ts                 — the real car's HARDWARE, pure SI (metres/kg/newtons/seconds)
@@ -46,7 +49,9 @@ one hardware number, `NITROUS_TORQUE_GAIN` in `gr86.ts` (+45% crank torque), is
 applied by the drivetrain INSIDE its traction limit — so a shot in 1st/2nd
 becomes wheelspin, 3rd+ is real thrust, and Drift + spray in 3rd lights the
 tyres. `carSim.nitrous` (flow) and `carSim.nitrousTank` (level) drive the blue
-flames, the cluster's N2O gauge and the chase camera's FOV kick.
+flames, the cluster's N2O gauge, the chase camera's FOV kick and the afterimage
+smear (`NitrousAfterimage.svelte` easing `uAfterimageBoost` — the effect is
+default-enabled at damp 0, so the smear only exists while nitrous does).
 
 Held keys and switches are separate in that module: `carInput` is polled per
 physics step, while the latched switches — `carLights` (`on` / `high`) and
