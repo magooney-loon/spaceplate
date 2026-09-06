@@ -46,7 +46,7 @@ one hardware number, `NITROUS_TORQUE_GAIN` in `gr86.ts` (+45% crank torque), is
 applied by the drivetrain INSIDE its traction limit — so a shot in 1st/2nd
 becomes wheelspin, 3rd+ is real thrust, and Drift + spray in 3rd lights the
 tyres. `carSim.nitrous` (flow) and `carSim.nitrousTank` (level) drive the blue
-flames and the cluster's N2O gauge.
+flames, the cluster's N2O gauge and the chase camera's FOV kick.
 
 Held keys and switches are separate in that module: `carInput` is polled per
 physics step, while the latched switches — `carLights` (`on` / `high`) and
@@ -333,7 +333,11 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   `@threlte/extras`, rather than mounting a second `makeDefault` camera. One
   camera keeps the listener, the sky's framing and the post-processing pipeline
   pointed at what is on screen (`Renderer.svelte` rebuilds the whole pipeline on
-  a camera swap). Two rules come with borrowing:
+  a camera swap). It also widens the lens while nitrous flows (`NITROUS_FOV_KICK`,
+  60 → 72 at full spray, a `useTask` damped onto `carSim.nitrous`) — the FOV is
+  borrowed and returned with the pose, re-adopted on every borrow so a re-entry
+  can't animate from a stale value, and the task only invalidates on frames
+  where the lens actually moves. Two rules come with borrowing:
   - **Save the pose on entry, restore it on exit.** `Camera.svelte` sets its
     vantage once, in `oncreate`, and never re-asserts it — leave the camera at
     the car and every other scene inherits that framing.

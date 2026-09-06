@@ -1,9 +1,11 @@
 <script lang="ts">
-	import { useThrelte } from '@threlte/core/webgpu';
+	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import { CameraControls, useFollow } from '@threlte/extras';
 	import CameraControlsImpl from 'camera-controls';
 	import * as THREE from 'three/webgpu';
 	import { sceneState } from '$extensions/scene';
+	import { carSim } from './carTelemetry.svelte';
+	import { clamp, damp } from './carMath';
 
 	// Third-person / bird chase camera for the car.
 	//
@@ -39,6 +41,15 @@
 	const HEIGHT_MIN = -1.4; // below the roofline, looking up the road
 	const HEIGHT_MAX = 6; // helicopter
 	const HEIGHT_PER_PX = 0.014;
+
+	// ── Nitrous FOV kick ─────────────────────────────────────────────────────────
+	// Widening the lens while the system sprays is the "kickback" that sells the
+	// shove — the flames sell the cause, this sells the effect. Driven off the
+	// smoothed FLOW (carSim.nitrous), never the raw key: it punches out with the
+	// 8/s spray ramp and eases back in with the 4/s tail, and a light extra damp
+	// on top keeps the lens itself from snapping between physics-sized steps.
+	const NITROUS_FOV_KICK = 12; // deg of widening at full flow (60 → 72)
+	const FOV_RATE = 12; // 1/s — lens settling on top of the flow ramp
 
 	const { camera, dom, invalidate } = useThrelte();
 	let controls = $state.raw<CameraControlsImpl>();
@@ -76,6 +87,11 @@
 	// covers scene switches AND unmount with one code path.
 	const savedPosition = new THREE.Vector3();
 	const savedQuaternion = new THREE.Quaternion();
+	let savedFov = 60;
+	/** The lens' current animated value — adopted from the camera at each borrow,
+	 * so a re-entry (or camera swap) can never animate from a stale value and
+	 * jump. Plain let, not state: only the task below reads it. */
+	let fov = 60;
 
 	const _p = new THREE.Vector3();
 	const _q = new THREE.Quaternion();
@@ -91,6 +107,13 @@
 		const cam = $camera;
 		savedPosition.copy(cam.position);
 		savedQuaternion.copy(cam.quaternion);
+		// The FOV is borrowed like the pose (the kick below widens it): save it, and
+		// adopt it as the animation's starting point so the task can't jump. Guarded —
+		// only a perspective camera has a fov to save.
+		if (cam instanceof THREE.PerspectiveCamera) {
+			savedFov = cam.fov;
+			fov = cam.fov;
+		}
 
 		// Snap the rig behind the car ONCE, on entry. From here useFollow owns the orbit
 		// point and the azimuth; distance and polar angle stay wherever the player's wheel
@@ -107,8 +130,40 @@
 		return () => {
 			cam.position.copy(savedPosition);
 			cam.quaternion.copy(savedQuaternion);
+			if (cam instanceof THREE.PerspectiveCamera) {
+				cam.fov = savedFov;
+				cam.updateProjectionMatrix();
+			}
 			invalidate();
 		};
+	});
+
+	// The kick itself. Same borrow scope as the effect above (controls + target +
+	// active), so `fov`/`savedFov` are always the borrowed camera's before this
+	// runs. On-demand discipline: the task only invalidates on a frame where the
+	// lens actually moved — settled at base with no spray is free, and while the
+	// car is spraying the flames' pilot jet is already pinning the render loop.
+	useTask((delta) => {
+		if (!active || !controls || !target) return;
+		const cam = camera.current;
+		if (!(cam instanceof THREE.PerspectiveCamera)) return;
+		const flow = clamp(carSim.nitrous, 0, 1);
+		const fovTarget = savedFov + NITROUS_FOV_KICK * flow;
+		if (Math.abs(fovTarget - fov) < 0.01) {
+			// Settled — snap exactly, and only touch the camera (and invalidate) if
+			// the snap is a change.
+			fov = fovTarget;
+			if (cam.fov !== fovTarget) {
+				cam.fov = fovTarget;
+				cam.updateProjectionMatrix();
+				invalidate();
+			}
+			return;
+		}
+		fov += (fovTarget - fov) * damp(FOV_RATE, delta);
+		cam.fov = fov;
+		cam.updateProjectionMatrix();
+		invalidate();
 	});
 
 	// Right button is OURS. camera-controls binds it to TRUCK by default, which pans the
