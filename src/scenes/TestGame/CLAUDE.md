@@ -368,13 +368,17 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   at init: a fixed unlit gray lifted by the night exposure is LIGHTER than
   night asphalt, so marks read whitish-gray after dark; lit, they darken with
   the environment (and take fog) like the road — darker than asphalt by day,
-  near-black at night. THE LOOK IS ORGANIC WITHOUT ANY NOISE PATTERN — all
-  randomness is LAY-TIME: the shader feathers the cross-width edge softly to
-  nothing (no hard rectangle rim), intensity + grain are written PER END of
-  each segment (the previous segment's values at a, this one's at b) so
-  darkness and grain interpolate down the strip, each segment's width jitters
-  ±12% under the soft rim, starts taper in from 0, and a slide's end lays one
-  tapering tail-off segment.
+  near-black at night. THE QUADS ARE INDEXED, NOT 6-VERT — four verts per
+  segment (aL, aR, bL, bR) with both a-verts carrying the previous segment's
+  values: the 6-vert version's shared diagonal was a visible triangle/diamond
+  pattern. ORGANIC LOOK = lay-time randomness + the vendored perlin PNG
+  (public/textures/noises/, first consumer): two world-space samples at
+  different scales multiply into a scratch/mottle that also raggers the soft
+  rim — stable (world-anchored, no shimmer), continuous along the strip, and
+  not one obvious pattern. Plus per-segment width jitter ±12%, tapered starts
+  from 0, and one SHORT tail-off segment where a slide ends (capped at
+  TAIL_MAX). Enter/exit hysteresis (MARK_ON 0.3 / MARK_EXIT 0.22) stops
+  threshold chatter laying confetti.
 - **`CarExhaustFlames.svelte` pops fire on downshifts and limiter bangs**
   (adapted from three's `webgpu_tsl_vfx_flames`). The exhaust tips are
   MEASURED, not placed by hand: the GLB's Draco `Nickel_Smooth` mesh decoded
