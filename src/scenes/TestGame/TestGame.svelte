@@ -18,6 +18,7 @@
 	import CarEngineAudio from './CarEngineAudio.svelte';
 	import CarWheels from './CarWheels.svelte';
 	import ChaseCamera from './ChaseCamera.svelte';
+	import SkidMarks from './SkidMarks.svelte';
 	import NitrousAfterimage from './NitrousAfterimage.svelte';
 	import {
 		CAR_INPUT_KEYS,
@@ -647,9 +648,14 @@
 		</RigidBody>
 	</T.Group>
 
-	<!-- Borrows the app camera while this scene is current and hands it back on the way
-	     out — see ChaseCamera.svelte. Outside the car's group: it is a rig, not cargo. -->
+	<!-- Borrows the app camera while this scene is current and hands it back on the
+	     way out — see ChaseCamera.svelte. Outside the car's group: it is a rig, not cargo. -->
 	<ChaseCamera target={chaseAnchor} />
+
+	<!-- Skid marks — world-anchored ring buffer of rubber quads laid at the tyre
+	     patches while the car slides (same anchor: its parent is the body, the space
+	     the wheel offsets live in). See SkidMarks.svelte. -->
+	<SkidMarks target={chaseAnchor} />
 
 	<!-- The nitrous → afterimage smear driver. Renders nothing — a task that writes
 	     the effect's runtime boost uniform from carSim (NitrousAfterimage.svelte). -->
