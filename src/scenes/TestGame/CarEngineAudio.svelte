@@ -165,7 +165,7 @@
 <!-- The tyre-squeal loop: under the car, not the engine bay — tyres speak from
      the contact patches, so axle height between the axles (the CG). One voice
      for all four corners; level = the loosest of wheelspin / slide / handbrake /
-     hard brake / cornering load, slewed by the tick like the bed. -->
+     hard brake / cornering load / launch chirp, slewed by the tick like the bed. -->
 <T.Group position={[0, 0.3, 0]} userData={{ hideInTree: true, selectable: false }}>
 	<PositionalAudio
 		src={ENGINE_URL + 'tires_squal_loop.opus'}

@@ -3,6 +3,7 @@
 	import { carHud } from './carTelemetry.svelte';
 	import { carHandling, carIgnition } from './carInput.svelte';
 	import { HANDLING_TUNES } from './handling';
+	import { PERFECT_LAUNCH_MIN, PERFECT_LAUNCH_MAX } from './drivetrain';
 
 	// Bottom-right instrument cluster: tacho ring, gear, speed — styled after an
 	// aftermarket gauge pod (ice-blue numerals, red needle/redline, backlit LCD
@@ -94,6 +95,18 @@
 			Math.ceil((SHIFT_LIGHTS * (rpm - SHIFT_LIGHT_FROM)) / (GR86.limiterRpm - SHIFT_LIGHT_FROM))
 		)
 	);
+	// Launch meter: in N with the revs in the rev-match window the shift lights
+	// moonlight as the catch gauge — GREEN, filling with depth in the window
+	// (one light per 400 rpm, five = the 6 k money catch). Overrides the shift
+	// indication entirely: in N it has no job, and the window's top 400 rpm
+	// (5.6–6 k) would otherwise paint red and read "shift" exactly when the
+	// answer is "drop the clutch".
+	const launchWindow = $derived(
+		carHud.gear === 0 && carHud.rpm >= PERFECT_LAUNCH_MIN && carHud.rpm <= PERFECT_LAUNCH_MAX
+	);
+	const launchLit = $derived(
+		Math.max(1, Math.ceil((SHIFT_LIGHTS * (carHud.rpm - PERFECT_LAUNCH_MIN)) / (PERFECT_LAUNCH_MAX - PERFECT_LAUNCH_MIN)))
+	);
 	// TC lamps when the ECU is working — which it never is in Drift: the tune
 	// runs `tractionControl: false`, so wheelspin there is the SETUP, not a system
 	// intervening, and a blinking lamp would be a lie. Gate on the tune's own flag
@@ -109,7 +122,12 @@
 <div class="cluster" class:limiting={carHud.limiting} class:dimmed>
 	<div class="lights" aria-hidden="true">
 		{#each { length: SHIFT_LIGHTS } as _, i (i)}
-			<span class="light" class:on={i < shiftLit} class:red={i >= SHIFT_LIGHTS - 2}></span>
+			<span
+				class="light"
+				class:on={launchWindow ? i < launchLit : i < shiftLit}
+				class:red={!launchWindow && i >= SHIFT_LIGHTS - 2}
+				class:green={launchWindow}
+			></span>
 		{/each}
 	</div>
 
@@ -212,6 +230,14 @@
 			<span class="flag slip" class:on={spinning}>TC</span>
 		</div>
 	</div>
+
+	<!-- PERFECT LAUNCH — one-shot over the dials when a rev-match launch lands
+	     (1st slotted from N with the revs in the 5–6k window). The element's
+	     lifetime is the carSim countdown (~1.5 s), so the keyframe runs once and
+	     the unmount ends it — no transitions (repo rule). -->
+	{#if carHud.perfectLaunch}
+		<div class="launch-flash">PERFECT LAUNCH</div>
+	{/if}
 </div>
 
 <style>
@@ -243,6 +269,44 @@
 		filter: saturate(0.4);
 	}
 
+	/* ── Perfect-launch flash ─────────────────────────────────────────── */
+	.launch-flash {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1.15rem;
+		font-weight: 700;
+		letter-spacing: 0.18em;
+		color: #a8dcff;
+		text-shadow:
+			0 0 12px rgba(122, 200, 255, 0.9),
+			0 0 3px #fff;
+		animation: launch-pop 1.5s ease-out forwards;
+	}
+
+	@keyframes launch-pop {
+		0% {
+			opacity: 0;
+			transform: scale(0.6);
+		}
+		12% {
+			opacity: 1;
+			transform: scale(1.06);
+		}
+		22% {
+			transform: scale(1);
+		}
+		70% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+			transform: scale(1.02);
+		}
+	}
+
 	/* ── Shift lights ─────────────────────────────────────────────────────── */
 	.lights {
 		display: flex;
@@ -264,6 +328,12 @@
 	.light.red.on {
 		background: #ff4e4e;
 		box-shadow: 0 0 8px #ff4e4e;
+	}
+
+	/* The launch meter's green — see the launchWindow derived. */
+	.light.green.on {
+		background: #4ade80;
+		box-shadow: 0 0 6px #4ade80;
 	}
 
 	/* ── Dial ─────────────────────────────────────────────────────────────── */

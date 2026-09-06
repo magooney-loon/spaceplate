@@ -40,6 +40,11 @@ cityColliders.ts        — hand-rolled static trimesh colliders for the track G
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
 Shift nitrous, L headlights, K main beam, G handling setup, M/N ignition on/off.
+Launching is a ritual: sit in N, rev into the 4–6k window (the shift lights
+turn green and fill as you go), tap E — a REV-MATCH LAUNCH drops the clutch
+clean, and the closer to 6k the harder it plants (≈1 g at the top; the cluster
+flashes PERFECT LAUNCH, the tyres chirp); miss the window and the soft street
+launch is what you get.
 M starts a realistic sequence: the turnon sound cranks, RPM revs to ~2k then
 settles to idle, and only when the sound ends does the idle bed fade in and the
 car become driveable. N cuts everything instantly — bed, pops, nitrous all stop,
@@ -265,6 +270,25 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   bouncing fuel-cut limiter, and a traction limit at the rear axle with load
   transfer (flooring 1st spins the wheels; the leftover is `slip`, which the
   scene turns into lost lateral grip). See `drivetrain.ts`'s header.
+- **REV-MATCH LAUNCH**: slot 1st out of N with the revs in the 4–6k window
+  (`PERFECT_LAUNCH_MIN/MAX`, judged at the SHIFT TAP — the 0.28 s cut that
+  follows lets the revs climb out of it, that climb is the player's timing)
+  and the clutch drops CLEAN, with DEPTH in the window setting how hard
+  (`launchQ` 0→1 across it): bite scales `clutchMinBite`→1, and the boost —
+  rear μ up to `LAUNCH_GRIP_GAIN` (+100%) plus WOT up to `LAUNCH_TORQUE_GAIN`
+  (+50%, nitrous-style, inside the traction limit) — is `launchBoost`: held
+  through the drop, then decaying at `LAUNCH_BOOST_DECAY` (~1.4 s tail) into
+  1st so the slam outlives the engagement. At 6 k that is ≈1 g off the line,
+  ~3× the soft launch's thrust; the window floor is barely above the street
+  launch. The revs hold where you caught them until the clutch homes. The
+  hold ends on the clutch homing or a lift; a lift or gear change kills the
+  boost instantly (no reward for aborted launches). In N with the revs in
+  the window the cluster's five shift lights turn GREEN and fill with depth
+  (launch meter — overrides the shift indication, which has no job in N);
+  on the landing the cluster flashes PERFECT LAUNCH ~1.5 s (`state.launched`
+  → `carSim.perfectLaunch` countdown → `carHud.perfectLaunch` → CarCluster's
+  one-shot keyframe), and the tyres chirp through the drop and tail
+  (`state.launch` = the boost → `carSim.launch` → carAudio's squeal).
 
 ## Colliders — the hard-won rules
 
@@ -388,10 +412,12 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   level = the LOOSEST of wheelspin (ramping from the TC lamp's own 0.15), |slip
   angle| (8°–25°, speed-gated; the cluster's slide flag reads 10°),
   handbrake-at-speed, HARD BRAKE (the pedal at speed, fading below ~20 km/h
-  so stops don't end in a squeak) and CORNERING LOAD (`carSim.latLoad`, the
+  so stops don't end in a squeak), CORNERING LOAD (`carSim.latLoad`, the
   share of the lateral μ·g budget the corner demands — Grip's planted max
   banking lights no other signal, so it sings from ~75% of budget and pins at
-  full lock at speed); sources never sum (the looseness model's own
+  full lock at speed) and LAUNCH (`carSim.launch`, the rev-match chirp — the
+  launch boost, full through the drop and easing off with the tail into 1st);
+  sources never sum (the looseness model's own rule). Attack
   rule). Attack
   12/s vs release 4/s with a snap to 0 so the release asymptote can't hiss. Not
   gated on ignition — tyres aren't combustive. TC LAMP: the cluster's `spinning` indicator gates on the tune's `tractionControl`

@@ -11,6 +11,10 @@
 //   cares which gear they are in.
 // - A slipping clutch below `launchSpeed`, so pulling away from a light holds
 //   ~3200 rpm instead of bogging at idle.
+// - A REV-MATCH LAUNCH: slot 1st out of N with the revs in the 4–6k window and
+//   the clutch drops CLEAN — bite and rear plant both scale with DEPTH in the
+//   window, so the closer to 6k the harder the launch. Miss the window and the
+//   soft slip above eats the excess like every other launch.
 // - Engine BRAKING off-throttle, scaled by the gear you are in. Lifting in 2nd
 //   should feel different from lifting in 6th.
 // - A bouncing rev limiter (fuel cut, not a clamp), which is what tells you to
@@ -109,6 +113,14 @@ export interface DrivetrainState {
 	limiting: boolean;
 	/** True for the frame a gear change starts — the scene can bark a sound off it. */
 	shifted: boolean;
+	/** True for the frame a REV-MATCH LAUNCH lands — 1st slotted from N with the
+	 * revs in the window and the clutch just dropped clean. The scene flashes
+	 * the cluster off it. */
+	launched: boolean;
+	/** 0..1 — rev-match launch LIVE: depth in the window × what's left of the
+	 * clutch drop. Fades to 0 exactly as the clutch homes; the tyre-squeal
+	 * source reads it through carSim. */
+	launch: number;
 }
 
 /**
@@ -130,6 +142,26 @@ const FULL_SLIP = 10;
 const TC_SLIP = 2;
 /** m/s under which the tyre is gripping rather than sliding. Noise floor. */
 const HOOKED = 0.05;
+/** rpm window for a REV-MATCH LAUNCH: slot 1st out of N inside it and the
+ * clutch drops clean — bite, plant and torque all scale with DEPTH in the
+ * window (`launchQ`, 0 at the floor → 1 at 6 k). Too low bogs, too high and
+ * the soft slip eats the excess. */
+export const PERFECT_LAUNCH_MIN = 4000;
+export const PERFECT_LAUNCH_MAX = 6000;
+/** Rear-μ bonus at the TOP of the window — the dump slams load onto the rear
+ * axle and the tyre plants. Grip is the cap on thrust (full bite already
+ * requests past the tyre), so the plant is most of the felt launch. */
+const LAUNCH_GRIP_GAIN = 1.0;
+/** WOT bonus at the TOP of the window, nitrous-style and inside the traction
+ * limit — with the plant raising the cap, torque has to rise too or the μ
+ * bonus is never spent. Together: ≈1 g off the line at 6 k, ~3× the soft
+ * launch. */
+const LAUNCH_TORQUE_GAIN = 0.5;
+/** 1/s — how fast the boost decays once the clutch homes. The drop is the
+ * launch, but the TAIL is what makes it feel like a slam instead of a blip:
+ * the whole of 1st stays planted, handing over to normal pull as it fades
+ * (~1.4 s at full quality). A lift or a gear change kills it instantly. */
+const LAUNCH_BOOST_DECAY = 0.7;
 
 export type Drivetrain = ReturnType<typeof createDrivetrain>;
 
@@ -143,7 +175,9 @@ export function createDrivetrain() {
 		throttle: 0,
 		brake: 0,
 		limiting: false,
-		shifted: false
+		shifted: false,
+		launched: false,
+		launch: 0
 	};
 
 	let shiftTimer = 0;
@@ -155,9 +189,45 @@ export function createDrivetrain() {
 	let prevDrive = 0;
 	/** Phase accumulator for the idle wobble — organic fluctuation 800–900 rpm. */
 	let idlePhase = 0;
+	/** rpm held during a REV-MATCH LAUNCH, 0 = none. Latched in engage() when 1st
+	 * slots from N with the revs in the window; cleared by the clutch coming
+	 * home, a lift, or any further gear change (engage re-latches). */
+	let launchHold = 0;
+	/** Depth in the window at the catch, 0…1 — how hard the launch is. Bite and
+	 * the rear-μ plant both scale with it. */
+	let launchQ = 0;
+	/** The live launch boost: `launchQ` held through the clutch drop, then
+	 * decaying into 1st (LAUNCH_BOOST_DECAY). Plant and torque gain read THIS —
+	 * the slam must outlive the drop or it reads as a blip. Zeroed instantly on
+	 * a lift or gear change: no reward for aborted launches. */
+	let launchBoost = 0;
+	/** One-shot latch so `state.launched` fires on the landing frame only. */
+	let launchAnnounced = false;
 
 	function engage(gear: number): void {
 		if (gear === state.gear) return;
+		// The rev-match window is judged at the TAP — the 0.28 s shift cut that
+		// follows lets the revs climb out of it, and that climb is the player's
+		// timing, not a miss. Depth in the window (`launchQ`) is how hard the
+		// launch is: the floor is barely more than the street launch, the top is
+		// a dropped clutch at full plant. Rolling engagements past `launchSpeed`
+		// self-clear in the step (coupling is already 1) — a launch this is not.
+		launchHold =
+			gear === 1 &&
+			state.gear === 0 &&
+			state.rpm >= PERFECT_LAUNCH_MIN &&
+			state.rpm <= PERFECT_LAUNCH_MAX
+				? state.rpm
+				: 0;
+		launchQ =
+			launchHold > 0
+				? clamp(
+						(state.rpm - PERFECT_LAUNCH_MIN) / (PERFECT_LAUNCH_MAX - PERFECT_LAUNCH_MIN),
+						0,
+						1
+					)
+				: 0;
+		launchBoost = launchQ;
 		state.gear = gear;
 		shiftTimer = GR86.shiftTime;
 		state.shifted = true;
@@ -188,6 +258,7 @@ export function createDrivetrain() {
 	 */
 	function step(dt: number, speedMs: number, input: DriveInput, tune: HandlingTune): DriveOutput {
 		state.shifted = false;
+		state.launched = false;
 		const rolling = Math.abs(speedMs);
 
 		// ── Gear selection ───────────────────────────────────────────────────
@@ -215,6 +286,7 @@ export function createDrivetrain() {
 			// Neutral or mid-shift: the engine is on its own. Blipping the throttle
 			// during a shift actually does something, which is the point.
 			state.clutch = 0;
+			state.launch = 0;
 			const free = GR86.idleRpm + throttle * (GR86.limiterRpm - GR86.idleRpm);
 			const rate = throttle > 0 ? GR86.freeRevRate : GR86.freeDropRate;
 			state.rpm += (free - state.rpm) * damp(rate, dt);
@@ -223,19 +295,47 @@ export function createDrivetrain() {
 			// Scaled by gear: 1st is home by 4.5 m/s, 6th would never slip anyway.
 			const homeAt = GR86.launchSpeed * (totalRatio(1) / total);
 			const coupling = clamp(rolling / homeAt, 0, 1);
-			state.clutch = coupling;
+			// REV-MATCH LAUNCH (window at the top): while held, the clutch is DOWN
+			// CLEAN and DEPTH in the window sets how hard — bite scales
+			// `clutchMinBite`→1 with `launchQ`, the revs sit where you caught them
+			// instead of the soft-slip 3200. The BOOST (plant + torque) is
+			// `launchBoost`: held through the drop, then decaying into 1st so the
+			// slam outlives the engagement. The hold ends when the clutch homes or
+			// the throttle lifts; a lift (or any gear change) kills the boost too —
+			// no reward for aborted launches.
+			if (launchHold > 0 && (coupling >= 1 || throttle === 0)) {
+				launchHold = 0;
+				launchQ = 0;
+				if (throttle === 0) launchBoost = 0;
+			}
+			if (launchHold > 0) launchBoost = launchQ;
+			else if (launchBoost > 0) {
+				launchBoost = Math.max(0, launchBoost - LAUNCH_BOOST_DECAY * dt);
+			}
+			if (launchHold > 0 && !launchAnnounced) {
+				launchAnnounced = true;
+				state.launched = true;
+			}
+			if (launchHold === 0) launchAnnounced = false;
+			state.clutch = launchHold > 0 ? Math.max(coupling, launchQ) : coupling;
+			// The tyres' chirp reads the boost: full through the drop, easing off
+			// with the tail into 1st.
+			state.launch = launchBoost;
 
 			// `spin` feeds back here: spinning wheels turn faster than the road, so the
 			// revs climb even though the car is not. It is a real wheel speed, so this
 			// is just the gearing — a donut on the limiter is 12 m/s of spin over a
 			// 4 m/s car, and the tacho says so.
 			const gearRpm = rpmInGear(state.gear, speedMs + state.spin);
-			const slipping = GR86.idleRpm + throttle * (GR86.launchRpm - GR86.idleRpm);
+			const slipping =
+				launchHold > 0
+					? launchHold
+					: GR86.idleRpm + throttle * (GR86.launchRpm - GR86.idleRpm);
 			const target = Math.max(
-				GR86.idleRpm,
-				gearRpm,
-				gearRpm * coupling + slipping * (1 - coupling)
-			);
+					GR86.idleRpm,
+					gearRpm,
+					gearRpm * coupling + slipping * (1 - coupling)
+				);
 			state.rpm += (target - state.rpm) * damp(GR86.rpmResponse, dt);
 		}
 
@@ -254,7 +354,12 @@ export function createDrivetrain() {
 			const lug = clamp(state.rpm / GR86.lugRpm, 0.35, 1);
 			// Nitrous multiplies the WOT term only — a fuel cut still cuts and engine
 			// braking is untouched, exactly as if the kit had just made the curve fatter.
-			const wot = engineTorque(state.rpm) * lug * (1 + NITROUS_TORQUE_GAIN * input.nitrous);
+			// The launch boost multiplies on top of that, same rule.
+			const wot =
+				engineTorque(state.rpm) *
+				lug *
+				(1 + NITROUS_TORQUE_GAIN * input.nitrous) *
+				(1 + LAUNCH_TORQUE_GAIN * launchBoost);
 			const drag = engineBrakeTorque(state.rpm);
 			crankTorque = cut ? -drag : throttle * wot - (1 - throttle) * drag;
 		}
@@ -279,10 +384,14 @@ export function createDrivetrain() {
 		// the limit. SLIDING, it gives full μ along the way the wheels are turning and
 		// the engine has no say at all — which is why a burnout keeps pulling through
 		// the limiter's fuel cut instead of braking the car (see the header).
+		// During a rev-match launch the rear μ gains up to LAUNCH_GRIP_GAIN — the
+		// plant that makes the launch HARDER with depth in the window (the request
+		// at full bite is already past the tyre, so grip is the cap on thrust).
 		const sliding = Math.abs(state.spin) > HOOKED;
+		const plant = 1 + launchBoost * LAUNCH_GRIP_GAIN;
 		const driveForce = sliding
-			? Math.sign(state.spin) * traction
-			: clamp(requested, -traction, traction);
+			? Math.sign(state.spin) * traction * plant
+			: clamp(requested, -traction * plant, traction * plant);
 
 		// Everything the engine asked for beyond what the tyre took goes into WHEEL
 		// SPEED. The rotating assembly resists that as an equivalent mass at the
@@ -356,13 +465,15 @@ export function createDrivetrain() {
 	}
 
 	/** Called when the car is parked and the scene stops touching the body. */
-	function idle(dt: number): void {
+function idle(dt: number): void {
 		state.throttle = 0;
 		state.brake = 0;
 		state.slip = 0;
 		state.spin = 0;
 		state.limiting = false;
 		state.shifted = false;
+		state.launch = 0;
+		launchBoost = 0;
 		// Organic idle: slow sine wobble between 800–900 rpm. The two terms
 		// (1.5 Hz main + 0.4 Hz sub-harmonic) keep it from looking periodic.
 		idlePhase += dt;
@@ -382,12 +493,17 @@ export function createDrivetrain() {
 		state.brake = 0;
 		state.limiting = false;
 		state.shifted = false;
+		state.launched = false;
 		shiftTimer = 0;
 		cutTimer = 0;
 		prevUp = false;
 		prevDown = false;
 		prevDrive = 0;
 		idlePhase = 0;
+		launchHold = 0;
+		launchQ = 0;
+		launchBoost = 0;
+		launchAnnounced = false;
 	}
 
 	return { state, step, idle, reset };

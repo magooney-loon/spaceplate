@@ -42,11 +42,20 @@ export const carSim = {
 	handbrake: false,
 	limiting: false,
 	/** 0..1 — nitrous FLOW right now (ramped in TestGame.svelte's task, not raw
-	 * key state). Read by CarExhaustFlames to tint the flames blue and hold the
-	 * pilot jet while the system sprays. */
+	 *  key state). Read by CarExhaustFlames to tint the flames blue and hold the
+	 *  pilot jet while the system sprays. */
 	nitrous: 0,
 	/** 0..1 — bottle level. Drains while spraying, regenerates otherwise. */
-	nitrousTank: 1
+	nitrousTank: 1,
+	/** s remaining on the PERFECT LAUNCH cluster flash — set when a rev-match
+	 *  launch lands (1st slotted from N, revs in the 4–6k window; drivetrain.ts
+	 *  flags the frame), counted down in the task. The HUD mirrors it as a
+	 *  boolean. */
+	perfectLaunch: 0,
+	/** 0..1 — rev-match launch LIVE: depth in the window × what's left of the
+	 *  clutch drop (drivetrain.state.launch). The tyre-squeal source reads it;
+	 *  the cluster flash is the separate perfectLaunch countdown above. */
+	launch: 0
 };
 
 /** The HUD's reactive view. Quantised, ~30 Hz. */
@@ -67,7 +76,9 @@ export const carHud = $state({
 	/** 0..1 flow — quantised to 0.1, enough for the cluster's flowing lamp. */
 	nitrous: 0,
 	/** 0..1 bottle — quantised to 0.01, read as whole percent by the N2O gauge. */
-	nitrousTank: 1
+	nitrousTank: 1,
+	/** PERFECT LAUNCH flash live (carSim.perfectLaunch > 0). */
+	perfectLaunch: false
 });
 
 const HUD_INTERVAL = 1 / 30;
@@ -101,6 +112,8 @@ export function publishCarHud(dt: number): void {
 	if (carHud.nitrous !== nitrous) carHud.nitrous = nitrous;
 	const nitrousTank = Math.round(carSim.nitrousTank * 100) / 100;
 	if (carHud.nitrousTank !== nitrousTank) carHud.nitrousTank = nitrousTank;
+	const launch = carSim.perfectLaunch > 0;
+	if (carHud.perfectLaunch !== launch) carHud.perfectLaunch = launch;
 }
 
 /** Park the instruments — used when the scene stops driving (scene switch, blur). */
@@ -121,6 +134,8 @@ export function resetCarTelemetry(): void {
 	// The bottle refills on scene exit to match the fresh component state the
 	// next mount starts with.
 	carSim.nitrousTank = 1;
+	carSim.perfectLaunch = 0;
+	carSim.launch = 0;
 	elapsed = HUD_INTERVAL;
 	publishCarHud(0);
 }

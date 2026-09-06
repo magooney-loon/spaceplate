@@ -322,6 +322,7 @@
 			carSim.slip = 0;
 			carSim.drift = 0;
 			carSim.latLoad = 0;
+			carSim.launch = 0;
 			carSim.throttle = 0;
 			carSim.brake = 0;
 			carSim.handbrake = false;
@@ -357,6 +358,7 @@
 			carSim.slip = 0;
 			carSim.drift = 0;
 			carSim.latLoad = 0;
+			carSim.launch = 0;
 			carSim.throttle = 0;
 			carSim.brake = 0;
 			carSim.handbrake = false;
@@ -500,6 +502,12 @@
 		carSim.gear = drivetrain.state.gear;
 		carSim.slip = drivetrain.state.slip;
 		carSim.latLoad = latLoad;
+		carSim.launch = drivetrain.state.launch;
+		// REV-MATCH LAUNCH: the drivetrain flags the frame the clutch dropped
+		// clean; hold the cluster's flash ~1.5 s (matches the keyframe in
+		// CarCluster, which runs its own 1.5 s and ends on the unmount).
+		if (drivetrain.state.launched) carSim.perfectLaunch = 1.5;
+		carSim.perfectLaunch = Math.max(0, carSim.perfectLaunch - delta);
 		carSim.throttle = drivetrain.state.throttle;
 		carSim.brake = drivetrain.state.brake;
 		carSim.handbrake = handbrake;

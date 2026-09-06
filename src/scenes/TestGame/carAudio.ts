@@ -201,7 +201,7 @@ const IGNITION_GAIN = 0.9;
 //
 // The squeal loop: ONE voice under the car, not per-corner — RWD wheelspin is a
 // rear-axle sound, a drift is the whole car, and per-corner voices would need
-// per-wheel slip the sim doesn't publish. Level = the LOOSEST of five sources,
+// per-wheel slip the sim doesn't publish. Level = the LOOSEST of six sources,
 // never a sum (the looseness model's own rule, handling.ts: sources that stack
 // make a gentle cornering slide scream):
 //   - WHEELSPIN: carSim.slip past the TC lamp's own 0.15 — lamp and squeal agree
@@ -216,6 +216,9 @@ const IGNITION_GAIN = 0.9;
 //     the rears or touches the brake, but the tyres ARE at their limit — the load
 //     is the only honest signal that corner gives, so it sings from ~75% of
 //     budget and pins at full lock at speed.
+//   - LAUNCH: carSim.launch — the rev-match boost live: full quality through
+//     the clutch drop, easing off with the tail into 1st. The chirp off the
+//     line, sized by how hard the catch was.
 //   - HARD BRAKE: the pedal at speed — there is no ABS/lockup channel, so the
 //     squeal is the drama the missing tyre slip would have supplied. Fades out
 //     below ~20 km/h, so a stop doesn't end in a squeak at the line.
@@ -242,6 +245,9 @@ const SQUEAL_LAT = 0.65;
 const SQUEAL_BRAKE = 0.7;
 /** m/s — brake squeal fades out below this, so a stop doesn't end in a squeak. */
 const SQUEAL_BRAKE_SPEED = 6;
+/** Launch-chirp weight — the rev-match drop, scaled by the launch's own
+ * quality-and-remaining signal. */
+const SQUEAL_LAUNCH = 0.6;
 
 /** The mounted squeal loop. Set by the component. */
 let tireSqueal: ThreePositionalAudio | undefined;
@@ -466,7 +472,8 @@ export const tickCarAudio = (delta: number): void => {
 	const hand = carSim.handbrake ? 0.8 * clamp(speed / 10, 0, 1) : 0;
 	const hard = carSim.brake * SQUEAL_BRAKE * clamp(speed / SQUEAL_BRAKE_SPEED, 0, 1);
 	const lat = SQUEAL_LAT * clamp((carSim.latLoad - SQUEAL_LAT_ON) / (1 - SQUEAL_LAT_ON), 0, 1);
-	const squeal = Math.max(spin, slide, hand, hard, lat);
+	const launchSq = carSim.launch * SQUEAL_LAUNCH;
+	const squeal = Math.max(spin, slide, hand, hard, lat, launchSq);
 	squealLevel += (squeal - squealLevel) * damp(squeal > squealLevel ? SQUEAL_ATTACK : SQUEAL_RELEASE, delta);
 	// The release asymptote never lands on 0 — snap it, or the loop hisses at ~0
 	// for the rest of the session after the first slide.
