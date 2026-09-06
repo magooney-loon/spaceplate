@@ -51,6 +51,45 @@
 	const NITROUS_FOV_KICK = 12; // deg of widening at full flow (60 → 72)
 	const FOV_RATE = 12; // 1/s — lens settling on top of the flow ramp
 
+	// ── Launch dolly kick ──────────────────────────────────────────────────
+	// A rev-match launch shoves the camera IN with the clutch drop and lets the
+	// boost's own tail pull it back out — driven off carSim.launch (the same
+	// signal the tyre squeal reads), so the punch scales with the catch and dies
+	// with the boost: a STREET catch barely moves the lens, a PERFECT one lunges.
+	// The dolly is a DELTA on the rig's distance, recovered every frame, so the
+	// player's wheel zoom survives under it; clamped to 60% of the base so the
+	// kick can never shove the camera inside the car.
+	const LAUNCH_DOLLY = 3.5; // world units toward the car at full quality
+	const LAUNCH_FOV_KICK = 12; // deg of widening at full quality, stacking on nitrous
+	const KICK_RATE = 14; // 1/s — a shove is a punch, not a drift
+	/** Smoothed boost level driving dolly + FOV together. */
+	let kickLevel = 0;
+	/** World units currently added to the rig's distance (negative = closer). */
+	let appliedKick = 0;
+
+	// ── Shift kick ──────────────────────────────────────────────────────
+	// Up/down shifts get their own nudge, edge-detected off carSim.gear (no
+	// drivetrain wiring needed): UPSHIFT = KICKBACK — the post-cut surge throws
+	// the camera back (dolly out + FOV widen); DOWNSHIFT = KICK IN — the
+	// engine-braking grab shoves it toward the car (dolly in + FOV narrow), in
+	// sync with the downshift exhaust bang. Subtlety is the design constraint:
+	// shifts are frequent, so the kick must read as the car's motion, never as
+	// the camera glitching — HALF the launch's magnitude, and crucially it never
+	// STEPS: the impulse is ramped through a one-pole filter (SHIFT_ATTACK), so
+	// the lens swells into the kick and eases out of it. Only real driving
+	// shifts (both sides ≥ 1st) count — N/R slotting is not a shift, and the
+	// N→1 launch has its own (much bigger) kick.
+	const SHIFT_DOLLY = 0.45; // world units of nudge
+	const SHIFT_FOV_KICK = 1.5; // deg — widen on the upshift's surge, narrow on the downshift's grab
+	const SHIFT_KICK_RATE = 7; // 1/s — the impulse's decay
+	const SHIFT_ATTACK = 12; // 1/s — the ramp IN; no frame ever steps
+	/** Signed impulse, +1 = upshift kickback, -1 = downshift kick in. */
+	let shiftKick = 0;
+	/** The applied kick — `shiftKick` ramped through a one-pole, so nothing steps. */
+	let shiftLevel = 0;
+	/** Last frame's gear — the edge detector. */
+	let prevGear = 1;
+
 	const { camera, dom, invalidate } = useThrelte();
 	let controls = $state.raw<CameraControlsImpl>();
 	let lookHeight = $state(0);
@@ -125,6 +164,13 @@
 		rig.azimuthAngle = _e.y;
 		rig.polarAngle = CHASE_POLAR;
 		rig.distance = CHASE_DISTANCE;
+		// Re-entry must not recover a stale zoom base out of a leftover kick, nor
+		// read the current gear as a shift.
+		kickLevel = 0;
+		appliedKick = 0;
+		shiftKick = 0;
+		shiftLevel = 0;
+		prevGear = carSim.gear;
 		invalidate();
 
 		return () => {
@@ -151,8 +197,40 @@
 			if (!active || !controls || !target) return;
 			const cam = camera.current;
 			if (!(cam instanceof THREE.PerspectiveCamera)) return;
+
+			// ── Launch kick: snap in with the drop, ease out with the boost tail. ──
+			const boost = clamp(carSim.launch, 0, 1);
+			kickLevel += (boost - kickLevel) * damp(KICK_RATE, delta);
+
+			// ── Shift kick: edge-detect the gear, decay the impulse, ramp the level. ─
+			const gear = carSim.gear;
+			if (gear !== prevGear) {
+				if (prevGear >= 1 && gear >= 1 && carSim.launch <= 0) {
+					shiftKick = clamp(shiftKick + (gear > prevGear ? 1 : -1), -1, 1);
+				}
+				prevGear = gear;
+			}
+			shiftKick *= Math.exp(-SHIFT_KICK_RATE * delta);
+			if (Math.abs(shiftKick) < 0.001) shiftKick = 0;
+			// The one-pole: the lens swells into the kick and eases out — no step.
+			shiftLevel += (shiftKick - shiftLevel) * damp(SHIFT_ATTACK, delta);
+			if (shiftKick === 0 && Math.abs(shiftLevel) < 0.001) shiftLevel = 0;
+
+			if (kickLevel > 0.001 || shiftLevel !== 0 || appliedKick !== 0) {
+				// Recover the player's zoom from under last frame's kick, then apply
+				// this frame's — a wheel zoom mid-launch lands in the base, not the kick.
+				const base = controls.distance - appliedKick;
+				const wanted =
+					-Math.min(LAUNCH_DOLLY * kickLevel, base * 0.6) + SHIFT_DOLLY * shiftLevel;
+				const d = clamp(base + wanted, MIN_DISTANCE, MAX_DISTANCE);
+				appliedKick = d - base;
+				controls.distance = d;
+				invalidate();
+			}
+
 			const flow = clamp(carSim.nitrous, 0, 1);
-			const fovTarget = savedFov + NITROUS_FOV_KICK * flow;
+			const fovTarget =
+				savedFov + NITROUS_FOV_KICK * flow + LAUNCH_FOV_KICK * kickLevel + SHIFT_FOV_KICK * shiftLevel;
 			if (Math.abs(fovTarget - fov) < 0.01) {
 				// Settled — snap exactly, and only touch the camera (and invalidate) if
 				// the snap is a change.

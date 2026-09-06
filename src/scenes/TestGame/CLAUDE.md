@@ -9,7 +9,8 @@ scene via `Scene.svelte` / `SceneHud.svelte`.
 
 ```
 TestGame.svelte         — the scene: city + car + the driving physics task
-TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart)
+TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart) + the
+                         upper-middle launch flash (STREET / JUICY / PERFECT)
 CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed,
                          live N2O bottle gauge)
 CarWheels.svelte        — per-vertex steering/rolling wheel deformation (TSL)
@@ -19,7 +20,7 @@ CarHeadlights.svelte    — car-local lights (nose is -Z)
 CarEngineAudio.svelte   — the car's positional engine bed, mounted inside the ×2.5
                          group; all mixing lives in carAudio.ts
 ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + the
-                         nitrous FOV kick
+                         nitrous FOV kick, the launch dolly kick and the shift jolt
 NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
                          boost from the nitrous flow (the lensState contract)
 carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E / Shift) +
@@ -285,12 +286,16 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   boost instantly (no reward for aborted launches). In N with the revs in
   the window the cluster's five shift lights turn GREEN and fill with depth
   (launch meter — overrides the shift indication, which has no job in N);
-  on the landing the cluster flashes the caught band for ~1.5 s — STREET
-  LAUNCH (4–5k) / JUICY LAUNCH (5–5.5k) / PERFECT LAUNCH (5.5–6k), tier
-  latched at the catch (`state.launchTier` → `carSim.launchTier` →
-  `carHud.launchTier` → CarCluster's LAUNCH_LABELS one-shot keyframe) — and
-  the tyres chirp through the drop and tail (`state.launch` = the boost →
-  `carSim.launch` → carAudio's squeal).
+  on the landing the HUD flashes the caught band UPPER-MIDDLE of the screen
+  for ~1.5 s — STREET LAUNCH (4–5k) / JUICY LAUNCH (5–5.5k) / PERFECT LAUNCH
+  (5.5–6k), tier latched at the catch (`state.launchTier` →
+  `carSim.launchTier` → `carHud.launchTier` → TestGameHud's LAUNCH_LABELS
+  one-shot keyframe) — and the launch KICKS THE CAMERA (ChaseCamera: dolly
+  toward the car + FOV widen, both off `carSim.launch` — snap in with the
+  drop, ease out with the boost tail; the dolly is a per-frame delta on the
+  rig distance so the player's zoom survives, clamped to 60% of base). The
+  tyres chirp through the drop and tail (`state.launch` → `carSim.launch` →
+  carAudio's squeal).
 
 ## Colliders — the hard-won rules
 
@@ -455,7 +460,16 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   camera keeps the listener, the sky's framing and the post-processing pipeline
   pointed at what is on screen (`Renderer.svelte` rebuilds the whole pipeline on
   a camera swap). It also widens the lens while nitrous flows (`NITROUS_FOV_KICK`,
-  60 → 72 at full spray, a `useTask` damped onto `carSim.nitrous`) — the FOV is
+  60 → 72 at full spray, a `useTask` damped onto `carSim.nitrous`), KICKS on
+  rev-match launches (dolly in + FOV widen off `carSim.launch`, snap with the
+  drop, ease out with the boost tail) and NUDGES on shifts (edge-detected off
+  `carSim.gear`: upshift = kickback — dolly out + widen on the post-cut surge;
+  downshift = kick in — dolly in + narrow on the engine-braking grab, in sync
+  with the exhaust bang; subtle by design — half the launch's magnitude and
+  ramped through a one-pole (`SHIFT_ATTACK`) so no frame ever steps, ±`SHIFT_DOLLY`
+  /`SHIFT_FOV_KICK`, decaying at `SHIFT_KICK_RATE`) — the kicks are per-frame
+  deltas on the rig distance, so the player's wheel zoom survives under them
+  (base recovered every frame, launch-in clamped to 60% of base). The FOV is
   borrowed and returned with the pose, re-adopted on every borrow so a re-entry
   can't animate from a stale value, and the task only invalidates on frames
   where the lens actually moves. Two rules come with borrowing:

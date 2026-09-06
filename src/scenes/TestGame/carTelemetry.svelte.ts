@@ -57,8 +57,9 @@ export const carSim = {
 	 *  label must not follow the live revs. */
 	launchTier: 0,
 	/** 0..1 — rev-match launch LIVE: depth in the window × what's left of the
-	 *  clutch drop (drivetrain.state.launch). The tyre-squeal source reads it;
-	 *  the cluster flash is the separate perfectLaunch countdown above. */
+	 *  clutch drop (drivetrain.state.launch). Read by the tyre-squeal source
+	 *  (carAudio) and the launch camera kick (ChaseCamera); the cluster flash
+	 *  is the separate perfectLaunch countdown above. */
 	launch: 0
 };
 
@@ -83,8 +84,8 @@ export const carHud = $state({
 	nitrousTank: 1,
 	/** PERFECT LAUNCH flash live (carSim.perfectLaunch > 0). */
 	perfectLaunch: false,
-	/** The flash's tier label index — STREET / JUICY / PERFECT (CarCluster
-	 *  owns the strings). */
+	/** The flash's tier label index — STREET / JUICY / PERFECT (TestGameHud
+	 *  owns the strings; the flash is the centre-screen one). */
 	launchTier: 0
 });
 

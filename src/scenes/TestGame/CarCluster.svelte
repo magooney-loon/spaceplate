@@ -107,10 +107,6 @@
 	const launchLit = $derived(
 		Math.max(1, Math.ceil((SHIFT_LIGHTS * (carHud.rpm - PERFECT_LAUNCH_MIN)) / (PERFECT_LAUNCH_MAX - PERFECT_LAUNCH_MIN)))
 	);
-	// The flash names the band the catch landed in — tiers are latched at the
-	// catch (carSim.launchTier), never read off the live revs. The boost itself
-	// is continuous; the names are how the player learns the window.
-	const LAUNCH_LABELS = ['STREET LAUNCH', 'JUICY LAUNCH', 'PERFECT LAUNCH'] as const;
 	// TC lamps when the ECU is working — which it never is in Drift: the tune
 	// runs `tractionControl: false`, so wheelspin there is the SETUP, not a system
 	// intervening, and a blinking lamp would be a lie. Gate on the tune's own flag
@@ -234,15 +230,6 @@
 			<span class="flag slip" class:on={spinning}>TC</span>
 		</div>
 	</div>
-
-	<!-- Launch flash — one-shot over the dials when a rev-match launch lands
-	     (1st slotted from N with the revs in the window). The label is the
-	     caught band: STREET / JUICY / PERFECT. The element's lifetime is the
-	     carSim countdown (~1.5 s), so the keyframe runs once and the unmount
-	     ends it — no transitions (repo rule). -->
-	{#if carHud.perfectLaunch}
-		<div class="launch-flash">{LAUNCH_LABELS[carHud.launchTier] ?? 'PERFECT LAUNCH'}</div>
-	{/if}
 </div>
 
 <style>
@@ -272,44 +259,6 @@
 	.cluster.dimmed {
 		opacity: 0.3;
 		filter: saturate(0.4);
-	}
-
-	/* ── Perfect-launch flash ─────────────────────────────────────────── */
-	.launch-flash {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 1.15rem;
-		font-weight: 700;
-		letter-spacing: 0.18em;
-		color: #a8dcff;
-		text-shadow:
-			0 0 12px rgba(122, 200, 255, 0.9),
-			0 0 3px #fff;
-		animation: launch-pop 1.5s ease-out forwards;
-	}
-
-	@keyframes launch-pop {
-		0% {
-			opacity: 0;
-			transform: scale(0.6);
-		}
-		12% {
-			opacity: 1;
-			transform: scale(1.06);
-		}
-		22% {
-			transform: scale(1);
-		}
-		70% {
-			opacity: 1;
-		}
-		100% {
-			opacity: 0;
-			transform: scale(1.02);
-		}
 	}
 
 	/* ── Shift lights ─────────────────────────────────────────────────────── */
