@@ -363,7 +363,13 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   randomized lowpass per clone (thunder-clap contract: no two bangs alike). Pops
   are CLONES parented at the dominant tip (model metres, same TIP_L/TIP_R space;
   polyphonic, so double-bangs overlap), reaped in the tick when spent and stopped
-  by parkCarAudio on scene exit. The pop wavs are PEAK-NORMALIZED to -3 dBFS
+  by parkCarAudio on scene exit. NITROUS: three voices — `nitrosstart` on ENGAGE
+  (flow crosses up through ~0.02), its REVERSE `nitrosend.wav` (made offline via
+  ffmpeg `areverse` — buffer sources can't play backwards) on RELEASE (the first
+  frame the flow falls while on; pedal lift and bottle-dry are both releases),
+  and the `nitrosdrain` LOOP while spraying, volume following `carSim.nitrous`
+  (the same flow the flames/camera/HUD read). One-shot semantics (clickAudio
+  pattern): a re-engage mid-play cuts and restarts. The pop wavs are PEAK-NORMALIZED to -3 dBFS
   offline (+6.03/+8.05 dB pure gain — a transient must slam past the bed's
   continuous RMS or it's inaudible; their peaks originally sat AT the bed's
   effective level, fully masked) on top of `POP_GAIN` at runtime. The six wavs are

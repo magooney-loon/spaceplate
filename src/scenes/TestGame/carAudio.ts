@@ -6,8 +6,8 @@
 // shared keymapper: scene-owned until the audio layer grows per-scene needs.
 //
 // THE CONTRACT (weatherAudio.ts is the precedent): CarEngineAudio.svelte mounts the
-// six <PositionalAudio> loops and the two pop one-shots inside the car, hands them
-// over via the attach functions below, and its task calls `tickCarAudio(delta)` —
+// six <PositionalAudio> loops and the pop/nitrous one-shots inside the car, hands
+// them over via the attach functions below, and its task calls `tickCarAudio(delta)` —
 // never an `$effect` (carSim is plain state; an effect would run once at mount
 // and never again).
 //
@@ -113,6 +113,52 @@ export const attachPopAudio = (take: number, audio: ThreePositionalAudio): void 
 	popTakes[take] = audio;
 };
 
+// ── Nitrous ─────────────────────────────────────────────────────────────────
+//
+// Three voices: `nitrosstart` on ENGAGE, its REVERSE (`nitrosend`, made with
+// ffmpeg areverse — buffer sources can't play backwards) on RELEASE, and the
+// `nitrosdrain` loop while the bottle empties, volume following the FLOW
+// (carSim.nitrous — the same smoothed 0..1 the flames/camera/HUD read). Edges
+// are read off that flow: engage = crossing up through ~0.02, release = the
+// first frame the flow clearly FALLS from on (a drop >3%/frame only happens
+// when the pedal lifts or the bottle runs dry — both are releases). The files
+// peak near 0 dBFS as delivered, so these gains are pure mixes.
+
+/** Drain-loop level at full flow — a hiss under the engine, not over it. */
+const NITRO_GAIN = 0.5;
+/** Engage/release one-shot level. */
+const NITRO_SHOT_GAIN = 0.9;
+/** Flow above this = system on (the ~0.13 s attack crosses it in a frame or two). */
+const NITRO_ON_FLOW = 0.02;
+
+/** The mounted nitrous voices. Set by the component. */
+let nitroDrain: ThreePositionalAudio | undefined;
+let nitroStart: ThreePositionalAudio | undefined;
+let nitroEnd: ThreePositionalAudio | undefined;
+/** Previous tick's flow + the release latch (fire once per spray). */
+let nitroPrev = 0;
+let nitroOn = false;
+let nitroReleased = false;
+
+export const attachNitroDrain = (audio: ThreePositionalAudio): void => {
+	nitroDrain = audio;
+};
+export const attachNitroStart = (audio: ThreePositionalAudio): void => {
+	nitroStart = audio;
+};
+export const attachNitroEnd = (audio: ThreePositionalAudio): void => {
+	nitroEnd = audio;
+};
+
+/** One-shot semantics (clickAudio pattern): a re-engage mid-play cuts and
+ * restarts — that read is correct, the system just fired again. */
+const playNitroShot = (audio: ThreePositionalAudio | undefined, master: number): void => {
+	if (!audio?.buffer) return;
+	if (audio.isPlaying) audio.stop();
+	audio.setVolume(NITRO_SHOT_GAIN * master);
+	audio.play();
+};
+
 /**
  * Voice one pop. `energy` 0..1 sizes it (downshift bursts big, limiter stutters
  * small), `right` picks the pipe it speaks from (the visual pop's dominant tip).
@@ -157,6 +203,12 @@ export const detachCarAudio = (): void => {
 	layers.fill(undefined);
 	popTakes.fill(undefined);
 	livePops.length = 0;
+	nitroDrain = undefined;
+	nitroStart = undefined;
+	nitroEnd = undefined;
+	nitroPrev = 0;
+	nitroOn = false;
+	nitroReleased = false;
 };
 
 /**
@@ -177,6 +229,14 @@ export const parkCarAudio = (): void => {
 		pop.parent?.remove(pop);
 	}
 	livePops.length = 0;
+	// Nitrous too — the loop pauses (progress kept), the one-shots stop, and the
+	// edge state resets so re-entry starts clean.
+	nitroPrev = 0;
+	nitroOn = false;
+	nitroReleased = false;
+	if (nitroDrain?.isPlaying) nitroDrain.pause();
+	if (nitroStart?.isPlaying) nitroStart.stop();
+	if (nitroEnd?.isPlaying) nitroEnd.stop();
 };
 
 export const tickCarAudio = (delta: number): void => {
@@ -220,6 +280,34 @@ export const tickCarAudio = (delta: number): void => {
 			if (!audio.isPlaying) audio.play();
 		} else if (audio.isPlaying) {
 			audio.pause();
+		}
+	}
+
+	// ── Nitrous: edges on the flow, then the drain loop rides what's left. ──────
+	const flow = clamp(carSim.nitrous, 0, 1);
+	if (!nitroOn && flow > NITRO_ON_FLOW) {
+		nitroOn = true;
+		nitroReleased = false;
+		playNitroShot(nitroStart, master);
+	} else if (nitroOn && !nitroReleased && nitroPrev > NITRO_ON_FLOW && flow < nitroPrev * 0.97) {
+		// The flow only falls while ON at the moment the pedal lifts or the bottle
+		// runs dry — one frame later than the physics knows it, close enough for ears.
+		nitroReleased = true;
+		playNitroShot(nitroEnd, master);
+	}
+	if (nitroOn && flow <= NITRO_ON_FLOW) {
+		nitroOn = false;
+		nitroReleased = false;
+	}
+	nitroPrev = flow;
+
+	if (nitroDrain?.buffer) {
+		// Same contract as the bed: volume first, then play/pause on audibility.
+		nitroDrain.setVolume(flow * NITRO_GAIN * master);
+		if (flow > 0.01 && audible) {
+			if (!nitroDrain.isPlaying) nitroDrain.play();
+		} else if (nitroDrain.isPlaying) {
+			nitroDrain.pause();
 		}
 	}
 

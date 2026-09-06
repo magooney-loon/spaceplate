@@ -7,6 +7,9 @@
 	import {
 		LAYER_FILES,
 		attachEngineLayer,
+		attachNitroDrain,
+		attachNitroEnd,
+		attachNitroStart,
 		attachPopAudio,
 		detachCarAudio,
 		parkCarAudio,
@@ -83,6 +86,35 @@
 			oncreate={(a: ThreePositionalAudio) => attachEngineLayer(i, a)}
 		/>
 	{/each}
+	<!-- Nitrous voices: the drain loop rides the flow, start fires on engage and
+	     its REVERSE (nitrosend.wav, made offline via areverse) on release — one-shot
+	     semantics live in carAudio.ts. Engine bay: the solenoids are up front. -->
+	<PositionalAudio
+		src={ENGINE_URL + 'nitrosdrain.wav'}
+		loop
+		autoplay={false}
+		volume={0}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachNitroDrain(a)}
+	/>
+	<PositionalAudio
+		src={ENGINE_URL + 'nitrosstart.wav'}
+		autoplay={false}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachNitroStart(a)}
+	/>
+	<PositionalAudio
+		src={ENGINE_URL + 'nitrosend.wav'}
+		autoplay={false}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachNitroEnd(a)}
+	/>
 </T.Group>
 
 <!-- The exhaust-pop one-shots. Mounted at the car's ORIGIN (not the engine-bay
