@@ -408,7 +408,20 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   gradient texture, icy ember rims, deep-blue glow), so pops landing mid-spray
   bang blue. The same flow floors both tips' energy (a steady PILOT jet, no
   style roll — max(), so a pop on top still reads as a bang) and floors the
-  flash faintly so the glow halos stay lit while spraying. While a pop is visible the component owns
+  flash faintly so the glow halos stay lit while spraying. SMOKE: every bang
+  also coughs puffs — a pool of 16 billboarded quads, one material instance
+  per puff with dyn uniforms (birth/life/strength/seed — the tips' own
+  one-node-graph/one-program trick). WORLD-ANCHORED, unlike the flames:
+  parented to the scene root (not the car), spawned at the tip's world
+  position, so a puff hangs in the air while the car drives away; velocity
+  inherits a lagged share of the car's motion plus a rearward jet (at speed
+  they nearly cancel — the puff hangs where it was coughed). NORMAL blending
+  (smoke dims what is behind it — the opposite job to the additive flames),
+  graphite colour, perlin ROIL crawling through the quad + cellular clumps +
+  a soft radial rim; aging is shader-side against the shared uTime, the task
+  only drifts (with drag), grows and billboards (camera quaternion copy).
+  Puffs update BEFORE the tips-visible early return — a puff outlives its
+  bang — and the scene gate hides the pool on exit. While a pop is visible the component owns
   an `invalidate()` reason (stationary rev-match case — driving is already
   covered by the chase camera). Noise textures:
   `public/textures/noises/{voronoi,perlin}.png`, copied from the vendored
@@ -457,9 +470,8 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   banking lights no other signal, so it sings from ~75% of budget and pins at
   full lock at speed) and LAUNCH (`carSim.launch`, the rev-match chirp — the
   launch boost, full through the drop and easing off with the tail into 1st);
-  sources never sum (the looseness model's own rule). Attack
-  rule). Attack
-  12/s vs release 4/s with a snap to 0 so the release asymptote can't hiss. Not
+  sources never sum (the looseness model's own rule). Attack 12/s vs release 4/s
+  with a snap to 0 so the release asymptote can't hiss. Not
   gated on ignition — tyres aren't combustive. TC LAMP: the cluster's `spinning` indicator gates on the tune's `tractionControl`
   flag — in Drift mode `tractionControl` is false, so wheelspin there is the setup,
   not a system intervening, and the lamp stays off. The pop wavs are PEAK-NORMALIZED to -3 dBFS

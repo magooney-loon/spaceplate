@@ -13,6 +13,7 @@
 		saturate,
 		sin,
 		spherizeUV,
+		smoothstep,
 		step,
 		texture,
 		uniform,
@@ -23,7 +24,7 @@
 	} from 'three/tsl';
 	import { sceneState } from '$extensions/scene';
 	import { BASE_URL } from '$extensions/settings';
-	import { GR86 } from './gr86';
+	import { GR86, UNITS_PER_METER } from './gr86';
 	import { clamp } from './carMath';
 	import { carSim } from './carTelemetry.svelte';
 	import { triggerExhaustPop } from './carAudio';
@@ -76,6 +77,13 @@
 	// PILOT FLAME: the flow floors both tips' energy (no flash, no style roll — just
 	// a steady jet), which is the continuous blue torch the chase cam reads as "the
 	// system is on", plus a faint steady flash floor so the glow halos stay lit.
+	//
+	// SMOKE: every bang also coughs puffs — see the smoke section below. Unlike
+	// the flames (car-local jets) the puffs are WORLD-ANCHORED, spawned at the
+	// tip's world position and parented to the scene, so they hang in the air
+	// while the car drives away; and they NORMAL-blend (they dim what is behind
+	// them — the opposite job to the additive flames). Billboards via a camera
+	// quaternion copy in the task.
 
 	const DEBUG_TIPS = false;
 
@@ -101,7 +109,7 @@
 		{ amp: [1.2, 1.5], decay: 5.5, len: [0.75, 1.0], w: 1.55, dbl: 0.35 } // ball
 	] as const;
 
-	const { invalidate } = useThrelte();
+	const { invalidate, camera, scene } = useThrelte();
 
 	// ── Textures ────────────────────────────────────────────────────────────────
 	// The gradient is a canvas (like the example): the backfire ramp is dim violet
@@ -424,6 +432,145 @@
 		return mesh;
 	});
 
+	// ── Smoke ──────────────────────────────────────────────────────────────────
+	// A pool of billboarded quads, one material instance per puff with dyn
+	// uniforms (the tips' own trick — one node graph, one compiled program).
+	// WORLD-ANCHORED on purpose: parented to the scene (an $effect below), spawned
+	// at the tip's world position, so a puff hangs in the air while the car drives
+	// away. The shader does the aging (birth/life uniforms against the shared
+	// uTime) — the task only moves, grows and billboards. NORMAL blending: smoke
+	// DIMS what is behind it, the opposite job to the additive flames.
+	const SMOKE_POOL = 16;
+	const smokeRoot = new THREE.Group();
+	const smokeGeometry = new THREE.PlaneGeometry(1, 1);
+
+	type SmokeDyn = {
+		birth: ReturnType<typeof numUniform>;
+		life: ReturnType<typeof numUniform>;
+		strength: ReturnType<typeof numUniform>;
+		seed: ReturnType<typeof numUniform>;
+	};
+
+	function makeSmokeMaterial(dyn: SmokeDyn) {
+		const material = new THREE.MeshBasicNodeMaterial({
+			transparent: true,
+			depthWrite: false,
+			side: THREE.DoubleSide
+		});
+		// Age: born fast, gone before the ring recycles the quad.
+		const t = uTime.sub(dyn.birth).div(dyn.life);
+		const fadeIn = saturate(t.mul(5));
+		const fadeOut = saturate(t.oneMinus().mul(1.6));
+		// Soft blob: radial falloff to nothing before the quad's corner.
+		const c = uv().sub(0.5);
+		const rad = c.x.mul(c.x).add(c.y.mul(c.y)).sqrt();
+		const rim = smoothstep(0.18, 0.5, rad).oneMinus();
+		// Roil: perlin crawling through the quad (the puff evolves, not just
+		// fades), clumps from the cellular texture so it breaks into blobs.
+		const roilUv = uv()
+			.mul(1.6)
+			.add(vec2(dyn.seed.add(uTime.mul(0.22)), dyn.seed.mul(2.3).sub(uTime.mul(0.13))));
+		const roil = texture(perlinTex, roilUv).r;
+		const clumpUv = uv().mul(2.4).add(vec2(dyn.seed.mul(1.7), dyn.seed));
+		const clump = texture(cellularTex, clumpUv).r;
+		material.colorNode = vec3(0.3, 0.29, 0.28); // graphite — the flames' colour, cooled
+		material.opacityNode = dyn.strength
+			.mul(0.42)
+			.mul(fadeIn)
+			.mul(fadeOut)
+			.mul(rim)
+			.mul(saturate(roil.mul(1.45)))
+			.mul(clump.mul(0.55).add(0.45));
+		return material;
+	}
+
+	type Puff = {
+		mesh: THREE.Mesh;
+		dyn: SmokeDyn;
+		alive: boolean;
+		x: number;
+		y: number;
+		z: number;
+		vx: number;
+		vy: number;
+		vz: number;
+		birth: number;
+		life: number;
+		s0: number;
+		grow: number;
+	};
+	const puffs: Puff[] = [];
+	let smokeHead = 0;
+	for (let i = 0; i < SMOKE_POOL; i++) {
+		const dyn: SmokeDyn = {
+			birth: numUniform(),
+			life: numUniform(),
+			strength: numUniform(),
+			seed: numUniform()
+		};
+		dyn.birth.value = -99;
+		dyn.life.value = 1;
+		const mesh = new THREE.Mesh(smokeGeometry, makeSmokeMaterial(dyn));
+		mesh.visible = false;
+		mesh.frustumCulled = false; // task-driven scale — never cull
+		smokeRoot.add(mesh);
+		puffs.push({
+			mesh,
+			dyn,
+			alive: false,
+			x: 0,
+			y: 0,
+			z: 0,
+			vx: 0,
+			vy: 0,
+			vz: 0,
+			birth: 0,
+			life: 1,
+			s0: 0.3,
+			grow: 1
+		});
+	}
+
+	// Scene-root parenting via effect — covers unmount AND any scene teardown.
+	$effect(() => {
+		scene.add(smokeRoot);
+		return () => scene.remove(smokeRoot);
+	});
+
+	const _w = new THREE.Vector3();
+
+	/** Cough one puff at a tip's world position — called by fire() with the same
+	 * per-tip shares as the bang, so the pipe that reads loudest smokes most. */
+	function spawnSmoke(tip: THREE.Group, strength: number): void {
+		const puff = puffs[smokeHead];
+		smokeHead = (smokeHead + 1) % SMOKE_POOL;
+		tip.getWorldPosition(_w); // updates world matrices on the way
+		const e = tip.matrixWorld.elements;
+		const rx = e[8];
+		const rz = e[10]; // local +Z — REAR — in world
+		// Inherit a lagged share of the car's motion, plus the rearward jet: at
+		// speed the two nearly cancel, which is exactly right — the puff hangs
+		// where it was coughed while the car leaves it behind.
+		const v = carSim.speedMs * UNITS_PER_METER * 0.3;
+		const jet = 2.0 + 1.8 * Math.random();
+		puff.x = _w.x;
+		puff.y = _w.y;
+		puff.z = _w.z;
+		puff.vx = rx * (jet - v) + (Math.random() - 0.5) * 0.5;
+		puff.vz = rz * (jet - v) + (Math.random() - 0.5) * 0.5;
+		puff.vy = 0.9 + 0.6 * Math.random();
+		puff.birth = clock;
+		puff.life = 0.9 + 0.5 * Math.random();
+		puff.s0 = 0.24 + 0.2 * strength;
+		puff.grow = (1.0 + 1.1 * strength) * (0.8 + 0.4 * Math.random());
+		puff.alive = true;
+		puff.mesh.visible = true;
+		puff.dyn.birth.value = clock;
+		puff.dyn.life.value = puff.life;
+		puff.dyn.strength.value = strength;
+		puff.dyn.seed.value = Math.random();
+	}
+
 	// ── Trigger ─────────────────────────────────────────────────────────────────
 
 	let clock = 0;
@@ -481,6 +628,10 @@
 		// the flame that reads loudest (carAudio picks/jitters the take).
 		triggerExhaustPop(clamp(amp, 0, 1), shareR >= shareL);
 
+		// Smoke follows the bang, sized by the same per-tip shares.
+		spawnSmoke(tipL.group, clamp(amp * shareL, 0, 1));
+		spawnSmoke(tipR.group, clamp(amp * shareR, 0, 1));
+
 		if (style.dbl > 0 && Math.random() < style.dbl && pendingTimer <= 0) {
 			pending = amount * 0.55;
 			pendingTimer = 0.06 + 0.07 * Math.random();
@@ -493,6 +644,10 @@
 			energyR = 0;
 			pending = 0;
 			pendingTimer = 0;
+			for (const p of puffs) {
+				p.alive = false;
+				p.mesh.visible = false;
+			}
 			return;
 		}
 		clock += delta;
@@ -552,6 +707,32 @@
 		// invalidate reason while a pop is alive (the driving case is already
 		// covered by the chase camera; this covers a stationary rev-match).
 		if (tipL.group.visible || tipR.group.visible) invalidate();
+
+		// ── Smoke: drift, grow, billboard, die — BEFORE the early return, because
+		// a puff outlives its bang and must keep animating after the flames die.
+		const cam = camera.current;
+		let smokeAlive = false;
+		for (const p of puffs) {
+			if (!p.alive) continue;
+			const t = (clock - p.birth) / p.life;
+			if (t >= 1 || !cam) {
+				p.alive = false;
+				p.mesh.visible = false;
+				continue;
+			}
+			smokeAlive = true;
+			const drag = Math.exp(-1.7 * delta);
+			p.vx *= drag;
+			p.vz *= drag;
+			p.x += p.vx * delta;
+			p.y += p.vy * delta;
+			p.z += p.vz * delta;
+			p.mesh.position.set(p.x, p.y, p.z);
+			p.mesh.scale.setScalar(p.s0 + p.grow * t);
+			p.mesh.quaternion.copy(cam.quaternion);
+		}
+		if (smokeAlive) invalidate();
+
 		if (!tipL.group.visible && !tipR.group.visible) return;
 
 		// Per-tip flicker at unrelated frequencies so the pair never pulses as
@@ -571,9 +752,11 @@
 		flameGeometry.dispose();
 		emberGeometry.dispose();
 		glowGeometry.dispose();
+		smokeGeometry.dispose();
 		for (const tip of [tipL, tipR]) {
 			for (const m of tip.materials) m.dispose();
 		}
+		for (const p of puffs) (p.mesh.material as THREE.Material).dispose();
 		gradientTex.dispose();
 		nitroGradientTex.dispose();
 		cellularTex.dispose();
