@@ -38,10 +38,28 @@
 // (40). Both halves matter. AO/DoF/motion blur are SCENE-space and must see the un-lensed,
 // geometry-aligned frame; bloom is optics, and light scattered by water on the front
 // element is exactly the sort of thing that should then bloom.
-import { Fn, dot, float, floor, fract, mix, screenSize, screenUV, sin, sqrt, vec2, vec3, vec4 } from 'three/tsl';
+import {
+	Fn,
+	dot,
+	float,
+	floor,
+	fract,
+	mix,
+	screenSize,
+	screenUV,
+	sin,
+	sqrt,
+	vec2,
+	vec3,
+	vec4
+} from 'three/tsl';
 import { rtt } from 'three/tsl';
 import { HalfFloatType, LinearMipmapLinearFilter } from 'three/webgpu';
-import { lensActivity, uDropTime, uWetness } from '$core/skybox/layers/precipitation/lensState.svelte';
+import {
+	lensActivity,
+	uDropTime,
+	uWetness
+} from '$core/skybox/layers/precipitation/lensState.svelte';
 import type { EffectDef } from '../types';
 
 export type RainLensParams = {

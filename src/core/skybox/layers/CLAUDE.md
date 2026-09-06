@@ -68,7 +68,7 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   2.6 (bolt), 3 (Rain, Snow — nearest), 4 (the faint lightning sky wash),
   The lens overlays used to sit above all of it at **10 / 11**; they are
   post-processing chain effects now and no longer participate in draw order at all
-  (see *The lenses left* below).
+  (see _The lenses left_ below).
 - **Task order** falls back to mount order among `before: autoRenderTask` tasks; the one
   real dependency is Lightning → CloudDeck (flash published and read in the same frame).
 - **Anything that MOVES the camera must run in the main stage, not here.** Six layers

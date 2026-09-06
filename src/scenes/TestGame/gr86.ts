@@ -171,3 +171,14 @@ export function engineTorque(rpm: number): number {
 export function engineBrakeTorque(rpm: number): number {
 	return GR86.engineBrakeBase + GR86.engineBrakePerRpm * rpm;
 }
+
+/**
+ * Aftermarket wet nitrous kit — emphatically NOT real GR86 hardware (the FA24
+ * is naturally aspirated; TestGame's demo car just has a bottle in the boot).
+ * The one HARDWARE number lives here: crank torque multiplier at full spray.
+ * ≈ +45% ≈ +112 Nm on peak (≈ 360 Nm, ~100 hp on top) — big enough to light up
+ * 2nd in Grip and 3rd in Drift, honest enough that 3rd+ in Grip still hooks.
+ * Everything else about the system (bottle size, regen, ramp) is gameplay and
+ * lives in TestGame.svelte.
+ */
+export const NITROUS_TORQUE_GAIN = 0.45;

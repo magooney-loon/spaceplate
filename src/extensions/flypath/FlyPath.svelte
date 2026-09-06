@@ -180,7 +180,7 @@
 	 *  long enough to reach it just stops growing arrows past the cap. */
 	const MAX_ARROWS = 512;
 
-	const arrowGeometry = new THREE.ConeGeometry(0.10, 0.4, 12);
+	const arrowGeometry = new THREE.ConeGeometry(0.1, 0.4, 12);
 	arrowGeometry.rotateX(-Math.PI / 2);
 
 	const arrowMaterial = new THREE.MeshBasicNodeMaterial();
@@ -804,16 +804,13 @@
 			}}
 		/>
 		<HTML
-			position={[
-				waypoint.position[0],
-				waypoint.position[1] + 0.7,
-				waypoint.position[2]
-			]}
+			position={[waypoint.position[0], waypoint.position[1] + 0.7, waypoint.position[2]]}
 			userData={{ selectable: false, hideInTree: true }}
 		>
 			<span
 				style="color: #fff; font: bold 14px monospace; text-shadow: 0 0 4px #000, 0 0 8px #000; pointer-events: none; user-select: none; white-space: nowrap;"
-			>{index + 1}</span>
+				>{index + 1}</span
+			>
 		</HTML>
 	{/each}
 

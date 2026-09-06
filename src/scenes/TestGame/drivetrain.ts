@@ -45,6 +45,7 @@
 import {
 	G,
 	GR86,
+	NITROUS_TORQUE_GAIN,
 	TOP_GEAR,
 	engineBrakeTorque,
 	engineTorque,
@@ -64,6 +65,12 @@ export interface DriveInput {
 	handbrake: boolean;
 	shiftUp: boolean;
 	shiftDown: boolean;
+	/** 0..1 — nitrous flow reaching the engine this step. The SCENE owns the
+	 * bottle and the throttle-switch gating (X alone does nothing); this is just
+	 * how much spray is in, multiplying wide-open-throttle torque. Sits INSIDE
+	 * the traction limit like any engine torque, so in the low gears a shot
+	 * becomes wheelspin rather than teleportation. */
+	nitrous: number;
 }
 
 export interface DriveOutput {
@@ -243,7 +250,9 @@ export function createDrivetrain() {
 		if (connected) {
 			// Lugging: below ~1400 rpm the engine can't make its curve.
 			const lug = clamp(state.rpm / GR86.lugRpm, 0.35, 1);
-			const wot = engineTorque(state.rpm) * lug;
+			// Nitrous multiplies the WOT term only — a fuel cut still cuts and engine
+			// braking is untouched, exactly as if the kit had just made the curve fatter.
+			const wot = engineTorque(state.rpm) * lug * (1 + NITROUS_TORQUE_GAIN * input.nitrous);
 			const drag = engineBrakeTorque(state.rpm);
 			crankTorque = cut ? -drag : throttle * wot - (1 - throttle) * drag;
 		}

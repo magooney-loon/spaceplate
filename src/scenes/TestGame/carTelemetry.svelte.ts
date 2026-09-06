@@ -33,7 +33,13 @@ export const carSim = {
 	throttle: 0,
 	brake: 0,
 	handbrake: false,
-	limiting: false
+	limiting: false,
+	/** 0..1 — nitrous FLOW right now (ramped in TestGame.svelte's task, not raw
+	 * key state). Read by CarExhaustFlames to tint the flames blue and hold the
+	 * pilot jet while the system sprays. */
+	nitrous: 0,
+	/** 0..1 — bottle level. Drains while spraying, regenerates otherwise. */
+	nitrousTank: 1
 };
 
 /** The HUD's reactive view. Quantised, ~30 Hz. */
@@ -50,7 +56,11 @@ export const carHud = $state({
 	throttle: 0,
 	brake: 0,
 	handbrake: false,
-	limiting: false
+	limiting: false,
+	/** 0..1 flow — quantised to 0.1, enough for the cluster's flowing lamp. */
+	nitrous: 0,
+	/** 0..1 bottle — quantised to 0.01, read as whole percent by the N2O gauge. */
+	nitrousTank: 1
 });
 
 const HUD_INTERVAL = 1 / 30;
@@ -80,6 +90,10 @@ export function publishCarHud(dt: number): void {
 	if (carHud.brake !== carSim.brake) carHud.brake = carSim.brake;
 	if (carHud.handbrake !== carSim.handbrake) carHud.handbrake = carSim.handbrake;
 	if (carHud.limiting !== carSim.limiting) carHud.limiting = carSim.limiting;
+	const nitrous = Math.round(carSim.nitrous * 10) / 10;
+	if (carHud.nitrous !== nitrous) carHud.nitrous = nitrous;
+	const nitrousTank = Math.round(carSim.nitrousTank * 100) / 100;
+	if (carHud.nitrousTank !== nitrousTank) carHud.nitrousTank = nitrousTank;
 }
 
 /** Park the instruments — used when the scene stops driving (scene switch, blur). */
@@ -95,6 +109,10 @@ export function resetCarTelemetry(): void {
 	carSim.brake = 0;
 	carSim.handbrake = false;
 	carSim.limiting = false;
+	carSim.nitrous = 0;
+	// The bottle refills on scene exit to match the fresh component state the
+	// next mount starts with.
+	carSim.nitrousTank = 1;
 	elapsed = HUD_INTERVAL;
 	publishCarHud(0);
 }

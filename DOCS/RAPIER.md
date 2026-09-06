@@ -17,12 +17,12 @@ Wrap any scene that needs physics in `<World>`. Everything physics-related must 
 ```svelte
 <!-- src/scenes/PhysicsScene.svelte -->
 <script lang="ts">
-  import { World } from '@threlte/rapier'
-  import GameObjects from './GameObjects.svelte'
+	import { World } from '@threlte/rapier';
+	import GameObjects from './GameObjects.svelte';
 </script>
 
 <World gravity={{ y: -9.81 }}>
-  <GameObjects />
+	<GameObjects />
 </World>
 ```
 
@@ -32,11 +32,11 @@ Wrap any scene that needs physics in `<World>`. Everything physics-related must 
 
 ```svelte
 <World gravity={{ y: -9.81 }}>
-  <GameObjects />
-  {#snippet fallback()}
-    <!-- shown if WASM fails to load -->
-    <FallbackScene />
-  {/snippet}
+	<GameObjects />
+	{#snippet fallback()}
+		<!-- shown if WASM fails to load -->
+		<FallbackScene />
+	{/snippet}
 </World>
 ```
 
@@ -50,23 +50,25 @@ The simulated physics body. Attach colliders as children to give it shape.
 
 ```svelte
 <RigidBody type="dynamic">
-  <Collider shape="cuboid" args={[0.5, 0.5, 0.5]} />
-  <T.Mesh>
-    <T.BoxGeometry />
-    <T.MeshStandardMaterial />
-  </T.Mesh>
+	<Collider shape="cuboid" args={[0.5, 0.5, 0.5]} />
+	<T.Mesh>
+		<T.BoxGeometry />
+		<T.MeshStandardMaterial />
+	</T.Mesh>
 </RigidBody>
 ```
 
 **Types:**
-| Type | Behaviour |
-|------|-----------|
+
+| Type                | Behaviour                                           |
+| ------------------- | --------------------------------------------------- |
 | `dynamic` (default) | Fully simulated — affected by forces and collisions |
-| `fixed` | Never moves — terrain, walls, floors |
-| `kinematicPosition` | You set position each frame, physics reacts to it |
-| `kinematicVelocity` | You set velocity each frame |
+| `fixed`             | Never moves — terrain, walls, floors                |
+| `kinematicPosition` | You set position each frame, physics reacts to it   |
+| `kinematicVelocity` | You set velocity each frame                         |
 
 **Key props:**
+
 ```svelte
 <RigidBody
   type="dynamic"
@@ -85,15 +87,14 @@ The simulated physics body. Attach colliders as children to give it shape.
 ```
 
 **Binding:**
+
 ```svelte
 <script>
-  import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat'
-  let rb = $state.raw<RapierRigidBody>()
+	import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';
+	let rb = $state.raw<RapierRigidBody>();
 </script>
 
-<RigidBody bind:rigidBody={rb}>
-  ...
-</RigidBody>
+<RigidBody bind:rigidBody={rb}>...</RigidBody>
 ```
 
 ---
@@ -105,7 +106,7 @@ Defines the collision shape of a rigid body.
 ```svelte
 <!-- Must be a child of <RigidBody> -->
 <RigidBody>
-  <Collider shape="cuboid" args={[0.5, 0.5, 0.5]} />
+	<Collider shape="cuboid" args={[0.5, 0.5, 0.5]} />
 </RigidBody>
 
 <!-- Standalone fixed collider (floor) -->
@@ -113,18 +114,20 @@ Defines the collision shape of a rigid body.
 ```
 
 **Shapes and their `args`:**
-| Shape | Args |
-|-------|------|
-| `ball` | `[radius]` |
-| `cuboid` | `[halfX, halfY, halfZ]` |
-| `capsule` | `[halfHeight, radius]` |
-| `cylinder` | `[halfHeight, radius]` |
-| `cone` | `[halfHeight, radius]` |
-| `trimesh` | `[vertices, indices]` — exact mesh, non-convex, expensive |
-| `convexHull` | `[points]` — convex wrap, cheaper than trimesh |
-| `heightfield` | `[nrows, ncols, heights, scale]` — terrain |
+
+| Shape         | Args                                                      |
+| ------------- | --------------------------------------------------------- |
+| `ball`        | `[radius]`                                                |
+| `cuboid`      | `[halfX, halfY, halfZ]`                                   |
+| `capsule`     | `[halfHeight, radius]`                                    |
+| `cylinder`    | `[halfHeight, radius]`                                    |
+| `cone`        | `[halfHeight, radius]`                                    |
+| `trimesh`     | `[vertices, indices]` — exact mesh, non-convex, expensive |
+| `convexHull`  | `[points]` — convex wrap, cheaper than trimesh            |
+| `heightfield` | `[nrows, ncols, heights, scale]` — terrain                |
 
 **Material props:**
+
 ```svelte
 <Collider
   shape="cuboid"
@@ -137,6 +140,7 @@ Defines the collision shape of a rigid body.
 ```
 
 **Events:**
+
 ```svelte
 <Collider
   shape="cuboid"
@@ -156,22 +160,22 @@ Generates colliders automatically from child mesh geometry. Best for imported 3D
 
 ```svelte
 <RigidBody>
-  <AutoColliders shape="convexHull">
-    <T.Mesh geometry={importedGeometry} material={material} />
-  </AutoColliders>
+	<AutoColliders shape="convexHull">
+		<T.Mesh geometry={importedGeometry} {material} />
+	</AutoColliders>
 </RigidBody>
 ```
 
 **Shape options:** `cuboid` | `ball` | `capsule` | `trimesh` | `convexHull` (default)
 
 **Refresh after geometry change:**
+
 ```svelte
 <script>
-  let autoColliders: { refresh: () => void }
+	let autoColliders: { refresh: () => void };
 </script>
-<AutoColliders bind:this={autoColliders} shape="convexHull">
-  ...
-</AutoColliders>
+
+<AutoColliders bind:this={autoColliders} shape="convexHull">...</AutoColliders>
 <!-- call autoColliders.refresh() when geometry updates -->
 ```
 
@@ -184,14 +188,14 @@ Controls which bodies interact with which. All collider children inherit the gro
 ```svelte
 <!-- Player (group 1) collides with world (group 2) but not other players (group 3) -->
 <CollisionGroups memberships={[1]} filter={[2]}>
-  <RigidBody>
-    <Collider shape="cuboid" args={[0.5, 1, 0.5]} />
-  </RigidBody>
+	<RigidBody>
+		<Collider shape="cuboid" args={[0.5, 1, 0.5]} />
+	</RigidBody>
 </CollisionGroups>
 
 <!-- World geometry — collides with everything -->
 <CollisionGroups memberships={[2]} filter={[1, 2, 3]}>
-  <Collider shape="cuboid" args={[10, 0.1, 10]} />
+	<Collider shape="cuboid" args={[10, 0.1, 10]} />
 </CollisionGroups>
 ```
 
@@ -204,20 +208,16 @@ Shorthand `groups` sets both `memberships` and `filter` to the same value.
 Simulates a gravity source. Pulls nearby rigid bodies toward its center.
 
 ```svelte
-<Attractor
-  strength={10}
-  range={20}
-  gravityType="newtonian"
-  gravitationalConstant={6.673e-11}
-/>
+<Attractor strength={10} range={20} gravityType="newtonian" gravitationalConstant={6.673e-11} />
 ```
 
 **Gravity types:**
-| Type | Formula |
-|------|---------|
-| `static` (default) | Constant force = `strength` regardless of distance |
-| `linear` | Force = `strength * distance / range` — stronger when closer |
-| `newtonian` | `F = G * m1 * m2 / r²` — realistic gravity |
+
+| Type               | Formula                                                      |
+| ------------------ | ------------------------------------------------------------ |
+| `static` (default) | Constant force = `strength` regardless of distance           |
+| `linear`           | Force = `strength * distance / range` — stronger when closer |
+| `newtonian`        | `F = G * m1 * m2 / r²` — realistic gravity                   |
 
 ---
 
@@ -227,8 +227,9 @@ Renders wireframe overlays of all active colliders. Use during development only.
 
 ```svelte
 <World>
-  <Debug />   <!-- shows all collider shapes as wireframes -->
-  ...
+	<Debug />
+	<!-- shows all collider shapes as wireframes -->
+	...
 </World>
 ```
 
@@ -241,17 +242,17 @@ Renders wireframe overlays of all active colliders. Use during development only.
 Direct access to the underlying Rapier world.
 
 ```ts
-import { useRapier } from '@threlte/rapier'
+import { useRapier } from '@threlte/rapier';
 
-const { world, rapier } = useRapier()
+const { world, rapier } = useRapier();
 
 // Change gravity at runtime
-world.gravity = { x: 0, y: -20, z: 0 }
+world.gravity = { x: 0, y: -20, z: 0 };
 
 // Raycast
-const ray = new rapier.Ray({ x: 0, y: 10, z: 0 }, { x: 0, y: -1, z: 0 })
-const hit = world.castRay(ray, 100, true)
-if (hit) console.log('hit at t =', hit.timeOfImpact)
+const ray = new rapier.Ray({ x: 0, y: 10, z: 0 }, { x: 0, y: -1, z: 0 });
+const hit = world.castRay(ray, 100, true);
+if (hit) console.log('hit at t =', hit.timeOfImpact);
 ```
 
 ---
@@ -261,13 +262,13 @@ if (hit) console.log('hit at t =', hit.timeOfImpact)
 Access the parent `<RigidBody>`'s underlying Rapier body from a child component.
 
 ```ts
-import { useRapier, useRigidBody } from '@threlte/rapier'
+import { useRapier, useRigidBody } from '@threlte/rapier';
 
-const { world } = useRapier()
-const rigidBody = useRigidBody()  // undefined if no parent <RigidBody>
+const { world } = useRapier();
+const rigidBody = useRigidBody(); // undefined if no parent <RigidBody>
 
 // Apply impulse
-rigidBody?.applyImpulse({ x: 0, y: 5, z: 0 }, true)
+rigidBody?.applyImpulse({ x: 0, y: 5, z: 0 }, true);
 ```
 
 ---
@@ -277,17 +278,17 @@ rigidBody?.applyImpulse({ x: 0, y: 5, z: 0 }, true)
 Runs a callback every physics step, **before** the world is stepped. Inside a `<World>` it automatically slots into the correct simulation stage.
 
 ```ts
-import { usePhysicsTask } from '@threlte/rapier'
+import { usePhysicsTask } from '@threlte/rapier';
 
 usePhysicsTask((delta) => {
-  // Runs before each physics step
-  // delta is fixed (e.g. 0.005) if World framerate is fixed
-  // delta varies (~0.016) if World framerate is 'varying'
-  rigidBody?.applyImpulse({ x: input.x, y: 0, z: input.z }, true)
-})
+	// Runs before each physics step
+	// delta is fixed (e.g. 0.005) if World framerate is fixed
+	// delta varies (~0.016) if World framerate is 'varying'
+	rigidBody?.applyImpulse({ x: input.x, y: 0, z: input.z }, true);
+});
 ```
 
-> **Note for Spaceplate:** `usePhysicsTask` is for logic that runs *inside* a `<World>`. For game logic outside the physics world (AI, non-physics animations, etc.), use a plain `useTask` from `@threlte/core/webgpu` with explicit `before`/`after` constraints and `autoInvalidate: false` — the repo convention (see `Renderer.svelte` and the sky tasks).
+> **Note for Spaceplate:** `usePhysicsTask` is for logic that runs _inside_ a `<World>`. For game logic outside the physics world (AI, non-physics animations, etc.), use a plain `useTask` from `@threlte/core/webgpu` with explicit `before`/`after` constraints and `autoInvalidate: false` — the repo convention (see `Renderer.svelte` and the sky tasks).
 
 ---
 
@@ -296,15 +297,15 @@ usePhysicsTask((delta) => {
 Apply collision groups programmatically to manually created colliders.
 
 ```ts
-import { useRapier, useCollisionGroups } from '@threlte/rapier'
+import { useRapier, useCollisionGroups } from '@threlte/rapier';
 
-const { world } = useRapier()
-const { registerColliders, removeColliders } = useCollisionGroups()
+const { world } = useRapier();
+const { registerColliders, removeColliders } = useCollisionGroups();
 
-const collider = world.createCollider(colliderDesc)
-registerColliders([collider])
+const collider = world.createCollider(colliderDesc);
+registerColliders([collider]);
 
-onDestroy(() => removeColliders([collider]))
+onDestroy(() => removeColliders([collider]));
 ```
 
 ---
@@ -314,6 +315,7 @@ onDestroy(() => removeColliders([collider]))
 Joints constrain the relative motion of two rigid bodies. Use hooks — not components — because a joint acts on two separate bodies which may not share a parent in the component tree.
 
 **All joint hooks return:**
+
 ```ts
 {
   joint: Writable<JointType>,
@@ -323,58 +325,64 @@ Joints constrain the relative motion of two rigid bodies. Use hooks — not comp
 ```
 
 ### `useFixedJoint` — no relative movement
+
 ```ts
 const { joint, rigidBodyA, rigidBodyB } = useFixedJoint(
-  anchorA,  // Position — anchor on body A
-  frameA,   // Rotation — frame on body A
-  anchorB,  // Position — anchor on body B
-  frameB    // Rotation — frame on body B
-)
+	anchorA, // Position — anchor on body A
+	frameA, // Rotation — frame on body A
+	anchorB, // Position — anchor on body B
+	frameB // Rotation — frame on body B
+);
 ```
 
 ### `useRevoluteJoint` — hinge, rotates around one axis
+
 ```ts
 const { joint, rigidBodyA, rigidBodyB } = useRevoluteJoint(
-  anchorA,          // Position
-  anchorB,          // Position
-  axis,             // [x, y, z] — axis of rotation
-  limits            // [min, max] radians | undefined
-)
+	anchorA, // Position
+	anchorB, // Position
+	axis, // [x, y, z] — axis of rotation
+	limits // [min, max] radians | undefined
+);
 ```
 
 ### `usePrismaticJoint` — slides along one axis
+
 ```ts
 const { joint, rigidBodyA, rigidBodyB } = usePrismaticJoint(
-  anchorA,  // Position
-  anchorB,  // Position
-  axis,     // [x, y, z] — slide direction
-  limits    // [min, max] | undefined
-)
+	anchorA, // Position
+	anchorB, // Position
+	axis, // [x, y, z] — slide direction
+	limits // [min, max] | undefined
+);
 ```
 
 ### `useSphericalJoint` — ball-in-socket, free rotation
+
 ```ts
 const { joint, rigidBodyA, rigidBodyB } = useSphericalJoint(
-  anchorA,  // Position
-  anchorB   // Position
-)
+	anchorA, // Position
+	anchorB // Position
+);
 ```
 
 ### `useRopeJoint` — max distance constraint
+
 ```ts
 const { joint, rigidBodyA, rigidBodyB } = useRopeJoint(
-  anchorA,  // Position
-  anchorB,  // Position
-  length    // max distance between bodies
-)
+	anchorA, // Position
+	anchorB, // Position
+	length // max distance between bodies
+);
 ```
 
 ### `useJoint` — custom / low-level
+
 ```ts
 const { joint, rigidBodyA, rigidBodyB } = useJoint((rbA, rbB, { world, rapier }) => {
-  const params = rapier.JointData.revolute(anchorA, anchorB, axis)
-  return world.createImpulseJoint(params, rbA, rbB, true)
-})
+	const params = rapier.JointData.revolute(anchorA, anchorB, axis);
+	return world.createImpulseJoint(params, rbA, rbB, true);
+});
 ```
 
 ---
@@ -383,16 +391,14 @@ const { joint, rigidBodyA, rigidBodyB } = useJoint((rbA, rbB, { world, rapier })
 
 Set on `<World framerate={...}>`.
 
-| Value | Behaviour |
-|-------|-----------|
-| `'varying'` (default) | Steps with render delta — not deterministic, simplest |
-| `60` / `120` / `200` | Fixed steps per second — deterministic, same result every run |
+| Value                 | Behaviour                                                     |
+| --------------------- | ------------------------------------------------------------- |
+| `'varying'` (default) | Steps with render delta — not deterministic, simplest         |
+| `60` / `120` / `200`  | Fixed steps per second — deterministic, same result every run |
 
 ```svelte
 <!-- Deterministic at 200hz — good for competitive games -->
-<World framerate={200}>
-  ...
-</World>
+<World framerate={200}>...</World>
 ```
 
 With a fixed framerate Threlte runs the physics simulation ahead of rendering by sub-stepping, then interpolates the visual position back to match render time. This gives smooth visuals at any monitor refresh rate while keeping physics deterministic.
@@ -406,26 +412,26 @@ With a fixed framerate Threlte runs the physics simulation ahead of rendering by
 ```svelte
 <!-- src/scenes/PhysicsScene.svelte -->
 <script lang="ts">
-  import { World, RigidBody, Collider, Debug } from '@threlte/rapier'
-  import { T } from '@threlte/core'
+	import { World, RigidBody, Collider, Debug } from '@threlte/rapier';
+	import { T } from '@threlte/core';
 </script>
 
 <World gravity={{ y: -9.81 }}>
-  {#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-    <Debug />
-  {/if}
+	{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
+		<Debug />
+	{/if}
 
-  <!-- Static floor -->
-  <Collider shape="cuboid" args={[20, 0.1, 20]} />
+	<!-- Static floor -->
+	<Collider shape="cuboid" args={[20, 0.1, 20]} />
 
-  <!-- Dynamic body -->
-  <RigidBody type="dynamic">
-    <Collider shape="cuboid" args={[0.5, 0.5, 0.5]} />
-    <T.Mesh castShadow>
-      <T.BoxGeometry />
-      <T.MeshStandardMaterial color="tomato" />
-    </T.Mesh>
-  </RigidBody>
+	<!-- Dynamic body -->
+	<RigidBody type="dynamic">
+		<Collider shape="cuboid" args={[0.5, 0.5, 0.5]} />
+		<T.Mesh castShadow>
+			<T.BoxGeometry />
+			<T.MeshStandardMaterial color="tomato" />
+		</T.Mesh>
+	</RigidBody>
 </World>
 ```
 
@@ -433,22 +439,22 @@ With a fixed framerate Threlte runs the physics simulation ahead of rendering by
 
 ```svelte
 <script lang="ts">
-  import { usePhysicsTask } from '@threlte/rapier'
-  import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat'
+	import { usePhysicsTask } from '@threlte/rapier';
+	import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';
 
-  let rb = $state.raw<RapierRigidBody>()
-  let inputX = $state(0)
-  let inputZ = $state(0)
+	let rb = $state.raw<RapierRigidBody>();
+	let inputX = $state(0);
+	let inputZ = $state(0);
 
-  usePhysicsTask(() => {
-    if (!rb) return
-    rb.applyImpulse({ x: inputX * 10, y: 0, z: inputZ * 10 }, true)
-  })
+	usePhysicsTask(() => {
+		if (!rb) return;
+		rb.applyImpulse({ x: inputX * 10, y: 0, z: inputZ * 10 }, true);
+	});
 </script>
 
 <RigidBody bind:rigidBody={rb} linearDamping={2}>
-  <Collider shape="capsule" args={[0.8, 0.3]} />
-  <T.Mesh>...</T.Mesh>
+	<Collider shape="capsule" args={[0.8, 0.3]} />
+	<T.Mesh>...</T.Mesh>
 </RigidBody>
 ```
 
@@ -456,15 +462,15 @@ With a fixed framerate Threlte runs the physics simulation ahead of rendering by
 
 ```svelte
 <script lang="ts">
-  let triggered = $state(false)
+	let triggered = $state(false);
 </script>
 
 <Collider
-  shape="cuboid"
-  args={[2, 2, 2]}
-  sensor={true}
-  on:sensorenter={() => triggered = true}
-  on:sensorexit={() => triggered = false}
+	shape="cuboid"
+	args={[2, 2, 2]}
+	sensor={true}
+	on:sensorenter={() => (triggered = true)}
+	on:sensorexit={() => (triggered = false)}
 />
 ```
 
@@ -472,22 +478,22 @@ With a fixed framerate Threlte runs the physics simulation ahead of rendering by
 
 ```svelte
 <script lang="ts">
-  import { useRevoluteJoint, RigidBody, Collider } from '@threlte/rapier'
+	import { useRevoluteJoint, RigidBody, Collider } from '@threlte/rapier';
 
-  const { rigidBodyA: torso, rigidBodyB: head } = useRevoluteJoint(
-    { x: 0, y: 0.5, z: 0 },   // anchor on torso
-    { x: 0, y: -0.2, z: 0 },  // anchor on head
-    [0, 0, 1],                 // rotation axis (Z)
-    [-0.5, 0.5]                // angle limits in radians
-  )
+	const { rigidBodyA: torso, rigidBodyB: head } = useRevoluteJoint(
+		{ x: 0, y: 0.5, z: 0 }, // anchor on torso
+		{ x: 0, y: -0.2, z: 0 }, // anchor on head
+		[0, 0, 1], // rotation axis (Z)
+		[-0.5, 0.5] // angle limits in radians
+	);
 </script>
 
 <RigidBody bind:rigidBody={$torso}>
-  <Collider shape="cuboid" args={[0.3, 0.5, 0.2]} />
+	<Collider shape="cuboid" args={[0.3, 0.5, 0.2]} />
 </RigidBody>
 
 <RigidBody bind:rigidBody={$head}>
-  <Collider shape="ball" args={[0.2]} />
+	<Collider shape="ball" args={[0.2]} />
 </RigidBody>
 ```
 
@@ -495,23 +501,23 @@ With a fixed framerate Threlte runs the physics simulation ahead of rendering by
 
 ## Common Mistakes
 
-| Wrong | Right |
-|-------|-------|
-| Physics components outside `<World>` | Wrap scene in `<World>` first |
-| `useTask` for physics logic inside World | Use `usePhysicsTask` instead |
-| Mutating `rigidBody.translation()` directly | Use `rb.setTranslation({ x, y, z }, true)` |
-| `trimesh` on dynamic bodies | `trimesh` is for static/fixed only — use `convexHull` on dynamic bodies |
-| `bind:rigidBody` with `$state()` | Use `$state.raw<RapierRigidBody>()` — avoids Svelte Proxy wrapping Rapier WASM object |
-| `<Debug>` in production | Gate with `import.meta.env.VITE_GAME_ENGINE === 'true'` |
-| Unmounting `<World>` on scene switch | Keep it mounted and pause via `useRapier().pause()` when the physics scene isn't current (`Scene.svelte`) — unmounting destroys bodies and evicts compiled pipelines |
+| Wrong                                       | Right                                                                                                                                                                |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Physics components outside `<World>`        | Wrap scene in `<World>` first                                                                                                                                        |
+| `useTask` for physics logic inside World    | Use `usePhysicsTask` instead                                                                                                                                         |
+| Mutating `rigidBody.translation()` directly | Use `rb.setTranslation({ x, y, z }, true)`                                                                                                                           |
+| `trimesh` on dynamic bodies                 | `trimesh` is for static/fixed only — use `convexHull` on dynamic bodies                                                                                              |
+| `bind:rigidBody` with `$state()`            | Use `$state.raw<RapierRigidBody>()` — avoids Svelte Proxy wrapping Rapier WASM object                                                                                |
+| `<Debug>` in production                     | Gate with `import.meta.env.VITE_GAME_ENGINE === 'true'`                                                                                                              |
+| Unmounting `<World>` on scene switch        | Keep it mounted and pause via `useRapier().pause()` when the physics scene isn't current (`Scene.svelte`) — unmounting destroys bodies and evicts compiled pipelines |
 
 ---
 
 ## useTask vs usePhysicsTask
 
-| | `useTask` (@threlte/core) | `usePhysicsTask` (@threlte/rapier) |
-|---|---|---|
-| Requires `<World>` | No | Yes |
-| Runs before physics step | No (ordered vs `autoRenderTask`) | Yes (guaranteed before world step) |
-| Respects fixed framerate | No | Yes |
-| Use for | Non-physics game logic, AI, animations | Forces, impulses, kinematic control |
+|                          | `useTask` (@threlte/core)              | `usePhysicsTask` (@threlte/rapier)  |
+| ------------------------ | -------------------------------------- | ----------------------------------- |
+| Requires `<World>`       | No                                     | Yes                                 |
+| Runs before physics step | No (ordered vs `autoRenderTask`)       | Yes (guaranteed before world step)  |
+| Respects fixed framerate | No                                     | Yes                                 |
+| Use for                  | Non-physics game logic, AI, animations | Forces, impulses, kinematic control |

@@ -31,17 +31,17 @@ wrote `transitionState` in one pass and was a direct cause of
 
 So the mechanism is entirely speculative, and it is also **the wrong shape now**:
 
-| | Old payload | New payload |
-|---|---|---|
-| Post-processing | Preset ID → a snapshot of 25 effect param sets | Which effects are enabled + their params |
-| Sky | Preset ID → 6 scalars + 17 star fields | *Not a snapshot at all* — a clock, a time, a weather target |
+|                 | Old payload                                    | New payload                                                 |
+| --------------- | ---------------------------------------------- | ----------------------------------------------------------- |
+| Post-processing | Preset ID → a snapshot of 25 effect param sets | Which effects are enabled + their params                    |
+| Sky             | Preset ID → 6 scalars + 17 star fields         | _Not a snapshot at all_ — a clock, a time, a weather target |
 
 A preset ID pointing into a library made sense when the payload was large and opaque.
 The sky's payload is now three small values with meaning, and there is nothing to look
 up. The unified `ScenePresets { postprocessing?: string; skybox?: string }` cannot
 describe both halves any more.
 
-**The replacement is not a preset system.** A scene declares its *environment intent*,
+**The replacement is not a preset system.** A scene declares its _environment intent_,
 and the engine applies it through the same public API any other caller uses.
 
 ---
@@ -87,24 +87,24 @@ layer already exists and already carries content.
 ```ts
 // extensions/scene/types.ts
 export type SceneEnvironment = {
-    /** Shallow partial over the global post-processing config. */
-    postprocessing?: Partial<PostProcessingConfig>;
+	/** Shallow partial over the global post-processing config. */
+	postprocessing?: Partial<PostProcessingConfig>;
 
-    sky?: {
-        clock?: 'realtime' | 'external' | 'manual';
-        /** Normalized time-of-day, for a manual clock. */
-        t?: number;
-        timeScale?: number;
-        /** A named weather, or a raw channel target. */
-        weather?: string | Partial<WeatherChannels>;
-    };
+	sky?: {
+		clock?: 'realtime' | 'external' | 'manual';
+		/** Normalized time-of-day, for a manual clock. */
+		t?: number;
+		timeScale?: number;
+		/** A named weather, or a raw channel target. */
+		weather?: string | Partial<WeatherChannels>;
+	};
 };
 
 export type SceneConfig = {
-    id: SceneType;
-    label: string;
-    icon: string;
-    environment?: SceneEnvironment;
+	id: SceneType;
+	label: string;
+	icon: string;
+	environment?: SceneEnvironment;
 };
 ```
 
@@ -112,23 +112,23 @@ In practice:
 
 ```ts
 export const SCENES: SceneConfig[] = [
-    {
-        id: 'mainMenu',
-        label: 'Main Menu',
-        icon: 'mdiHome',
-        // A fixed, art-directed vista: pinned at golden hour, always clear.
-        environment: {
-            sky: { clock: 'manual', t: 0.78, weather: 'clear' },
-            postprocessing: { dof: { enabled: true, focusDistance: 8 } }
-        }
-    },
-    {
-        id: 'demoScene',
-        label: 'Demo Scene',
-        icon: 'mdiEarth',
-        // Gameplay: real time, weather free to change.
-        environment: { sky: { clock: 'realtime', timeScale: 60 } }
-    }
+	{
+		id: 'mainMenu',
+		label: 'Main Menu',
+		icon: 'mdiHome',
+		// A fixed, art-directed vista: pinned at golden hour, always clear.
+		environment: {
+			sky: { clock: 'manual', t: 0.78, weather: 'clear' },
+			postprocessing: { dof: { enabled: true, focusDistance: 8 } }
+		}
+	},
+	{
+		id: 'demoScene',
+		label: 'Demo Scene',
+		icon: 'mdiEarth',
+		// Gameplay: real time, weather free to change.
+		environment: { sky: { clock: 'realtime', timeScale: 60 } }
+	}
 ];
 ```
 
@@ -149,14 +149,14 @@ sky or post-processing state is the same bug wearing new clothes.
 ```ts
 // core/environment.ts — imports sky + postprocessing; nothing imports it back
 export function applyEnvironment(sceneId: SceneType) {
-    const env = resolveEnvironment(sceneId);   // global ← scene partial
+	const env = resolveEnvironment(sceneId); // global ← scene partial
 
-    if (env.sky?.clock) sky.setClock(env.sky.clock);
-    if (env.sky?.t !== undefined) sky.setTime(env.sky.t);
-    if (env.sky?.timeScale !== undefined) sky.setTimeScale(env.sky.timeScale);
-    if (env.sky?.weather) sky.setWeather(env.sky.weather);
+	if (env.sky?.clock) sky.setClock(env.sky.clock);
+	if (env.sky?.t !== undefined) sky.setTime(env.sky.t);
+	if (env.sky?.timeScale !== undefined) sky.setTimeScale(env.sky.timeScale);
+	if (env.sky?.weather) sky.setWeather(env.sky.weather);
 
-    postprocessing.applyConfig(env.postprocessing);
+	postprocessing.applyConfig(env.postprocessing);
 }
 ```
 
@@ -179,7 +179,7 @@ scene.svelte.ts ──► core/environment.ts ──► sky, postprocessing
 Nothing in `sky` or `postprocessing` may import the scene extension. If a subsystem
 ever needs to know the current scene, it takes it as a parameter.
 
-**There is no leave handler.** Every scene enter applies a *complete* environment —
+**There is no leave handler.** Every scene enter applies a _complete_ environment —
 global provides every field, the scene block overrides some. A scene therefore never
 has to undo what the previous one did, which removes an entire class of
 "scene B looks wrong only when entered from scene A" bugs.
@@ -208,13 +208,13 @@ chosen time; gameplay scenes run `realtime` or server-driven `external`.
 Consequences worth stating up front, because this is the one decision here with teeth:
 
 - **"What time is it" becomes scene-dependent.** Gameplay queries
-  (`sky.getPhase()`, `sky.isDaytime()`) answer for the *current* scene's clock. Any
+  (`sky.getPhase()`, `sky.isDaytime()`) answer for the _current_ scene's clock. Any
   game logic that must track world time regardless of scene has to read the world
   clock directly, not the sky's current view of it.
 - **Re-entering a server-driven scene is a discontinuity.** Leaving a manual menu clock
   back to `external` means jumping to wherever server time now is. That jump must go
   through the clock's discontinuity path, not its smoothing path — the smoothing in
-  `weather-system.md` §6 exists so time never runs backwards during *normal* drift,
+  `weather-system.md` §6 exists so time never runs backwards during _normal_ drift,
   and it must not be asked to absorb a deliberate multi-hour jump.
 - **A discontinuity forces an env-map re-bake** (`weather-system.md` §15.2). The
   budget's "significant change" trigger covers it, but it must be an explicit call at
@@ -243,27 +243,27 @@ keeps the panel from drifting away from the real behaviour.
 
 ### Added
 
-| Path | Purpose |
-|---|---|
+| Path                      | Purpose                                                          |
+| ------------------------- | ---------------------------------------------------------------- |
 | `src/core/environment.ts` | `resolveEnvironment(sceneId)` + `applyEnvironment(sceneId)` (§4) |
 
 ### Changed
 
-| Path | Change |
-|---|---|
-| `extensions/scene/types.ts` | `SceneEnvironment` type; `environment?` on `SceneConfig`; the four preset actions leave `ExtensionActions` |
-| `extensions/scene/scene.svelte.ts` | `SCENES` entries gain `environment`; `setScene` calls `applyEnvironment`. Removes both resolvers, both override `$state` objects, the four preset actions and all four localStorage helpers |
-| `extensions/scene/SceneExtension.svelte` | Preset-assignment and copy-to-clipboard UI → environment editor + save |
+| Path                                     | Change                                                                                                                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extensions/scene/types.ts`              | `SceneEnvironment` type; `environment?` on `SceneConfig`; the four preset actions leave `ExtensionActions`                                                                                  |
+| `extensions/scene/scene.svelte.ts`       | `SCENES` entries gain `environment`; `setScene` calls `applyEnvironment`. Removes both resolvers, both override `$state` objects, the four preset actions and all four localStorage helpers |
+| `extensions/scene/SceneExtension.svelte` | Preset-assignment and copy-to-clipboard UI → environment editor + save                                                                                                                      |
 
 ### Deleted
 
-| Path | Reason |
-|---|---|
+| Path                                 | Reason                                                                      |
+| ------------------------------------ | --------------------------------------------------------------------------- |
 | `extensions/scene/bundledPresets.ts` | Replaced by `environment` on `SCENES`. Contains only commented-out examples |
 
 Two localStorage keys (`spaceplate-scene-preset-overrides`,
 `spaceplate-global-preset-override`) become orphaned. They are dev-only scratch data;
-stale values must be *ignored*, not migrated.
+stale values must be _ignored_, not migrated.
 
 ---
 
@@ -309,7 +309,7 @@ deletion of unreachable code.
 
 ## 10. Out of scope
 
-- Per-scene *physics*, audio or input configuration. This document covers the visual
+- Per-scene _physics_, audio or input configuration. This document covers the visual
   environment only. If a general per-scene config layer is ever wanted, this is the
   precedent to follow, not a reason to build it now.
 - Runtime scene creation. `SCENES` is a static committed list.

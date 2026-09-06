@@ -41,7 +41,7 @@ the app. It also pins TSL `time`, which the scheduler cannot reach.
 - **A `delta` of 0 is legal** — a held frame. No divisions by it.
 - `engineClock.elapsed` / `.delta` / `.fixed` are readable from outside a task.
 - **A per-frame quantity that is not a delta still has to be normalised by one.** three's
-  `velocity` MRT is the live case: it is an NDC delta per *frame*, so motion blur was 2–5×
+  `velocity` MRT is the live case: it is an NDC delta per _frame_, so motion blur was 2–5×
   wider in a below-realtime take than in the viewport. `Renderer.svelte`'s render task feeds
   `engineClock.delta` to `build.setShutterScale()` for exactly that
   (`core/postprocessing/CLAUDE.md`).

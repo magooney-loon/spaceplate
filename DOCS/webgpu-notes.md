@@ -536,14 +536,14 @@ compiler rewrite that `svelte-check` cannot consume as a drop-in.
 
 ## 9. Migration status
 
-| Area                                      | State                                                  |
-| ----------------------------------------- | ------------------------------------------------------ |
-| pnpm workspace                            | Done                                                   |
-| `WebGPURenderer` + `@threlte/core/webgpu` | Done                                                   |
-| Studio compat                             | Done, in `patches/`                                    |
-| Viewport Y-origin (gizmo, PiP)            | Done, verified by canvas readback                      |
-| Sky → `SkyMesh`                           | Done (`core/skybox/Sky.svelte`)                        |
-| Post-processing                           | Done — registry/builder in `core/postprocessing/`      |
+| Area                                      | State                                                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------- |
+| pnpm workspace                            | Done                                                                                          |
+| `WebGPURenderer` + `@threlte/core/webgpu` | Done                                                                                          |
+| Studio compat                             | Done, in `patches/`                                                                           |
+| Viewport Y-origin (gizmo, PiP)            | Done, verified by canvas readback                                                             |
+| Sky → `SkyMesh`                           | Done (`core/skybox/Sky.svelte`)                                                               |
+| Post-processing                           | Done — registry/builder in `core/postprocessing/`                                             |
 | Stars                                     | Done — billboarded TSL quads, not point sprites (`core/skybox/layers/celestial/Stars.svelte`) |
-| Sky/weather system                        | Done — `core/skybox/` (see its CLAUDE.md files)        |
-| `Planet.svelte` terrain shader            | **Not ported.** Still raw GLSL `ShaderMaterial`        |
+| Sky/weather system                        | Done — `core/skybox/` (see its CLAUDE.md files)                                               |
+| `Planet.svelte` terrain shader            | **Not ported.** Still raw GLSL `ShaderMaterial`                                               |

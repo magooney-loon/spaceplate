@@ -6,8 +6,11 @@
 
 	// Bottom-right instrument cluster: tacho ring, gear, speed — styled after an
 	// aftermarket gauge pod (ice-blue numerals, red needle/redline, backlit LCD
-	// speed readout, small Boost/N2O gauges bracketing the tacho). Boost and N2O
-	// are DECORATIVE — the GR86 has neither, see the comment by MINI_CX below.
+	// speed readout, small Boost/N2O gauges bracketing the tacho). N2O is REAL
+	// since the nitrous kit (X): the needle tracks the BOTTLE LEVEL like a pressure
+	// gauge on a real bottle — full reads full and falls as you spray — and the
+	// readout is percent remaining, ice-blue while flowing. Boost stays DECORATIVE:
+	// the GR86 has no turbo, see the comment by MINI_CX below.
 	//
 	// Everything real is driven by `carHud`, the 30 Hz quantised mirror in
 	// carTelemetry.svelte.ts — never `carSim`, which changes 200×/s. No CSS or
@@ -50,11 +53,12 @@
 	const trackPath = arc(A0, A0 + SWEEP, R);
 	const redlinePath = arc(polar(GR86.redlineRpm), A0 + SWEEP, R);
 
-	// ── Boost / N2O — DECORATIVE. The GR86 is a naturally aspirated road car: no
-	// turbo, no nitrous, nothing to read. They exist because the reference cluster
-	// has them and a gauge cluster missing its corners looks broken — but rather
-	// than fake a signal, the needle just rests barely off the peg (what a real
-	// boost gauge does at idle) and the number is replaced with an honest "N/A".
+	// ── Boost — DECORATIVE (the N2O gauge next to it is real, see the header). The
+	// GR86 is a naturally aspirated road car: no turbo, nothing to read. It exists
+	// because the reference cluster has the pair and a gauge pod missing its
+	// corner looks broken — but rather than fake a signal, the needle just rests
+	// barely off the peg (what a real boost gauge does at idle) and the number is
+	// replaced with an honest "N/A".
 	const MINI_CX = 45;
 	const MINI_CY = 38;
 	const MINI_R = 27;
@@ -68,6 +72,12 @@
 	const miniNeedleAngle = A0 + SWEEP * MINI_REST;
 	const miniNeedleTail = polarPoint(MINI_CX, MINI_CY, miniNeedleAngle, 7);
 	const miniNeedleTip = polarPoint(MINI_CX, MINI_CY, miniNeedleAngle, MINI_R - 6);
+
+	// N2O — the bottle level across the same sweep. Full spray reads full-scale;
+	// the needle falls as the bottle empties, like the pressure gauge on a real bottle.
+	const n2oNeedleAngle = $derived(A0 + SWEEP * Math.min(Math.max(carHud.nitrousTank, 0), 1));
+	const n2oTail = $derived(polarPoint(MINI_CX, MINI_CY, n2oNeedleAngle, 7));
+	const n2oTip = $derived(polarPoint(MINI_CX, MINI_CY, n2oNeedleAngle, MINI_R - 6));
 
 	const rpm = $derived(carHud.rpm);
 	// A degenerate zero-length arc renders nothing at all with a round linecap, so the
@@ -132,16 +142,19 @@
 						<line class="mini-tick" x1={ix} y1={iy} x2={ox} y2={oy} />
 					{/each}
 					<line
-						class="mini-needle"
-						x1={miniNeedleTail[0]}
-						y1={miniNeedleTail[1]}
-						x2={miniNeedleTip[0]}
-						y2={miniNeedleTip[1]}
+						class="mini-needle n2o"
+						class:spraying={carHud.nitrous > 0.05}
+						x1={n2oTail[0]}
+						y1={n2oTail[1]}
+						x2={n2oTip[0]}
+						y2={n2oTip[1]}
 					/>
-					<circle class="mini-hub" cx={MINI_CX} cy={MINI_CY} r="3" />
+					<circle class="mini-hub n2o" cx={MINI_CX} cy={MINI_CY} r="3" />
 				</svg>
-				<span class="mini-label">N2O</span>
-				<span class="mini-na">N/A</span>
+				<span class="mini-label" class:spraying={carHud.nitrous > 0.05}>N2O</span>
+				<span class="mini-na" class:on={carHud.nitrous > 0.05}>
+					{Math.round(carHud.nitrousTank * 100)}%
+				</span>
 			</div>
 		</div>
 
@@ -300,6 +313,25 @@
 
 	.mini-hub {
 		fill: #ff4e4e;
+	}
+
+	/* N2O is the live one of the pair — ice-blue needle, and everything about it
+	   lights up while the system sprays (matches the blue exhaust flames). */
+	.mini-needle.n2o {
+		stroke: #5fd0ff;
+	}
+
+	.mini-hub.n2o {
+		fill: #5fd0ff;
+	}
+
+	.mini-label.spraying {
+		color: #5fd0ff;
+		text-shadow: 0 0 6px rgba(95, 208, 255, 0.85);
+	}
+
+	.mini-na.on {
+		color: #5fd0ff;
 	}
 
 	.mini-label {

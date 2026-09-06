@@ -43,7 +43,7 @@ The box used to be a hard ±20 world units at the **world origin**, sized for De
 casts nor receives — so the key light passed straight through any model bigger than 40
 units across. At sunset it was worse in three ways at once, because `KEY_MIN_ELEVATION`
 floors the aim at 3°: the shadow camera looks nearly **horizontally**, which spends the
-±20 top/bottom on world *height* rather than ground, and put casters more than ~45 units
+±20 top/bottom on world _height_ rather than ground, and put casters more than ~45 units
 along the sun axis past the old `distance * 2.5` far plane.
 
 It now fits a bounding sphere over the **visible shadow casters** each `fitIntervalMs`
@@ -55,7 +55,7 @@ free). Three properties keep that from becoming its own bug:
   of the box, so a box tracking the bounds continuously would re-blur every shadow in
   the frame as a physics body rolled.
 - **The centre is snapped to the texel grid.** Making the centre mobile is what
-  *introduces* shadow-edge crawl; the snap is what takes it back out.
+  _introduces_ shadow-edge crawl; the snap is what takes it back out.
 - `maxShadowRadius` (400) caps it, so one stray body flung to infinity cannot inflate
   the box until every shadow is mush. `normalBias` scales with texel size — at ±20 a
   texel is 2 cm and zero bias was fine, at ±400 it is 39 cm and very much is not.

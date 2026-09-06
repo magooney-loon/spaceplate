@@ -30,7 +30,7 @@ How a scene declares what it looks like: which post-processing is active, what t
 is, what the weather is doing. Nothing implemented yet; this is the agreed design.
 
 **Not a preset system.** The old preset-ID layer failed by existing with nothing in it.
-A scene declares its *environment intent* as a shallow partial, and the engine applies
+A scene declares its _environment intent_ as a shallow partial, and the engine applies
 it through the same public API any other caller uses:
 
 ```ts
@@ -38,7 +38,7 @@ export type SceneEnvironment = {
 	postprocessing?: Partial<PostProcessingConfig>; // shallow partial over the global config
 	sky?: {
 		clock?: 'realtime' | 'external' | 'manual';
-		t?: number;      // normalized time-of-day, for a manual clock
+		t?: number; // normalized time-of-day, for a manual clock
 		timeScale?: number;
 		weather?: string | Partial<WeatherChannels>; // named weather or raw channel target
 	};
@@ -58,7 +58,7 @@ Rules that are the whole design:
    dependency direction is strictly one-way:
    `scene.svelte.ts → core/environment.ts → sky, postprocessing` — nothing in sky or
    postprocessing may import the scene extension.
-3. **No leave handler.** Every enter applies a *complete* environment (global provides
+3. **No leave handler.** Every enter applies a _complete_ environment (global provides
    every field, the scene overrides some), so a scene never undoes the previous one —
    removes the "scene B looks wrong only when entered from scene A" class of bugs.
 

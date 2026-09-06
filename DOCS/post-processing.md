@@ -61,7 +61,7 @@ faults rather than bugs to patch:
    dependency. Dragging a bloom slider disposed and rebuilt all 25 effects. See
    `webgpu-notes.md` §3.
 2. **The effect list was wrong.** It was a port of pmndrs' catalogue — a flat set of
-   independent screen-space filters. The effects actually wanted here are *not*
+   independent screen-space filters. The effects actually wanted here are _not_
    independent: half of them need geometry data (depth, normals, velocity) that must
    be produced by the scene pass, and three of them **replace** the scene pass
    outright.
@@ -97,14 +97,14 @@ naive toggle grid impossible.
 `(scene, camera)`. Each **is** the scene pass. You can have exactly one:
 
 ```js
-pixelationPass( scene, camera, pixelSize, normalEdgeStrength, depthEdgeStrength )  // removed
-retroPass( scene, camera, options )
-ssaaPass( scene, camera )
-pass( scene, camera )   // the default when none of the above is enabled
+pixelationPass(scene, camera, pixelSize, normalEdgeStrength, depthEdgeStrength); // removed
+retroPass(scene, camera, options);
+ssaaPass(scene, camera);
+pass(scene, camera); // the default when none of the above is enabled
 ```
 
 Because all three extend `PassNode`, they inherit `setMRT()`, `getTextureNode(name)`,
-`getViewZNode()` and `getLinearDepthNode()` — so in principle they *can* feed the
+`getViewZNode()` and `getLinearDepthNode()` — so in principle they _can_ feed the
 geometry-dependent effects. Whether they do so usefully is unverified (see §8).
 
 The mutual-exclusion rule stays even with only two base passes left, and the builder
@@ -118,29 +118,31 @@ These read buffers the scene pass has to be told to produce. **Only the two ✅ 
 live** — the rest is the table a revival restores, and the reason `MRT_LAYOUT` in
 `build.ts` is a lookup rather than a hard-coded attachment set:
 
-| | Effect | Needs |
-|---|---|---|
-| ❌ | `ao` / `ssao` | depth, normal |
-| ✅ | `dof` | viewZ (`pass.getViewZNode()` — derived from depth, no MRT needed) |
-| ✅ | `motionBlur` | velocity |
-| ❌ | `traa` | depth, velocity |
-| ❌ | `ssgi` | depth, normal, velocity (temporal), diffuseColor |
-| ❌ | `ssr` | depth, normal, metalrough |
-| ❌ | `denoise` | depth, normal |
-| ⬜ | bloom (selective) | bloomIntensity |
-| ✅ | bloom (material mode) | emissive — `vec4(emissive, output.a)`, NormalBlending, UnsignedByte texture. Provisioned only when the mode param asks for it (`requiresValues` on the def) |
+|     | Effect                | Needs                                                                                                                                                       |
+| --- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ❌  | `ao` / `ssao`         | depth, normal                                                                                                                                               |
+| ✅  | `dof`                 | viewZ (`pass.getViewZNode()` — derived from depth, no MRT needed)                                                                                           |
+| ✅  | `motionBlur`          | velocity                                                                                                                                                    |
+| ❌  | `traa`                | depth, velocity                                                                                                                                             |
+| ❌  | `ssgi`                | depth, normal, velocity (temporal), diffuseColor                                                                                                            |
+| ❌  | `ssr`                 | depth, normal, metalrough                                                                                                                                   |
+| ❌  | `denoise`             | depth, normal                                                                                                                                               |
+| ⬜  | bloom (selective)     | bloomIntensity                                                                                                                                              |
+| ✅  | bloom (material mode) | emissive — `vec4(emissive, output.a)`, NormalBlending, UnsignedByte texture. Provisioned only when the mode param asks for it (`requiresValues` on the def) |
 
 The MRT set is therefore a **function of which effects are enabled**, not a fixed
 choice. From the examples:
 
 ```js
-scenePass.setMRT( mrt( {
-    output,
-    normal: packNormalToRGB( normalView ),
-    velocity,
-    metalrough: vec2( metalness, roughness ),
-    diffuseColor
-} ) );
+scenePass.setMRT(
+	mrt({
+		output,
+		normal: packNormalToRGB(normalView),
+		velocity,
+		metalrough: vec2(metalness, roughness),
+		diffuseColor
+	})
+);
 ```
 
 ### 2.3 Chain effects — plain colour-in/colour-out
@@ -148,11 +150,11 @@ scenePass.setMRT( mrt( {
 `bloom`, `afterImage`, `lut3D`, `motionBlur`, `anamorphic`, `vignette` fold into the
 colour chain in order and need nothing special.
 
-Note that not all of these are node *classes*. `motionBlur` (three's) and `vignette`
+Note that not all of these are node _classes_. `motionBlur` (three's) and `vignette`
 (ours, §5.1) are plain TSL `Fn`s — called, not constructed, with no instance to hold
 uniforms on. The registry treats them identically (an `EffectDef` whose `build`
 returns a node either way), but there is no `.strength`-style handle to reach for
-afterwards, so the uniform bag is the *only* way to animate them. See §4.
+afterwards, so the uniform bag is the _only_ way to animate them. See §4.
 
 ### 2.4 Resolve effects — must run last, and fight each other
 
@@ -176,7 +178,7 @@ are alternatives". The architecture below makes those relationships data.
 
 ## 3. Architecture: an effect registry
 
-One module declares what every effect *is*. A builder reads the registry plus the
+One module declares what every effect _is_. A builder reads the registry plus the
 enabled set and produces the node graph. Nothing hand-wires a graph.
 
 ### 3.1 The declaration
@@ -185,22 +187,28 @@ enabled set and produces the node graph. Nothing hand-wires a graph.
 type PassRole = 'base' | 'chain' | 'grade' | 'resolve';
 
 type Requirement =
-    | 'depth' | 'viewZ' | 'normal' | 'velocity'
-    | 'metalrough' | 'diffuse' | 'emissive' | 'bloomIntensity';
+	| 'depth'
+	| 'viewZ'
+	| 'normal'
+	| 'velocity'
+	| 'metalrough'
+	| 'diffuse'
+	| 'emissive'
+	| 'bloomIntensity';
 
 interface EffectDef<S> {
-    id: string;
-    role: PassRole;
-    order: number;              // sort key within the role
-    requires: Requirement[];    // drives MRT provisioning
-    conflicts?: string[];       // ids that cannot be co-enabled
-    /** Consumes display-referred colour — the builder folds in one renderOutput(). */
-    displayColor?: boolean;
-    /** Non-hot params: changing these forces a graph rebuild (see §4). */
-    structural?: (keyof S)[];
-    /** Runtime rebuild key material the param values cannot carry (see §4). */
-    structuralTag?: () => string | number;
-    build(ctx: BuildContext, u: UniformBag<S>): Node;
+	id: string;
+	role: PassRole;
+	order: number; // sort key within the role
+	requires: Requirement[]; // drives MRT provisioning
+	conflicts?: string[]; // ids that cannot be co-enabled
+	/** Consumes display-referred colour — the builder folds in one renderOutput(). */
+	displayColor?: boolean;
+	/** Non-hot params: changing these forces a graph rebuild (see §4). */
+	structural?: (keyof S)[];
+	/** Runtime rebuild key material the param values cannot carry (see §4). */
+	structuralTag?: () => string | number;
+	build(ctx: BuildContext, u: UniformBag<S>): Node;
 }
 ```
 
@@ -221,16 +229,16 @@ no effect ever reaches for the scene pass itself:
 
 ```ts
 interface BuildContext {
-    scene: Scene;
-    camera: Camera;
-    renderer: WebGPURenderer;
-    basePass: PassNode;
-    color: Node;        // the running chain value — reassigned as effects fold in
-    depth: Node;
-    viewZ: Node;
-    normal: Node;
-    velocity: Node;
-    metalrough: Node;
+	scene: Scene;
+	camera: Camera;
+	renderer: WebGPURenderer;
+	basePass: PassNode;
+	color: Node; // the running chain value — reassigned as effects fold in
+	depth: Node;
+	viewZ: Node;
+	normal: Node;
+	velocity: Node;
+	metalrough: Node;
 }
 ```
 
@@ -258,7 +266,7 @@ interface BuildContext {
 ### 3.4 What the UI gets for free
 
 Because conflicts and roles are data, the Studio panel can grey out `retro` while
-`ssaa` is on, show *why*, and display the live MRT set and its cost. That is not
+`ssaa` is on, show _why_, and display the live MRT set and its cost. That is not
 polish — an effect grid where illegal combinations are merely broken is the thing that
 made the old panel untrustworthy.
 
@@ -283,7 +291,7 @@ Verified from source, this works nearly everywhere:
 - `motionBlur`, `boxBlur`, our `vignette` (§5.1) and our basic `dof` — TSL `Fn`s whose
   params default to `float(...)` / `int(...)` nodes. They accept a `uniform()` in the
   same position. With no node instance to hold a handle on, the uniform bag is the
-  *only* way to animate them.
+  _only_ way to animate them.
 
 It also sidesteps a typing trap. The addon `.d.ts` files are **inconsistently typed
 against their own JS default-parameter behaviour** — some exports demand values
@@ -295,13 +303,13 @@ The consequence is that the **structural key collapses to the enabled set**:
 
 ```ts
 const structuralKey = $derived(
-    [basePassId, ...enabledIds.toSorted(), mrtKey, qualityTier].join('|')
+	[basePassId, ...enabledIds.toSorted(), mrtKey, qualityTier].join('|')
 );
 ```
 
 Two effects, cleanly separated:
 
-- **Structural effect** — depends on `structuralKey`, a *string*. Rebuilds the graph.
+- **Structural effect** — depends on `structuralKey`, a _string_. Rebuilds the graph.
   Fires on toggle, never on drag.
 - **Uniform effect** — walks the parameter values and writes `uniform.value` in place.
   No disposal, no rebuild.
@@ -314,7 +322,7 @@ LUT choice (a different texture, hence a different graph).
 `structuralTag` is the runtime companion: key material an effect can only know when it
 runs, appended to `structuralKeyOf`. The LUT returns its loaded-texture version so an
 async load landing triggers exactly one rebuild. Reach for it when the graph is built
-*around* a resource rather than merely reading a value.
+_around_ a resource rather than merely reading a value.
 
 ---
 
@@ -327,28 +335,28 @@ requirements as per §2.
 Removed rows are kept with their signatures and gotchas intact: they are what a revival
 starts from, and they cost nothing to keep here.
 
-| | Effect | Factory | Role | Requires | Notes |
-|---|---|---|---|---|---|
-| ✅ | **ssaa** | `ssaaPass(scene, camera)` | base | — | `extends PassNode` |
-| ❌ | **pixel** | `pixelationPass(scene, camera, pixelSize, normalEdgeStrength, depthEdgeStrength)` | base | — | `extends PassNode`; provisions its own `mrt({ output, normal })` internally, which is why it failed with the §8.7 group despite requiring nothing |
-| ✅ | **retro** | `retroPass(scene, camera, options)` | base | — | `extends PassNode`; needs `patches/three.patch` (§5.2). Does not bundle a vignette, so no conflict with ours |
-| ❌ | **ao** | `ao(depthNode, normalNode, camera)` | chain | depth, normal | GTAO. `ssao(...)` is the alternative with the same signature |
-| ❌ | **ssgi** | `ssgi(beauty, depth, normal, camera)` | chain | depth, normal, diffuse, velocity | Composite is `color.rgb * AO + diffuse.rgb * GI`, and the AO term is a float in a vec4 — §5.3 |
-| ❌ | **ssr** | `ssr(colorNode, depthNode, normalNode, options)` | chain | depth, normal, metalrough | Takes the RAW base-pass beauty: `SSRNode` derives its camera from `colorNode.passNode`, which a computed chain node does not have |
-| ❌ | **denoise** | `denoise(node, depth, normal, camera)` | chain | depth, normal | Never built; went with SSR |
-| ✅ | **dof** | *ours* — `mix(color, boxBlur(color), smoothstep(min, max, abs(viewZ + focus)))` | chain | viewZ | The "basic" DoF (`webgpu_postprocessing_dof_basic`); the bokeh `DepthOfFieldNode` was dropped for performance — one box blur vs its multi-pass kernel. viewZ from `basePass.getViewZNode()` — no MRT attachment |
-| ✅ | **motion blur** | `motionBlur(inputNode, velocity, numSamples)` | chain | velocity | A TSL `Fn`, not a node class. **The only remaining MRT consumer**. The one sampler addon that does NOT `convertToTexture` its input — our wrapper does (an RTT when fed a computed node, e.g. anything after the basic DoF), otherwise it throws `inputNode.sample is not a function` |
-| ✅ | **bloom** | `bloom(input, strength, radius, threshold)` | chain | emissive (material mode only, via `requiresValues`) | Additive. `mode` param: **Global** blooms the colour buffer; **Material** blooms the `emissive` MRT attachment (selective, `webgpu_postprocessing_bloom_emissive`) |
-| ✅ | **lensflare** | `lensflare(bloomNode, params)` — sub-toggle inside `bloom` | chain | — | Ghosts are sampled FROM the bloom buffer, hence nested in bloom (no bloom, no flare). Works in either bloom mode — in material mode the flare traces emitted lights. `gaussianBlur(flare, 8)` smooths the ¼-res ghosts. `lensflare` + `ghostSamples` are structural |
-| ⬜ | **bloom (emissive)** | ~~same, fed an `emissive` MRT texture~~ | chain | emissive | **Wired** — shipped as bloom's Material mode toggle (see bloom row) |
-| ⬜ | **anamorphic** | *composed* | chain | — | **No shipped node.** The example builds a custom high-pass `Fn`, runs `bloom()` on it, tints, and adds. Budget it as real work |
-| ✅ | **afterimage** | `afterImage(node, damp)` | chain | — | Feedback buffer. The "interacts badly with temporal AA" caveat is moot now that TRAA is gone |
-| ✅ | **vignette** | *ours* — hand-written `Fn` (§5.1) | chain | — | Applied late, after grading, before AA |
-| ✅ | **3dlut** | `lut3D(node, texture3D, size, intensity)` | grade | — | `displayColor`. three's nine example LUTs in `public/luts/` (§7); catalogue + async load in `luts.svelte.ts` |
-| ❌ | **traa** | `traa(beauty, depth, velocity, camera)` | resolve | depth, velocity | Temporal AA |
-| ✅ | **smaa** | `smaa(node)` | resolve | — | Conflicts with fxaa (one AA max) |
-| ✅ | **fxaa** | `fxaa(node)` | resolve | — | `displayColor` — the builder supplies the sRGB input, not the effect |
-| ⬜ | **transition** | `transition(a, b, mixTexture, mixRatio, threshold, useTexture)` | resolve | — | Not built; §6 |
+|     | Effect               | Factory                                                                           | Role    | Requires                                            | Notes                                                                                                                                                                                                                                                                                 |
+| --- | -------------------- | --------------------------------------------------------------------------------- | ------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ✅  | **ssaa**             | `ssaaPass(scene, camera)`                                                         | base    | —                                                   | `extends PassNode`                                                                                                                                                                                                                                                                    |
+| ❌  | **pixel**            | `pixelationPass(scene, camera, pixelSize, normalEdgeStrength, depthEdgeStrength)` | base    | —                                                   | `extends PassNode`; provisions its own `mrt({ output, normal })` internally, which is why it failed with the §8.7 group despite requiring nothing                                                                                                                                     |
+| ✅  | **retro**            | `retroPass(scene, camera, options)`                                               | base    | —                                                   | `extends PassNode`; needs `patches/three.patch` (§5.2). Does not bundle a vignette, so no conflict with ours                                                                                                                                                                          |
+| ❌  | **ao**               | `ao(depthNode, normalNode, camera)`                                               | chain   | depth, normal                                       | GTAO. `ssao(...)` is the alternative with the same signature                                                                                                                                                                                                                          |
+| ❌  | **ssgi**             | `ssgi(beauty, depth, normal, camera)`                                             | chain   | depth, normal, diffuse, velocity                    | Composite is `color.rgb * AO + diffuse.rgb * GI`, and the AO term is a float in a vec4 — §5.3                                                                                                                                                                                         |
+| ❌  | **ssr**              | `ssr(colorNode, depthNode, normalNode, options)`                                  | chain   | depth, normal, metalrough                           | Takes the RAW base-pass beauty: `SSRNode` derives its camera from `colorNode.passNode`, which a computed chain node does not have                                                                                                                                                     |
+| ❌  | **denoise**          | `denoise(node, depth, normal, camera)`                                            | chain   | depth, normal                                       | Never built; went with SSR                                                                                                                                                                                                                                                            |
+| ✅  | **dof**              | _ours_ — `mix(color, boxBlur(color), smoothstep(min, max, abs(viewZ + focus)))`   | chain   | viewZ                                               | The "basic" DoF (`webgpu_postprocessing_dof_basic`); the bokeh `DepthOfFieldNode` was dropped for performance — one box blur vs its multi-pass kernel. viewZ from `basePass.getViewZNode()` — no MRT attachment                                                                       |
+| ✅  | **motion blur**      | `motionBlur(inputNode, velocity, numSamples)`                                     | chain   | velocity                                            | A TSL `Fn`, not a node class. **The only remaining MRT consumer**. The one sampler addon that does NOT `convertToTexture` its input — our wrapper does (an RTT when fed a computed node, e.g. anything after the basic DoF), otherwise it throws `inputNode.sample is not a function` |
+| ✅  | **bloom**            | `bloom(input, strength, radius, threshold)`                                       | chain   | emissive (material mode only, via `requiresValues`) | Additive. `mode` param: **Global** blooms the colour buffer; **Material** blooms the `emissive` MRT attachment (selective, `webgpu_postprocessing_bloom_emissive`)                                                                                                                    |
+| ✅  | **lensflare**        | `lensflare(bloomNode, params)` — sub-toggle inside `bloom`                        | chain   | —                                                   | Ghosts are sampled FROM the bloom buffer, hence nested in bloom (no bloom, no flare). Works in either bloom mode — in material mode the flare traces emitted lights. `gaussianBlur(flare, 8)` smooths the ¼-res ghosts. `lensflare` + `ghostSamples` are structural                   |
+| ⬜  | **bloom (emissive)** | ~~same, fed an `emissive` MRT texture~~                                           | chain   | emissive                                            | **Wired** — shipped as bloom's Material mode toggle (see bloom row)                                                                                                                                                                                                                   |
+| ⬜  | **anamorphic**       | _composed_                                                                        | chain   | —                                                   | **No shipped node.** The example builds a custom high-pass `Fn`, runs `bloom()` on it, tints, and adds. Budget it as real work                                                                                                                                                        |
+| ✅  | **afterimage**       | `afterImage(node, damp)`                                                          | chain   | —                                                   | Feedback buffer. The "interacts badly with temporal AA" caveat is moot now that TRAA is gone                                                                                                                                                                                          |
+| ✅  | **vignette**         | _ours_ — hand-written `Fn` (§5.1)                                                 | chain   | —                                                   | Applied late, after grading, before AA                                                                                                                                                                                                                                                |
+| ✅  | **3dlut**            | `lut3D(node, texture3D, size, intensity)`                                         | grade   | —                                                   | `displayColor`. three's nine example LUTs in `public/luts/` (§7); catalogue + async load in `luts.svelte.ts`                                                                                                                                                                          |
+| ❌  | **traa**             | `traa(beauty, depth, velocity, camera)`                                           | resolve | depth, velocity                                     | Temporal AA                                                                                                                                                                                                                                                                           |
+| ✅  | **smaa**             | `smaa(node)`                                                                      | resolve | —                                                   | Conflicts with fxaa (one AA max)                                                                                                                                                                                                                                                      |
+| ✅  | **fxaa**             | `fxaa(node)`                                                                      | resolve | —                                                   | `displayColor` — the builder supplies the sRGB input, not the effect                                                                                                                                                                                                                  |
+| ⬜  | **transition**       | `transition(a, b, mixTexture, mixRatio, threshold, useTexture)`                   | resolve | —                                                   | Not built; §6                                                                                                                                                                                                                                                                         |
 
 ### 5.1 Vignette — written, not imported
 
@@ -359,13 +367,13 @@ total:
 
 ```js
 // CRT.js
-const mask = circle( float( 1.42 ), smoothness, coord );
-const vignetteAmount = mix( float( 1.0 ).sub( intensity ), float( 1.0 ), mask );
-return color.mul( vignetteAmount );
+const mask = circle(float(1.42), smoothness, coord);
+const vignetteAmount = mix(float(1.0).sub(intensity), float(1.0), mask);
+return color.mul(vignetteAmount);
 
 // Shape.js — circle()
-const dist = length( coord.sub( 0.5 ) ).mul( 2.0 );
-return smoothstep( scale, scale.sub( softness.mul( scale ) ), dist );
+const dist = length(coord.sub(0.5)).mul(2.0);
+return smoothstep(scale, scale.sub(softness.mul(scale)), dist);
 ```
 
 Importing two addon modules to get that is not a good trade. Writing it ourselves
@@ -386,13 +394,13 @@ import { Fn, uv, vec2, float, length, smoothstep, mix } from 'three/tsl';
 
 /** intensity 0..1 edge darkening · smoothness falloff width · roundness 0 = frame-shaped, 1 = circular */
 export const vignetteFn = Fn(([color, intensity, smoothness, roundness, aspect]) => {
-    // roundness 0 keeps uv space (ellipse follows the viewport); 1 corrects x by
-    // aspect so the falloff is a true circle.
-    const scaleX = mix(float(1), aspect, roundness);
-    const dist = length(uv().sub(0.5).mul(vec2(scaleX, 1))).mul(2);
+	// roundness 0 keeps uv space (ellipse follows the viewport); 1 corrects x by
+	// aspect so the falloff is a true circle.
+	const scaleX = mix(float(1), aspect, roundness);
+	const dist = length(uv().sub(0.5).mul(vec2(scaleX, 1))).mul(2);
 
-    const mask = smoothstep(float(1.42), float(1.42).sub(smoothness), dist);
-    return color.mul(mix(float(1).sub(intensity), float(1), mask));
+	const mask = smoothstep(float(1.42), float(1.42).sub(smoothness), dist);
+	return color.mul(mix(float(1).sub(intensity), float(1), mask));
 });
 ```
 
@@ -419,7 +427,7 @@ RGBA16Float)] doesn't match the expected dimension (TextureViewDimension::e2D).
 standard materials it rebuilds the reflection term as `new CubeMapNode( texture( envMap ) )`
 where `envMap = material.envMap || scene.environment`. `texture()` builds a **2D**
 `TextureNode`. That is fine in three's own examples because `scene.environment` there is
-a PMREM'd 2D map — but `CubeMapNode` only converts *equirectangular* sources, and when
+a PMREM'd 2D map — but `CubeMapNode` only converts _equirectangular_ sources, and when
 handed something already cubic it takes this branch:
 
 ```js
@@ -446,7 +454,7 @@ composition that mixes vector widths — which is every one of them.
 three's own `webgpu_postprocessing_ssgi` example composites with:
 
 ```js
-vec4( add( scenePassColor.rgb.mul( ao ), scenePassDiffuse.rgb.mul( gi.rgb ) ), scenePassColor.a )
+vec4(add(scenePassColor.rgb.mul(ao), scenePassDiffuse.rgb.mul(gi.rgb)), scenePassColor.a);
 ```
 
 `getAONode()` returns a `passTexture`, i.e. **vec4**. Under TSL's promotion rule
@@ -459,7 +467,7 @@ THREE.TSL: Length of parameters exceeds maximum length of function 'vec4()'
 ```
 
 The material's build then throws, and three quietly swaps in a blank `NodeMaterial`
-(`NodeManager.getForRender`'s catch) — which is why the symptom is a *wrongly rendered*
+(`NodeManager.getForRender`'s catch) — which is why the symptom is a _wrongly rendered_
 object rather than a hard failure. AO was written as a `property('float')` into
 `textures[0]`, so the fix was the red channel: `ctx.color.rgb.mul(aoOut.r)`.
 
@@ -527,6 +535,7 @@ redesign: it is the same node with a real pass in slot B.
   colour-space or double-tone-map error in the pipeline, not in the grade.
 
   Catalogue indices are stored in effect state, so **append rather than reorder**.
+
 - **Transition masks.** Optional greyscale textures for wipe patterns; the example
   uses `textures/transition/transition{1..6}.png`. Ship two or three or start with
   `useTexture = 0` (plain fade).
@@ -544,7 +553,7 @@ ao/ssgi/ssr/traa/pixelation. They are kept for a revival, struck where dead.
 1. ~~**Do the base-pass effects support MRT usefully?**~~ Moot: the surviving base
    passes (`retro`, `ssaa`) have no geometry consumer left to feed except motion blur,
    and `resolveEnabledSet` drops geometry consumers under a non-default base pass
-   anyway. Still open *if* pixelation or AO ever returns.
+   anyway. Still open _if_ pixelation or AO ever returns.
 2. ~~**MRT on the main pass vs. a separate pre-pass.**~~ Never settled, because the
    effects that would have forced the decision are gone. Velocity for motion blur comes
    off the main pass and that is fine. **The question returns intact with AO or SSR**:
@@ -565,7 +574,7 @@ ao/ssgi/ssr/traa/pixelation. They are kept for a revival, struck where dead.
    `webgpu-notes.md` §2 — they were written for the deleted `EffectComposer` but the
    DAG constraints are unchanged.
 7. **SETTLED — the MRT traps.** Read this before changing the builder. §8.7 is the
-   shader-cache trap; §8.8 is the second, independent one that §8.7 does *not* cover and
+   shader-cache trap; §8.8 is the second, independent one that §8.7 does _not_ cover and
    that produces the identical error message.
 
 ### 8.7 The MRT shader-cache trap
@@ -588,7 +597,7 @@ fxaa — are exactly the ones needing no attachment. **The effects were never th
 problem.**
 
 `NodeMaterial.setup()` folds the MRT into a material's output by reading
-`renderer.getMRT()` *at build time*, and the build is lazy — it happens on the first
+`renderer.getMRT()` _at build time_, and the build is lazy — it happens on the first
 draw, in whatever pass draws first. The compiled result is then cached in
 `NodeManager.nodeBuilderCache` under `RenderObject.initialCacheKey`, and **that key
 contains no MRT information and no render-target information**. Render objects are
@@ -607,7 +616,7 @@ if (basePass.getMRT() !== null) basePass.contextNode = context();
 
 `RenderObject.getDynamicCacheKey()` hashes `renderer.contextNode.id`, and `PassNode`
 swaps `renderer.contextNode` for its own for the duration of its render. An empty
-`context()` merges to identical context *data* with a distinct node *identity* — same
+`context()` merges to identical context _data_ with a distinct node _identity_ — same
 generated code, private cache namespace. (PassNode already calls
 `getFlowContextData()` on an empty `context()` every render, since that is what
 `Renderer.contextNode` is initialised to, so this path is well travelled.)
@@ -620,9 +629,9 @@ Two consequences worth remembering:
 
 - **The symptom names the material, and that is the best clue available.** three labels
   pipelines `material.name || material.type` (`WebGPUPipelineUtils.js`), so
-  `renderPipeline_NodeMaterial_22` means an *unnamed, plain* `NodeMaterial`. Naming
+  `renderPipeline_NodeMaterial_22` means an _unnamed, plain_ `NodeMaterial`. Naming
   custom materials makes the next one of these far easier to read. Note that the
-  encoder aborts at the first bad pipeline, so the error names *a* culprit, not the
+  encoder aborts at the first bad pipeline, so the error names _a_ culprit, not the
   only one.
 - **Do not "fix" this by giving the sky its own dome, or by disabling the env bake.**
   That treats one racer rather than the race, and the next auxiliary pass reintroduces
@@ -632,7 +641,7 @@ Two consequences worth remembering:
 verified in a browser: with motion blur on, every material in the pass recompiles under
 the pass's private context and emits two outputs. But it is not the whole story. The
 sentence "the effects were never the problem" above is true; "so it must be the shader
-cache" is not. §8.8 is a second failure mode with the *same* error text that this fix
+cache" is not. §8.8 is a second failure mode with the _same_ error text that this fix
 cannot reach, and it is the one that was actually still firing.
 
 ### 8.8 A material can bypass MRT entirely — `fragmentNode`
@@ -657,7 +666,7 @@ So a material with a custom `fragmentNode` emits a single `@location( 0 )` **no 
 what the pass is doing** (unless the node is already an `isOutputStructNode`). Note
 `outputNode` is fine — it still folds; only `fragmentNode` bypasses.
 
-Drawn inside a two-attachment pass that is fatal on Chromium/Dawn, and it is the *same*
+Drawn inside a two-attachment pass that is fatal on Chromium/Dawn, and it is the _same_
 message §8.7 produces, which is why this hid behind that diagnosis for so long:
 
 ```
@@ -667,12 +676,12 @@ with [RenderPassEncoder]. Expects colorTargets [0, 1]; pipeline has [0].
 
 **Why nothing upstream catches it.** The material's WGSL is byte-identical with and
 without MRT, so it collapses onto one `ProgrammableStage` (`Pipelines.programs.fragment`
-is a `Map` keyed on the shader *string*), and `WebGPUBackend.getRenderCacheKey()` records
+is a `Map` keyed on the shader _string_), and `WebGPUBackend.getRenderCacheKey()` records
 `getCurrentColorFormat( renderContext )` — the format of attachment **0** — and never the
-attachment *count*, even though `getCurrentColorFormats()` (plural) sits unused beside it
+attachment _count_, even though `getCurrentColorFormats()` (plural) sits unused beside it
 in `WebGPUUtils.js`. Identical stage ids plus an identical backend key means one GPU
 pipeline shared across both contexts, so the pipeline built for the one-attachment pass
-is handed to the two-attachment one. A wrong shader becomes a wrong *pipeline* instead of
+is handed to the two-attachment one. A wrong shader becomes a wrong _pipeline_ instead of
 a recompile. That is a genuine upstream three bug and is worth reporting; we have not
 patched it.
 
@@ -698,7 +707,7 @@ this.blendModes = { output: _materialBlending };
 
 Every other attachment falls through `getBlendMode()` to `_noBlending`, and
 `WebGPUPipelineUtils` then builds that colour target with `blend: undefined` — a straight
-overwrite with alpha ignored. Blending is also per-*pass*, not per-material:
+overwrite with alpha ignored. Blending is also per-_pass_, not per-material:
 `WebGPUPipelineUtils` reads `renderObject.context.mrt`, so a material cannot opt out.
 (`MRTNode.merge()` looks like it could override per material, but it assigns
 `mrtTarget.blendings` while `getBlendMode()` reads `this.blendModes`, so merged modes are
@@ -711,7 +720,7 @@ stamped its own (zero, being camera-parented) velocity over the whole buffer and
 blur became an identity transform. The patch skips it when the selection is empty, which
 was upstream's own TODO; with something selected the overlay still flattens velocity.
 
-The real cure — compositing Studio's overlays *after* post-processing rather than inside
+The real cure — compositing Studio's overlays _after_ post-processing rather than inside
 the base pass — is unbuilt and is the open item here. The same trap waits for any
 in-scene fullscreen overlay we add ourselves.
 
@@ -725,40 +734,40 @@ and its ancestry. It is what found §8.8 after static analysis had failed twice.
 
 ### Added
 
-| Path | Purpose |
-|---|---|
-| `src/core/postprocessing/registry.ts` | Effect definitions (§3.1) — the single source of truth |
-| `src/core/postprocessing/build.ts` | The builder (§3.3): base pass, MRT union, fold, resolve |
-| `src/core/postprocessing/uniforms.ts` | The uniform bag — create, look up, write `.value` |
-| `src/core/postprocessing/effects/*.ts` | One small module per effect, each exporting an `EffectDef`. Most wrap an addon node; `vignette.ts` is hand-written TSL (§5.1) and is the template for any future custom effect |
-| `src/core/postprocessing/luts.svelte.ts` | LUT catalogue + async load cache across three loaders (§7). A `.svelte.ts` only because the version counter drives the structural rebuild |
-| `public/luts/*` | three's nine example LUTs, copied verbatim (§7) |
-| `patches/three.patch` | `RetroPassNode` cube-environment fix (§5.2) |
+| Path                                     | Purpose                                                                                                                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/core/postprocessing/registry.ts`    | Effect definitions (§3.1) — the single source of truth                                                                                                                         |
+| `src/core/postprocessing/build.ts`       | The builder (§3.3): base pass, MRT union, fold, resolve                                                                                                                        |
+| `src/core/postprocessing/uniforms.ts`    | The uniform bag — create, look up, write `.value`                                                                                                                              |
+| `src/core/postprocessing/effects/*.ts`   | One small module per effect, each exporting an `EffectDef`. Most wrap an addon node; `vignette.ts` is hand-written TSL (§5.1) and is the template for any future custom effect |
+| `src/core/postprocessing/luts.svelte.ts` | LUT catalogue + async load cache across three loaders (§7). A `.svelte.ts` only because the version counter drives the structural rebuild                                      |
+| `public/luts/*`                          | three's nine example LUTs, copied verbatim (§7)                                                                                                                                |
+| `patches/three.patch`                    | `RetroPassNode` cube-environment fix (§5.2)                                                                                                                                    |
 
 ### Rewritten
 
-| Path | Change |
-|---|---|
-| `src/core/utils/Renderer.svelte` | Stub → owns the `RenderPipeline`, the structural effect and the uniform effect (§4). Task ordering per `webgpu-notes.md` §2 |
-| `src/extensions/postprocessing/types.ts` | Per-effect param sets for the new list; the pmndrs-era types (glitch, shockWave, ascii, tiltShift, scanline, sepia, dotScreen…) go |
-| `src/extensions/postprocessing/postprocessing.svelte.ts` | State for the new effect set; preset/localStorage layer dropped |
-| `src/extensions/postprocessing/PostProcessingExtension.svelte` | Rebuilt against the registry — roles, conflicts and the live MRT set are rendered *from* the registry, not hand-written |
+| Path                                                           | Change                                                                                                                             |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `src/core/utils/Renderer.svelte`                               | Stub → owns the `RenderPipeline`, the structural effect and the uniform effect (§4). Task ordering per `webgpu-notes.md` §2        |
+| `src/extensions/postprocessing/types.ts`                       | Per-effect param sets for the new list; the pmndrs-era types (glitch, shockWave, ascii, tiltShift, scanline, sepia, dotScreen…) go |
+| `src/extensions/postprocessing/postprocessing.svelte.ts`       | State for the new effect set; preset/localStorage layer dropped                                                                    |
+| `src/extensions/postprocessing/PostProcessingExtension.svelte` | Rebuilt against the registry — roles, conflicts and the live MRT set are rendered _from_ the registry, not hand-written            |
 
 ### Deleted
 
-| Path | Reason |
-|---|---|
-| `src/extensions/postprocessing/bundledPresets.ts` | Preset layer removed; contains only commented-out examples |
-| `src/extensions/postprocessing/usePostProcessing.ts` | Zero consumers |
-| `src/core/postprocessing/effects/{pixelation,ao,ssgi,ssr,traa}.ts` | Scope cut — see the removal note at the top |
+| Path                                                               | Reason                                                     |
+| ------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `src/extensions/postprocessing/bundledPresets.ts`                  | Preset layer removed; contains only commented-out examples |
+| `src/extensions/postprocessing/usePostProcessing.ts`               | Zero consumers                                             |
+| `src/core/postprocessing/effects/{pixelation,ao,ssgi,ssr,traa}.ts` | Scope cut — see the removal note at the top                |
 
 ### Changed
 
-| Path | Change |
-|---|---|
-| `src/App.svelte` | `autoRender={false}` as a `<Canvas>` **option** once a pipeline exists — never toggled from an `$effect` (`webgpu-notes.md` §3). Re-register `PostProcessingExtension` |
-| `src/extensions/scene/scene.svelte.ts` | `transitionTo` drives the transition uniform instead of `setTimeout`. Per-scene config overrides are `scene-environment.md`, not this doc |
-| `src/extensions/scene/SceneExtension.svelte` | Drops its read of `postprocessingPresetsState` |
+| Path                                         | Change                                                                                                                                                                 |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/App.svelte`                             | `autoRender={false}` as a `<Canvas>` **option** once a pipeline exists — never toggled from an `$effect` (`webgpu-notes.md` §3). Re-register `PostProcessingExtension` |
+| `src/extensions/scene/scene.svelte.ts`       | `transitionTo` drives the transition uniform instead of `setTimeout`. Per-scene config overrides are `scene-environment.md`, not this doc                              |
+| `src/extensions/scene/SceneExtension.svelte` | Drops its read of `postprocessingPresetsState`                                                                                                                         |
 
 ---
 
@@ -794,7 +803,7 @@ mistake the previous pipeline made.
 
 The phasing held up, with one correction worth recording: it assumed effects could be
 brought up one at a time and judged independently. §8.7 says otherwise — the whole
-MRT-dependent *group* shares a single failure mode that no individual effect can be
+MRT-dependent _group_ shares a single failure mode that no individual effect can be
 debugged into. When several effects fail at once, look for what they have in common
 before looking at any one of them.
 

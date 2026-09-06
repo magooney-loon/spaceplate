@@ -75,7 +75,7 @@ The renderer is `WebGPURenderer`, which auto-falls back to WebGL when WebGPU is 
   effect swaps the graph when the enabled set / quality / structural params change; a
   uniform effect writes param drags in place (no rebuild). Registry + builder rules and
   the browser-verified MRT/TSL gotchas: `core/postprocessing/CLAUDE.md`. `<Canvas
-  autoRender={false}>` is a Canvas **option** — never toggled from an `$effect`
+autoRender={false}>` is a Canvas **option** — never toggled from an `$effect`
   (`webgpu-notes.md` §3.1) — and the pipeline renders from a task registered
   `{ after: autoRenderTask, autoInvalidate: false }` (`webgpu-notes.md` §2). Renderer.svelte
   must stay the **first** child inside `<Canvas>` so it draws before the Gizmo.

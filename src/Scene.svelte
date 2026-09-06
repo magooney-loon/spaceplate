@@ -42,7 +42,11 @@
 {/if}
 
 {#if sceneState.visited.testGame}
-	<T.Group name="TestGame" visible={sceneState.currentScene === 'testGame'} position={[ 0, -0.7572, 0 ]}>
+	<T.Group
+		name="TestGame"
+		visible={sceneState.currentScene === 'testGame'}
+		position={[0, -0.7572, 0]}
+	>
 		<TestGame />
 	</T.Group>
 {/if}

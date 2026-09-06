@@ -172,11 +172,11 @@ tables.user.filter(u => u.name === 'alice');  // No .filter() on tables object!
 
 ```typescript
 // ✅ CORRECT IMPORTS
-import { DbConnection, tables, reducers } from "./module_bindings"; // Generated!
-import { useTable, useSpacetimeDB, useReducer } from "spacetimedb/svelte";
+import { DbConnection, tables, reducers } from './module_bindings'; // Generated!
+import { useTable, useSpacetimeDB, useReducer } from 'spacetimedb/svelte';
 
 // ✅ CORRECT REDUCER CALLS — object syntax, not positional!
-conn.reducers.doSomething({ value: "test" });
+conn.reducers.doSomething({ value: 'test' });
 conn.reducers.updateItem({ itemId: 1n, newValue: 42 });
 
 // ✅ CORRECT DATA ACCESS — useTable returns [rows, isReady]
@@ -193,9 +193,9 @@ const [items, isReady] = useTable(tables.item);
 ## Imports
 
 ```typescript
-import { schema, table, t } from "spacetimedb/server";
-import { SenderError } from "spacetimedb/server";
-import { ScheduleAt } from "spacetimedb"; // for scheduled tables only
+import { schema, table, t } from 'spacetimedb/server';
+import { SenderError } from 'spacetimedb/server';
+import { ScheduleAt } from 'spacetimedb'; // for scheduled tables only
 ```
 
 ## Tables
@@ -204,12 +204,12 @@ import { ScheduleAt } from "spacetimedb"; // for scheduled tables only
 
 ```typescript
 const entity = table(
-  { name: "entity", public: true },
-  {
-    identity: t.identity().primaryKey(),
-    name: t.string(),
-    active: t.bool(),
-  },
+	{ name: 'entity', public: true },
+	{
+		identity: t.identity().primaryKey(),
+		name: t.string(),
+		active: t.bool()
+	}
 );
 ```
 
@@ -255,10 +255,10 @@ Additional type builders: `t.row({...})` (row builder for generated bindings), `
 ```typescript
 // ✅ MUST provide 0n placeholder for auto-inc fields
 ctx.db.task.insert({
-  id: 0n,
-  ownerId: ctx.sender,
-  title: "New",
-  createdAt: ctx.timestamp,
+	id: 0n,
+	ownerId: ctx.sender,
+	title: 'New',
+	createdAt: ctx.timestamp
 });
 ```
 
@@ -378,9 +378,9 @@ ctx.db.scores.by_player_level.filter(playerId);
 
 // ✅ DO — use single-column index + manual filter
 for (const row of ctx.db.scores.by_player.filter(playerId)) {
-  if (row.level === targetLevel) {
-    /* ... */
-  }
+	if (row.level === targetLevel) {
+		/* ... */
+	}
 }
 ```
 
@@ -412,11 +412,11 @@ export const doReset = spacetimedb.reducer((ctx) => { ... });
 ```typescript
 // ✅ CORRECT — spread existing row, override specific fields
 const existing = ctx.db.task.id.find(taskId);
-if (!existing) throw new SenderError("Task not found");
+if (!existing) throw new SenderError('Task not found');
 ctx.db.task.id.update({
-  ...existing,
-  title: newTitle,
-  updatedAt: ctx.timestamp,
+	...existing,
+	title: newTitle,
+	updatedAt: ctx.timestamp
 });
 
 // ❌ WRONG — partial update nulls out other fields!
@@ -440,16 +440,16 @@ ctx.db.player.identity.delete(ctx.sender); // delete by identity
 
 ```typescript
 // ❌ WRONG - positional
-conn.reducers.doSomething("value");
+conn.reducers.doSomething('value');
 
 // ✅ RIGHT - object
-conn.reducers.doSomething({ param: "value" });
+conn.reducers.doSomething({ param: 'value' });
 ```
 
 ## DB Operations
 
 ```typescript
-ctx.db.entity.insert({ id: 0n, name: "Sample" }); // Insert (0n for autoInc)
+ctx.db.entity.insert({ id: 0n, name: 'Sample' }); // Insert (0n for autoInc)
 ctx.db.entity.id.find(entityId); // Find by PK → row | null
 ctx.db.entity.identity.find(ctx.sender); // Find by unique column
 [...ctx.db.item.authorId.filter(authorId)]; // Filter → spread to Array
@@ -476,7 +476,7 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 
 ```typescript
 // Auth: ctx.sender is the caller's Identity
-if (!row.owner.equals(ctx.sender)) throw new SenderError("unauthorized");
+if (!row.owner.equals(ctx.sender)) throw new SenderError('unauthorized');
 
 // Identity: ctx.databaseIdentity is the DB's identity
 // ctx.identity is deprecated alias for databaseIdentity
@@ -504,22 +504,19 @@ new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
 
 ```typescript
 const tickTimer = table(
-  {
-    name: "tick_timer",
-    scheduled: (): any => tick, // (): any => breaks circular dep
-  },
-  {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
-  },
+	{
+		name: 'tick_timer',
+		scheduled: (): any => tick // (): any => breaks circular dep
+	},
+	{
+		scheduled_id: t.u64().primaryKey().autoInc(),
+		scheduled_at: t.scheduleAt()
+	}
 );
 
-export const tick = spacetimedb.reducer(
-  { timer: tickTimer.rowType },
-  (ctx, { timer }) => {
-    /* timer row auto-deleted after this runs */
-  },
-);
+export const tick = spacetimedb.reducer({ timer: tickTimer.rowType }, (ctx, { timer }) => {
+	/* timer row auto-deleted after this runs */
+});
 
 // One-time: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + delayMicros)
 // Repeating: ScheduleAt.interval(60_000_000n)
@@ -541,28 +538,28 @@ fires for this table?" at runtime, the registry is full.
 
 ```typescript
 // schema.ts
-import { schema, table, t } from "spacetimedb/server";
+import { schema, table, t } from 'spacetimedb/server';
 
 // Mutable registry — populated by index.ts after every module has loaded.
 // Thunks below close over this object so SpacetimeDB resolves reducer refs
 // lazily at runtime, avoiding the schema → reducer TDZ.
 const _sched: {
-  tick?: any;
-  // ...one entry per scheduled reducer
+	tick?: any;
+	// ...one entry per scheduled reducer
 } = {};
 export function setScheduled(r: typeof _sched): void {
-  Object.assign(_sched, r);
+	Object.assign(_sched, r);
 }
 
 const tickTimer = table(
-  {
-    name: "tick_timer",
-    scheduled: (): any => _sched.tick, // thunk reads registry lazily
-  },
-  {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
-  },
+	{
+		name: 'tick_timer',
+		scheduled: (): any => _sched.tick // thunk reads registry lazily
+	},
+	{
+		scheduled_id: t.u64().primaryKey().autoInc(),
+		scheduled_at: t.scheduleAt()
+	}
 );
 
 const spacetimedb = schema({ tickTimer });
@@ -574,14 +571,11 @@ because it never touches `_sched`:
 
 ```typescript
 // reducers/tick.ts
-import spacetimedb, { tickTimer } from "../schema";
+import spacetimedb, { tickTimer } from '../schema';
 
-export const tick = spacetimedb.reducer(
-  { timer: tickTimer.rowType },
-  (ctx, { timer }) => {
-    /* timer row auto-deleted after this runs */
-  },
-);
+export const tick = spacetimedb.reducer({ timer: tickTimer.rowType }, (ctx, { timer }) => {
+	/* timer row auto-deleted after this runs */
+});
 ```
 
 The module entry wires the registry at the bottom, after every import has
@@ -589,8 +583,8 @@ resolved — so no TDZ:
 
 ```typescript
 // index.ts (module entry — the file with the default export)
-import spacetimedb, { setScheduled } from "./schema";
-import { tick } from "./reducers/tick";
+import spacetimedb, { setScheduled } from './schema';
+import { tick } from './reducers/tick';
 
 export default spacetimedb;
 export { tick };
@@ -614,19 +608,19 @@ fires** — no error, no log, just nothing happens.
 
 ```typescript
 // Product type (struct):
-const Position = t.object("Position", { x: t.i32(), y: t.i32() });
+const Position = t.object('Position', { x: t.i32(), y: t.i32() });
 const entity = table(
-  { name: "entity" },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    pos: Position,
-  },
+	{ name: 'entity' },
+	{
+		id: t.u64().primaryKey().autoInc(),
+		pos: Position
+	}
 );
 
 // Sum type (tagged union):
-const Shape = t.enum("Shape", {
-  circle: t.i32(),
-  rectangle: t.object("Rect", { w: t.i32(), h: t.i32() }),
+const Shape = t.enum('Shape', {
+	circle: t.i32(),
+	rectangle: t.object('Rect', { w: t.i32(), h: t.i32() })
 });
 // Values: { tag: 'circle', value: 10 }
 ```
@@ -636,16 +630,16 @@ const Shape = t.enum("Shape", {
 ```typescript
 // Anonymous view (same for all clients):
 export const activeUsers = spacetimedb.anonymousView(
-  { name: "active_users", public: true },
-  t.array(entity.rowType),
-  (ctx) => [...ctx.db.entity.iter()].filter((e) => e.active),
+	{ name: 'active_users', public: true },
+	t.array(entity.rowType),
+	(ctx) => [...ctx.db.entity.iter()].filter((e) => e.active)
 );
 
 // Per-user view (varies by ctx.sender):
 export const myProfile = spacetimedb.view(
-  { name: "my_profile", public: true },
-  t.option(entity.rowType),
-  (ctx) => ctx.db.entity.identity.find(ctx.sender) ?? undefined,
+	{ name: 'my_profile', public: true },
+	t.option(entity.rowType),
+	(ctx) => ctx.db.entity.identity.find(ctx.sender) ?? undefined
 );
 ```
 
@@ -656,16 +650,16 @@ events (instead of delete+insert) when a row changes. Set `.primaryKey()` on the
 column of the `t.row(...)`/`rowType` the view returns:
 
 ```typescript
-const Player = t.row("Player", {
-  id: t.u64().primaryKey(),
-  owner: t.identity().index("btree"),
-  name: t.string(),
+const Player = t.row('Player', {
+	id: t.u64().primaryKey(),
+	owner: t.identity().index('btree'),
+	name: t.string()
 });
 
 export const myPlayers = spacetimedb.view(
-  { name: "my_players", public: true },
-  t.array(Player),
-  (ctx) => [...ctx.db.player.owner.filter(ctx.sender)],
+	{ name: 'my_players', public: true },
+	t.array(Player),
+	(ctx) => [...ctx.db.player.owner.filter(ctx.sender)]
 );
 ```
 
@@ -762,8 +756,8 @@ const date = new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
 
 ```typescript
 // ScheduleAt is a tagged union
-if (scheduleAt.tag === "Time") {
-  const date = new Date(Number(scheduleAt.value.microsSinceUnixEpoch / 1000n));
+if (scheduleAt.tag === 'Time') {
+	const date = new Date(Number(scheduleAt.value.microsSinceUnixEpoch / 1000n));
 }
 ```
 
@@ -786,18 +780,15 @@ conn.subscriptionBuilder().subscribeToAllTables();
 
 // Subscribe to specific tables with SQL
 conn
-  .subscriptionBuilder()
-  .subscribe([
-    "SELECT * FROM message",
-    "SELECT * FROM room WHERE is_public = true",
-  ]);
+	.subscriptionBuilder()
+	.subscribe(['SELECT * FROM message', 'SELECT * FROM room WHERE is_public = true']);
 
 // Handle subscription lifecycle
 conn
-  .subscriptionBuilder()
-  .onApplied(() => console.log("Initial data loaded"))
-  .onError((e) => console.error("Subscription failed:", e))
-  .subscribeToAllTables();
+	.subscriptionBuilder()
+	.onApplied(() => console.log('Initial data loaded'))
+	.onError((e) => console.error('Subscription failed:', e))
+	.subscribeToAllTables();
 ```
 
 ### Private table + view pattern (RECOMMENDED)
@@ -815,39 +806,33 @@ Views are the recommended approach for controlling data visibility:
 ```typescript
 // Private table with index on ownerId
 export const PrivateData = table(
-  {
-    name: "private_data",
-    indexes: [{ name: "by_owner", algorithm: "btree", columns: ["ownerId"] }],
-  },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    ownerId: t.identity(),
-    secret: t.string(),
-  },
+	{
+		name: 'private_data',
+		indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
+	},
+	{
+		id: t.u64().primaryKey().autoInc(),
+		ownerId: t.identity(),
+		secret: t.string()
+	}
 );
 
 // ❌ BAD — .iter() causes performance issues (re-evaluates on ANY row change)
-spacetimedb.view(
-  { name: "my_data_slow", public: true },
-  t.array(PrivateData.rowType),
-  (ctx) => [...ctx.db.privateData.iter()],
-);
+spacetimedb.view({ name: 'my_data_slow', public: true }, t.array(PrivateData.rowType), (ctx) => [
+	...ctx.db.privateData.iter()
+]);
 
 // ✅ GOOD — index lookup enables targeted invalidation
-spacetimedb.view(
-  { name: "my_data", public: true },
-  t.array(PrivateData.rowType),
-  (ctx) => [...ctx.db.privateData.by_owner.filter(ctx.sender)],
-);
+spacetimedb.view({ name: 'my_data', public: true }, t.array(PrivateData.rowType), (ctx) => [
+	...ctx.db.privateData.by_owner.filter(ctx.sender)
+]);
 ```
 
 ### Query builder view pattern (can scan)
 
 ```typescript
-spacetimedb.anonymousView(
-  { name: "top_players", public: true },
-  t.array(Player.rowType),
-  (ctx) => ctx.from.player.where((p) => p.score.gt(1000)),
+spacetimedb.anonymousView({ name: 'top_players', public: true }, t.array(Player.rowType), (ctx) =>
+	ctx.from.player.where((p) => p.score.gt(1000))
 );
 ```
 
@@ -855,30 +840,22 @@ spacetimedb.anonymousView(
 
 ```typescript
 // ViewContext — has ctx.sender, result varies per user (computed per-subscriber)
-spacetimedb.view(
-  { name: "my_items", public: true },
-  t.array(Item.rowType),
-  (ctx) => {
-    return [...ctx.db.item.by_owner.filter(ctx.sender)];
-  },
-);
+spacetimedb.view({ name: 'my_items', public: true }, t.array(Item.rowType), (ctx) => {
+	return [...ctx.db.item.by_owner.filter(ctx.sender)];
+});
 
 // AnonymousViewContext — no ctx.sender, same result for everyone (shared, better perf)
-spacetimedb.anonymousView(
-  { name: "leaderboard", public: true },
-  t.array(LeaderboardRow),
-  (ctx) => {
-    return [...ctx.db.player.by_score.filter(/* top scores */)];
-  },
-);
+spacetimedb.anonymousView({ name: 'leaderboard', public: true }, t.array(LeaderboardRow), (ctx) => {
+	return [...ctx.db.player.by_score.filter(/* top scores */)];
+});
 ```
 
 **Views require explicit subscription:**
 
 ```typescript
 conn.subscriptionBuilder().subscribe([
-  "SELECT * FROM public_table",
-  "SELECT * FROM my_data", // Views need explicit SQL!
+	'SELECT * FROM public_table',
+	'SELECT * FROM my_data' // Views need explicit SQL!
 ]);
 ```
 
@@ -895,12 +872,12 @@ Procedures are for side effects (HTTP requests, etc.) that reducers can't do.
 ```typescript
 // ✅ CORRECT — export const name = spacetimedb.procedure(params, ret, fn)
 export const fetch_external_data = spacetimedb.procedure(
-  { url: t.string() },
-  t.string(), // return type
-  (ctx, { url }) => {
-    const response = ctx.http.fetch(url);
-    return response.text();
-  },
+	{ url: t.string() },
+	t.string(), // return type
+	(ctx, { url }) => {
+		const response = ctx.http.fetch(url);
+		return response.text();
+	}
 );
 ```
 
@@ -1001,22 +978,22 @@ Mount the provider once, above everything that reads from the database.
 
 ```svelte
 <script lang="ts">
-  import { createSpacetimeDBProvider, useSpacetimeDB } from 'spacetimedb/svelte';
-  import { DbConnection } from './module_bindings';
+	import { createSpacetimeDBProvider, useSpacetimeDB } from 'spacetimedb/svelte';
+	import { DbConnection } from './module_bindings';
 
-  const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
-  const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'svelte-ts';
+	const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
+	const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'svelte-ts';
 
-  const connection = DbConnection.builder()
-    .withUri(HOST)
-    .withDatabaseName(DB_NAME)
-    .withToken(localStorage.getItem(`${HOST}/${DB_NAME}/auth_token`) ?? undefined);
+	const connection = DbConnection.builder()
+		.withUri(HOST)
+		.withDatabaseName(DB_NAME)
+		.withToken(localStorage.getItem(`${HOST}/${DB_NAME}/auth_token`) ?? undefined);
 
-  // Provider is a Svelte writable store — subscribe to connection state
-  const spacetimeDBStore = createSpacetimeDBProvider(connection);
+	// Provider is a Svelte writable store — subscribe to connection state
+	const spacetimeDBStore = createSpacetimeDBProvider(connection);
 
-  // Connection identity — store access via $ prefix; use $derived in runes mode, not `$:`
-  const identity = $derived($spacetimeDBStore.identity);
+	// Connection identity — store access via $ prefix; use $derived in runes mode, not `$:`
+	const identity = $derived($spacetimeDBStore.identity);
 </script>
 
 <!-- SvelteKit would put <slot /> here; this project renders <App /> from Root.svelte -->
@@ -1027,76 +1004,77 @@ Mount the provider once, above everything that reads from the database.
 
 ```svelte
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { useTable, useSpacetimeDB, useReducer } from 'spacetimedb/svelte';
-  import { tables, reducers } from './module_bindings';
+	import { onMount } from 'svelte';
+	import { useTable, useSpacetimeDB, useReducer } from 'spacetimedb/svelte';
+	import { tables, reducers } from './module_bindings';
 
-  // Reactive connection state (returns a Svelte store)
-  const spacetimeDB = useSpacetimeDB();
-  let isActive = $derived($spacetimeDB.isActive);
-  let identity = $derived($spacetimeDB.identity);
-  let token = $derived($spacetimeDB.token);
-  let getConnection = $derived($spacetimeDB.getConnection);
-  let conn = $derived(getConnection());
+	// Reactive connection state (returns a Svelte store)
+	const spacetimeDB = useSpacetimeDB();
+	let isActive = $derived($spacetimeDB.isActive);
+	let identity = $derived($spacetimeDB.identity);
+	let token = $derived($spacetimeDB.token);
+	let getConnection = $derived($spacetimeDB.getConnection);
+	let conn = $derived(getConnection());
 
-  // Subscribe manually when connected. Prefer typed query builders over raw SQL
-  let subscribed = $state(false);
-  $effect(() => {
-    if (!conn || !isActive) return;
-    conn.subscriptionBuilder()
-      .onApplied(() => { subscribed = true; })
-      .subscribe([tables.entity, tables.record]);
-      // Or with filters: tables.entity.where(r => r.active.eq(true))
-      // Or raw SQL:      'SELECT * FROM entity'
-  });
+	// Subscribe manually when connected. Prefer typed query builders over raw SQL
+	let subscribed = $state(false);
+	$effect(() => {
+		if (!conn || !isActive) return;
+		conn
+			.subscriptionBuilder()
+			.onApplied(() => {
+				subscribed = true;
+			})
+			.subscribe([tables.entity, tables.record]);
+		// Or with filters: tables.entity.where(r => r.active.eq(true))
+		// Or raw SQL:      'SELECT * FROM entity'
+	});
 
-  // Reactive data — useTable returns [Readable<rows[]>, Readable<boolean>]
-  let [entities, entitiesReady] = useTable(tables.entity);
-  let [records, recordsReady] = useTable(tables.record);
+	// Reactive data — useTable returns [Readable<rows[]>, Readable<boolean>]
+	let [entities, entitiesReady] = useTable(tables.entity);
+	let [records, recordsReady] = useTable(tables.record);
 
-  // useTable with row callbacks
-  let [onlineUsers] = useTable(
-    tables.entity.where(r => r.active.eq(true)),
-    {
-      onInsert: (user) => console.log('User connected:', user.name),
-      onDelete: (user) => console.log('User disconnected:', user.name),
-      onUpdate: (oldUser, newUser) => console.log('Updated:', newUser.name),
-    }
-  );
+	// useTable with row callbacks
+	let [onlineUsers] = useTable(
+		tables.entity.where((r) => r.active.eq(true)),
+		{
+			onInsert: (user) => console.log('User connected:', user.name),
+			onDelete: (user) => console.log('User disconnected:', user.name),
+			onUpdate: (oldUser, newUser) => console.log('Updated:', newUser.name)
+		}
+	);
 
-  // useReducer hook for convenient reducer calls
-  const addRecord = useReducer(reducers.addRecord);
+	// useReducer hook for convenient reducer calls
+	const addRecord = useReducer(reducers.addRecord);
 
-  // Call reducers with object syntax
-  function handleSubmit() {
-    addRecord({ data: someValue });
-  }
+	// Call reducers with object syntax
+	function handleSubmit() {
+		addRecord({ data: someValue });
+	}
 
-  // Compare identities
-  let isMe = $derived(row.owner.toHexString() === identity?.toHexString());
+	// Compare identities
+	let isMe = $derived(row.owner.toHexString() === identity?.toHexString());
 </script>
 ```
 
 ## Vanilla (no framework hooks)
 
 ```typescript
-import { DbConnection, tables } from "./module_bindings";
+import { DbConnection, tables } from './module_bindings';
 
 const conn = DbConnection.builder()
-  .withUri("wss://maincloud.spacetimedb.com")
-  .withDatabaseName("my_module")
-  .onConnect((connection, identity, token) => {
-    connection
-      .subscriptionBuilder()
-      .onApplied(() => console.log("Ready"))
-      .subscribe([tables.user, tables.message]);
-  })
-  .build();
+	.withUri('wss://maincloud.spacetimedb.com')
+	.withDatabaseName('my_module')
+	.onConnect((connection, identity, token) => {
+		connection
+			.subscriptionBuilder()
+			.onApplied(() => console.log('Ready'))
+			.subscribe([tables.user, tables.message]);
+	})
+	.build();
 
 // Row callbacks
-conn.db.user.onInsert((ctx, user) => console.log("Joined:", user.name));
-conn.db.user.onDelete((ctx, user) => console.log("Left:", user.name));
-conn.db.user.onUpdate((ctx, oldUser, newUser) =>
-  console.log("Updated:", newUser.name),
-);
+conn.db.user.onInsert((ctx, user) => console.log('Joined:', user.name));
+conn.db.user.onDelete((ctx, user) => console.log('Left:', user.name));
+conn.db.user.onUpdate((ctx, oldUser, newUser) => console.log('Updated:', newUser.name));
 ```

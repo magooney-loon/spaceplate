@@ -20,7 +20,7 @@ effects/*.ts   — 13 EffectDefs: ssaa, retro (base) · ao, dof, motionBlur, rai
 
 Four `PassRole`s exist because a flat enable-grid cannot express the relationships:
 
-- **base** (`ssaa`, `retro`) — mutually exclusive; each *is* the scene pass
+- **base** (`ssaa`, `retro`) — mutually exclusive; each _is_ the scene pass
   (`extends PassNode`). None enabled → the default `pass(scene, camera)`. The builder
   asks `basePass.getMRT()` instead of assuming the default — a base pass may provision
   attachments the registry never asked for (pixelationPass did exactly that).
@@ -100,9 +100,9 @@ pipeline has [0={RGBA16Float}].
 
 Fix (one line in the builder, load-bearing while motionBlur exists):
 `if (basePass.getMRT() !== null) basePass.contextNode = context();` — an empty
-`context()` gives identical context *data* with distinct node *identity*: same generated
+`context()` gives identical context _data_ with distinct node _identity_: same generated
 code, private cache namespace. A fresh context per rebuild also handles attachment-set
-changes. Read "the error names *a* culprit, not the only one" (the encoder aborts at the
+changes. Read "the error names _a_ culprit, not the only one" (the encoder aborts at the
 first bad pipeline) — and never "fix" this by disabling the env bake; that treats one
 racer, not the race.
 
@@ -156,12 +156,12 @@ returns already-cubic sources verbatim, so our cube `scene.environment` (what
   chain, **pre-tonemap** (before tone mapping = real lens falloff; after = crushed
   shadows). Multiplies **rgb** — reattach alpha if the chain value is vec4 there.
 - **`dof.ts`** — the basic DoF: `mix(color, boxBlur(color), smoothstep(min, max,
-  abs(viewZ + focus)))`. The bokeh `DepthOfFieldNode` was dropped for performance (one
+abs(viewZ + focus)))`. The bokeh `DepthOfFieldNode` was dropped for performance (one
   box blur vs its multi-pass kernel). viewZ from `basePass.getViewZNode()`, no MRT.
 - **`motionBlur`** — three's Fn is the one sampler addon that does NOT
   `convertToTexture` its input; our wrapper does (an RTT when fed a computed node,
   e.g. anything after the basic DoF), otherwise it throws `inputNode.sample is not a
-  function`. It also multiplies by **`ctx.shutterScale`** — see below.
+function`. It also multiplies by **`ctx.shutterScale`** — see below.
 
 ### Velocity is per-frame, not per-second — multiply by `ctx.shutterScale`
 
@@ -223,7 +223,7 @@ daylight (`core/skybox/model/CLAUDE.md`).
   DemoScene's reflector.
 - **The precipitation fields still perturb it**, via the no-blending rule below: they
   are thousands of small transparent quads in the scene pass, each punching its own
-  normal through. This used to be far worse — the two lens layers were *screen-filling*
+  normal through. This used to be far worse — the two lens layers were _screen-filling_
   quads that wiped the buffer outright, which is what adding AO surfaced (see `rainLens`
   below). The prePass question under "Removed effects" is the real fix.
 

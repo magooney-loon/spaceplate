@@ -62,11 +62,19 @@
 	// can queue a second, smaller bang 60–130 ms later (anti-lag stutter).
 	//
 	// TRIGGER (physics task, reads carSim after TestGame's task wrote it — the
-	// same parent-first ordering CarWheels relies on):
+	//   same parent-first ordering CarWheels relies on):
 	//   downshift — gear DROPS INTO a real gear (≥1; N/R transitions never
 	//               pop). Burst size grows with rpm — a money downshift near
 	//               the limiter is a fireball, a lazy 6→5 is a hiccup.
 	//   limiter   — each fuel-cut bounce (rising edge of `limiting`) pops small.
+	//
+	// NITROUS: while `carSim.nitrous` flows, two things change. (1) uNitro (a GLOBAL
+	// uniform like uStyle — spray is engine state, not per-pop) crossfades every
+	// layer's palette to a cold one — flame gradient indigo→royal→electric→ice,
+	// icy ember rims, deep-blue glow — so pops that land mid-spray bang BLUE. (2) A
+	// PILOT FLAME: the flow floors both tips' energy (no flash, no style roll — just
+	// a steady jet), which is the continuous blue torch the chase cam reads as "the
+	// system is on", plus a faint steady flash floor so the glow halos stay lit.
 
 	const DEBUG_TIPS = false;
 
@@ -95,39 +103,49 @@
 	const { invalidate } = useThrelte();
 
 	// ── Textures ────────────────────────────────────────────────────────────────
-	// The gradient is a canvas (like the example) tuned for a backfire: dim
-	// violet edge → deep red → orange → white-hot core. TextureLoader returns
-	// synchronously and fills in async — invalidate when the noise PNGs land or
-	// the first flames render against an incomplete mip chain. (Not
-	// @threlte/extras' useTexture: it returns a store, and this repo is
-	// runes-only — see Moon.svelte.)
+	// The gradient is a canvas (like the example): the backfire ramp is dim violet
+	// edge → deep red → orange → white-hot core, the nitrous ramp the same shape
+	// through a cold flame — indigo → royal → electric → ice. Two textures, not a
+	// recolour in flight: the shader crossfades them by uNitro (below), which costs
+	// one mix and never re-uploads a canvas. TextureLoader returns synchronously and
+	// fills in async — invalidate when the noise PNGs land or the first flames render
+	// against an incomplete mip chain. (Not @threlte/extras' useTexture: it returns a
+	// store, and this repo is runes-only — see Moon.svelte.)
 
-	const gradientCanvas = document.createElement('canvas');
-	gradientCanvas.width = 128;
-	gradientCanvas.height = 1;
-	const gradientCtx = gradientCanvas.getContext('2d')!;
-	const gradientFill = gradientCtx.createLinearGradient(0, 0, 128, 0);
-	for (const [stop, color] of [
+	function makeGradientTexture(stops: readonly (readonly [number, string])[]): THREE.CanvasTexture {
+		const canvas = document.createElement('canvas');
+		canvas.width = 128;
+		canvas.height = 1;
+		const ctx = canvas.getContext('2d')!;
+		const fill = ctx.createLinearGradient(0, 0, 128, 0);
+		for (const [stop, color] of stops) fill.addColorStop(stop, color);
+		ctx.fillStyle = fill;
+		ctx.fillRect(0, 0, 128, 1);
+		const tex = new THREE.CanvasTexture(canvas);
+		tex.colorSpace = THREE.SRGBColorSpace;
+		return tex;
+	}
+
+	const gradientTex = makeGradientTexture([
 		[0, '#0b0524'],
 		[0.25, '#6d1240'],
 		[0.55, '#e0331c'],
 		[0.8, '#ff9e2e'],
 		[1, '#fff4d6']
-	] as const) {
-		gradientFill.addColorStop(stop, color);
-	}
-	gradientCtx.fillStyle = gradientFill;
-	gradientCtx.fillRect(0, 0, 128, 1);
-	const gradientTex = new THREE.CanvasTexture(gradientCanvas);
-	gradientTex.colorSpace = THREE.SRGBColorSpace;
+	]);
+	const nitroGradientTex = makeGradientTexture([
+		[0, '#040920'],
+		[0.25, '#122a7a'],
+		[0.55, '#1e63e0'],
+		[0.8, '#5fd0ff'],
+		[1, '#eef8ff']
+	]);
 
-	const cellularTex = new THREE.TextureLoader().load(
-		`${BASE_URL}textures/noises/voronoi.png`,
-		() => invalidate()
+	const cellularTex = new THREE.TextureLoader().load(`${BASE_URL}textures/noises/voronoi.png`, () =>
+		invalidate()
 	);
-	const perlinTex = new THREE.TextureLoader().load(
-		`${BASE_URL}textures/noises/perlin.png`,
-		() => invalidate()
+	const perlinTex = new THREE.TextureLoader().load(`${BASE_URL}textures/noises/perlin.png`, () =>
+		invalidate()
 	);
 	// The colorNode uvs run through .mod(1) — repeat wrapping keeps the seam
 	// from smearing (the example got away with clamp; repeat is strictly safer).
@@ -143,6 +161,9 @@
 	// offsets the noise within one tip.
 	const uTime = uniform(0);
 	const uStyle = uniform(0);
+	/** 0 = orange backfire palette, 1 = full nitrous blue. Global like uStyle: the
+	 * spray is engine state, shared by both pipes and every layer. */
+	const uNitro = uniform(0);
 	const aSeed = attribute<'float'>('aSeed');
 
 	function numUniform() {
@@ -266,9 +287,7 @@
 			mainUv.assign(mainUv.pow(vec2(1, stretchY)));
 			mainUv.assign(mainUv.mul(2, 1).sub(vec2(0.5, 0)));
 
-			const gradient1 = sin(
-				uTime.mul(10).mul(noiseSpeed).sub(mainUv.y.mul(TWO_PI).mul(2))
-			).toVar();
+			const gradient1 = sin(uTime.mul(10).mul(noiseSpeed).sub(mainUv.y.mul(TWO_PI).mul(2))).toVar();
 			const gradient2 = mainUv.y.smoothstep(0, 1).toVar();
 			mainUv.x.addAssign(gradient1.mul(gradient2).mul(0.2));
 
@@ -285,10 +304,16 @@
 			const shape = mainUv.sub(0.5).mul(vec2(2.1, 1.7)).length().oneMinus().toVar();
 			shape.assign(shape.sub(cellularNoise));
 
-			const gradientColor = texture(gradientTex, vec2(saturate(shape), 0));
+			const gradientColor = mix(
+				texture(gradientTex, vec2(saturate(shape), 0)),
+				texture(nitroGradientTex, vec2(saturate(shape), 0)),
+				uNitro
+			);
 			const core = shape.step(float(0.74).sub(isBall.mul(0.24)));
 			const color = mix(gradientColor, vec3(1), core);
-			const flicker = sin(uTime.mul(37).add(seed.mul(12))).mul(0.25).add(0.85);
+			const flicker = sin(uTime.mul(37).add(seed.mul(12)))
+				.mul(0.25)
+				.add(0.85);
 			const alpha = shape.smoothstep(0, 0.42).mul(dyn.intensity).mul(flicker);
 			return vec4(color.rgb, alpha);
 		})();
@@ -323,20 +348,16 @@
 			const gradient3 = oneMinus(mainUv.y).smoothstep(0, 0.3);
 			mainUv.x.addAssign(gradient1.mul(gradient2).mul(0.2));
 
-			const cellularUv = mainUv
-				.add(vec2(seed, uTime.negate().mul(1.5).mul(noiseSpeed)))
-				.mod(1);
-			const cellularNoise = texture(cellularTex, cellularUv, 0)
-				.r.oneMinus()
-				.smoothstep(0.25, 1);
+			const cellularUv = mainUv.add(vec2(seed, uTime.negate().mul(1.5).mul(noiseSpeed))).mod(1);
+			const cellularNoise = texture(cellularTex, cellularUv, 0).r.oneMinus().smoothstep(0.25, 1);
 
 			const shape = step(mainUv.sub(0.5).mul(vec2(6, 1)).length(), 0.5).toVar();
 			shape.assign(shape.mul(cellularNoise));
 			shape.mulAssign(gradient3);
 			shape.assign(step(0.01, shape));
 
-			// White-hot core with a warm rim, not the example's pure white.
-			const color = mix(vec3(1, 0.82, 0.55), vec3(1), shape);
+			// White-hot core with a warm rim (icy under nitrous), not the example's pure white.
+			const color = mix(mix(vec3(1, 0.82, 0.55), vec3(0.55, 0.78, 1), uNitro), vec3(1), shape);
 			const alpha = shape.mul(dyn.intensity).mul(0.9).mul(emberGain);
 			return vec4(color, alpha);
 		})();
@@ -352,15 +373,14 @@
 			side: THREE.DoubleSide
 		});
 		material.colorNode = Fn(() => {
-			const r = uv()
-				.sub(0.5)
-				.mul(vec2(2.0, 1.7))
-				.length()
-				.saturate()
-				.toVar();
+			const r = uv().sub(0.5).mul(vec2(2.0, 1.7)).length().saturate().toVar();
 			const falloff = oneMinus(r).pow(2.4).toVar();
-			// Near-white hot centre falling off to deep orange.
-			const color = mix(vec3(1, 0.42, 0.15), vec3(1, 0.93, 0.82), falloff);
+			// Near-white hot centre falling off to deep orange (deep blue under nitrous).
+			const color = mix(
+				mix(vec3(1, 0.42, 0.15), vec3(0.15, 0.45, 1), uNitro),
+				mix(vec3(1, 0.93, 0.82), vec3(0.82, 0.93, 1), uNitro),
+				falloff
+			);
 			const alpha = falloff.mul(dyn.flash).mul(0.65);
 			return vec4(color, alpha);
 		})();
@@ -381,7 +401,11 @@
 		ember.frustumCulled = false;
 		glow.frustumCulled = false;
 		group.add(glow, flame, ember);
-		return { group, dyn, materials: [flame.material, ember.material, glow.material] as THREE.Material[] };
+		return {
+			group,
+			dyn,
+			materials: [flame.material, ember.material, glow.material] as THREE.Material[]
+		};
 	}
 
 	const tipL = makeTip(TIP_L);
@@ -493,6 +517,18 @@
 		energyR *= decay;
 		ageL += delta;
 		ageR += delta;
+
+		// Nitrous: crossfade the palette (blue at full flow) and floor both tips'
+		// energy — a steady pilot jet instead of discrete pops, the purge torch.
+		// max(), not add: a pop landing on top of the floor still reads as a bang.
+		const nitro = clamp(carSim.nitrous, 0, 1);
+		uNitro.value = nitro;
+		if (nitro > 0.01) {
+			const pilot = 0.32 + 0.2 * nitro;
+			if (energyL < pilot) energyL = pilot;
+			if (energyR < pilot) energyR = pilot;
+		}
+
 		const iL = clamp(energyL, 0, 1);
 		const iR = clamp(energyR, 0, 1);
 		// The ignition flash leads the flame: full at birth, gone in ~150 ms.
@@ -500,8 +536,10 @@
 		const flashR = Math.exp(-ageR * FLASH_DECAY) * clamp(energyR * 1.6, 0, 1);
 		tipL.dyn.intensity.value = iL;
 		tipR.dyn.intensity.value = iR;
-		tipL.dyn.flash.value = flashL;
-		tipR.dyn.flash.value = flashR;
+		// A floor under the flash too, so the glow halos stay faintly lit while
+		// spraying (a pilot jet with no halo reads as a dim pop, not a lit pipe).
+		tipL.dyn.flash.value = Math.max(flashL, nitro * 0.35);
+		tipR.dyn.flash.value = Math.max(flashR, nitro * 0.35);
 
 		tipL.group.visible = iL > 0.02 || flashL > 0.02;
 		tipR.group.visible = iR > 0.02 || flashR > 0.02;
@@ -532,6 +570,7 @@
 			for (const m of tip.materials) m.dispose();
 		}
 		gradientTex.dispose();
+		nitroGradientTex.dispose();
 		cellularTex.dispose();
 		perlinTex.dispose();
 		for (const c of tipCones) c.geometry.dispose();

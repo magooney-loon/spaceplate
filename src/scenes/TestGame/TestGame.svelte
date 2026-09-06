@@ -34,10 +34,11 @@
 	import { clamp, damp } from './carMath';
 
 	// Test Game 3D scene — driving prototype.
-	// Controls: arrows drive, Space handbrake, Q/E shift down/up, L lights, H main beam
-	// — deliberately keys Studio doesn't bind (w a s z t r c v m), so dev-mode shortcuts
-	// don't fight the car. Input is this scene's own svelte:window keymap
-	// (carInput.svelte.ts), not the shared keymapper — that needs a per-scene rework first.
+	// Controls: arrows drive, Space handbrake, Q/E shift down/up, X nitrous, L lights,
+	// H main beam — deliberately keys Studio doesn't bind (w a s z t r c v m), so
+	// dev-mode shortcuts don't fight the car. Input is this scene's own
+	// svelte:window keymap (carInput.svelte.ts), not the shared keymapper — that
+	// needs a per-scene rework first.
 
 	// Both models are draco + KTX2 compressed, so the decoders must be handed to useGltf
 	// (same setup as the gltf-viewer extension: DRACO/KTX2 fetch their decoder binaries
@@ -163,6 +164,29 @@
 	const DRIFT_GATE_SPEED = 1;
 	const DRIFT_GATE_RAMP = 2;
 
+	// ── Nitrous (X) ──────────────────────────────────────────────────────────────
+	// A wet kit on a throttle switch: X alone does nothing — it sprays only while
+	// the throttle is open in a forward gear, and only while the bottle has anything
+	// left. The scene owns everything gameplay-shaped here (bottle, ramp); the one
+	// hardware number — what spray does to torque — is NITROUS_TORQUE_GAIN in gr86.ts,
+	// and the drivetrain applies it inside its own traction limit. So a shot in 1st
+	// is wheelspin, a shot in 3rd is thrust, and Drift + spray in 3rd is smoke.
+	/** s of full spray in a full bottle. */
+	const NITROUS_CAPACITY = 4;
+	/** bottle fraction per s, back while not spraying. ~14 s empty → full. */
+	const NITROUS_REGEN = 1 / 14;
+	/** 1/s — flow ramps in fast (the hit should bite) … */
+	const NITROUS_ATTACK = 8;
+	/** … and tails off a touch slower, which reads as a sputter rather than a switch. */
+	const NITROUS_RELEASE = 4;
+	/** Below this the bottle counts as dry and the switch opens. */
+	const NITROUS_DRY = 0.01;
+
+	let nitrousBottle = 1; // 0..1
+	/** 0..1 — smoothed spray level. This is what reaches the drivetrain, the
+	 * flames (blue mix + pilot jet) and the HUD, never the raw key. */
+	let nitrousFlow = 0;
+
 	let carBody = $state.raw<RapierRigidBody>();
 	/** What ChaseCamera follows — an empty parented to the chassis body, see below. */
 	let chaseAnchor = $state.raw<THREE.Object3D>();
@@ -213,6 +237,20 @@
 		const steerKey = (carInput.left ? 1 : 0) - (carInput.right ? 1 : 0);
 		const handbrake = carInput.handbrake;
 
+		// The bottle. Runs BEFORE the idle early-return below so it regenerates while
+		// parked too, and so `nitrousFlow` is already honest when the idle branch
+		// publishes it. Note the throttle switch reads the raw ↑ key: parked with X
+		// held but no throttle, nothing sprays (and the car may sleep).
+		const spraying =
+			carInput.nitrous && carInput.up && drivetrain.state.gear >= 1 && nitrousBottle > NITROUS_DRY;
+		nitrousFlow +=
+			((spraying ? 1 : 0) - nitrousFlow) * damp(spraying ? NITROUS_ATTACK : NITROUS_RELEASE, delta);
+		if (spraying) {
+			nitrousBottle = Math.max(0, nitrousBottle - (nitrousFlow * delta) / NITROUS_CAPACITY);
+		} else {
+			nitrousBottle = Math.min(1, nitrousBottle + NITROUS_REGEN * delta);
+		}
+
 		body.linvel(_lin);
 		_vel.set(_lin.x, _lin.y, _lin.z);
 
@@ -260,6 +298,8 @@
 			carSim.brake = 0;
 			carSim.handbrake = false;
 			carSim.limiting = false;
+			carSim.nitrous = nitrousFlow;
+			carSim.nitrousTank = nitrousBottle;
 			publishCarHud(delta);
 			return;
 		}
@@ -272,7 +312,8 @@
 				backward: carInput.down,
 				handbrake,
 				shiftUp: carInput.shiftUp,
-				shiftDown: carInput.shiftDown
+				shiftDown: carInput.shiftDown,
+				nitrous: nitrousFlow
 			},
 			tune
 		);
@@ -389,6 +430,8 @@
 		carSim.brake = drivetrain.state.brake;
 		carSim.handbrake = handbrake;
 		carSim.limiting = drivetrain.state.limiting;
+		carSim.nitrous = nitrousFlow;
+		carSim.nitrousTank = nitrousBottle;
 		publishCarHud(delta);
 	});
 
@@ -413,6 +456,12 @@
 		if (sceneState.currentScene !== 'testGame') return;
 		return () => {
 			drivetrain.reset();
+			// The bottle too — the scene is KEEP-ALIVE (Scene.svelte), so this state
+			// survives a scene switch and must be parked to match the fresh carSim
+			// mirror above (and the task below is scene-gated, so it can't refill
+			// itself while away).
+			nitrousBottle = 1;
+			nitrousFlow = 0;
 			resetCarTelemetry();
 		};
 	});

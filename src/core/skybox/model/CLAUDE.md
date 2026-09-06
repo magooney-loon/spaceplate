@@ -149,7 +149,7 @@ never re-derive the split in a layer.
 - **`KEY_MIN_ELEVATION` (3°) floors the light's _aim_** so civil twilight does not light
   undersides and throw shadows upward.
 - **Sun and moon are computed independently and combined with `max()`** — one shared
-  `horizon` weight once handed over to the moon *and* dimmed the sun, cutting a
+  `horizon` weight once handed over to the moon _and_ dimmed the sun, cutting a
   horizon sun to an eighth of peak and rendering warm keyframes cold. Now
   `sunShare = sunKey / (sunKey + moonKey)` is the single weight driving direction,
   colour and intensity, so they cannot disagree. The direction still flips 180° at the

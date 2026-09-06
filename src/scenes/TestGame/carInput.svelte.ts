@@ -1,7 +1,7 @@
 // TestGame's own keyboard state — deliberately NOT the shared keymapper
-// ($extensions/input): that system needs a rework for per-scene action maps, and the
-// chosen keys (arrows / Space / Q / E) exist precisely because Studio's dev-mode
-// shortcuts don't bind them (Studio binds bare w a s z t r c v m — see
+// ($extensions/input): that system needs a rework for per-scene action maps, and
+// the chosen keys (arrows / Space / Q / E / X) exist precisely because Studio's
+// dev-mode shortcuts don't bind them (Studio binds bare w a s z t r c v m — see
 // CarHeadlights.svelte's sibling notes / TestGame.svelte).
 //
 // The state is $state (not plain) so a future HUD can show gear/input reactively;
@@ -16,7 +16,11 @@ export const carInput = $state({
 	right: false,
 	handbrake: false,
 	shiftUp: false,
-	shiftDown: false
+	shiftDown: false,
+	/** X — held. A pedal, not a switch: nitrous only flows while it is down AND
+	 * the throttle is open in a forward gear (TestGame.svelte owns that gating and
+	 * the bottle itself). */
+	nitrous: false
 });
 
 export type CarInputAction = keyof typeof carInput;
@@ -29,7 +33,8 @@ export const CAR_INPUT_KEYS: Record<string, CarInputAction> = {
 	ArrowRight: 'right',
 	Space: 'handbrake',
 	KeyE: 'shiftUp',
-	KeyQ: 'shiftDown'
+	KeyQ: 'shiftDown',
+	KeyX: 'nitrous'
 };
 
 export const resetCarInput = (): void => {

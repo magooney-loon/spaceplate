@@ -10,14 +10,15 @@ scene via `Scene.svelte` / `SceneHud.svelte`.
 ```
 TestGame.svelte         — the scene: city + car + the driving physics task
 TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart)
-CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed)
+CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed,
+                         live N2O bottle gauge)
 CarWheels.svelte        — per-vertex steering/rolling wheel deformation (TSL)
-CarExhaustFlames.svelte — downshift/limiter exhaust pops (TSL, from the three.js
-                         webgpu_tsl_vfx_flames example)
+CarExhaustFlames.svelte — downshift/limiter exhaust pops + the blue nitrous pilot
+                         jet (TSL, from the three.js webgpu_tsl_vfx_flames example)
 CarHeadlights.svelte    — car-local lights (nose is -Z)
 ChaseCamera.svelte      — chase cam; borrows the app camera (rules below)
-carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E) + the latched
-                         switches (lights, handling tune) + the HUD → scene restart signal
+carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E / X) + the
+                         latched switches (lights, handling tune) + the HUD → scene restart signal
 gr86.ts                 — the real car's HARDWARE, pure SI (metres/kg/newtons/seconds)
 handling.ts             — the two SETUPS (Grip / Drift): tyre μ, steering rack, oversteer
 drivetrain.ts           — pure engine → clutch → 6MT → rear-axle traction step
@@ -28,13 +29,24 @@ cityColliders.ts        — hand-rolled static trimesh colliders for the track G
 
 ## Controls
 
-Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, L
-headlights, H main beam, G handling setup. Reverse is a GEAR, not a pedal: Q past
-1st through N into R, then pull away on ↑ — the pedals never swap meaning, ↓ is
-only ever the brake. The keys are chosen so Studio's dev-mode shortcuts
-(w a s z t r c v m) never fight the car, and L/H/G also dodge the engine's own
-Ctrl+H. Input is this scene's own `svelte:window` keymap (`carInput.svelte.ts`),
-not the shared keymapper — that needs a per-scene rework first.
+Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, X
+nitrous, L headlights, H main beam, G handling setup. Reverse is a GEAR, not a
+pedal: Q past 1st through N into R, then pull away on ↑ — the pedals never swap
+meaning, ↓ is only ever the brake. The keys are chosen so Studio's dev-mode
+shortcuts (w a s z t r c v m) never fight the car, and L/H/G also dodge the
+engine's own Ctrl+H. Input is this scene's own `svelte:window` keymap
+(`carInput.svelte.ts`), not the shared keymapper — that needs a per-scene rework
+first.
+
+X is a wet nitrous kit on a throttle switch: it only sprays while held WITH ↑
+open in a forward gear (gear ≥ 1), and everything about it is owned by the
+scene's task — the bottle (4 s of full spray, ~14 s to refill, runs even while
+parked), the flow ramp (~0.13 s in, ~0.25 s out) and the telemetry publish. The
+one hardware number, `NITROUS_TORQUE_GAIN` in `gr86.ts` (+45% crank torque), is
+applied by the drivetrain INSIDE its traction limit — so a shot in 1st/2nd
+becomes wheelspin, 3rd+ is real thrust, and Drift + spray in 3rd lights the
+tyres. `carSim.nitrous` (flow) and `carSim.nitrousTank` (level) drive the blue
+flames and the cluster's N2O gauge.
 
 Held keys and switches are separate in that module: `carInput` is polled per
 physics step, while the latched switches — `carLights` (`on` / `high`) and
@@ -304,7 +316,14 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   BALL (wide fireball, big white core, heavy embers) — driving amplitude,
   decay, length, width, shader stretch/noise-speed/core-size via `uStyle`
   (branchless step/mix selects), per-tip energy shares (≈18 % effectively
-  one-pipe) and per-tip noise phase. While a pop is visible the component owns
+  one-pipe) and per-tip noise phase. NITROUS recolours and extends the whole
+  stack: `carSim.nitrous` (written by TestGame's task, same parent-first
+  ordering) drives `uNitro`, a GLOBAL uniform that crossfades every layer's
+  palette to a cold one (flame gradient indigo→royal→electric→ice via a second
+  gradient texture, icy ember rims, deep-blue glow), so pops landing mid-spray
+  bang blue. The same flow floors both tips' energy (a steady PILOT jet, no
+  style roll — max(), so a pop on top still reads as a bang) and floors the
+  flash faintly so the glow halos stay lit while spraying. While a pop is visible the component owns
   an `invalidate()` reason (stationary rev-match case — driving is already
   covered by the chase camera). Noise textures:
   `public/textures/noises/{voronoi,perlin}.png`, copied from the vendored

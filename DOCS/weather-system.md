@@ -240,16 +240,16 @@ evening.
 
 Weather is a vector of independent **channels**, each a scalar in `[0, 1]`:
 
-| Channel             | Roughly governs                                          |
-| ------------------- | -------------------------------------------------------- |
-| `cloudCover`        | Opacity/extent of the cloud layer                        |
-| `cloudType`         | Cloud morphology: 0 wispy, 1 heavy stratus/storm tower   |
-| `fog`               | Fog/haze density                                         |
-| `precipitation`     | How much is falling — intensity only, never the kind      |
-| `precipitationType` | The kind: 0 = snow, 1 = rain, the band between is sleet   |
-| `wind`              | Speed: 0 = still, 1 = storm                               |
-| `windDirection`     | Compass bearing, one full turn over `[0,1)`               |
-| `lightning`         | Arms / rates the strike scheduler                         |
+| Channel             | Roughly governs                                         |
+| ------------------- | ------------------------------------------------------- |
+| `cloudCover`        | Opacity/extent of the cloud layer                       |
+| `cloudType`         | Cloud morphology: 0 wispy, 1 heavy stratus/storm tower  |
+| `fog`               | Fog/haze density                                        |
+| `precipitation`     | How much is falling — intensity only, never the kind    |
+| `precipitationType` | The kind: 0 = snow, 1 = rain, the band between is sleet |
+| `wind`              | Speed: 0 = still, 1 = storm                             |
+| `windDirection`     | Compass bearing, one full turn over `[0,1)`             |
+| `lightning`         | Arms / rates the strike scheduler                       |
 
 **As built** (`model/types.ts`, `WeatherChannels`): most channels are intensities
 where 0 means "none of this". Two are **positions** where 0 is a valid, meaningful
@@ -481,8 +481,8 @@ for where things land.
 | `SKY_PRESETS` (`dawn`/`day`/`sunset`/`night`...)         | Keyframes on the day curve (they already are, semantically)                                                                                                                                            |
 | `cloudy`/`overcast`/"storm-ish" presets                  | Weather target vectors in the mixer                                                                                                                                                                    |
 | `transitionState` + preset-pair lerp machinery           | Deleted — curve sampling and the weather mixer replace it                                                                                                                                              |
-| `starsState` (17 fields)                                 | One number: star visibility in the descriptor, consumed by `core/skybox/layers/celestial/Stars.svelte` (§15.4)                                                                                          |
-| `environmentState` (env/cube texture modes)              | Stays, orthogonal — a sky-driven env map is one mode among several. Now in `core/skybox/environment/` (engine state, not extension)                                                                      |
+| `starsState` (17 fields)                                 | One number: star visibility in the descriptor, consumed by `core/skybox/layers/celestial/Stars.svelte` (§15.4)                                                                                         |
+| `environmentState` (env/cube texture modes)              | Stays, orthogonal — a sky-driven env map is one mode among several. Now in `core/skybox/environment/` (engine state, not extension)                                                                    |
 | User presets in `localStorage`                           | Gone — authored keyframes/weather live in a committed file (the `graphics.json` story), Studio edits the live state and saves                                                                          |
 | `Sky.svelte`                                             | A consumer of the descriptor's `sky` + `sun` slices; gains the env budget logic                                                                                                                        |
 | Hardcoded `<T.DirectionalLight>` in `core/Camera.svelte` | Replaced by the descriptor-driven key light (sun/moon crossover) — and the light moves out of the camera component, where it never belonged                                                            |
@@ -1101,16 +1101,16 @@ Requires a `$config` alias in **both** `vite.config.ts` and `tsconfig.json`.
 Not designed. Recorded so the descriptor contract is understood to be the seam these
 plug into, and so nobody assumes they are close.
 
-| Layer         | Consumes                               | Rough approach                                         | Status                              |
-| ------------- | -------------------------------------- | ------------------------------------------------------ | ----------------------------------- |
-| Clouds        | `weather.cloudCover/cloudType`, `wind`, `sun` | **See below — SkyMesh already ships one**              | cover bound; **heavy deck done** — `CloudDeck.svelte` (wind scroll, §15.7) |
-| Fog           | `weather.fog`, `sky.fogColor/fogDensity` | `scene.fog` as mutated linear `Fog` (§15.6)            | **done**                            |
-| Rain          | `weather.precipitation` + `precipitationType`, `wind`/`windDirection` | Billboarded TSL quads, camera-anchored                 | **done**                            |
-| Snow          | `weather.precipitation` + `precipitationType`, `wind`/`windDirection` | GPU particles / instanced sprites, camera-anchored     | **done** — `Snow.svelte` (TSL quads, wind drift + sway, light-hint dimming) |
-| Lightning     | `weather.lightning` (strike scheduler) | Emissive flash + a transient light contribution        | **done** — `Lightning.svelte` (bolt + sheet strikes, deck-local flash via `flashState`, faint sky wash, shadowless flash light; photosafety-capped envelope) |
-| Moon disc     | `moon.direction`, phase                | Textured sphere, phase from the surface normal (§15.5) | **done**                            |
-| Stars         | `sky.starVisibility`                   | Billboarded TSL quads, _not_ point sprites (§15.4)     | **done**                            |
-| Audio         | `wind`, `precipitation`                | Crossfading layers; its own extension                  | rain bed + thunder: **done** — `core/audio/weatherAudio.ts`, task-ticked from GlobalAudio; wind layers not started |
+| Layer     | Consumes                                                              | Rough approach                                         | Status                                                                                                                                                       |
+| --------- | --------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Clouds    | `weather.cloudCover/cloudType`, `wind`, `sun`                         | **See below — SkyMesh already ships one**              | cover bound; **heavy deck done** — `CloudDeck.svelte` (wind scroll, §15.7)                                                                                   |
+| Fog       | `weather.fog`, `sky.fogColor/fogDensity`                              | `scene.fog` as mutated linear `Fog` (§15.6)            | **done**                                                                                                                                                     |
+| Rain      | `weather.precipitation` + `precipitationType`, `wind`/`windDirection` | Billboarded TSL quads, camera-anchored                 | **done**                                                                                                                                                     |
+| Snow      | `weather.precipitation` + `precipitationType`, `wind`/`windDirection` | GPU particles / instanced sprites, camera-anchored     | **done** — `Snow.svelte` (TSL quads, wind drift + sway, light-hint dimming)                                                                                  |
+| Lightning | `weather.lightning` (strike scheduler)                                | Emissive flash + a transient light contribution        | **done** — `Lightning.svelte` (bolt + sheet strikes, deck-local flash via `flashState`, faint sky wash, shadowless flash light; photosafety-capped envelope) |
+| Moon disc | `moon.direction`, phase                                               | Textured sphere, phase from the surface normal (§15.5) | **done**                                                                                                                                                     |
+| Stars     | `sky.starVisibility`                                                  | Billboarded TSL quads, _not_ point sprites (§15.4)     | **done**                                                                                                                                                     |
+| Audio     | `wind`, `precipitation`                                               | Crossfading layers; its own extension                  | rain bed + thunder: **done** — `core/audio/weatherAudio.ts`, task-ticked from GlobalAudio; wind layers not started                                           |
 
 **SkyMesh already has a procedural cloud layer, and it was on by default.** three
 0.185.1's `SkyMesh` exposes `cloudCoverage` / `cloudDensity` / `cloudScale` /
