@@ -344,16 +344,23 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
 - **`CarEngineAudio.svelte` + `carAudio.ts` are the engine NOTE, positional**. Six
   loops (`public/sounds/engine/`: `idle` + `rpm1..5`) crossfaded by rpm — the two
   layers bracketing the tacho blend while each plays at `rate = rpm/anchor`, so
-  pitch rises continuously instead of stepping at band edges — plus an asymmetric
-  throttle-load term (fast attack, quicker release). LIFT-OFF IS THE BED ALONE: no
+  pitch rises continuously instead of stepping at band edges. LOUDNESS ANSWERS
+  THE TACHO, NEVER THE PEDALS: level = idle→limiter mapped 0.45→0.8 (`BED_IDLE`/
+  `BED_REDLINE`, one-pole `LEVEL_SLEW`) — a throttle term was here first and read
+  as an echo of the key: lift or downshift and the bed ducked to a 0.22 mutter
+  in ~250 ms. Now a downshift blip leans in, engine braking on a lift eases the
+  level down at exactly the rate the tacho falls, and the pedals change nothing.
+  LIFT-OFF IS THE BED ALONE: no
   one-shot sample — a recorded "release" carries its own pitch envelope and speaks
-  twice over a bed already tracking rpm down, so the lift reads as the level
-  dropping (~250 ms) under engine-braking pitch decay instead. The six wavs are
+  twice over a bed already tracking rpm down. The six wavs are
   CUT FOR LOOPING (ffmpeg: self-crossfade construction — each file is the
   crossfade of itself, extracted so its last sample flows into its first;
-  verified join-jump < p95 of normal sample deltas) and loudness-matched to one
-  RMS (-8.4 dBFS) — a new take without that treatment will click on wrap and
-  pump the crossfade (rpm3 was 2.7 dB hot before); recover originals via git. Deliberately NOT core/audio:
+  verified join-jump < p95 of normal sample deltas), HEAD-TRIMMED to their settled
+  segment (measured: every layer had a 1–3.5 s darker/unstable intro that
+  replayed as a periodic character wobble each loop wrap — rpm2's head sat
+  649 Hz below its settled centroid), and loudness-matched to one
+  RMS (-8.4 dBFS) — a new take without that treatment will click on wrap,
+  wander, and pump; recover originals via git. Deliberately NOT core/audio:
   GlobalAudio/soundTriggers are for UI one-shots and weather beds, not a
   scene-local engine following the car's pose — same call as carInput vs the
   keymapper. The tick follows the weatherAudio contract: the component mounts

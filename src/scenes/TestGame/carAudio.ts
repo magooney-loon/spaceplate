@@ -53,31 +53,29 @@ const LAYER_RPM = [850, 1800, 3000, 4300, 5600, 6900];
 const RATE_MIN = 0.7;
 const RATE_MAX = 1.5;
 
-// ── The bed's loudness ────────────────────────────────────────────────────────
+// ── The bed's loudness ──────────────────────────────────────────────────────
 //
-// Off-throttle the engine mutters; on-throttle it shouts, and LIFT-OFF is the
-// bed alone — no one-shot sample on top. A recorded "release" carries its own
-// pitch envelope, which speaks twice over a bed that is already tracking rpm
-// down; instead the throttle term is smoothed asymmetrically (fast in, quicker
-// out) so a lift READS: the level drops away in ~250 ms under a pitch that
-// follows the engine-braking rpm decay, which is what a real lift sounds like.
+// Driven by the TACHO, never the pedals — the engine answers rpm and gears,
+// not input. A throttle term was here first and read as an echo of the key:
+// lift or downshift and the bed ducked to a mutter (0.22) in ~250 ms, which
+// just sounded like the car vanishing. Instead the level rises gently with
+// rpm: a downshift blip leans in, engine braking on a lift eases the level
+// down at exactly the rate the tacho falls, and the pedals change nothing.
 
-/** 1/s — throttle hardens the note in ~100 ms. */
-const LOAD_ATTACK = 10;
-/** 1/s — and empties it in ~250 ms on lift. */
-const LOAD_RELEASE = 4;
-/** Off-throttle bed level — the overrun burble. */
-const BED_QUIET = 0.22;
-/** Added at full throttle. */
-const BED_LOAD = 0.63;
+/** Bed level at idle rpm. */
+const BED_IDLE = 0.45;
+/** Bed level at the limiter. */
+const BED_REDLINE = 0.8;
+/** 1/s — level slew, so a shift's rpm jump can't click the gain. */
+const LEVEL_SLEW = 8;
 /** Below this weight a layer is silent — pause it rather than hiss at ~0. */
 const AUDIBLE_WEIGHT = 0.004;
 
 /** The mounted loops, index-aligned with LAYER_FILES/LAYER_RPM. Set by the component. */
 const layers: (ThreePositionalAudio | undefined)[] = new Array(LAYER_FILES.length).fill(undefined);
 
-/** Smoothed 0..1 throttle load — the bed's loudness term. */
-let load = 0;
+/** Smoothed bed level — eases toward the rpm-implied loudness. */
+let bedLevel = BED_IDLE;
 
 export const attachEngineLayer = (index: number, audio: ThreePositionalAudio): void => {
 	layers[index] = audio;
@@ -96,7 +94,7 @@ export const detachCarAudio = (): void => {
  * tab is a bug.
  */
 export const parkCarAudio = (): void => {
-	load = 0;
+	bedLevel = BED_IDLE;
 	for (const audio of layers) {
 		if (audio?.isPlaying) audio.pause();
 	}
@@ -112,15 +110,15 @@ export const tickCarAudio = (delta: number): void => {
 	const master = settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0;
 	const audible = master > 0;
 
-	// Throttle load, one-pole both ways — fast in, quicker out (weatherAudio's
-	// framerate-independent damp, from the shared carMath).
-	const throttle = carSim.throttle;
-	load += (throttle - load) * damp(throttle > load ? LOAD_ATTACK : LOAD_RELEASE, delta);
-	const level = BED_QUIET + BED_LOAD * load;
+	// Level from the TACHO: idle → limiter maps BED_IDLE → BED_REDLINE, one-pole
+	// so a shift's rpm jump can't click the gain. No input anywhere in this term.
+	const rpm = clamp(carSim.rpm, GR86.idleRpm, GR86.limiterRpm);
+	const rpmFrac = (rpm - GR86.idleRpm) / (GR86.limiterRpm - GR86.idleRpm);
+	bedLevel += (BED_IDLE + (BED_REDLINE - BED_IDLE) * rpmFrac - bedLevel) * damp(LEVEL_SLEW, delta);
+	const level = bedLevel;
 
 	// Which band the rpm sits in. Clamped at the drivetrain's own floors/ceilings,
 	// so the outer layers just play slightly slow/fast beyond their anchors.
-	const rpm = clamp(carSim.rpm, GR86.idleRpm, GR86.limiterRpm);
 	let band = 0;
 	while (band < LAYER_RPM.length - 2 && rpm > LAYER_RPM[band + 1]) band++;
 	const span = LAYER_RPM[band + 1] - LAYER_RPM[band];
