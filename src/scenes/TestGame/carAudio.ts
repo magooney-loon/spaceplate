@@ -49,7 +49,7 @@ export const LAYER_FILES = [
  * These are guesses at the wavs — dial them BY EAR: a wrong anchor is a layer
  * that speaks in the wrong octave while it holds the crossfade.
  */
-const LAYER_RPM = [950, 1900, 3200, 4300, 6500, 7300];
+const LAYER_RPM = [1000, 2200, 3400, 4900, 6200, 7300];
 
 /** Safety clamps for the derived rates (idle dips and limiter overshoots). */
 const RATE_MIN = 0.7;
