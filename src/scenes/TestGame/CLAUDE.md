@@ -387,8 +387,11 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   TYRES: `tires_squal_loop.opus`, one voice under the car (axle height at the CG) —
   level = the LOOSEST of wheelspin (ramping from the TC lamp's own 0.15), |slip
   angle| (8°–25°, speed-gated; the cluster's slide flag reads 10°),
-  handbrake-at-speed and HARD BRAKE (the pedal at speed, fading below ~20 km/h
-  so stops don't end in a squeak); sources never sum (the looseness model's own
+  handbrake-at-speed, HARD BRAKE (the pedal at speed, fading below ~20 km/h
+  so stops don't end in a squeak) and CORNERING LOAD (`carSim.latLoad`, the
+  share of the lateral μ·g budget the corner demands — Grip's planted max
+  banking lights no other signal, so it sings from ~75% of budget and pins at
+  full lock at speed); sources never sum (the looseness model's own
   rule). Attack
   12/s vs release 4/s with a snap to 0 so the release asymptote can't hiss. Not
   gated on ignition — tyres aren't combustive. TC LAMP: the cluster's `spinning` indicator gates on the tune's `tractionControl`

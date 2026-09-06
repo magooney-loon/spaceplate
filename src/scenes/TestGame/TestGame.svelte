@@ -321,6 +321,7 @@
 			carSim.gear = drivetrain.state.gear;
 			carSim.slip = 0;
 			carSim.drift = 0;
+			carSim.latLoad = 0;
 			carSim.throttle = 0;
 			carSim.brake = 0;
 			carSim.handbrake = false;
@@ -355,6 +356,7 @@
 			carSim.gear = drivetrain.state.gear;
 			carSim.slip = 0;
 			carSim.drift = 0;
+			carSim.latLoad = 0;
 			carSim.throttle = 0;
 			carSim.brake = 0;
 			carSim.handbrake = false;
@@ -479,6 +481,12 @@
 			tune.handbrakeMuLat + (latGrip - tune.handbrakeMuLat) * clamp(out.gripFactor, 0, 1);
 		const settle = vLateral * damp(GRIP_RATE, delta);
 		const bleedLimit = muLat * G * UNITS_PER_METER * delta; // m/s² → world units/s this step
+		// The share of the lateral budget this corner demands — demanded bleed over
+		// the cap. Pins at 1 exactly at max banking (v·ω = μ·g at the yaw cap), sits
+		// well under it in a normal corner. The squeal reads it (carAudio): Grip's
+		// planted limit cornering has no drift angle and no wheelspin for any other
+		// source to see.
+		const latLoad = clamp(Math.abs(settle) / bleedLimit, 0, 1);
 		_vel.addScaledVector(_right, -clamp(settle, -bleedLimit, bleedLimit));
 		body.setLinvel({ x: _vel.x, y: _vel.y, z: _vel.z }, true);
 
@@ -491,6 +499,7 @@
 		}
 		carSim.gear = drivetrain.state.gear;
 		carSim.slip = drivetrain.state.slip;
+		carSim.latLoad = latLoad;
 		carSim.throttle = drivetrain.state.throttle;
 		carSim.brake = drivetrain.state.brake;
 		carSim.handbrake = handbrake;

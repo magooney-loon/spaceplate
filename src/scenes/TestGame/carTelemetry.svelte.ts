@@ -30,6 +30,13 @@ export const carSim = {
 	 *  tail is out in a left-hand slide. Zero when planted; a drift IS a big held
 	 *  value here. Written in both tunes; only Drift can hold much of it. */
 	drift: 0,
+	/** 0..1 — share of the lateral grip budget the current corner demands: the
+	 *  sideways-bleed demand over the μ·g cap it's clamped to (TestGame.svelte).
+	 *  Pins at 1 exactly at max banking (v·ω = μ·g at the yaw cap), sits well under
+	 *  it in a normal corner. The tyre-squeal driver reads this (carAudio): Grip's
+	 *  planted limit cornering lights no drift angle and no TC lamp — the load
+	 *  itself is the only honest squeal signal. */
+	latLoad: 0,
 	throttle: 0,
 	brake: 0,
 	handbrake: false,
@@ -105,6 +112,7 @@ export function resetCarTelemetry(): void {
 	carSim.steer = 0;
 	carSim.steerAngle = 0;
 	carSim.drift = 0;
+	carSim.latLoad = 0;
 	carSim.throttle = 0;
 	carSim.brake = 0;
 	carSim.handbrake = false;
