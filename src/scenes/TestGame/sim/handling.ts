@@ -1,8 +1,10 @@
-// Two SETUPS for the same car. `gr86.ts` is the hardware — engine, gearbox, mass,
-// aero, brakes — and never changes between them; this file is what a tune shop
-// touches: tyre compounds, the steering rack, and how willing the rear axle is to
-// let go. The scene reads one of these per physics step, so switching is instant
-// and carries no state (`carHandling` in carInput.svelte.ts owns the choice).
+// The handling CONTRACT + the cornering model's rules. The TUNES themselves
+// are per-car data — the GR86's live in cars/gr86.ts (`tunes`), moved here from
+// this file when the scene went multi-car. What a tune shop touches: tyre
+// compounds, the steering rack, and how willing the rear axle is to let go.
+// The controller reads the current car's tune per physics step, so switching
+// is instant and carries no state (`carHandling` in carInput.svelte.ts owns
+// the choice).
 //
 // GRIP is the car, tuned FRIENDLY rather than strictly real: 0-60 mph in 5.7 s,
 // 140 mph governed (both are the drivetrain's, unaffected by this file), ~1.8 g of
@@ -56,7 +58,8 @@
 // the line, so 0-60 goes from 5.7 s to about 7.5. A drift tune gives some of the
 // drag strip away; that is the trade, not a bug.
 
-/** The knobs that differ between setups. Everything else is `GR86` in gr86.ts. */
+/** The knobs that differ between setups. Everything else is the car's hardware
+ *  (its spec's `hardware` block). */
 export interface HandlingTune {
 	/** Shown on the HUD switch and the cluster badge. */
 	label: string;
@@ -191,131 +194,12 @@ export interface HandlingTune {
 	maxDriftAngle: number;
 }
 
-export const HANDLING_TUNES = {
-	grip: {
-		label: 'Grip',
+/** The setups a car carries. The GR86 ships Grip/Drift; the union is explicit
+ *  (it used to be `keyof typeof HANDLING_TUNES`) because tunes now live in the
+ *  spec. */
+export type HandlingMode = 'grip' | 'drift';
 
-		tireMuLong: 1.05,
-		tireMuLat: 1.1,
-		// Up from the real car's 1.3 — a friendlier, more forgiving cornering margin
-		// so a slightly hot entry still hooks up instead of running wide.
-		latGripGain: 1.6,
-		handbrakeMuLat: 0.42,
-		// Down from 0.55: wheelspin now only costs a third of the lateral tyre instead
-		// of nearly half, so mashing the throttle out of a corner doesn't step the
-		// back out as a side effect — that's DRIFT's job, not a Grip surprise.
-		slipGripLoss: 0.35,
-		// On, like the real car. The rears are caught at 2 m/s of overspeed, which is
-		// where Grip's wheelspin always effectively sat — 1st still lights the TC lamp
-		// off the line and nothing else in the tune notices.
-		tractionControl: true,
-		looseBase: 0,
-		throttleLoose: 0,
-		brakeLoose: 0,
-
-		// 28.6°, a touch more than the real car's 24°: the demo favours tight turns.
-		// Radius at full lock is 4.7 m against the real 5.4. This was 0.7 rad — 40°,
-		// not the ≈29° the old comment claimed — which is a 3.0 m radius and 94°/s of
-		// yaw at 18 km/h. That is where the low-speed twitchiness came from.
-		maxSteerAngle: 0.5,
-		// Up from 0.35: the rack keeps half its lock at speed instead of a third, so
-		// the car doesn't go numb on the motorway.
-		steerHighSpeedFactor: 0.5,
-		// Up from 42: the falloff above stretches over a wider speed range, so it
-		// keeps feeling direct through more of the range instead of going flat early.
-		steerFalloffSpeed: 55,
-		// Up from 5.5: a keyboard tap reaches its target lock quicker — less input lag.
-		steerResponse: 7,
-		// Up from 7: the body catches up to the yaw target faster, which reads as a
-		// more eager, direct car.
-		yawResponse: 9,
-
-		handbrakeYawBoost: 2.2,
-		// 1 and 0 — Grip is the original kinematic model, untouched.
-		powerYawBoost: 1,
-		driftAlign: 0,
-		maxDriftAngle: 0.75
-	},
-	drift: {
-		label: 'Drift',
-
-		// The rears hold ~5 550 N: 1st lights up hard, 2nd steps out, 3rd and up hook
-		// back in. High enough to keep the car properly quick — 0-60 in 6.2 s, near
-		// Grip's 5.7 — because `throttleLoose` below, not wheelspin, is what gets the
-		// car sideways. Trying to make wheelspin the trigger meant dropping this to
-		// 0.6 and paying two and a half seconds for it.
-		tireMuLong: 0.8,
-		tireMuLat: 1.1,
-		// The SAME as Grip. A coasting car should have a coasting car's grip: with
-		// `looseBase` near zero, boost ≈ 1 and the yaw cap matches what the bleed can
-		// service, so Drift corners exactly like Grip until something provokes it.
-		// That contrast IS the feel — running this lower just made everything vague.
-		latGripGain: 1.6,
-		// A third of Grip's. This is the μ a fully committed slide bleeds at — at 0.42
-		// the handbrake shed 4.1 m/s² sideways and the car was straight again in a
-		// tenth of a second, which is why it read as a turn-tighter button.
-		handbrakeMuLat: 0.15,
-		// Wheelspin nearly wipes the lateral tyre, so power deepens a slide sharply.
-		slipGripLoss: 0.95,
-		// OFF. Nothing trims the surplus torque, so the rears spin up for real: 1st is
-		// on the limiter in a blink, 2nd builds over a couple of seconds of held
-		// throttle, 3rd and up still cannot out-pull the tyre. A donut now sits at the
-		// limiter with the rears lit instead of at 2 900 rpm, which is the whole reason
-		// this switch exists. It costs no acceleration — the tyre's limit is unchanged
-		// — but under power in 1st and 2nd `slip` now reaches 1, so `driftAlign` fades
-		// right out and the car is genuinely on its own until you lift.
-		tractionControl: false,
-		// A little livelier than before — the car has a hint of playfulness even
-		// coasting, without giving up the planted-until-provoked contrast.
-		looseBase: 0.15,
-		// Up from 0.55: the throttle takes the tail out quicker and with less pedal
-		// precision — you don't have to bury it to feel the rear step out, which is
-		// the whole point of an easy drift control.
-		throttleLoose: 0.7,
-		// Up from 0.8, closer to the handbrake's 1: trail-braking into a corner
-		// triggers a slide more readily — an easier, more generous "tap ↓ to set the
-		// car" entry.
-		brakeLoose: 0.9,
-
-		// A LITTLE more lock than Grip, held a little further up the speed range — just
-		// enough countersteer authority to catch a slide (Grip's rack falls to 35% by
-		// motorway speed, which is fine for lane changes and useless for catching
-		// anything). These were 0.62 / 0.55 / 8, and that rack was most of what read as
-		// punchy: from a keyboard the only thing smoothing a binary key press is
-		// `steerResponse`, and at 8/s a 0.2 s tap already had 80% of a bigger lock in.
-		maxSteerAngle: 0.95,
-		steerHighSpeedFactor: 0.95,
-		steerFalloffSpeed: 92,
-		// Up from 1.5: countersteer answers the key quicker, which is what actually
-		// makes catching a slide feel controllable instead of laggy.
-		steerResponse: 2.2,
-		// Up from 2.5, still a shade under Grip's 9 so the body keeps some of its own
-		// inertia — but with the quicker steerResponse above, the whole catch-and-hold
-		// loop reacts faster than before.
-		yawResponse: 3.2,
-
-		// Bigger flick: the handbrake already sets looseness to 1, so it collects the
-		// whole of `powerYawBoost`. 1.6 × 2.6 = 4.16 is the flick multiplier — a more
-		// dramatic handbrake turn.
-		handbrakeYawBoost: 1.6,
-		// Unchanged. This one was already tuned DOWN from a punchy 4.5 to 2.6 because
-		// more snap made the car harder, not easier, to hold — the easier-to-control
-		// direction here is a stronger `driftAlign` catch, not a bigger flick.
-		powerYawBoost: 2.6,
-		// Up from 1.6: a firmer auto-catch, so a slide is less likely to run away into
-		// a spin and opposite lock does more of the work for you.
-		driftAlign: 2.2,
-		// Up from 0.9: the drift can hold a bigger angle before the catch fully takes
-		// over, for a more dramatic slide before it settles. The handbrake held at full
-		// lock still spins the car out to fully sideways, which is what that input
-		// should do.
-		maxDriftAngle: 1.05
-	}
-} as const satisfies Record<string, HandlingTune>;
-
-export type HandlingMode = keyof typeof HANDLING_TUNES;
-
-export const HANDLING_MODES = Object.keys(HANDLING_TUNES) as HandlingMode[];
+export const HANDLING_MODES: readonly HandlingMode[] = ['grip', 'drift'];
 
 /** Lateral μ the cornering model runs on — the yaw cap and the sideways bleed share it. */
 export const latMu = (tune: HandlingTune): number => tune.tireMuLat * tune.latGripGain;

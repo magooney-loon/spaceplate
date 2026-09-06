@@ -6,15 +6,15 @@
 // mirror is published at ~30 Hz and each field is quantised to what the dial can
 // actually show. A value that rounds to the same number is not written at all.
 
-import { GR86 } from './gr86';
+import { currentCar } from '../cars';
 
 /** Written every physics step. Read by CarWheels and the mirror below — never by the HUD. */
 export const carSim = {
 	/** Signed road speed along the nose, m/s (real metres — not world units). */
 	speedMs: 0,
-	// `as number`: GR86 is `as const`, so a bare `GR86.idleRpm` would type this
+	// `as number`: the spec is `as const`, so a bare `idleRpm` would type this
 	// field as the literal 800 and reject every reading the engine ever produces.
-	rpm: GR86.idleRpm as number,
+	rpm: currentCar().hardware.idleRpm as number,
 	/** -1 reverse, 0 neutral, 1…6. */
 	gear: 1,
 	/** 0…1 wheelspin. */
@@ -67,9 +67,9 @@ export const carSim = {
 export const carHud = $state({
 	kmh: 0,
 	mph: 0,
-	// `as number`: GR86 is `as const`, so a bare `GR86.idleRpm` would type this
+	// `as number`: the spec is `as const`, so a bare `idleRpm` would type this
 	// field as the literal 800 and reject every reading the engine ever produces.
-	rpm: GR86.idleRpm as number,
+	rpm: currentCar().hardware.idleRpm as number,
 	gear: 1,
 	slip: 0,
 	/** Slip angle in whole DEGREES, unsigned — the drift readout. */
@@ -128,7 +128,7 @@ export function publishCarHud(dt: number): void {
 /** Park the instruments — used when the scene stops driving (scene switch, blur). */
 export function resetCarTelemetry(): void {
 	carSim.speedMs = 0;
-	carSim.rpm = GR86.idleRpm;
+	carSim.rpm = currentCar().hardware.idleRpm;
 	carSim.gear = 1;
 	carSim.slip = 0;
 	carSim.steer = 0;

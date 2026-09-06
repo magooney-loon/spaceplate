@@ -8,38 +8,80 @@ engine architecture — do not generalise from this code into `core/` or
 scene via `Scene.svelte` / `SceneHud.svelte`.
 
 ```
-TestGame.svelte         — the scene: city + car + the driving physics task
+TestGame.svelte         — the scene: city + car composition + the physics-task
+                         shell; the driving model itself is sim/controller.ts
 TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart) + the
                          upper-middle launch flash (STREET / JUICY / PERFECT)
-CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed,
-                         live N2O bottle gauge)
-CarWheels.svelte        — per-vertex steering/rolling wheel deformation (TSL)
-SkidMarks.svelte        — world-anchored ring buffer of rubber quads laid at the
-                         tyre patches while the car slides; fades in-shader (TSL)
-TireSmoke.svelte        — continuous white smoke puffs at the contact patches
+cars/                   — THE GARAGE: everything car-specific is data here
+  types.ts              — CarSpec: the contract (hardware/geometry/model/audio/
+                         cluster/tunes + layout 'rwd'|'fwd'|'awd')
+  gr86.ts               — the GR86 spec: real-car hardware, measured geometry,
+                         the two tunes (values + inline comments = source of truth)
+  spec.ts               — spec math: gearRatio/rpmInGear/engineTorque +
+                         layout-aware drivenAxleLoad + wheelPatches (shared layout)
+  garage.svelte.ts      — CARS registry + carGarage.currentId ($state) + currentCar()
+  index.ts              — barrel (directory imports can't resolve .svelte.ts)
+sim/                    — the driving model, car-agnostic
+  controller.ts         — the physics task's brain: drivetrain + nitrous gameplay +
+                         startup sequence + spawn/restart + yaw & lateral grip +
+                         carSim writes (extracted from TestGame.svelte)
+  drivetrain.ts         — pure engine → clutch → gearbox → driven-axle traction step
+                         (createDrivetrain(spec); layout-aware load)
+  handling.ts           — the HandlingTune CONTRACT + cornering-model rules + modes
+                         (the GR86's tunes live in its spec)
+  carInput.svelte.ts    — this scene's own keymap (arrows / Space / Q / E / Shift) +
+                         the latched switches (lights, ignition, handling tune) +
+                         the HUD → scene restart signal
+  carTelemetry.svelte.ts — carSim (200 Hz plain object) / carHud (30 Hz $state mirror)
+  carMath.ts            — `clamp` / `damp`, shared by the sim modules
+fx/                     — the car's visual effects
+  CarWheels.svelte      — per-vertex steering/rolling wheel deformation (TSL); finds
+                         wheels by the spec's material prefix in the GLB
+  SkidMarks.svelte      — world-anchored ring buffer of rubber quads at the tyre
+                         patches while the car slides; fades in-shader (TSL)
+  TireSmoke.svelte      — continuous white smoke puffs at the contact patches
                          while a wheel slides; LIT so it dims at night (TSL)
-CarExhaustFlames.svelte — downshift/limiter exhaust pops + the blue nitrous pilot
-                         jet (TSL, from the three.js webgpu_tsl_vfx_flames example)
-CarHeadlights.svelte    — car-local lights (nose is -Z)
-CarEngineAudio.svelte   — the car's positional engine bed, mounted inside the ×2.5
-                         group; all mixing lives in carAudio.ts
+  CarExhaustFlames.svelte — downshift/limiter exhaust pops + the blue nitrous pilot
+                         jet (TSL, from the three.js webgpu_tsl_vfx_flames example);
+                         tips come from the spec
+  CarHeadlights.svelte  — car-local lights (nose is -Z); lamp anchors from the spec
+  NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
+                         boost from the nitrous flow (the lensState contract)
+audio/                  — the engine NOTE
+  CarEngineAudio.svelte — the car's positional engine bed, mounted inside the
+                         visual-scale group; all mixing lives in carAudio.ts
+  carAudio.ts           — rpm voice bands, rpm-driven loudness (never input), pop
+                         takes jittered per hit; layers/anchors/pitch from the spec
+                         (files are SHARED across cars) — ticked from carSim
+                         (weatherAudio contract — never $effect)
 ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + the
                          nitrous FOV kick, the launch dolly kick and the shift jolt
-NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
-                         boost from the nitrous flow (the lensState contract)
-carInput.svelte.ts      — this scene's own keymap (arrows / Space / Q / E / Shift) +
-                         the latched switches (lights, ignition, handling tune) + the
-                         HUD → scene restart signal
-gr86.ts                 — the real car's HARDWARE, pure SI (metres/kg/newtons/seconds)
-handling.ts             — the two SETUPS (Grip / Drift): tyre μ, steering rack, oversteer
-drivetrain.ts           — pure engine → clutch → 6MT → rear-axle traction step
-carMath.ts              — `clamp` / `damp`, shared by drivetrain.ts and TestGame.svelte
-carTelemetry.svelte.ts  — carSim (200 Hz plain object) / carHud (30 Hz $state mirror)
-carAudio.ts             — the engine NOTE + exhaust pops: rpm voice bands, rpm-driven
-                         loudness (never input), pop takes jittered per hit — ticked from
-                         carSim (weatherAudio contract — never $effect)
+CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed,
+                         live N2O bottle gauge); dial facts from the spec
 cityColliders.ts        — hand-rolled static trimesh colliders for the track GLB
+units.ts                — UNITS_PER_METER + G: the SI ↔ world boundary (city scale)
 ```
+
+## Multi-car — the spec is the car
+
+Everything car-specific is DATA in `cars/`; the code (sim/, fx/, audio/, the
+cluster, the scene) is car-agnostic and reads `currentCar()` once at init.
+**Adding a car** is: one `cars/<id>.ts` exporting a `CarSpec` (see `types.ts`
+for every field and its contract), plus one entry in `CARS` (garage.svelte.ts).
+No component edits. The GLB contract a new model must match: wheel materials
+named `<wheelMaterialPrefix>*` with all four wheels merged per mesh (CarWheels
+splits them by bounding box), nose −Z, ground plane at y=0; the measured
+anchors (axles, exhaust tips, lamps, collider box) go in the spec's geometry.
+Engine audio files are SHARED across cars — a new car voices them via
+`audio.layerRpm` (where each layer sits on ITS tacho) + `audio.pitchScale`.
+
+`layout` is spec-level plumbing: RWD is the fully implemented, validated model.
+The drivetrain's driven-axle load is layout-aware (`spec.ts` `drivenAxleLoad`:
+RWD rear-bias + transfer, FWD front-bias − transfer, AWD full weight), but FWD
+and AWD HANDLING FEEL (front-slip understeer, torque split, handbrake-while-
+driven) is deliberately unwritten — the current model is rear-slip-centric
+(looseness, driftAlign, "the fronts are never the axle that lets go") and
+should not be guessed at without the cars to tune against.
 
 ## Controls
 
@@ -60,7 +102,7 @@ dev-mode shortcuts (w a s z t r c v m) never fight the car (Shift is a modifier,
 invisible to those bare-letter binds), and L/K/G/N also dodge the engine's own
 Ctrl+H — EXCEPT M, which is in Studio's set: accepted because Studio is dev-only,
 rebind if it ever bites. Input is this scene's own `svelte:window` keymap
-(`carInput.svelte.ts`),
+(`sim/carInput.svelte.ts`),
 not the shared keymapper — that needs a per-scene rework first.
 
 Either Shift is a wet nitrous kit on a throttle switch: it only sprays while held
@@ -68,9 +110,9 @@ WITH ↑ open in a forward gear (gear ≥ 1). Both Shift keys are ONE pedal — 
 edges go through `setCarInputKey` (held-code tracking), so releasing one while
 the other is down keeps the pedal down, and `resetCarInput` clears the held set
 so a Shift released while blurred can't stick it. Everything else about the
-system is owned by the scene's task — the bottle (4 s of full spray, ~14 s to
+system is owned by the controller's task (sim/controller.ts) — the bottle (4 s of full spray, ~14 s to
 refill, runs even while parked), the flow ramp (~0.13 s in, ~0.25 s out) and the
-telemetry publish. The one hardware number, `NITROUS_TORQUE_GAIN` in `gr86.ts`
+telemetry publish. The one hardware number, `nitrousTorqueGain` in the car's spec
 (+45% crank torque), is applied by the drivetrain INSIDE its traction limit — so
 a shot in 1st/2nd becomes wheelspin, 3rd+ is real thrust, and Drift + spray in
 3rd lights the tyres. `carSim.nitrous` (flow) and `carSim.nitrousTank` (level)
@@ -89,8 +131,8 @@ lights or the setup.
 
 ONE dynamic body for the chassis (no per-wheel suspension). The longitudinal half
 is a real drivetrain — torque curve → clutch → gearbox → traction limit at the
-rear axle (`drivetrain.ts`, all SI, GR86 numbers in `gr86.ts`). Steering is
-DIRECT yaw-rate control — the target is the lesser of what the front wheels
+driven axle (`sim/drivetrain.ts`, all SI, numbers in the car's spec `cars/gr86.ts`).
+Steering is DIRECT yaw-rate control — the target is the lesser of what the front wheels
 geometrically point at (v·tan δ / wheelbase) and what the tyres can hold
 (μ·g / v). Pitch AND roll are both disabled on the body
 (`enabledRotations={[false, true, false]}`) — only yaw is free. **Rapier's
@@ -106,18 +148,20 @@ flipped car could still drive.)
 
 ### Two setups, one car
 
-`gr86.ts` is the HARDWARE (engine, gearbox, mass, aero, brakes) and never varies.
-`handling.ts` is the SETUP — tyre μ, the steering rack, and the oversteer knobs —
-and there are two, picked by `carHandling.mode` (G, or the HUD switch). The scene
-and `drivetrain.step()` read `HANDLING_TUNES[mode]` **fresh every physics step**;
-nothing caches a tune, so switching mid-corner is legal.
+`cars/gr86.ts` is the HARDWARE (engine, gearbox, mass, aero, brakes) and never varies.
+`sim/handling.ts` is the SETUP CONTRACT — tyre μ, the steering rack, and the oversteer
+knobs — and the GR86 carries two tunes (in its spec), picked by `carHandling.mode`
+(G, or the HUD switch). The controller and `drivetrain.step()` read
+`tunes[mode]` **fresh every physics step**; nothing caches a tune, so switching
+mid-corner is legal.
 
 > Both tunes were revised for a friendlier, more arcade feel — more lateral grip,
 > quicker steering response, and an easier-to-trigger, easier-to-catch drift. The
 > exact numbers below are current; the specific MEASURED figures throughout this
 > section (peak yaw °/s, circle diameters, settle times) predate that revision and
-> haven't been re-measured — treat them as illustrating the mechanism, not as
-> current numbers. `handling.ts`'s own inline comments are the source of truth.
+haven't been re-measured — treat them as illustrating the mechanism, not as
+current numbers. The spec's own inline comments (in `cars/gr86.ts`) are the
+source of truth.
 
 - **Grip** is the car (0-60 in 5.7 s, 140 mph governed — both the drivetrain's,
   unaffected by this file), tuned friendlier than the real car for cornering grip
@@ -247,9 +291,10 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   which made it a no-op and left `maxSteerAngle` (then 40°, not the ≈29° its own
   comment claimed) as the low-speed feel — that pair was the twitchiness.
 
-- **The model is SI; the world is not.** `gr86.ts` and `handling.ts` hold the
+- **The model is SI; the world is not.** The car's spec and tunes hold the
   numbers (torque curve, 6MT ratios, tyre μ, drag) in metres/kg/newtons, and
-  `TestGame.svelte` converts at exactly one boundary: `UNITS_PER_METER = 2.5`, the
+  the controller converts at exactly one boundary: `UNITS_PER_METER = 2.5`
+  (units.ts), the
   same 2.5 the car's visual group is scaled by (the city is authored at 2.5
   units/metre). Forces and velocities scale by it, rad/s does not. The car's
   `gravityScale` is that constant too — the shared `<World>` pulls at 9.8
@@ -272,9 +317,9 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   (acceleration falls off and snaps back on every upshift), a clutch fully OPEN
   for the length of a shift (0.28 s torque cut), a slipping clutch below
   `launchSpeed` (launches hold ~3200 rpm), engine braking scaled by gear, a
-  bouncing fuel-cut limiter, and a traction limit at the rear axle with load
+  bouncing fuel-cut limiter, and a traction limit at the driven axle with load
   transfer (flooring 1st spins the wheels; the leftover is `slip`, which the
-  scene turns into lost lateral grip). See `drivetrain.ts`'s header.
+  controller turns into lost lateral grip). See `sim/drivetrain.ts`'s header.
 - **REV-MATCH LAUNCH**: slot 1st out of N with the revs in the 4–6k window
   (`PERFECT_LAUNCH_MIN/MAX`, judged at the SHIFT TAP — the 0.28 s cut that
   follows lets the revs climb out of it, that climb is the player's timing)
@@ -350,7 +395,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   angle and roll rate come from `carSim`, not from raw key state — the rack is
   speed-sensitive, so re-deriving it here would show full lock while the physics
   used a third.
-- **`SkidMarks.svelte` lays rubber while the car slides** — one world-anchored
+- **`SkidMarks.svelte` (fx/) lays rubber while the car slides** — one world-anchored
   mesh (mounted beside ChaseCamera, NOT in the car: marks never move with the
   body), a fixed ring buffer of quads written at the tyre contact patches.
   Intensity is the squeal driver's TWIN (carAudio.ts — loosest source wins,
@@ -381,7 +426,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   from 0, and one SHORT tail-off segment where a slide ends (capped at
   TAIL_MAX). Enter/exit hysteresis (MARK_ON 0.3 / MARK_EXIT 0.22) stops
   threshold chatter laying confetti.
-- **`TireSmoke.svelte` is the squeal made visible** — a pool of 32 billboarded
+- **`TireSmoke.svelte` (fx/) is the squeal made visible** — a pool of 32 billboarded
   quads (the exhaust puffs' architecture: per-puff material instances with dyn
   uniforms, one node graph/one program), spawned CONTINUOUSLY at the contact
   patches while a wheel slides: rate = 2 + 8×intensity puffs/s per wheel, so a
@@ -398,8 +443,17 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   car) + a small rearward roll off the spinning tyre (rears roll harder);
   perlin roil + cellular clumps + soft radial rim, aging shader-side against
   uTime. World-anchored at TestGame root (`target={chaseAnchor}`, same
-  body-space wheel offsets as SkidMarks); unmounting the scene hides the pool.
-- **`CarExhaustFlames.svelte` pops fire on downshifts and limiter bangs**
+  body-space wheel offsets as SkidMarks — both from the spec's geometry via
+  `wheelPatches`, one shared source); unmounting the scene hides the pool.
+  **BOOT WARM**: the pool's materials are invisible until the first spawn, and
+  on-demand rendering never compiles them until then — the FIRST burnout paid
+  the whole pipeline compile as a visible hitch. Fix: the pool's LAST slot is
+  visible-by-default at zero alpha (its dyn defaults: birth −99, strength 0),
+  and a short task-time warm window (~0.3 s) keeps invalidating so it renders
+  behind the scene-entry veil, compiling the pipeline before the player can
+  ever spawn a puff. The window is TIME-based, not tick-based — physics steps
+  run several per rendered frame, so counting ticks races the renderer.
+- **`CarExhaustFlames.svelte` (fx/) pops fire on downshifts and limiter bangs**
   (adapted from three's `webgpu_tsl_vfx_flames`). The exhaust tips are
   MEASURED, not placed by hand: the GLB's Draco `Nickel_Smooth` mesh decoded
   offline (node + the draco wasm from `node_modules/three`), rear-most
@@ -445,8 +499,15 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   an `invalidate()` reason (stationary rev-match case — driving is already
   covered by the chase camera). Noise textures:
   `public/textures/noises/{voronoi,perlin}.png`, copied from the vendored
-  three.js-dev example assets.
-- **`CarEngineAudio.svelte` + `carAudio.ts` are the engine NOTE, positional**. Six
+  three.js-dev example assets. **BOOT WARM** (the TireSmoke lesson, same
+  disease): the tips and the smoke pool are invisible until the first pop, so
+  their pipelines compiled on it — a visible hitch on the first downshift. Same
+  fix: a ~0.3 s task-time warm window force-shows both tips and one smoke slot
+  at their zero-alpha defaults (intensity/flash/strength all 0), behind the
+  scene-entry veil. The window lives INSIDE the physics task, after its own
+  per-step visibility write — anything set at mount would be overwritten within
+  one 200 Hz step, before a frame ever rendered.
+- **`audio/CarEngineAudio.svelte` + `audio/carAudio.ts` are the engine NOTE, positional**. Six
   loops (`public/sounds/engine/`: `idle` + `rpm1..5`) crossfaded by rpm — the two
   layers bracketing the tacho blend while each plays at `rate = rpm/anchor`, so
   pitch rises continuously instead of stepping at band edges. LOUDNESS ANSWERS

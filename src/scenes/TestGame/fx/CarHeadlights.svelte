@@ -19,12 +19,11 @@
 		vec3,
 		vec4
 	} from 'three/tsl';
-	import { carLights } from './carInput.svelte';
+	import { carLights } from '../sim/carInput.svelte';
+	import { currentCar } from '../cars';
 
-	// Front headlight rig for the GR86. Mounts INSIDE the car group, so it inherits the
-	// hand-tuned scale/rotation/position and lives in car-local units (metres — measured
-	// off the GLB: the body spans z -2.12..2.12, x ±0.91, y 0.16..1.31, and the lamp
-	// glass (`Light_Glass`) reaches z = -1.95 at the nose. The nose is -Z.)
+	// Front headlight rig, generic over the car's spec (the lamp anchors come
+	// from cars/; everything else is this rig's own tuning). Mounts INSIDE the
 	//
 	// Three layers per side, cheapest-first:
 	//   1. a ProjectorLight for the pool on the road — a SpotLight whose attenuation is a
@@ -49,20 +48,21 @@
 	// All numbers are tweak-me constants; nothing here is load-bearing elsewhere.
 
 	// ---------------------------------------------------------------- placement
-
-	const LAMP_X = 0.65; // per-side |x| — outer lamp cluster
-	const LAMP_Y = 0.66; // lamp height
-	// Just AHEAD of the lamp glass (which ends at z ≈ -1.95), not behind it. Everything
-	// in this rig is additive and depth-TESTED, so a beam that starts inside the
-	// bodywork gets clipped by the bumper and shows a hard edge where it breaks out.
-	const LAMP_Z = -1.67;
-	const BEAM_PITCH = -0.045; // radians, negative dips the visible beam slightly down
+	// The four anchors are the CAR'S (spec geometry.lamp, measured off its GLB);
+	// the rig's own tuning starts below.
+	const {
+		x: LAMP_X,
+		y: LAMP_Y,
+		z: LAMP_Z,
+		pitch: BEAM_PITCH,
+		color: lampColor
+	} = currentCar().geometry.lamp;
 
 	// ------------------------------------------------------------------- light
 
-	// A real 2023 GR86 runs LED projectors — cool white, not halogen amber. For the old
-	// halogen look use (1.0, 0.93, 0.82) here and in the beam/emitter colours below.
-	const LAMP_COLOR = new THREE.Color(0.88, 0.93, 1.0);
+	// Cool-white LED projectors (the spec's colour). For an old halogen look use
+	// (1.0, 0.93, 0.82) in the spec and in the beam/emitter colours below.
+	const LAMP_COLOR = new THREE.Color(lampColor[0], lampColor[1], lampColor[2]);
 
 	const LIGHT_DISTANCE = 420; // world units, not scaled by the group's 2.5
 	const LIGHT_ANGLE = 0.46; // VERTICAL half-angle of the frustum (rad)

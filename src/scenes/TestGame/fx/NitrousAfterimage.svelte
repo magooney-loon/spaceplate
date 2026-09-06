@@ -25,8 +25,8 @@
 	// free.
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import { uAfterimageBoost } from '$core/postprocessing/effects/afterimage';
-	import { carSim } from './carTelemetry.svelte';
-	import { clamp } from './carMath';
+	import { carSim } from '../sim/carTelemetry.svelte';
+	import { clamp } from '../sim/carMath';
 
 	/** Boost at full flow. 0.85 keeps the deepest trail ≈ the addon example's look
 	 * (with the panel floor at 0 and the sum ceiling at 0.96). */

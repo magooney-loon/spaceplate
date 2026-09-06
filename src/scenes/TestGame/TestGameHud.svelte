@@ -2,8 +2,8 @@
 	import { sceneActions } from '$extensions/scene';
 	import { soundActions } from '$core';
 	import CarCluster from './CarCluster.svelte';
-	import { requestCarRestart } from './carInput.svelte';
-	import { carHud } from './carTelemetry.svelte';
+	import { requestCarRestart } from './sim/carInput.svelte';
+	import { carHud } from './sim/carTelemetry.svelte';
 
 	// The launch flash's tier names — latched at the catch (carSim.launchTier),
 	// never read off the live revs. The boost itself is continuous; the names
@@ -33,10 +33,11 @@
 		</button>
 	</div>
 
-
 	<!-- Controls hint. -->
 	<div class="info">
-		<p>↑ throttle · ↓ brake · Space handbrake · Q/E shift · ⇧ nitrous · M ignition · L/K lights/beams</p>
+		<p>
+			↑ throttle · ↓ brake · Space handbrake · Q/E shift · ⇧ nitrous · M ignition · L/K lights/beams
+		</p>
 		<p>G setup (Grip / Drift) · drag tilt · right-drag raise/lower · wheel zoom</p>
 	</div>
 

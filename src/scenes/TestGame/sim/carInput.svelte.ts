@@ -108,9 +108,9 @@ export const carIgnition = $state({ on: true, ready: true });
 /**
  * The selected setup — Grip (the validated road car) or Drift (a loose rear axle
  * and real oversteer). See handling.ts for what actually changes. A switch, not a
- * pedal: it survives `resetCarInput` and the Restart button, and the scene reads
- * `HANDLING_TUNES[mode]` fresh every physics step, so flipping it mid-corner is
- * legal and instant.
+ * pedal: it survives `resetCarInput` and the Restart button, and the controller reads
+ * the current car's `tunes[mode]` fresh every physics step, so flipping it mid-corner
+ * is legal and instant.
  */
 export const carHandling = $state({ mode: 'grip' as HandlingMode });
 

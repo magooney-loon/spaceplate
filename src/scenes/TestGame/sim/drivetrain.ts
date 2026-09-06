@@ -1,41 +1,45 @@
-// Engine + clutch + 6-speed gearbox for the GR86. Pure SI, pure function of its
-// own state — no runes, no Three, no Rapier. The scene owns the body and calls
-// `step()` once per physics step with the road speed it measured.
+// Engine + clutch + gearbox, generic over a CarSpec (cars/). Pure SI, pure
+// function of its own state — no runes, no Three, no Rapier. The controller
+// (sim/controller.ts) owns the body and calls `step()` once per physics step
+// with the road speed it measured.
 //
 // What this models, and why each piece is here for FEEL rather than realism:
 //
 // - A torque CURVE through GEARS, so acceleration falls off through the rev range
 //   and snaps back on every upshift. That contrast is the whole point of gears.
 // - A clutch that is fully OPEN for the length of a shift: torque cuts, revs
-//   drop, the car coasts for 0.28 s. Shifting has to cost something or nobody
-//   cares which gear they are in.
+//   drop, the car coasts for the shift window. Shifting has to cost something
+//   or nobody cares which gear they are in.
 // - A slipping clutch below `launchSpeed`, so pulling away from a light holds
-//   ~3200 rpm instead of bogging at idle.
+//   the launch rpm instead of bogging at idle.
 // - A REV-MATCH LAUNCH: slot 1st out of N with the revs in the 4–6k window and
-//   the clutch drops CLEAN — bite and rear plant both scale with DEPTH in the
-//   window, so the closer to 6k the harder the launch. Miss the window and the
-//   soft slip above eats the excess like every other launch.
+//   the clutch drops CLEAN — bite and driven-axle plant both scale with DEPTH in
+//   the window, so the closer to the top the harder the launch. Miss the window
+//   and the soft slip above eats the excess like every other launch.
 // - Engine BRAKING off-throttle, scaled by the gear you are in. Lifting in 2nd
 //   should feel different from lifting in 6th.
 // - A bouncing rev limiter (fuel cut, not a clamp), which is what tells you to
 //   shift without a HUD.
-// - A traction limit at the driven (rear) axle including load transfer, so
-//   flooring 1st spins the wheels instead of teleporting the car forward. The
-//   leftover torque becomes WHEEL SPEED (`spin`), which the revs follow and the
-//   scene turns into lost lateral grip — power oversteer, for free.
+// - A traction limit at the DRIVEN axle including load transfer, so flooring 1st
+//   spins the wheels instead of teleporting the car forward. The leftover torque
+//   becomes WHEEL SPEED (`spin`), which the revs follow and the controller turns
+//   into lost lateral grip — power oversteer, for free. The axle's static load
+//   and transfer sign come from the spec's `layout` (cars/spec.ts,
+//   `drivenAxleLoad`) — RWD is the original formula; FWD/AWD are the plumbing
+//   until their handling feel is tuned against real cars.
 // - TRACTION CONTROL, as a per-setup switch. The real car has it and Grip runs it;
 //   Drift turns it off, and that is what lets the rears run away to the limiter.
 //
 // Everything above is the CAR and is fixed. The three numbers that are the SETUP —
-// how much the rear axle can put down, how much lateral grip wheelspin costs, and
+// how much the driven axle can put down, how much lateral grip wheelspin costs, and
 // whether the ECU intervenes — come in per step as a `HandlingTune` (handling.ts),
 // because the player can switch tunes mid-corner and nothing here may cache them.
 //
 // ── Wheelspin is a SPEED, not a ratio ──────────────────────────────────────────
-// `spin` is how much faster the rear tyre's contact patch is running than the road,
-// in m/s, integrated against the rotating inertia in `gr86.ts`. It used to be a
-// force ratio clamped to 0…1 that scaled road speed by at most 1.8×, and that had
-// two consequences worth remembering:
+// `spin` is how much faster the driven tyre's contact patch is running than the
+// road, in m/s, integrated against the rotating inertia in the car's spec. It
+// used to be a force ratio clamped to 0…1 that scaled road speed by at most
+// 1.8×, and that had two consequences worth remembering:
 //   - **The revs could not run away.** A donut at 4 m/s pinned in 1st sat at about
 //     2 900 rpm however hard the tyres were spinning, because the "wheel speed" was
 //     road speed times a number that saturated. Now the surplus force accelerates
@@ -46,17 +50,16 @@
 //     whatever the engine is doing, so the force is now +traction throughout and
 //     bouncing off the limiter no longer stops the slide.
 
+import type { CarSpec } from '../cars/types';
 import {
-	G,
-	GR86,
-	NITROUS_TORQUE_GAIN,
-	TOP_GEAR,
+	drivenAxleLoad,
 	engineBrakeTorque,
 	engineTorque,
 	gearRatio,
 	rpmInGear,
+	topGear,
 	totalRatio
-} from './gr86';
+} from '../cars/spec';
 import type { HandlingTune } from './handling';
 import { clamp, damp } from './carMath';
 
@@ -80,17 +83,17 @@ export interface DriveInput {
 export interface DriveOutput {
 	/** N along the car's nose, signed. Engine + engine braking, traction-clipped. */
 	driveForce: number;
-	/** N along the nose, signed — always opposes motion. Brakes + drag + rolling. */
+	/** N along the car's nose, signed — always opposes motion. Brakes + drag + rolling. */
 	resistForce: number;
 	/** Lateral grip left, 0…1: 1 = the tyre's full bite, 0 = the handbrake's drift
-	 *  limit. The scene interpolates its two tuned grip rates across this. */
+	 *  limit. The controller interpolates its two tuned grip rates across this. */
 	gripFactor: number;
-	/** How much of the rear axle's grip budget the drive force is spending, 0…1 —
+	/** How much of the driven axle's grip budget the drive force is spending, 0…1 —
 	 *  the FRICTION CIRCLE. A tyre has one budget; grip spent pushing the car along
 	 *  is not available to hold it sideways, and that is true well before the tyre
-	 *  actually spins. The scene turns this into looseness (`throttleLoose`), which
-	 *  is what lets the throttle provoke a slide in a gear that never lights the
-	 *  rears up — without it, only 1st and 2nd could ever break traction. */
+	 *  actually spins. The controller turns this into looseness (`throttleLoose`),
+	 *  which is what lets the throttle provoke a slide in a gear that never lights
+	 *  the rears up — without it, only 1st and 2nd could ever break traction. */
 	powerLoad: number;
 }
 
@@ -100,12 +103,13 @@ export interface DrivetrainState {
 	rpm: number;
 	/** 0 = clutch on the floor (mid-shift), 1 = fully home. */
 	clutch: number;
-	/** 0…1 — how LIT the rears are: wheel overspeed over `FULL_SLIP`, so 1 is a tyre
-	 *  doing nothing but smoke. Feeds lateral grip here, looseness in the scene, and
-	 *  the cluster's TC lamp. */
+	/** 0…1 — how LIT the driven tyres are: wheel overspeed over `FULL_SLIP`, so 1 is
+	 *  a tyre doing nothing but smoke. Feeds lateral grip here, looseness in the
+	 *  controller, and the cluster's TC lamp. */
 	slip: number;
-	/** m/s — how much faster the rear contact patch is running than the road, signed
-	 *  along the nose. The state `slip` is a normalised view of; the revs read it. */
+	/** m/s — how much faster the driven contact patch is running than the road,
+	 *  signed along the nose. The state `slip` is a normalised view of; the revs
+	 *  read it. */
 	spin: number;
 	throttle: number;
 	brake: number;
@@ -149,17 +153,17 @@ const TC_SLIP = 2;
 const HOOKED = 0.05;
 /** rpm window for a REV-MATCH LAUNCH: slot 1st out of N inside it and the
  * clutch drops clean — bite, plant and torque all scale with DEPTH in the
- * window (`launchQ`, 0 at the floor → 1 at 6 k). Too low bogs, too high and
+ * window (`launchQ`, 0 at the floor → 1 at the top). Too low bogs, too high and
  * the soft slip eats the excess. */
 export const PERFECT_LAUNCH_MIN = 4000;
 export const PERFECT_LAUNCH_MAX = 6000;
-/** Rear-μ bonus at the TOP of the window — the dump slams load onto the rear
- * axle and the tyre plants. Grip is the cap on thrust (full bite already
+/** Driven-axle μ bonus at the TOP of the window — the dump slams load onto the
+ * driven axle and the tyre plants. Grip is the cap on thrust (full bite already
  * requests past the tyre), so the plant is most of the felt launch. */
 const LAUNCH_GRIP_GAIN = 1.0;
 /** WOT bonus at the TOP of the window, nitrous-style and inside the traction
  * limit — with the plant raising the cap, torque has to rise too or the μ
- * bonus is never spent. Together: ≈1 g off the line at 6 k, ~3× the soft
+ * bonus is never spent. Together: ≈1 g off the line at the top, ~3× the soft
  * launch. */
 const LAUNCH_TORQUE_GAIN = 0.5;
 /** 1/s — how fast the boost decays once the clutch homes. The drop is the
@@ -170,10 +174,12 @@ const LAUNCH_BOOST_DECAY = 0.7;
 
 export type Drivetrain = ReturnType<typeof createDrivetrain>;
 
-export function createDrivetrain() {
+export function createDrivetrain(spec: CarSpec) {
+	const hw = spec.hardware;
+
 	const state: DrivetrainState = {
 		gear: 1,
-		rpm: GR86.idleRpm,
+		rpm: hw.idleRpm,
 		clutch: 1,
 		slip: 0,
 		spin: 0,
@@ -193,14 +199,14 @@ export function createDrivetrain() {
 	let prevDown = false;
 	/** Last step's drive force, for the load-transfer term. Chicken-and-egg, one step stale. */
 	let prevDrive = 0;
-	/** Phase accumulator for the idle wobble — organic fluctuation 800–900 rpm. */
+	/** Phase accumulator for the idle wobble — organic fluctuation around idle. */
 	let idlePhase = 0;
 	/** rpm held during a REV-MATCH LAUNCH, 0 = none. Latched in engage() when 1st
 	 * slots from N with the revs in the window; cleared by the clutch coming
 	 * home, a lift, or any further gear change (engage re-latches). */
 	let launchHold = 0;
 	/** Depth in the window at the catch, 0…1 — how hard the launch is. Bite and
-	 * the rear-μ plant both scale with it. */
+	 * the driven-axle plant both scale with it. */
 	let launchQ = 0;
 	/** The live launch boost: `launchQ` held through the clutch drop, then
 	 * decaying into 1st (LAUNCH_BOOST_DECAY). Plant and torque gain read THIS —
@@ -212,12 +218,12 @@ export function createDrivetrain() {
 
 	function engage(gear: number): void {
 		if (gear === state.gear) return;
-		// The rev-match window is judged at the TAP — the 0.28 s shift cut that
-		// follows lets the revs climb out of it, and that climb is the player's
-		// timing, not a miss. Depth in the window (`launchQ`) is how hard the
-		// launch is: the floor is barely more than the street launch, the top is
-		// a dropped clutch at full plant. Rolling engagements past `launchSpeed`
-		// self-clear in the step (coupling is already 1) — a launch this is not.
+		// The rev-match window is judged at the TAP — the shift cut that follows
+		// lets the revs climb out of it, and that climb is the player's timing,
+		// not a miss. Depth in the window (`launchQ`) is how hard the launch is:
+		// the floor is barely more than the street launch, the top is a dropped
+		// clutch at full plant. Rolling engagements past `launchSpeed` self-clear
+		// in the step (coupling is already 1) — a launch this is not.
 		launchHold =
 			gear === 1 &&
 			state.gear === 0 &&
@@ -227,21 +233,17 @@ export function createDrivetrain() {
 				: 0;
 		launchQ =
 			launchHold > 0
-				? clamp(
-						(state.rpm - PERFECT_LAUNCH_MIN) / (PERFECT_LAUNCH_MAX - PERFECT_LAUNCH_MIN),
-						0,
-						1
-					)
+				? clamp((state.rpm - PERFECT_LAUNCH_MIN) / (PERFECT_LAUNCH_MAX - PERFECT_LAUNCH_MIN), 0, 1)
 				: 0;
 		launchBoost = launchQ;
 		state.gear = gear;
-		shiftTimer = GR86.shiftTime;
+		shiftTimer = hw.shiftTime;
 		state.shifted = true;
 	}
 
 	function requestShift(dir: number, speedMs: number): void {
 		const next = state.gear + dir;
-		if (next > TOP_GEAR || next < -1) return;
+		if (next > topGear(spec) || next < -1) return;
 		// Reverse only while (nearly) stopped or already rolling back; forward
 		// gears only while (nearly) stopped or already rolling forward. The 5 m/s
 		// grace window (up from 3, for friendlier shifting) lets you slot 1st from
@@ -251,7 +253,7 @@ export function createDrivetrain() {
 		if (next < 0 && speedMs > 5) return;
 		if (next > 0 && speedMs < -5) return;
 		// Money-shift guard: refuse a downshift that would slam past the limiter.
-		if (next > 0 && rpmInGear(next, speedMs) > GR86.limiterRpm) return;
+		if (next > 0 && rpmInGear(spec, next, speedMs) > hw.limiterRpm) return;
 		engage(next);
 	}
 
@@ -273,7 +275,7 @@ export function createDrivetrain() {
 		prevUp = input.shiftUp;
 		prevDown = input.shiftDown;
 
-		// ── Pedals ───────────────────────────────────────────────────────────────
+		// ── Pedals ───────────────────────────────────────────────────────────
 		// No pedal swapping in reverse: ↑ is ALWAYS throttle, ↓ is ALWAYS brake.
 		// In R the throttle simply drives the car backwards — you slot R with Q
 		// and pull away on the same key as everywhere else.
@@ -284,8 +286,8 @@ export function createDrivetrain() {
 
 		// ── Clutch & engine speed ────────────────────────────────────────────
 		shiftTimer = Math.max(0, shiftTimer - dt);
-		const ratio = gearRatio(state.gear);
-		const total = totalRatio(state.gear);
+		const ratio = gearRatio(spec, state.gear);
+		const total = totalRatio(spec, state.gear);
 		const connected = ratio !== 0 && shiftTimer === 0;
 
 		if (!connected) {
@@ -293,18 +295,18 @@ export function createDrivetrain() {
 			// during a shift actually does something, which is the point.
 			state.clutch = 0;
 			state.launch = 0;
-			const free = GR86.idleRpm + throttle * (GR86.limiterRpm - GR86.idleRpm);
-			const rate = throttle > 0 ? GR86.freeRevRate : GR86.freeDropRate;
+			const free = hw.idleRpm + throttle * (hw.limiterRpm - hw.idleRpm);
+			const rate = throttle > 0 ? hw.freeRevRate : hw.freeDropRate;
 			state.rpm += (free - state.rpm) * damp(rate, dt);
 		} else {
 			// Slip the clutch off the line so a launch holds revs instead of bogging.
-			// Scaled by gear: 1st is home by 4.5 m/s, 6th would never slip anyway.
-			const homeAt = GR86.launchSpeed * (totalRatio(1) / total);
+			// Scaled by gear: 1st is home by launchSpeed, top gear would never slip anyway.
+			const homeAt = hw.launchSpeed * (totalRatio(spec, 1) / total);
 			const coupling = clamp(rolling / homeAt, 0, 1);
 			// REV-MATCH LAUNCH (window at the top): while held, the clutch is DOWN
 			// CLEAN and DEPTH in the window sets how hard — bite scales
 			// `clutchMinBite`→1 with `launchQ`, the revs sit where you caught them
-			// instead of the soft-slip 3200. The BOOST (plant + torque) is
+			// instead of the soft-slip launch rpm. The BOOST (plant + torque) is
 			// `launchBoost`: held through the drop, then decaying into 1st so the
 			// slam outlives the engagement. The hold ends when the clutch homes or
 			// the throttle lifts; a lift (or any gear change) kills the boost too —
@@ -334,66 +336,58 @@ export function createDrivetrain() {
 			// revs climb even though the car is not. It is a real wheel speed, so this
 			// is just the gearing — a donut on the limiter is 12 m/s of spin over a
 			// 4 m/s car, and the tacho says so.
-			const gearRpm = rpmInGear(state.gear, speedMs + state.spin);
+			const gearRpm = rpmInGear(spec, state.gear, speedMs + state.spin);
 			const slipping =
-				launchHold > 0
-					? launchHold
-					: GR86.idleRpm + throttle * (GR86.launchRpm - GR86.idleRpm);
-			const target = Math.max(
-					GR86.idleRpm,
-					gearRpm,
-					gearRpm * coupling + slipping * (1 - coupling)
-				);
-			state.rpm += (target - state.rpm) * damp(GR86.rpmResponse, dt);
+				launchHold > 0 ? launchHold : hw.idleRpm + throttle * (hw.launchRpm - hw.idleRpm);
+			const target = Math.max(hw.idleRpm, gearRpm, gearRpm * coupling + slipping * (1 - coupling));
+			state.rpm += (target - state.rpm) * damp(hw.rpmResponse, dt);
 		}
 
-		// ── Fuel cut: rev limiter and the 140 mph governor ───────────────────
-		if (state.rpm >= GR86.limiterRpm) cutTimer = GR86.limiterCut;
+		// ── Fuel cut: rev limiter and the top-speed governor ─────────────────
+		if (state.rpm >= hw.limiterRpm) cutTimer = hw.limiterCut;
 		cutTimer = Math.max(0, cutTimer - dt);
-		const governed = speedMs > GR86.topSpeed;
+		const governed = speedMs > hw.topSpeed;
 		const cut = cutTimer > 0 || governed;
 		state.limiting = cut && throttle > 0;
-		state.rpm = clamp(state.rpm, GR86.idleRpm, GR86.limiterRpm + 150);
+		state.rpm = clamp(state.rpm, hw.idleRpm, hw.limiterRpm + 150);
 
 		// ── Crank torque → wheel force ───────────────────────────────────────
 		let crankTorque = 0;
 		if (connected) {
-			// Lugging: below ~1400 rpm the engine can't make its curve.
-			const lug = clamp(state.rpm / GR86.lugRpm, 0.35, 1);
+			// Lugging: below `lugRpm` the engine can't make its curve.
+			const lug = clamp(state.rpm / hw.lugRpm, 0.35, 1);
 			// Nitrous multiplies the WOT term only — a fuel cut still cuts and engine
 			// braking is untouched, exactly as if the kit had just made the curve fatter.
 			// The launch boost multiplies on top of that, same rule.
 			const wot =
-				engineTorque(state.rpm) *
+				engineTorque(spec, state.rpm) *
 				lug *
-				(1 + NITROUS_TORQUE_GAIN * input.nitrous) *
+				(1 + hw.nitrousTorqueGain * input.nitrous) *
 				(1 + LAUNCH_TORQUE_GAIN * launchBoost);
-			const drag = engineBrakeTorque(state.rpm);
+			const drag = engineBrakeTorque(spec, state.rpm);
 			crankTorque = cut ? -drag : throttle * wot - (1 - throttle) * drag;
 		}
 		// A slipping clutch transmits less than the crank makes — without this the car
 		// launched off the line at the full traction limit and ran 0-60 in 5.2 s
 		// against the real GR86's 6.1. It is also what stops the car lurching when you
 		// blip the throttle at walking pace.
-		const clutchTorque = GR86.clutchMinBite + (1 - GR86.clutchMinBite) * state.clutch;
-		const reduction = (total * GR86.efficiency) / GR86.wheelRadius;
+		const clutchTorque = hw.clutchMinBite + (1 - hw.clutchMinBite) * state.clutch;
+		const reduction = (total * hw.efficiency) / hw.wheelRadius;
 		const requested = crankTorque * clutchTorque * reduction * Math.sign(ratio || 1);
 
-		// ── Traction at the rear axle ────────────────────────────────────────
-		// Static rear load plus longitudinal transfer (m·a·h/L, and m·a is just
-		// last step's force). Handbrake locks the rears, so they drive nothing.
-		const rearLoad = Math.max(
-			0,
-			GR86.mass * G * GR86.rearWeightBias + (prevDrive * GR86.cogHeight) / GR86.wheelbase
-		);
-		const traction = input.handbrake ? 0 : tune.tireMuLong * rearLoad;
+		// ── Traction at the driven axle ──────────────────────────────────────
+		// Static driven-axle load plus longitudinal transfer (m·a·h/L, and m·a is
+		// just last step's force), layout-aware — cars/spec.ts. Handbrake locks
+		// the rears, so they drive nothing.
+		const drivenLoad = drivenAxleLoad(spec, prevDrive);
+		const traction = input.handbrake ? 0 : tune.tireMuLong * drivenLoad;
 
 		// What the tyre hands the road. Gripping, it passes the engine's request up to
 		// the limit. SLIDING, it gives full μ along the way the wheels are turning and
 		// the engine has no say at all — which is why a burnout keeps pulling through
 		// the limiter's fuel cut instead of braking the car (see the header).
-		// During a rev-match launch the rear μ gains up to LAUNCH_GRIP_GAIN — the
-		// plant that makes the launch HARDER with depth in the window (the request
+		// During a rev-match launch the driven-axle μ gains up to LAUNCH_GRIP_GAIN —
+		// the plant that makes the launch HARDER with depth in the window (the request
 		// at full bite is already past the tyre, so grip is the cap on thrust).
 		const sliding = Math.abs(state.spin) > HOOKED;
 		const plant = 1 + launchBoost * LAUNCH_GRIP_GAIN;
@@ -408,8 +402,8 @@ export function createDrivetrain() {
 		// why 1st lights up in a blink, 2nd builds over a couple of seconds, and 3rd
 		// (which cannot out-pull the tyre anyway) never spins.
 		const spinMass =
-			((connected ? GR86.engineInertia * total * total : 0) + GR86.wheelInertia) /
-			(GR86.wheelRadius * GR86.wheelRadius);
+			((connected ? hw.engineInertia * total * total : 0) + hw.wheelInertia) /
+			(hw.wheelRadius * hw.wheelRadius);
 		const wasSpin = state.spin;
 		state.spin += ((requested - driveForce) / spinMass) * dt;
 		// Never let a decaying spin cross zero inside one step — that is the wheels
@@ -429,21 +423,21 @@ export function createDrivetrain() {
 		// negative (engine braking pulling one way, the sliding tyre the other), so a
 		// lit 1st gear hooks back up in about 0.7 s and 2nd in a quarter of that.
 		state.slip = clamp(Math.abs(state.spin) / FULL_SLIP, 0, 1);
-		// Friction circle: the share of the rear's budget the drive force is using, AFTER
-		// the clip (so it saturates at 1 exactly when the tyre lets go). Off throttle
-		// this is just engine braking, a tenth or so — which is the point, because it is
-		// what makes lifting a real input rather than a no-op.
+		// Friction circle: the share of the driven axle's budget the drive force is
+		// using, AFTER the clip (so it saturates at 1 exactly when the tyre lets go).
+		// Off throttle this is just engine braking, a tenth or so — which is the
+		// point, because it is what makes lifting a real input rather than a no-op.
 		const powerLoad = traction > 0 ? clamp(Math.abs(driveForce) / traction, 0, 1) : 0;
 
 		// ── Brakes, aero, rolling resistance ─────────────────────────────────
 		let resist = 0;
 		if (rolling > 0.05) {
 			const dir = Math.sign(speedMs);
-			let magnitude = GR86.dragK * speedMs * speedMs + GR86.rollingResistance;
-			magnitude += braking * GR86.brakeForce;
-			if (input.handbrake) magnitude += GR86.handbrakeForce;
+			let magnitude = hw.dragK * speedMs * speedMs + hw.rollingResistance;
+			magnitude += braking * hw.brakeForce;
+			if (input.handbrake) magnitude += hw.handbrakeForce;
 			// Never let a retarding force push the car backwards inside one step.
-			const stopping = (rolling * GR86.mass) / dt;
+			const stopping = (rolling * hw.mass) / dt;
 			resist = -dir * Math.min(magnitude, stopping);
 		}
 
@@ -473,7 +467,7 @@ export function createDrivetrain() {
 	}
 
 	/** Called when the car is parked and the scene stops touching the body. */
-function idle(dt: number): void {
+	function idle(dt: number): void {
 		state.throttle = 0;
 		state.brake = 0;
 		state.slip = 0;
@@ -482,18 +476,17 @@ function idle(dt: number): void {
 		state.shifted = false;
 		state.launch = 0;
 		launchBoost = 0;
-		// Organic idle: slow sine wobble between 800–900 rpm. The two terms
+		// Organic idle: slow sine wobble around idle rpm. The two terms
 		// (1.5 Hz main + 0.4 Hz sub-harmonic) keep it from looking periodic.
 		idlePhase += dt;
-		const wobble =
-			Math.sin(idlePhase * 1.5) * 40 + Math.sin(idlePhase * 0.4) * 10;
-		state.rpm += (GR86.idleRpm + wobble - state.rpm) * damp(GR86.freeDropRate, dt);
+		const wobble = Math.sin(idlePhase * 1.5) * 40 + Math.sin(idlePhase * 0.4) * 10;
+		state.rpm += (hw.idleRpm + wobble - state.rpm) * damp(hw.freeDropRate, dt);
 		prevDrive = 0;
 	}
 
 	function reset(): void {
 		state.gear = 1;
-		state.rpm = GR86.idleRpm;
+		state.rpm = hw.idleRpm;
 		state.clutch = 1;
 		state.slip = 0;
 		state.spin = 0;

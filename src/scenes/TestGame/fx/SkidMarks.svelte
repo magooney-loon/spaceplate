@@ -4,8 +4,10 @@
 	import * as THREE from 'three/webgpu';
 	import { attribute, clamp, positionWorld, smoothstep, texture, uniform, vec2 } from 'three/tsl';
 	import { BASE_URL } from '$extensions/settings';
-	import { GR86, UNITS_PER_METER } from './gr86';
-	import { carSim } from './carTelemetry.svelte';
+	import { currentCar } from '../cars';
+	import { wheelPatches } from '../cars/spec';
+	import { UNITS_PER_METER } from '../units';
+	import { carSim } from '../sim/carTelemetry.svelte';
 
 	// Skid marks — the road's memory of the squeal. One world-anchored mesh whose
 	// geometry is a ring buffer of quads laid at the tyre contact patches while
@@ -26,22 +28,12 @@
 	let { target }: { target?: THREE.Object3D } = $props();
 
 	// ── Layout (body space: world units, y=0 is the road at the car) ────────────
-	// Track width is the one number not in gr86.ts (the GLB's wheels are measured
-	// at runtime by CarWheels, not exported) — the real car's rear track, 1.55 m.
-	// A couple of cm of error is invisible under a 0.54-unit-wide ribbon.
-	const HALF_TRACK = 0.775 * UNITS_PER_METER;
-	const FRONT_Z = -GR86.wheelbase * (1 - GR86.rearWeightBias) * UNITS_PER_METER;
-	const REAR_Z = GR86.wheelbase * GR86.rearWeightBias * UNITS_PER_METER;
-	// FL, FR, RL, RR — nose is -Z, +X left (CarHeadlights' sibling convention).
-	const WHEELS: readonly (readonly [number, number])[] = [
-		[-HALF_TRACK, FRONT_Z],
-		[HALF_TRACK, FRONT_Z],
-		[-HALF_TRACK, REAR_Z],
-		[HALF_TRACK, REAR_Z]
-	];
+	// From the car's spec (geometry.axleZ / halfTrack) via the shared wheelPatches
+	// helper — the smoke's twin layout, one source.
+	const WHEELS = wheelPatches(currentCar());
 
 	// ── Tuning ──────────────────────────────────────────────────────────────────
-	const HALF_WIDTH = 0.108 * UNITS_PER_METER; // 215 mm tyre
+	const HALF_WIDTH = currentCar().geometry.tyreHalfWidth * UNITS_PER_METER;
 	const MARK_ON = 0.3; // source intensity before rubber is laid
 	const MARK_EXIT = 0.22; // hysteresis — chatter at the threshold lays confetti
 	const SEG_MIN = 0.35; // world units between laid segments
@@ -108,11 +100,16 @@
 	// kind of thing), multiplied together. World-anchored, so it is stable — no
 	// shimmer — and continuous along the strip; the product of two scales reads
 	// as scratched, patchy rubber rather than one obvious pattern.
-	const noiseMap = new THREE.TextureLoader().load(`${BASE_URL}textures/noises/perlin.png`);
+	const noiseMap = new THREE.TextureLoader().load(`${BASE_URL}textures/noises/perlin.png`, () =>
+		invalidate()
+	);
 	noiseMap.wrapS = noiseMap.wrapT = THREE.RepeatWrapping;
 	noiseMap.colorSpace = THREE.NoColorSpace;
 	const n1 = texture(noiseMap, vec2(positionWorld.x.mul(0.22), positionWorld.z.mul(0.22))).r;
-	const n2 = texture(noiseMap, vec2(positionWorld.x.mul(0.9).add(0.37), positionWorld.z.mul(0.9).add(0.71))).r;
+	const n2 = texture(
+		noiseMap,
+		vec2(positionWorld.x.mul(0.9).add(0.37), positionWorld.z.mul(0.9).add(0.71))
+	).r;
 	const noise = clamp(n1.mul(n2).mul(2.2), 0, 1);
 	// Soft rim, and the noise raggers it: the feather's threshold wanders across
 	// the width, so the edge is torn rather than a clean rectangle boundary.
@@ -128,8 +125,8 @@
 	});
 	material.color.setRGB(0.05, 0.05, 0.055); // albedo — the lighting owns the rest
 	material.opacityNode = clamp(
-		aMark
-			.y.mul(1.3) // the rim and mottle thin the average — pay it back at the core
+		aMark.y
+			.mul(1.3) // the rim and mottle thin the average — pay it back at the core
 			.mul(clamp(age.div(FADE_IN), 0, 1))
 			.mul(clamp(age.div(LIFETIME).oneMinus(), 0, 1))
 			.mul(edgeSoft)
@@ -339,8 +336,8 @@
      frustumCulled off — the ring buffer's bounds are meaningless, and one mesh's
      culling test is cheaper than maintaining a bounding sphere over live writes. -->
 <T.Mesh
-	geometry={geometry}
-	material={material}
+	{geometry}
+	{material}
 	frustumCulled={false}
 	renderOrder={1}
 	userData={{ hideInTree: true, selectable: false }}

@@ -3,8 +3,8 @@
 	import { CameraControls, useFollow } from '@threlte/extras';
 	import CameraControlsImpl from 'camera-controls';
 	import * as THREE from 'three/webgpu';
-	import { carSim } from './carTelemetry.svelte';
-	import { clamp, damp } from './carMath';
+	import { carSim } from './sim/carTelemetry.svelte';
+	import { clamp, damp } from './sim/carMath';
 
 	// Third-person / bird chase camera for the car.
 	//
@@ -213,8 +213,7 @@
 				// Recover the player's zoom from under last frame's kick, then apply
 				// this frame's — a wheel zoom mid-launch lands in the base, not the kick.
 				const base = controls.distance - appliedKick;
-				const wanted =
-					-Math.min(LAUNCH_DOLLY * kickLevel, base * 0.6) + SHIFT_DOLLY * shiftLevel;
+				const wanted = -Math.min(LAUNCH_DOLLY * kickLevel, base * 0.6) + SHIFT_DOLLY * shiftLevel;
 				const d = clamp(base + wanted, MIN_DISTANCE, MAX_DISTANCE);
 				appliedKick = d - base;
 				controls.distance = d;
@@ -223,7 +222,10 @@
 
 			const flow = clamp(carSim.nitrous, 0, 1);
 			const fovTarget =
-				savedFov + NITROUS_FOV_KICK * flow + LAUNCH_FOV_KICK * kickLevel + SHIFT_FOV_KICK * shiftLevel;
+				savedFov +
+				NITROUS_FOV_KICK * flow +
+				LAUNCH_FOV_KICK * kickLevel +
+				SHIFT_FOV_KICK * shiftLevel;
 			if (Math.abs(fovTarget - fov) < 0.01) {
 				// Settled — snap exactly, and only touch the camera (and invalidate) if
 				// the snap is a change.

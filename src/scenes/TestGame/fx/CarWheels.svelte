@@ -15,10 +15,12 @@
 		vec3
 	} from 'three/tsl';
 	import { logGltf } from '$extensions/logger';
-	import { UNITS_PER_METER } from './gr86';
-	import { carSim } from './carTelemetry.svelte';
+	import { currentCar } from '../cars';
+	import { UNITS_PER_METER } from '../units';
+	import { carSim } from '../sim/carTelemetry.svelte';
 
-	// Steerable + rolling wheels for the GR86.
+	// Steerable + rolling wheels, generic over the car's spec (wheel-material
+	// prefix + radius fallback come from cars/).
 	//
 	// The GLB merges ALL FOUR wheels into each wheel material's mesh (every Wheel*Mtl
 	// mesh spans the whole car length), so per-wheel node rotation is impossible. Fix:
@@ -33,14 +35,16 @@
 
 	let { scene, visualScale = 1 }: { scene: THREE.Group; visualScale?: number } = $props();
 
-	const WHEEL_MAT = /^wheel/i;
+	// Which materials are wheels — the spec's prefix (the GR86's are
+	// `WheelFLMtl` etc), case-insensitive.
+	const WHEEL_MAT = new RegExp(`^${currentCar().model.wheelMaterialPrefix}`, 'i');
 
 	// One shared uniform pair across all six wheel materials.
 	const uSteer = uniform(0);
 	const uRoll = uniform(0);
 
 	let bakedMeshes: THREE.Mesh[] = [];
-	let wheelRadius = 0.33;
+	let wheelRadius = currentCar().model.wheelRadiusFallback;
 
 	$effect(() => {
 		const wheelMeshes: THREE.Mesh[] = [];

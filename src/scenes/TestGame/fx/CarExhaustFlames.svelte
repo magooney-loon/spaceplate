@@ -23,10 +23,11 @@
 		vec4
 	} from 'three/tsl';
 	import { BASE_URL } from '$extensions/settings';
-	import { GR86, UNITS_PER_METER } from './gr86';
-	import { clamp } from './carMath';
-	import { carSim } from './carTelemetry.svelte';
-	import { triggerExhaustPop } from './carAudio';
+	import { currentCar } from '../cars';
+	import { UNITS_PER_METER } from '../units';
+	import { clamp } from '../sim/carMath';
+	import { carSim } from '../sim/carTelemetry.svelte';
+	import { triggerExhaustPop } from '../audio/carAudio';
 
 	// Exhaust flames — pops and bangs on nasty downshifts (and limiter bangs),
 	// adapted from three.js's webgpu_tsl_vfx_flames example (TSL VFX, @cmzw_).
@@ -86,9 +87,14 @@
 
 	const DEBUG_TIPS = false;
 
-	/** Model metres, measured from the GLB (see header). */
-	const TIP_L = new THREE.Vector3(-0.446, 0.293, 2.05);
-	const TIP_R = new THREE.Vector3(0.446, 0.293, 2.05);
+	// The car's spec owns the tip positions (measured off the GLB — see the spec
+	// file for provenance). Two entries, [left, right].
+	const CAR = currentCar();
+	const hw = CAR.hardware;
+	const [TIP_L_ARR, TIP_R_ARR] = CAR.geometry.exhaustTips;
+	/** Model metres, from the spec (see header). */
+	const TIP_L = new THREE.Vector3(TIP_L_ARR[0], TIP_L_ARR[1], TIP_L_ARR[2]);
+	const TIP_R = new THREE.Vector3(TIP_R_ARR[0], TIP_R_ARR[1], TIP_R_ARR[2]);
 
 	// Downshift burst sizing: base + gain × (rpm at the shift / limiter).
 	const POP_BASE = 0.55;
@@ -470,7 +476,9 @@
 			.mul(1.6)
 			.add(vec2(dyn.seed.add(uTime.mul(0.22)), dyn.seed.mul(2.3).sub(uTime.mul(0.13))));
 		const roil = texture(perlinTex, roilUv).r;
-		const clumpUv = uv().mul(2.4).add(vec2(dyn.seed.mul(1.7), dyn.seed));
+		const clumpUv = uv()
+			.mul(2.4)
+			.add(vec2(dyn.seed.mul(1.7), dyn.seed));
 		const clump = texture(cellularTex, clumpUv).r;
 		material.colorNode = vec3(0.3, 0.29, 0.28); // graphite — the flames' colour, cooled
 		material.opacityNode = dyn.strength
@@ -587,8 +595,18 @@
 	let pendingTimer = 0;
 	// Seconds since each tip last ignited — drives the flash (glow + width
 	// blow-up), which must lead the flame and die much faster than it.
+	// Seconds since each tip last ignited — drives the flash (glow + width
+	// blow-up), which must lead the flame and die much faster than it.
 	let ageL = 99;
 	let ageR = 99;
+	// Boot warm window, in seconds of task time: forces both tips (and one smoke
+	// slot) VISIBLE at zero alpha for the first moments after mount, so their
+	// pipelines compile at scene entry — behind the transition veil — instead of
+	// hitching the FIRST pop. The per-step visibility write in the task below
+	// would otherwise hide them before a frame ever rendered. A TIME window,
+	// not a tick count: physics steps run several per frame and would race the
+	// renderer; seconds of task time cannot.
+	let warm = 0.3;
 
 	/** Roll a pop: style, per-tip shares, per-tip noise phase, maybe a bang-bang. */
 	function fire(amount: number): void {
@@ -653,7 +671,7 @@
 
 		if (carSim.gear !== prevGear) {
 			if (carSim.gear >= 1 && prevGear > carSim.gear) {
-				fire(POP_BASE + POP_RPM_GAIN * clamp(carSim.rpm / GR86.limiterRpm, 0, 1));
+				fire(POP_BASE + POP_RPM_GAIN * clamp(carSim.rpm / hw.limiterRpm, 0, 1));
 			}
 			prevGear = carSim.gear;
 		}
@@ -691,6 +709,16 @@
 
 		tipL.group.visible = iL > 0.02 || flashL > 0.02;
 		tipR.group.visible = iR > 0.02 || flashR > 0.02;
+		// Boot warm window (see `warm`): force the hidden things visible at their
+		// default (zero-alpha) uniforms for the first moments, so the first REAL
+		// pop doesn't pay the pipeline compile. The smoke pool's last slot joins in
+		// — a spawn can't reach it for SMOKE_POOL coughs (head starts at 0).
+		if (warm > 0) {
+			warm -= delta;
+			tipL.group.visible = true;
+			tipR.group.visible = true;
+			puffs[SMOKE_POOL - 1].mesh.visible = warm > 0;
+		}
 		// A visible flame is an animating visual — this component owns that
 		// invalidate reason while a pop is alive (the driving case is already
 		// covered by the chase camera; this covers a stationary rev-match).

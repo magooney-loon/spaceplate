@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { GR86 } from './gr86';
-	import { carHud } from './carTelemetry.svelte';
-	import { carHandling, carIgnition } from './carInput.svelte';
-	import { HANDLING_TUNES } from './handling';
-	import { PERFECT_LAUNCH_MIN, PERFECT_LAUNCH_MAX } from './drivetrain';
+	import { currentCar } from './cars';
+	import { carHud } from './sim/carTelemetry.svelte';
+	import { carHandling, carIgnition } from './sim/carInput.svelte';
+	import { PERFECT_LAUNCH_MIN, PERFECT_LAUNCH_MAX } from './sim/drivetrain';
 
 	// Bottom-right instrument cluster: tacho ring, gear, speed — styled after an
 	// aftermarket gauge pod (ice-blue numerals, red needle/redline, backlit LCD
 	// speed readout, small Boost/N2O gauges bracketing the tacho). N2O is REAL
 	// since the nitrous kit (X): the needle tracks the BOTTLE LEVEL like a pressure
 	// gauge on a real bottle — full reads full and falls as you spray — and the
-	// readout is percent remaining, ice-blue while flowing. Boost stays DECORATIVE:
-	// the GR86 has no turbo, see the comment by MINI_CX below.
+	// readout is percent remaining, ice-blue while flowing. Boost stays DECORATIVE
+	// while no car in the demo is turbocharged (spec `cluster.hasTurbo`): see the
+	// comment by MINI_CX below.
 	//
 	// Everything real is driven by `carHud`, the 30 Hz quantised mirror in
 	// carTelemetry.svelte.ts — never `carSim`, which changes 200×/s. No CSS or
@@ -27,12 +27,17 @@
 	const A0 = 135;
 	const SWEEP = 270;
 
-	const TICKS = Array.from({ length: GR86.maxRpm / 1000 + 1 }, (_, i) => i * 1000);
+	// The dial facts are the CAR'S (spec hardware + cluster block); the rig's own
+	// geometry starts here.
+	const CAR = currentCar();
+	const { maxRpm, redlineRpm, limiterRpm } = CAR.hardware;
+
+	const TICKS = Array.from({ length: maxRpm / 1000 + 1 }, (_, i) => i * 1000);
 	/** Shift lights, evenly spaced from "getting on with it" to the fuel cut. */
-	const SHIFT_LIGHT_FROM = 5600;
+	const SHIFT_LIGHT_FROM = CAR.cluster.shiftLightFrom;
 	const SHIFT_LIGHTS = 5;
 
-	const polar = (rpm: number) => A0 + (SWEEP * Math.min(rpm, GR86.maxRpm)) / GR86.maxRpm;
+	const polar = (rpm: number) => A0 + (SWEEP * Math.min(rpm, maxRpm)) / maxRpm;
 	const point = (angleDeg: number, radius: number) => polarPoint(CX, CY, angleDeg, radius);
 
 	// Shared by the main tacho and the two mini gauges below — parameterised on
@@ -52,7 +57,7 @@
 		arcFrom(CX, CY, fromDeg, toDeg, radius);
 
 	const trackPath = arc(A0, A0 + SWEEP, R);
-	const redlinePath = arc(polar(GR86.redlineRpm), A0 + SWEEP, R);
+	const redlinePath = arc(polar(redlineRpm), A0 + SWEEP, R);
 
 	// ── Boost — DECORATIVE (the N2O gauge next to it is real, see the header). The
 	// GR86 is a naturally aspirated road car: no turbo, nothing to read. It exists
@@ -92,7 +97,7 @@
 	const shiftLit = $derived(
 		Math.max(
 			0,
-			Math.ceil((SHIFT_LIGHTS * (rpm - SHIFT_LIGHT_FROM)) / (GR86.limiterRpm - SHIFT_LIGHT_FROM))
+			Math.ceil((SHIFT_LIGHTS * (rpm - SHIFT_LIGHT_FROM)) / (limiterRpm - SHIFT_LIGHT_FROM))
 		)
 	);
 	// Launch meter: in N with the revs in the rev-match window the shift lights
@@ -105,14 +110,20 @@
 		carHud.gear === 0 && carHud.rpm >= PERFECT_LAUNCH_MIN && carHud.rpm <= PERFECT_LAUNCH_MAX
 	);
 	const launchLit = $derived(
-		Math.max(1, Math.ceil((SHIFT_LIGHTS * (carHud.rpm - PERFECT_LAUNCH_MIN)) / (PERFECT_LAUNCH_MAX - PERFECT_LAUNCH_MIN)))
+		Math.max(
+			1,
+			Math.ceil(
+				(SHIFT_LIGHTS * (carHud.rpm - PERFECT_LAUNCH_MIN)) /
+					(PERFECT_LAUNCH_MAX - PERFECT_LAUNCH_MIN)
+			)
+		)
 	);
 	// TC lamps when the ECU is working — which it never is in Drift: the tune
 	// runs `tractionControl: false`, so wheelspin there is the SETUP, not a system
 	// intervening, and a blinking lamp would be a lie. Gate on the tune's own flag
 	// rather than the mode string — the tune is the truth.
-	const spinning = $derived(HANDLING_TUNES[carHandling.mode].tractionControl && carHud.slip > 0.15);
-	const setup = $derived(HANDLING_TUNES[carHandling.mode].label);
+	const spinning = $derived(CAR.tunes[carHandling.mode].tractionControl && carHud.slip > 0.15);
+	const setup = $derived(CAR.tunes[carHandling.mode].label);
 	// A few degrees of slip angle is just a car cornering. Past ~10° it is a slide, and
 	// the number is worth watching: it is what the Drift tune's two yaw terms balance.
 	const sliding = $derived(carHud.driftDeg >= 10);
@@ -189,15 +200,15 @@
 		>
 			<path class="track" d={trackPath} />
 			<path class="redzone" d={redlinePath} />
-			<path class="sweep" class:hot={rpm >= GR86.redlineRpm} d={rpmPath} />
+			<path class="sweep" class:hot={rpm >= redlineRpm} d={rpmPath} />
 
 			{#each TICKS as tick (tick)}
 				{@const a = polar(tick)}
 				{@const [ix, iy] = point(a, R - 15)}
 				{@const [ox, oy] = point(a, R - 21)}
 				{@const [lx, ly] = point(a, R - 32)}
-				<line class="tick" class:red={tick >= GR86.redlineRpm} x1={ix} y1={iy} x2={ox} y2={oy} />
-				<text class="tick-label" class:red={tick >= GR86.redlineRpm} x={lx} y={ly}>
+				<line class="tick" class:red={tick >= redlineRpm} x1={ix} y1={iy} x2={ox} y2={oy} />
+				<text class="tick-label" class:red={tick >= redlineRpm} x={lx} y={ly}>
 					{tick / 1000}
 				</text>
 			{/each}

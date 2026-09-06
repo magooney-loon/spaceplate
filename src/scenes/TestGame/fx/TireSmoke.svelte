@@ -4,9 +4,11 @@
 	import * as THREE from 'three/webgpu';
 	import { saturate, smoothstep, texture, uniform, uv, vec2 } from 'three/tsl';
 	import { BASE_URL } from '$extensions/settings';
-	import { GR86, UNITS_PER_METER } from './gr86';
-	import { clamp as numClamp } from './carMath';
-	import { carSim } from './carTelemetry.svelte';
+	import { currentCar } from '../cars';
+	import { wheelPatches } from '../cars/spec';
+	import { UNITS_PER_METER } from '../units';
+	import { clamp as numClamp } from '../sim/carMath';
+	import { carSim } from '../sim/carTelemetry.svelte';
 
 	// Tyre smoke — the squeal made visible. Where the exhaust puffs (in
 	// CarExhaustFlames) are one-shot coughs, this is a CONTINUOUS stream: while
@@ -31,17 +33,8 @@
 
 	let { target }: { target?: THREE.Object3D } = $props();
 
-	// ── Layout (body space — the same twin values as SkidMarks) ────────────────
-	const HALF_TRACK = 0.775 * UNITS_PER_METER;
-	const FRONT_Z = -GR86.wheelbase * (1 - GR86.rearWeightBias) * UNITS_PER_METER;
-	const REAR_Z = GR86.wheelbase * GR86.rearWeightBias * UNITS_PER_METER;
-	// FL, FR, RL, RR — nose is -Z.
-	const WHEELS: readonly (readonly [number, number])[] = [
-		[-HALF_TRACK, FRONT_Z],
-		[HALF_TRACK, FRONT_Z],
-		[-HALF_TRACK, REAR_Z],
-		[HALF_TRACK, REAR_Z]
-	];
+	// ── Layout (body space — the shared wheelPatches twin of SkidMarks) ────────
+	const WHEELS = wheelPatches(currentCar());
 
 	// ── Tuning ──────────────────────────────────────────────────────────────────
 	const SMOKE_ON = 0.45; // slide intensity before a wheel smokes at all
@@ -99,7 +92,9 @@
 			.mul(1.5)
 			.add(vec2(dyn.seed.add(uTime.mul(0.2)), dyn.seed.mul(2.3).sub(uTime.mul(0.12))));
 		const roil = texture(perlinTex, roilUv).r;
-		const clumpUv = uv().mul(2.2).add(vec2(dyn.seed.mul(1.7), dyn.seed));
+		const clumpUv = uv()
+			.mul(2.2)
+			.add(vec2(dyn.seed.mul(1.7), dyn.seed));
 		const clump = texture(cellularTex, clumpUv).r;
 		material.opacityNode = dyn.strength
 			.mul(ALPHA_PEAK)
@@ -141,7 +136,13 @@
 		dyn.birth.value = -99;
 		dyn.life.value = 1;
 		const mesh = new THREE.Mesh(puffGeometry, makePuffMaterial(dyn));
-		mesh.visible = false;
+		// The LAST slot starts VISIBLE — the boot warm window below renders it at
+		// defaults (strength 0 → fully transparent) so the puff pipeline compiles at
+		// scene entry, behind the transition veil, instead of hitching the FIRST
+		// burnout. `head` starts at 0 and only a spawn advances it, so a real puff
+		// cannot reach this slot for POOL spawns — and if one somehow does, it just
+		// overwrites the dyns (a spawn sets everything it reads).
+		mesh.visible = i === POOL - 1;
 		mesh.frustumCulled = false; // task-driven scale — never cull
 		smokeRoot.add(mesh);
 		puffs.push({
@@ -167,10 +168,25 @@
 	let clock = 0;
 	const _v = new THREE.Vector3();
 
+	// Boot warm window, in seconds of task time: while it lasts, keep invalidating
+	// so the visible-by-default warm slot above actually RENDERS (on-demand: no
+	// invalidate, no draw, no pipeline compile) — physics steps can run several per
+	// frame, so counting ticks would race the renderer; a time window cannot. The
+	// window lands inside the scene-entry veil, where the (zero-alpha) draw is free.
+	let warm = 0.3;
+
 	useTask(
 		(delta) => {
 			clock += delta;
 			uTime.value = clock;
+
+			// Boot warm window (see `warm` above): keep frames flowing while it lasts,
+			// then park the warm slot back to invisible. Zero-alpha by construction.
+			if (warm > 0) {
+				warm -= delta;
+				if (warm <= 0) puffs[POOL - 1].mesh.visible = false;
+				invalidate();
+			}
 
 			const body = target?.parent;
 			if (!body) return;

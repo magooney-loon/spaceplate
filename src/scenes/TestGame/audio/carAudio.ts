@@ -24,10 +24,10 @@
 
 import type { PositionalAudio as ThreePositionalAudio } from 'three';
 import { settingsState } from '$extensions/settings';
-import { GR86 } from './gr86';
-import { clamp, damp } from './carMath';
-import { carSim } from './carTelemetry.svelte';
-import { carIgnition } from './carInput.svelte';
+import { currentCar } from '../cars';
+import { clamp, damp } from '../sim/carMath';
+import { carSim } from '../sim/carTelemetry.svelte';
+import { carIgnition } from '../sim/carInput.svelte';
 
 /**
  * The six loop files, lowest first: the parked tickover, then the rising rpm bed.
@@ -43,13 +43,19 @@ export const LAYER_FILES = [
 ] as const;
 
 /**
- * The rpm each layer's recording sits at — the pitch-tracking anchors. The two
- * layers bracketing the current rpm crossfade, each playing at rate = rpm/anchor,
- * so pitch rises CONTINUOUSLY with the tacho instead of stepping at band edges.
- * These are guesses at the wavs — dial them BY EAR: a wrong anchor is a layer
- * that speaks in the wrong octave while it holds the crossfade.
+ * The rpm each layer's recording sits at on THIS car's tacho — the
+ * pitch-tracking anchors (per-car: the spec's `audio.layerRpm`). The two
+ * layers bracketing the current rpm crossfade, each playing at
+ * rate = rpm/anchor × pitchScale, so pitch rises CONTINUOUSLY with the tacho
+ * instead of stepping at band edges. The anchors are guesses at the wavs —
+ * dial them BY EAR: a wrong anchor is a layer that speaks in the wrong octave
+ * while it holds the crossfade.
  */
-const LAYER_RPM = [1050, 1950, 3250, 4650, 6050, 7000];
+const LAYER_RPM = currentCar().audio.layerRpm;
+/** Per-car voice: scales every layer's rate, shifting the shared bed. */
+const PITCH_SCALE = currentCar().audio.pitchScale;
+/** This car's rpm bounds — read once; the car is constant for a session. */
+const HW = currentCar().hardware;
 
 /** Safety clamps for the derived rates (idle dips and limiter overshoots). */
 const RATE_MIN = 0.7;
@@ -153,7 +159,11 @@ export const attachNitroEnd = (audio: ThreePositionalAudio): void => {
 
 /** One-shot semantics (clickAudio pattern): a re-fire mid-play cuts and
  * restarts — that read is correct, the system just went again. */
-const playOneShot = (audio: ThreePositionalAudio | undefined, gain: number, master: number): void => {
+const playOneShot = (
+	audio: ThreePositionalAudio | undefined,
+	gain: number,
+	master: number
+): void => {
 	if (!audio?.buffer) return;
 	if (audio.isPlaying) audio.stop();
 	audio.setVolume(gain * master);
@@ -173,28 +183,28 @@ const playOneShot = (audio: ThreePositionalAudio | undefined, gain: number, mast
 /** Turn-on/off one-shot level. Files peak near 0 dBFS as delivered. */
 const IGNITION_GAIN = 0.9;
 
-	let turnOnSound: ThreePositionalAudio | undefined;
-	let turnOffSound: ThreePositionalAudio | undefined;
-	/** Previous tick's ignition — edge detect for the one-shots. */
-	let ignPrev = carIgnition.on;
-	/** AudioContext time the crank recording started — drives the bed's
-	 * fade-in under the recording's tail (see tick). */
-	let turnOnStart = 0;
-	/** Seconds of the bed fading in under the crank tail before `ready` flips. */
-	const STARTUP_BLEND = 0.9;
+let turnOnSound: ThreePositionalAudio | undefined;
+let turnOffSound: ThreePositionalAudio | undefined;
+/** Previous tick's ignition — edge detect for the one-shots. */
+let ignPrev = carIgnition.on;
+/** AudioContext time the crank recording started — drives the bed's
+ * fade-in under the recording's tail (see tick). */
+let turnOnStart = 0;
+/** Seconds of the bed fading in under the crank tail before `ready` flips. */
+const STARTUP_BLEND = 0.9;
 
-	export const attachTurnOnSound = (audio: ThreePositionalAudio): void => {
-		turnOnSound = audio;
-		// When the crank recording ends, the startup sequence is done — the bed
-		// can fade in and the player can drive. Wired here (not in tick) because
-		// this runs once at mount, and the callback must not stack.
-		audio.onEnded = () => {
-			carIgnition.ready = true;
-		};
+export const attachTurnOnSound = (audio: ThreePositionalAudio): void => {
+	turnOnSound = audio;
+	// When the crank recording ends, the startup sequence is done — the bed
+	// can fade in and the player can drive. Wired here (not in tick) because
+	// this runs once at mount, and the callback must not stack.
+	audio.onEnded = () => {
+		carIgnition.ready = true;
 	};
-	export const attachTurnOffSound = (audio: ThreePositionalAudio): void => {
-		turnOffSound = audio;
-	};
+};
+export const attachTurnOffSound = (audio: ThreePositionalAudio): void => {
+	turnOffSound = audio;
+};
 
 // ── Tyres ────────────────────────────────────────────────────────────────────
 //
@@ -276,9 +286,11 @@ export const triggerExhaustPop = (energy: number, right: boolean): void => {
 	if (!src?.buffer || !src.parent) return;
 
 	const pop = src.clone() as ThreePositionalAudio;
-	// Same model-metre space the flames' TIP_L/TIP_R live in (the group is at the
-	// car's origin, inside the ×2.5 visual group).
-	pop.position.set((right ? 1 : -1) * 0.446, 0.293, 2.05);
+	// Same model-metre space the flames' tips live in (the group is at the car's
+	// origin, inside the visual scale group) — the tip comes from the car's spec,
+	// the flames' own TIP_L/TIP_R twin.
+	const [tipX, tipY, tipZ] = currentCar().geometry.exhaustTips[right ? 1 : 0];
+	pop.position.set(tipX, tipY, tipZ);
 	pop.userData.hideInTree = true;
 	pop.userData.selectable = false;
 	src.parent.add(pop);
@@ -396,8 +408,8 @@ export const tickCarAudio = (delta: number): void => {
 
 	// Level from the TACHO: idle → limiter maps BED_IDLE → BED_REDLINE, one-pole
 	// so a shift's rpm jump can't click the gain. No input anywhere in this term.
-	const rpm = clamp(carSim.rpm, GR86.idleRpm, GR86.limiterRpm);
-	const rpmFrac = (rpm - GR86.idleRpm) / (GR86.limiterRpm - GR86.idleRpm);
+	const rpm = clamp(carSim.rpm, HW.idleRpm, HW.limiterRpm);
+	const rpmFrac = (rpm - HW.idleRpm) / (HW.limiterRpm - HW.idleRpm);
 	bedLevel += (BED_IDLE + (BED_REDLINE - BED_IDLE) * rpmFrac - bedLevel) * damp(LEVEL_SLEW, delta);
 	const level = bedLevel;
 
@@ -421,7 +433,7 @@ export const tickCarAudio = (delta: number): void => {
 			// Volume and rate first, then play — otherwise a layer entering the
 			// crossfade gets a buffer's worth at whatever level was left over.
 			audio.setVolume(weight * level * startupBlend * master);
-			audio.setPlaybackRate(clamp(rpm / LAYER_RPM[j], RATE_MIN, RATE_MAX));
+			audio.setPlaybackRate(clamp((rpm / LAYER_RPM[j]) * PITCH_SCALE, RATE_MIN, RATE_MAX));
 			if (!audio.isPlaying) audio.play();
 		} else if (audio.isPlaying) {
 			audio.pause();
@@ -460,14 +472,18 @@ export const tickCarAudio = (delta: number): void => {
 	const speed = Math.abs(carSim.speedMs);
 	const spin = clamp((carSim.slip - SQUEAL_SLIP_ON) / (1 - SQUEAL_SLIP_ON), 0, 1);
 	const slide =
-		clamp((Math.abs(carSim.drift) - SQUEAL_DRIFT_ON) / (SQUEAL_DRIFT_FULL - SQUEAL_DRIFT_ON), 0, 1) *
-		clamp(speed / 4, 0, 1);
+		clamp(
+			(Math.abs(carSim.drift) - SQUEAL_DRIFT_ON) / (SQUEAL_DRIFT_FULL - SQUEAL_DRIFT_ON),
+			0,
+			1
+		) * clamp(speed / 4, 0, 1);
 	const hand = carSim.handbrake ? 0.8 * clamp(speed / 10, 0, 1) : 0;
 	const hard = carSim.brake * SQUEAL_BRAKE * clamp(speed / SQUEAL_BRAKE_SPEED, 0, 1);
 	const lat = SQUEAL_LAT * clamp((carSim.latLoad - SQUEAL_LAT_ON) / (1 - SQUEAL_LAT_ON), 0, 1);
 	const launchSq = carSim.launch * SQUEAL_LAUNCH;
 	const squeal = Math.max(spin, slide, hand, hard, lat, launchSq);
-	squealLevel += (squeal - squealLevel) * damp(squeal > squealLevel ? SQUEAL_ATTACK : SQUEAL_RELEASE, delta);
+	squealLevel +=
+		(squeal - squealLevel) * damp(squeal > squealLevel ? SQUEAL_ATTACK : SQUEAL_RELEASE, delta);
 	// The release asymptote never lands on 0 — snap it, or the loop hisses at ~0
 	// for the rest of the session after the first slide.
 	if (squeal === 0 && squealLevel < 0.01) squealLevel = 0;
