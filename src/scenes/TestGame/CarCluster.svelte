@@ -107,6 +107,10 @@
 	const launchLit = $derived(
 		Math.max(1, Math.ceil((SHIFT_LIGHTS * (carHud.rpm - PERFECT_LAUNCH_MIN)) / (PERFECT_LAUNCH_MAX - PERFECT_LAUNCH_MIN)))
 	);
+	// The flash names the band the catch landed in — tiers are latched at the
+	// catch (carSim.launchTier), never read off the live revs. The boost itself
+	// is continuous; the names are how the player learns the window.
+	const LAUNCH_LABELS = ['STREET LAUNCH', 'JUICY LAUNCH', 'PERFECT LAUNCH'] as const;
 	// TC lamps when the ECU is working — which it never is in Drift: the tune
 	// runs `tractionControl: false`, so wheelspin there is the SETUP, not a system
 	// intervening, and a blinking lamp would be a lie. Gate on the tune's own flag
@@ -231,12 +235,13 @@
 		</div>
 	</div>
 
-	<!-- PERFECT LAUNCH — one-shot over the dials when a rev-match launch lands
-	     (1st slotted from N with the revs in the 5–6k window). The element's
-	     lifetime is the carSim countdown (~1.5 s), so the keyframe runs once and
-	     the unmount ends it — no transitions (repo rule). -->
+	<!-- Launch flash — one-shot over the dials when a rev-match launch lands
+	     (1st slotted from N with the revs in the window). The label is the
+	     caught band: STREET / JUICY / PERFECT. The element's lifetime is the
+	     carSim countdown (~1.5 s), so the keyframe runs once and the unmount
+	     ends it — no transitions (repo rule). -->
 	{#if carHud.perfectLaunch}
-		<div class="launch-flash">PERFECT LAUNCH</div>
+		<div class="launch-flash">{LAUNCH_LABELS[carHud.launchTier] ?? 'PERFECT LAUNCH'}</div>
 	{/if}
 </div>
 

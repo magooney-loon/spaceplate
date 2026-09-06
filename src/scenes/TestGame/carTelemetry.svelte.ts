@@ -52,6 +52,10 @@ export const carSim = {
 	 *  flags the frame), counted down in the task. The HUD mirrors it as a
 	 *  boolean. */
 	perfectLaunch: 0,
+	/** The caught launch's tier, riding with the flash: 0 = STREET (4–5k),
+	 *  1 = JUICY (5–5.5k), 2 = PERFECT (5.5–6k). Latched at the catch — the
+	 *  label must not follow the live revs. */
+	launchTier: 0,
 	/** 0..1 — rev-match launch LIVE: depth in the window × what's left of the
 	 *  clutch drop (drivetrain.state.launch). The tyre-squeal source reads it;
 	 *  the cluster flash is the separate perfectLaunch countdown above. */
@@ -78,7 +82,10 @@ export const carHud = $state({
 	/** 0..1 bottle — quantised to 0.01, read as whole percent by the N2O gauge. */
 	nitrousTank: 1,
 	/** PERFECT LAUNCH flash live (carSim.perfectLaunch > 0). */
-	perfectLaunch: false
+	perfectLaunch: false,
+	/** The flash's tier label index — STREET / JUICY / PERFECT (CarCluster
+	 *  owns the strings). */
+	launchTier: 0
 });
 
 const HUD_INTERVAL = 1 / 30;
@@ -114,6 +121,7 @@ export function publishCarHud(dt: number): void {
 	if (carHud.nitrousTank !== nitrousTank) carHud.nitrousTank = nitrousTank;
 	const launch = carSim.perfectLaunch > 0;
 	if (carHud.perfectLaunch !== launch) carHud.perfectLaunch = launch;
+	if (carHud.launchTier !== carSim.launchTier) carHud.launchTier = carSim.launchTier;
 }
 
 /** Park the instruments — used when the scene stops driving (scene switch, blur). */
@@ -135,6 +143,7 @@ export function resetCarTelemetry(): void {
 	// next mount starts with.
 	carSim.nitrousTank = 1;
 	carSim.perfectLaunch = 0;
+	carSim.launchTier = 0;
 	carSim.launch = 0;
 	elapsed = HUD_INTERVAL;
 	publishCarHud(0);

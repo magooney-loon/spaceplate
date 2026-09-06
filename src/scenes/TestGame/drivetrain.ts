@@ -117,6 +117,11 @@ export interface DrivetrainState {
 	 * revs in the window and the clutch just dropped clean. The scene flashes
 	 * the cluster off it. */
 	launched: boolean;
+	/** The caught launch's tier, set the same frame as `launched` (from the
+	 * caught rpm, not the live one): 0 = STREET (4–5k), 1 = JUICY (5–5.5k),
+	 * 2 = PERFECT (5.5–6k). Presentation bands — the boost itself stays
+	 * continuous; the cluster flash names the band. */
+	launchTier: number;
 	/** 0..1 — rev-match launch LIVE: depth in the window × what's left of the
 	 * clutch drop. Fades to 0 exactly as the clutch homes; the tyre-squeal
 	 * source reads it through carSim. */
@@ -177,6 +182,7 @@ export function createDrivetrain() {
 		limiting: false,
 		shifted: false,
 		launched: false,
+		launchTier: 0,
 		launch: 0
 	};
 
@@ -315,6 +321,8 @@ export function createDrivetrain() {
 			if (launchHold > 0 && !launchAnnounced) {
 				launchAnnounced = true;
 				state.launched = true;
+				// The tier off the CAUGHT rpm (launchHold is still the catch here).
+				state.launchTier = launchHold >= 5500 ? 2 : launchHold >= 5000 ? 1 : 0;
 			}
 			if (launchHold === 0) launchAnnounced = false;
 			state.clutch = launchHold > 0 ? Math.max(coupling, launchQ) : coupling;
@@ -494,6 +502,8 @@ function idle(dt: number): void {
 		state.limiting = false;
 		state.shifted = false;
 		state.launched = false;
+		state.launchTier = 0;
+		state.launch = 0;
 		shiftTimer = 0;
 		cutTimer = 0;
 		prevUp = false;

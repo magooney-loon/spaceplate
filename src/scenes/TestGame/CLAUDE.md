@@ -285,10 +285,12 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   boost instantly (no reward for aborted launches). In N with the revs in
   the window the cluster's five shift lights turn GREEN and fill with depth
   (launch meter — overrides the shift indication, which has no job in N);
-  on the landing the cluster flashes PERFECT LAUNCH ~1.5 s (`state.launched`
-  → `carSim.perfectLaunch` countdown → `carHud.perfectLaunch` → CarCluster's
-  one-shot keyframe), and the tyres chirp through the drop and tail
-  (`state.launch` = the boost → `carSim.launch` → carAudio's squeal).
+  on the landing the cluster flashes the caught band for ~1.5 s — STREET
+  LAUNCH (4–5k) / JUICY LAUNCH (5–5.5k) / PERFECT LAUNCH (5.5–6k), tier
+  latched at the catch (`state.launchTier` → `carSim.launchTier` →
+  `carHud.launchTier` → CarCluster's LAUNCH_LABELS one-shot keyframe) — and
+  the tyres chirp through the drop and tail (`state.launch` = the boost →
+  `carSim.launch` → carAudio's squeal).
 
 ## Colliders — the hard-won rules
 
