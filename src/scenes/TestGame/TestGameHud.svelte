@@ -52,8 +52,8 @@
 
 	<!-- Controls hint. -->
 	<div class="info">
-		<p>↑ throttle · ↓ brake · Space handbrake · Q/E shift · ⇧ nitrous · M/N engine · L lights · K beam</p>
-		<p>G setup (Grip / Drift) · drag to tilt · right-drag to raise/lower · wheel to zoom</p>
+		<p>↑ throttle · ↓ brake · Space handbrake · Q/E shift · ⇧ nitrous · N/M engine · L/K lights/beams</p>
+		<p>G setup (Grip / Drift) · drag tilt · right-drag raise/lower · wheel zoom</p>
 	</div>
 
 	<!-- Speed / gear / rpm — bottom right. -->

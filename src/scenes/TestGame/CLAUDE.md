@@ -40,8 +40,8 @@ cityColliders.ts        — hand-rolled static trimesh colliders for the track G
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
 Shift nitrous, L headlights, K main beam, G handling setup, M/N ignition on/off
-(turnon/turnoff sounds + the whole engine bed gates on it; the driving model is
-NOT gated — arcade v1, the car coasts on silently). Reverse is a GEAR,
+(turnon/turnoff sounds + the whole engine bed gates on it; throttle, brake and
+shifting are also gated — engine off = silent coast to a stop). Reverse is a GEAR,
 not a pedal: Q past 1st through N into R, then pull away on ↑ — the pedals never
 swap meaning, ↓ is only ever the brake. The keys are chosen so Studio's
 dev-mode shortcuts (w a s z t r c v m) never fight the car (Shift is a modifier,
@@ -376,8 +376,9 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   (the same flow the flames/camera/HUD read). One-shot semantics (clickAudio
   pattern): a re-engage mid-play cuts and restarts. IGNITION: M/N voice the
   transitions (`turnon.wav` / `turnoff.wav`) and gate everything combustive — bed,
-  pops, nitrous all stop when the switch is off. The driving model is NOT gated
-  (arcade v1: the car coasts silently). Edge-triggered: the one-shot fires on the
+  pops, nitrous all stop when the switch is off. The driving model is also gated:
+  throttle, brake and shifting do nothing with the engine off, so the car coasts
+  to a stop. Edge-triggered: the one-shot fires on the
   keydown, the bed cuts instantly on turnoff so the shot lands over silence. TC
   LAMP: the cluster's `spinning` indicator gates on the tune's `tractionControl`
   flag — in Drift mode `tractionControl` is false, so wheelspin there is the setup,

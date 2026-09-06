@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { GR86 } from './gr86';
 	import { carHud } from './carTelemetry.svelte';
-	import { carHandling } from './carInput.svelte';
+	import { carHandling, carIgnition } from './carInput.svelte';
 	import { HANDLING_TUNES } from './handling';
 
 	// Bottom-right instrument cluster: tacho ring, gear, speed — styled after an
@@ -103,9 +103,10 @@
 	// A few degrees of slip angle is just a car cornering. Past ~10° it is a slide, and
 	// the number is worth watching: it is what the Drift tune's two yaw terms balance.
 	const sliding = $derived(carHud.driftDeg >= 10);
+	const dimmed = $derived(!carIgnition.on);
 </script>
 
-<div class="cluster" class:limiting={carHud.limiting}>
+<div class="cluster" class:limiting={carHud.limiting} class:dimmed>
 	<div class="lights" aria-hidden="true">
 		{#each { length: SHIFT_LIGHTS } as _, i (i)}
 			<span class="light" class:on={i < shiftLit} class:red={i >= SHIFT_LIGHTS - 2}></span>
@@ -235,6 +236,11 @@
 
 	.cluster.limiting {
 		border-color: rgba(255, 78, 78, 0.85);
+	}
+
+	.cluster.dimmed {
+		opacity: 0.3;
+		filter: saturate(0.4);
 	}
 
 	/* ── Shift lights ─────────────────────────────────────────────────────── */

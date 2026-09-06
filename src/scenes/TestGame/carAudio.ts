@@ -164,7 +164,8 @@ const playOneShot = (audio: ThreePositionalAudio | undefined, gain: number, mast
 //
 // M on / N off (carInput's latched switch). The bed, pops and nitrous all gate
 // on it — no combustion, no noise — and the one-shots voice the transitions.
-// The DRIVING model is not gated (arcade v1): engine off = silent running.
+// The driving model is also gated: throttle, brake and shifting are dead with
+// the engine off, so the car coasts to a stop.
 
 /** Turn-on/off one-shot level. Files peak near 0 dBFS as delivered. */
 const IGNITION_GAIN = 0.9;

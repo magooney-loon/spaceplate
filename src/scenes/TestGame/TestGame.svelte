@@ -24,6 +24,7 @@
 		CAR_TOGGLE_KEYS,
 		applyCarToggle,
 		carHandling,
+		carIgnition,
 		carInput,
 		carRestart,
 		resetCarInput,
@@ -242,12 +243,18 @@
 		const steerKey = (carInput.left ? 1 : 0) - (carInput.right ? 1 : 0);
 		const handbrake = carInput.handbrake;
 
+		// Ignition gates throttle, brake and shifting — engine off, no drive. Handbrake
+		// still works (safety), steering still works (rolling car must still steer).
+		const ignOn = carIgnition.on;
+		const throttle = ignOn && carInput.up;
+		const brake = ignOn && carInput.down;
+
 		// The bottle. Runs BEFORE the idle early-return below so it regenerates while
 		// parked too, and so `nitrousFlow` is already honest when the idle branch
-		// publishes it. Note the throttle switch reads the raw ↑ key: parked with Shift
+		// publishes it. Note the throttle switch reads the gated ↑ key: parked with Shift
 		// held but no throttle, nothing sprays (and the car may sleep).
 		const spraying =
-			carInput.nitrous && carInput.up && drivetrain.state.gear >= 1 && nitrousBottle > NITROUS_DRY;
+			ignOn && carInput.nitrous && carInput.up && drivetrain.state.gear >= 1 && nitrousBottle > NITROUS_DRY;
 		nitrousFlow +=
 			((spraying ? 1 : 0) - nitrousFlow) * damp(spraying ? NITROUS_ATTACK : NITROUS_RELEASE, delta);
 		if (spraying) {
@@ -287,8 +294,8 @@
 		const idle =
 			steerKey === 0 &&
 			!handbrake &&
-			!carInput.up &&
-			!carInput.down &&
+			!throttle &&
+			!brake &&
 			!carInput.shiftUp &&
 			!carInput.shiftDown;
 		if (idle && _vel.lengthSq() < 0.25) {
@@ -313,11 +320,11 @@
 			delta,
 			speedMs,
 			{
-				forward: carInput.up,
-				backward: carInput.down,
+				forward: throttle,
+				backward: brake,
 				handbrake,
-				shiftUp: carInput.shiftUp,
-				shiftDown: carInput.shiftDown,
+				shiftUp: ignOn && carInput.shiftUp,
+				shiftDown: ignOn && carInput.shiftDown,
 				nitrous: nitrousFlow
 			},
 			tune

@@ -92,9 +92,9 @@ export const carLights = $state({
 /**
  * Ignition — M on, N off. A latched switch like the lights: it survives
  * `resetCarInput` and the Restart button. The ENGINE AUDIO follows it (carAudio
- * gates the bed/pops/nitrous and voices turnon/turnoff); the driving model does
- * not (yet) — arcade v1, the car keeps driving silently, which reads as an EV
- * mode more than a dead engine. Note: M collides with Studio's dev-mode bind
+ * gates the bed/pops/nitrous and voices turnon/turnoff); the driving model is
+ * also gated — throttle, brake and shifting do nothing with the engine off, so
+ * the car coasts to a stop. Note: M collides with Studio's dev-mode bind
  * (w a s z t r c v m) — accepted for now, Studio is dev-only.
  */
 export const carIgnition = $state({ on: true });
