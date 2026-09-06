@@ -51,7 +51,7 @@ renders wrong), `RAPIER.md` (physics), and the per-area `CLAUDE.md` files.
 | 79                | Effect params are live-tweakable via uniform writes in place (no graph rebuild)                                                                                                                                                                                                                                                                                                        | `core/utils/Renderer.svelte`, `extensions/postprocessing`                                 |
 | 80                | Render scale is the `dpr` knob from the quality preset; **low quality bypasses the pipeline entirely** — no base-pass render target is allocated at all                                                                                                                                                                                                                                | `App.svelte`, `core/utils/Renderer.svelte` (`bypass`)                                     |
 | 82                | Native TSL post-processing IS this engine (`RenderPipeline` + TSL nodes)                                                                                                                                                                                                                                                                                                               | `core/utils/Renderer.svelte`, `core/postprocessing/`                                      |
-| 83, 85, 89        | Scenes mount on first visit (keep-alive) and the boot warmup sweep renders every scene behind the loading screen — lazy-load/placeholder patterns for content sites do not apply to a full-canvas app                                                                                                                                                                                  | `Scene.svelte`, `core/utils/boot.svelte.ts`, `Loader.svelte`                              |
+| 83, 85, 89        | One 3D scene is mounted at a time (`{#if}` routing in `Scene.svelte`); lazy-load/placeholder patterns for content sites do not apply to a full-canvas app                                                                                                                                                                                                                               | `Scene.svelte`, `Loader.svelte`                                                          |
 | 84                | Studio + every extension panel are dynamically imported behind `VITE_GAME_ENGINE` and never ship; three itself is needed at boot                                                                                                                                                                                                                                                       | `App.svelte`                                                                              |
 | 90                | R3F-specific (Svelte: `{#await}` / loaded flags)                                                                                                                                                                                                                                                                                                                                       | —                                                                                         |
 | 91, 97            | stats-gl integrated, including the WebGPU timestamp-query resolution gotcha (stats-gl never resolves the queries itself on a three `WebGPURenderer`)                                                                                                                                                                                                                                   | `extensions/stats/StatsExtension.svelte`                                                  |
@@ -193,9 +193,8 @@ useTask(
 ```
 
 `autoInvalidate: false` is set, which looks correct, and then the body invalidates
-anyway. Since this engine's scenes are **keep-alive** — mounted on first visit and never
-unmounted — one `<InstancedMesh>` anywhere pins the render loop to full rate forever, in
-every scene, including the main menu.
+anyway. One `<InstancedMesh>` anywhere pins the render loop to full rate for as
+long as that scene is current — including its captures and reflectors.
 
 `update={false}` plus your own matrix sync works, or hand-roll the `InstancedMesh`;
 `scenes/DemoScene/SpawnedBodies.svelte` does the latter and invalidates only when a
@@ -564,8 +563,8 @@ Reference-grade notes for when they become relevant. APIs verified against 0.185
   mesh.geometry.boundsTree = new MeshBVH(mesh.geometry);
   mesh.raycast = acceleratedRaycast;
   ```
-  Note `extensions/scene/CLAUDE.md`: hidden keep-alive scenes still raycast if they
-  register pointer handlers.
+  Note: only meshes with registered pointer handlers are raycast by Threlte's
+  interactivity manager.
 - **Progressive loading / streaming** [86, 88]. Low-res first then swap; chunk load/unload
   keyed on camera position. Relevant the day a world outgrows one scene component.
-  Interacts with the keep-alive router — chunks must dispose, unlike scenes.
+  Chunks would dispose on scene switch, same as the scenes themselves.

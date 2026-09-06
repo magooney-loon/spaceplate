@@ -30,7 +30,7 @@ index.ts                  — barrel re-exports
 - **`MAX_BODIES` is a Rapier budget, not a render one.** The renderer draws every spawned body in **two instanced draw calls** (`scenes/DemoScene/SpawnedBodies.svelte`), so what the cap actually bounds is the simulation, the collider pairs and 500 `<RigidBody>` components' effects.
 - Spawn position: `[(random-0.5)*8, 8+random*4, (random-0.5)*8]`. Colors randomly from 6 hardcoded colors, and the colour reaches the GPU as a per-instance attribute, never as a per-body material.
 - `resetWorld()` uses `Object.assign(physicsState, WORLD_DEFAULTS)` — replaces properties, does not deep-merge sub-objects.
-- **Spawned bodies survive scene switches.** Scenes are keep-alive, and nothing calls `clearBodies()` on a switch — the bodies stay in the array and their components stay mounted; `DemoPhysicsBodies` and `SpawnedBodies` gate their per-frame work on `sceneState.currentScene` instead, and physics itself is paused by `Scene.svelte`. Clearing is explicit (`Clear All` in the panel).
+- **Spawned bodies unmount with the scene.** Descriptors stay in `physicsState.bodies` across scene switches (nothing calls `clearBodies()` on a switch), but their `<RigidBody>` components live inside DemoScene — leaving the scene removes the bodies from the world, and re-entering re-creates them at their original spawn positions. Clearing is explicit (`Clear All` in the panel).
 - `PhysicsController.svelte` syncs `physicsState.gravityX/Y/Z` to `world.gravity` via `$effect`.
 - No localStorage persistence — physics settings reset on page load.
 - Rapier specifics documented in `DOCS/RAPIER.md`.

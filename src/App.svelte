@@ -78,9 +78,9 @@
 		>
 			<PhysicsWorldLogger />
 			<!-- Global physics debug overlay — one mount instead of per-scene copies. Draws
-			     EVERY collider in the world, keep-alive scenes' bodies included (colliders are
-			     world-global, not scene-local), so DemoScene's floor/balls show while in
-			     TestGame and vice versa. Gated on Studio mode like the panel that toggles it. -->
+			     every collider in the world; only the current scene's bodies exist (scenes
+			     unmount with their Rapier bodies). Gated on Studio mode like the panel that
+			     toggles it. -->
 			{#if import.meta.env.VITE_GAME_ENGINE === 'true' && physicsState.debug}
 				<Debug />
 			{/if}

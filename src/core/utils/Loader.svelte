@@ -4,8 +4,6 @@
 	import { useProgress } from '@threlte/extras';
 	import { logEngine } from '$extensions/logger';
 	import { audioActions } from '$extensions/settings';
-	import { sceneActions } from '$extensions/scene';
-	import { bootState } from './boot.svelte';
 	import { capabilityState, isBlocked, WEBGPU_REPORT_URL } from './capabilities.svelte';
 
 	const { progress, active, item, loaded, total, errors } = useProgress();
@@ -24,14 +22,11 @@
 	// nothing-to-load case too); any new item restarts the wait.
 	let settled = $state(false);
 	$effect(() => {
-		// Never start the warmup sweep on a blocked device — with no <Canvas> mounted
-		// (App.svelte) it would wait on warm frames that can never be rendered.
+		// Never start the settled countdown on a blocked device — with no <Canvas>
+		// mounted (App.svelte) there is nothing to settle for.
 		if (blocked || settled || $active) return;
 		const timeout = setTimeout(() => {
 			settled = true;
-			// Assets done — kick the scene warmup sweep (visits + warm-renders every
-			// scene behind this screen). Its scenesWarmed latch arms the prompt below.
-			void sceneActions.warmupScenes();
 		}, 500);
 		return () => clearTimeout(timeout);
 	});
@@ -41,21 +36,11 @@
 
 	const tweened = new Tween(0, { duration: 600, easing: cubicOut });
 	$effect(() => {
-		// Two passes, two sources: while assets stream the LoadingManager drives the
-		// bar; once settled, ownership flips to the warmup sweep (warmProgress) — the
-		// bar rolls back and climbs again, reading as the shader compilation it is.
-		// Straggler loads the sweep discovers no longer touch the bar.
-		if (settled) {
-			tweened.target = bootState.warmProgress;
-			return;
-		}
 		tweened.target = $total === 0 ? 1 : $progress;
 	});
 
 	$effect(() => {
-		// Only after the warmup sweep finished: the prompt must never appear (let
-		// alone let the loader hide) mid-sweep, or the scene flipping behind it shows.
-		if (settled && bootState.scenesWarmed) {
+		if (settled) {
 			const timeout = setTimeout(() => {
 				showPrompt = true;
 			}, 1200);
@@ -143,7 +128,7 @@
 			</div>
 		{:else}
 			<!-- Loading screen -->
-			<p class="label">{settled ? 'Compiling shaders...' : 'Loading'}</p>
+			<p class="label">Loading</p>
 
 			<!-- Progress bar -->
 			<div class="track">

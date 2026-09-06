@@ -22,7 +22,6 @@
 		vec3,
 		vec4
 	} from 'three/tsl';
-	import { sceneState } from '$extensions/scene';
 	import { BASE_URL } from '$extensions/settings';
 	import { GR86, UNITS_PER_METER } from './gr86';
 	import { clamp } from './carMath';
@@ -639,17 +638,6 @@
 	}
 
 	usePhysicsTask((delta) => {
-		if (sceneState.currentScene !== 'testGame') {
-			energyL = 0;
-			energyR = 0;
-			pending = 0;
-			pendingTimer = 0;
-			for (const p of puffs) {
-				p.alive = false;
-				p.mesh.visible = false;
-			}
-			return;
-		}
 		clock += delta;
 		uTime.value = clock;
 

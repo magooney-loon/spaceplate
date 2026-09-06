@@ -9,18 +9,15 @@ engineClock.ts        — THE engine clock: wraps scheduler.run so one fixed ste
                         installed — only capture ever does. Read its header before touching
                         anything that integrates a delta
 EngineClock.svelte    — Installs the clock. Renders nothing, registers no task
-boot.svelte.ts        — bootState: loader↔engine boot flags (warmVersion bumps → Renderer
-                        warm-renders; scenesWarmed gates the sound prompt)
 capabilities.svelte.ts — Boot probe (WebGPU adapter / WebGL2 / WASM) awaited in main.ts before
                         mount, so the verdict is synchronous everywhere: capabilityState.tier
                         'webgpu' | 'webgl' | 'none' (+ adapter info, features, dGPU guess,
                         CPU/memory). Also seeds the graphics preset
 Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay
-                        unlock); after assets settle it runs the scene warmup sweep before
-                        arming the prompt. Owns the two capability screens: the blocking
-                        unsupported screen and the dismissible WebGL-fallback badge
+                        unlock), armed once assets settle. Owns the two capability screens:
+                        the blocking unsupported screen and the dismissible WebGL-fallback badge
 Renderer.svelte       — RenderPipeline owner: structural rebuild + hot uniform effects + render
-                        task + warm frames on bootState.warmVersion bumps
+                        task
 Telemetry.svelte      — Draws nothing: samples renderer.info at 2 Hz into telemetryState.
                         Mount right after <Renderer />
 telemetry.svelte.ts   — telemetryState: the live half of Settings ▸ System (the static half is
@@ -58,9 +55,6 @@ the app. It also pins TSL `time`, which the scheduler cannot reach.
 - Registered `{ after: autoRenderTask, autoInvalidate: false }` per the Studio
   task-ordering rules (`DOCS/webgpu-notes.md` §2), and must stay the **first** child
   inside `<Canvas>` so it draws before the Gizmo.
-- Warm frames (boot + `warmVersion` bumps) must go **through the pipeline itself**, not
-  a plain `renderer.render()` — the renderer's default context has no MRT, the wrong
-  variants for this graph whose scene pass lives in a private contextNode namespace.
 
 ## Telemetry — two tasks, two questions
 

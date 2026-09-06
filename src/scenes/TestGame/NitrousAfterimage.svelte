@@ -24,7 +24,6 @@
 	// have just stopped and nobody else is asking for frames. Settled at zero is
 	// free.
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
-	import { sceneState } from '$extensions/scene';
 	import { uAfterimageBoost } from '$core/postprocessing/effects/afterimage';
 	import { carSim } from './carTelemetry.svelte';
 	import { clamp } from './carMath';
@@ -45,8 +44,7 @@
 
 	useTask(
 		(delta) => {
-			const target =
-				sceneState.currentScene === 'testGame' ? clamp(carSim.nitrous, 0, 1) * MAX_BOOST : 0;
+			const target = clamp(carSim.nitrous, 0, 1) * MAX_BOOST;
 			if (Math.abs(target - level) < SETTLED) {
 				if (uAfterimageBoost.value !== target) {
 					uAfterimageBoost.value = target;
@@ -62,15 +60,11 @@
 		{ autoInvalidate: false }
 	);
 
-	// Keep-alive scenes never unmount, and the render loop may not schedule the
-	// task again after a scene switch — a spray interrupted by the Back button
-	// must not leave its boost smeared over the menu. Hard-set on exit, the same
-	// pattern TestGame.svelte's own exit effect uses.
-	$effect(() => {
-		if (sceneState.currentScene !== 'testGame') return;
-		return () => {
-			level = 0;
-			uAfterimageBoost.value = 0;
-		};
+	// A spray interrupted by leaving the scene must not leave its boost smeared
+	// over the next one — hard-set on teardown, the same pattern TestGame.svelte's
+	// own exit effect uses.
+	$effect(() => () => {
+		level = 0;
+		uAfterimageBoost.value = 0;
 	});
 </script>

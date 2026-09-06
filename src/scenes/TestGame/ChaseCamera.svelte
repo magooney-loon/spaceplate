@@ -3,7 +3,6 @@
 	import { CameraControls, useFollow } from '@threlte/extras';
 	import CameraControlsImpl from 'camera-controls';
 	import * as THREE from 'three/webgpu';
-	import { sceneState } from '$extensions/scene';
 	import { carSim } from './carTelemetry.svelte';
 	import { clamp, damp } from './carMath';
 
@@ -16,13 +15,6 @@
 	// what is on screen. The cost is that this component BORROWS a shared object, so it
 	// saves the pose on activation and puts it back on the way out — Camera.svelte sets
 	// its vantage once, in `oncreate`, and would never restore it itself.
-	//
-	// Scene gating is a hard requirement, not politeness: scenes are keep-alive, so this
-	// component stays mounted while MainMenu/DemoScene are current, and useFollow's task
-	// calls invalidate() on every frame it does work. Ungated that pins Threlte's
-	// on-demand render loop at full rate forever, in every scene (src/CLAUDE.md). A falsy
-	// `target` makes the hook return before it invalidates, and `enabled={active}` does
-	// the same for CameraControls' own update task.
 
 	let { target }: { target?: THREE.Object3D } = $props();
 
@@ -99,10 +91,11 @@
 	// every call with no dirty check — two rigs on one camera means neither wins
 	// (the same collision FlyPath.svelte documents at length). Detected by the marker
 	// Studio's EditorCamera.svelte stamps on both of its cameras, so this file never
-	// imports a dev-only module.
+	// imports a dev-only module. A falsy `target` makes useFollow return before it
+	// invalidates, and `enabled={active}` does the same for CameraControls' own task.
 	const isEditorCamera = (cam: THREE.Camera | undefined) => cam?.userData.editorCamera === true;
 
-	const active = $derived(sceneState.currentScene === 'testGame' && !isEditorCamera($camera));
+	const active = $derived(!isEditorCamera($camera));
 
 	useFollow(() => ({
 		target: active ? target : undefined,
@@ -123,7 +116,7 @@
 	}));
 
 	// Borrow/return the shared camera. Deactivation is the effect's own cleanup, so it
-	// covers scene switches AND unmount with one code path.
+	// covers unmount (and a Studio camera swap) with one code path.
 	const savedPosition = new THREE.Vector3();
 	const savedQuaternion = new THREE.Quaternion();
 	let savedFov = 60;

@@ -2,9 +2,9 @@
 
 One directory per scene, each pairing a 3D component (mounted inside `<Canvas>` via
 `Scene.svelte`) with its HUD component (HTML overlay via `SceneHud.svelte`). The scene
-state machine — `SCENES` config, `setScene`/`transitionTo`, keep-alive mounting — lives
-in `$extensions/scene` (see its `CLAUDE.md`, including the planned per-scene
-`environment` block for time/weather/post-processing overrides).
+state machine — `SCENES` config, `setScene`/`transitionTo` — lives in `$extensions/scene`
+(see its `CLAUDE.md`, including the planned per-scene `environment` block for
+time/weather/post-processing overrides).
 
 ```
 MainMenu/  MainMenu.svelte, MainMenuHud.svelte, SettingsHud.svelte (tabs: General, Audio,
@@ -31,14 +31,13 @@ TestGame/  standalone tech demo game (driving prototype) — self-contained, has
     100-call budget was gone at fourteen balls.
   - **`<InstancedMesh>` from `@threlte/extras` would break on-demand rendering.** Its
     Api task calls `invalidate()` unconditionally whenever it syncs (`update` defaults
-    to `true`), and scenes here are keep-alive — one mounted anywhere pins the render
-    loop at full rate forever, in every scene. Drive `InstancedMesh` from a task that
-    invalidates only when a matrix actually changed.
+    to `true`), so one mounted anywhere pins the render loop at full rate for as long
+    as the scene is current. Drive `InstancedMesh` from a task that invalidates only
+    when a matrix actually changed.
 
 ## Adding a scene
 
-1. Add the id to `SceneType` + an entry to `SCENES` in `$extensions/scene` (+
-   init `visited` in `sceneState`).
+1. Add the id to `SceneType` + an entry to `SCENES` in `$extensions/scene`.
 2. Create the directory with the scene component + HUD component.
-3. Mount it in `Scene.svelte` with a `visited`-latched `{#if}` + `visible={current}`
-   group — copy an existing block. The boot warmup sweep picks it up automatically.
+3. Mount it in `Scene.svelte` inside a plain `{#if sceneState.currentScene === '…'}`
+   group — copy an existing block.

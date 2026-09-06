@@ -14,12 +14,11 @@
 	import { untrack } from 'svelte';
 	import * as THREE from 'three/webgpu';
 	import { settingsState } from '$extensions/settings';
-	import { logEngine, logPostprocessing } from '$extensions/logger';
+	import { logPostprocessing } from '$extensions/logger';
 	import { postprocessingState } from '$extensions/postprocessing';
 	import { buildPipeline, type PipelineBuild } from '$core/postprocessing/build';
 	import { EFFECTS, structuralKeyOf } from '$core/postprocessing/registry';
 	import type { EffectValues } from '$core/postprocessing/types';
-	import { bootState } from './boot.svelte';
 	import { engineClock } from './engineClock';
 
 	const { scene, renderer, camera, autoRenderTask, invalidate } = useThrelte();
@@ -165,49 +164,6 @@
 			build = null;
 			renderPipeline.dispose();
 		};
-	});
-
-	// --- boot warmup -----------------------------------------------------------
-
-	// On-demand rendering draws only when something invalidates, so a quiet scene
-	// behind the loading screen stays cold: everything (the base pass under its
-	// private contextNode, all post effects, the mounted scenes' materials) would
-	// compile at the first frame AFTER the loader hides — the stall a warm frame
-	// removes. Each bootState.warmVersion bump (the warmup sweep, driven from
-	// Loader.svelte) renders once through the real graph while a cover still hides
-	// the canvas; renderer.init() is idempotent, and render() kicks three's async
-	// compilation, which lands during the sweep's grace delays.
-	//
-	// Deliberately NOT renderer.compileAsync(scene, camera): it compiles under the
-	// default context with no MRT — the wrong variants for this graph (see the
-	// shader-cache trap in postprocessing/CLAUDE.md). Warming goes through the
-	// pipeline itself.
-	let warming = false;
-	$effect(() => {
-		const version = bootState.warmVersion;
-		if (version === 0 || warming) return;
-		warming = true;
-		void (async () => {
-			try {
-				await renderer.init();
-				if (bypass) {
-					const cam = camera.current;
-					if (cam) renderer.render(scene, cam);
-					else return;
-				} else if (build) {
-					renderer.getSize(size);
-					if (size.width > 0 && size.height > 0) build.setAspect(size.width / size.height);
-					renderPipeline.render();
-				} else {
-					return;
-				}
-				logEngine.info(`Warm frame rendered (v${version}) — pipelines compiling in background`);
-			} catch (error) {
-				logEngine.warn('Pipeline warmup failed:', error);
-			} finally {
-				warming = false;
-			}
-		})();
 	});
 
 	// --- the render task ---------------------------------------------------------

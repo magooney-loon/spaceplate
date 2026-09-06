@@ -67,8 +67,8 @@ contract (established by the lenses, reused by afterimage): the shared values ar
 or beside the effect itself, when there is exactly one) so their identity
 survives a pipeline rebuild, and there is ONE writer (a driver component's task)
 and one reader (the effect's `build`). Drivers hard-set their uniforms to rest
-on scene exit — keep-alive scenes never unmount, and the loop may never schedule
-the task again to decay them.
+on scene exit (their effect teardown) — after the scene unmounts, nothing
+schedules the task again to decay them.
 
 - **`rainLens`/`snowLens`** — weather + camera speed, measured by
   `LensDriver.svelte`; DRY effects leave the graph entirely via the
@@ -277,7 +277,8 @@ bloom, tint, add; budget it as real work).
 ## Scene transitions — decided, not built
 
 Single-scene **fade**, not a true two-scene crossfade: `TransitionNode` needs both
-scenes rendering every frame, which keep-alive mounting makes expensive. Plan: pass A is
+scenes rendering every frame, and plain `{#if}` routing unmounts the outgoing scene
+at the swap. Plan: pass A is
 the live scene pass, pass B a cheap constant node; all the mask-texture machinery
 (wipes, dissolves) still works, only a genuine A→B crossfade doesn't. `mixRatio` is one
 `uniform()` eased by a task; the scene swap happens at `mixRatio === 1` — the covered

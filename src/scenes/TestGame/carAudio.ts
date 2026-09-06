@@ -24,7 +24,6 @@
 
 import type { PositionalAudio as ThreePositionalAudio } from 'three';
 import { settingsState } from '$extensions/settings';
-import { sceneState } from '$extensions/scene';
 import { GR86 } from './gr86';
 import { clamp, damp } from './carMath';
 import { carSim } from './carTelemetry.svelte';
@@ -261,7 +260,7 @@ export const attachTireSqueal = (audio: ThreePositionalAudio): void => {
 /**
  * Voice one pop. `energy` 0..1 sizes it (downshift bursts big, limiter stutters
  * small), `right` picks the pipe it speaks from (the visual pop's dominant tip).
- * Called from CarExhaustFlames' physics task — already scene-gated there.
+ * Called from CarExhaustFlames' physics task.
  */
 export const triggerExhaustPop = (energy: number, right: boolean): void => {
 	const master = settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0;
@@ -300,7 +299,7 @@ export const triggerExhaustPop = (energy: number, right: boolean): void => {
 };
 
 /** Drop every held instance — CarEngineAudio's teardown, so the module never
- * points at dead objects (the scene is keep-alive; this runs on real unmount). */
+ * points at dead objects (this runs on real unmount). */
 export const detachCarAudio = (): void => {
 	layers.fill(undefined);
 	popTakes.fill(undefined);
@@ -359,12 +358,6 @@ export const parkCarAudio = (): void => {
 };
 
 export const tickCarAudio = (delta: number): void => {
-	// Keep-alive: this component stays mounted while other scenes are current —
-	// the engine must not sound from another scene's frames. parkCarAudio (the
-	// component's scene-exit cleanup) has already paused everything by the time
-	// this gate starts returning.
-	if (sceneState.currentScene !== 'testGame') return;
-
 	const master = settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0;
 	// Ignition gates everything combustive — bed, pops, nitrous. The one-shots
 	// below still play through this (they ARE the transitions), so they take

@@ -126,8 +126,6 @@
 	 * false if nothing casts — in which case the box falls back to the `shadowRadius`
 	 * floor, because a scene with no casters has no opinion about it.
 	 *
-	 * `traverseVisible` is what excludes the keep-alive scenes that are mounted but
-	 * hidden (Scene.svelte toggles group `visible`, it never unmounts), and
 	 * `castShadow` is what excludes the sky: the dome sits at radius 1000 and would
 	 * otherwise fit the box to it on the first frame.
 	 */

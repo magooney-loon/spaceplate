@@ -3,7 +3,6 @@
 	import { PositionalAudio } from '@threlte/extras';
 	import type { PositionalAudio as ThreePositionalAudio } from 'three';
 	import { BASE_URL } from '$extensions/settings';
-	import { sceneState } from '$extensions/scene';
 	import {
 		LAYER_FILES,
 		attachEngineLayer,
@@ -45,14 +44,6 @@
 		{ autoInvalidate: false }
 	);
 
-	// Keep-alive: this component stays mounted while other scenes are current —
-	// park the engine then (NitrousAfterimage pattern). Re-entry resumes the loops
-	// from their paused positions, no seam.
-	$effect(() => {
-		if (sceneState.currentScene !== 'testGame') return;
-		return () => parkCarAudio();
-	});
-
 	// rAF stops when the tab hides but the AudioContext doesn't — without this the
 	// engine drones at its last pitch behind a hidden tab. Re-showing hands control
 	// straight back to the tick, which resumes the paused loops where they were.
@@ -67,8 +58,8 @@
 		};
 	});
 
-	// The scene is keep-alive, so this runs on real teardown only — still, the
-	// module must not keep pointing at dead instances.
+	// Runs on teardown only, but the module must not keep pointing at dead instances
+	// (unmounting the scene destroys the audio objects the pointers name).
 	$effect(() => () => detachCarAudio());
 </script>
 

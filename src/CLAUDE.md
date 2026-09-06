@@ -16,10 +16,9 @@ App.svelte          — Canvas (createRenderer → WebGPURenderer) + Rapier Worl
                       Keymapper / Loader / SceneHud are siblings outside the Canvas
 Root.svelte         — SpacetimeDB provider wrapper (wraps App); mounted by main.ts
 main.ts             — Entry point
-Scene.svelte        — Keep-alive 3D scene router: scenes mount on first visit (visited latch) and stay
-                      mounted; switching toggles group `visible` only — no dispose, no recompile.
-                      The boot warmup sweep (Loader → sceneActions.warmupScenes) visits every scene
-                      behind the loading screen and warm-renders it via bootState.warmVersion
+Scene.svelte        — 3D scene router: plain {#if} on currentScene — exactly one scene
+                      mounted at a time; switching unmounts (disposes THREE resources,
+                      tears down Rapier bodies) and the next scene mounts fresh
 SceneHud.svelte     — HTML overlay router (sibling to Canvas) + global settings overlay
 app.css             — Global styles
 module_bindings/    — Generated SpacetimeDB bindings — DO NOT EDIT
@@ -124,8 +123,9 @@ panel pattern, templates, extension inventory) and the per-extension reference. 
   moved something — Threlte's `renderMode` is 'on-demand', and a task with the default
   auto-invalidate forces a full-rate render loop forever (see `Skybox.svelte`).
 - Inside a `<World>`, use `usePhysicsTask` from `@threlte/rapier` (runs before each physics
-  step, respects fixed framerate). Physics is scene-gated by `Scene.svelte`'s
-  `pause()/resume()` on `useRapier()`, not by task stages.
+  step, respects fixed framerate). Physics work exists only while a physics scene is
+  mounted — scenes unmount with their Rapier bodies, so an empty world is all that
+  steps when none is current.
 - Among tasks sharing a constraint the DAG falls back to registration (mount) order —
   parents register before children.
 

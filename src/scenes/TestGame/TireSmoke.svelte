@@ -3,7 +3,6 @@
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import { saturate, smoothstep, texture, uniform, uv, vec2 } from 'three/tsl';
-	import { sceneState } from '$extensions/scene';
 	import { BASE_URL } from '$extensions/settings';
 	import { GR86, UNITS_PER_METER } from './gr86';
 	import { clamp as numClamp } from './carMath';
@@ -170,13 +169,6 @@
 
 	useTask(
 		(delta) => {
-			if (sceneState.currentScene !== 'testGame') {
-				for (const p of puffs) {
-					p.alive = false;
-					p.mesh.visible = false;
-				}
-				return;
-			}
 			clock += delta;
 			uTime.value = clock;
 

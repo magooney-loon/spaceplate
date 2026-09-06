@@ -509,7 +509,7 @@ With a fixed framerate Threlte runs the physics simulation ahead of rendering by
 | `trimesh` on dynamic bodies                 | `trimesh` is for static/fixed only — use `convexHull` on dynamic bodies                                                                                              |
 | `bind:rigidBody` with `$state()`            | Use `$state.raw<RapierRigidBody>()` — avoids Svelte Proxy wrapping Rapier WASM object                                                                                |
 | `<Debug>` in production                     | Gate with `import.meta.env.VITE_GAME_ENGINE === 'true'`                                                                                                              |
-| Unmounting `<World>` on scene switch        | Keep it mounted and pause via `useRapier().pause()` when the physics scene isn't current (`Scene.svelte`) — unmounting destroys bodies and evicts compiled pipelines |
+| Unmounting `<World>` on scene switch        | Keep it mounted (`App.svelte` owns it globally) — scenes unmount *with* their bodies, which is the intended lifecycle; an empty world steps for free |
 
 ---
 

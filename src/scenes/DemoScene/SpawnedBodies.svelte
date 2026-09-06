@@ -22,17 +22,16 @@
 	// Only the rendering collapses. `MAX_BODIES` caps the simulation side.
 	//
 	// NOT USED: `<InstancedMesh>` from @threlte/extras. Its Api task calls `invalidate()`
-	// unconditionally whenever it syncs instances (`update` defaults to true), and scenes
-	// here are keep-alive -- so mounting one would pin the render loop at full rate
-	// forever, in every scene, killing on-demand rendering (see src/CLAUDE.md, "Frame
-	// tasks"). The sync below invalidates only when a matrix actually changed.
+	// unconditionally whenever it syncs instances (`update` defaults to true), so
+	// mounting one pins the render loop at full rate for as long as this scene is
+	// current, killing on-demand rendering (see src/CLAUDE.md, "Frame tasks"). The
+	// sync below invalidates only when a matrix actually changed.
 
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { RigidBody, Collider } from '@threlte/rapier';
 	import { untrack } from 'svelte';
 	import * as THREE from 'three/webgpu';
 	import { physicsState, MAX_BODIES } from '$extensions/physics';
-	import { sceneState } from '$extensions/scene';
 	import { settingsState } from '$extensions/settings';
 	import { logPhysics } from '$extensions/logger';
 	import { DEMO_QUALITY } from './demoQuality';
@@ -112,10 +111,6 @@
 
 	useTask(
 		() => {
-			// Keep-alive: this component stays mounted while other scenes are current.
-			// Physics is paused then (Scene.svelte), so there is nothing to sync.
-			if (sceneState.currentScene !== 'demoScene') return;
-
 			let ballCount = 0;
 			let boxCount = 0;
 			let moved = anchorsDirty;

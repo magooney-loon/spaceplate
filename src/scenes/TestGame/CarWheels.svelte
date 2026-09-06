@@ -14,7 +14,6 @@
 		uniform,
 		vec3
 	} from 'three/tsl';
-	import { sceneState } from '$extensions/scene';
 	import { logGltf } from '$extensions/logger';
 	import { UNITS_PER_METER } from './gr86';
 	import { carSim } from './carTelemetry.svelte';
@@ -268,8 +267,6 @@
 	};
 
 	usePhysicsTask((delta) => {
-		if (sceneState.currentScene !== 'testGame') return;
-
 		// Already in radians — the rack fraction AND the tune's full lock are both the
 		// physics task's, so multiplying them out here again would show the Grip lock
 		// while the Drift tune was steering at 0.62 rad.

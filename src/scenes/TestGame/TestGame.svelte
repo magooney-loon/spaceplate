@@ -11,7 +11,6 @@
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';
 	import { BASE_URL } from '$extensions/settings';
-	import { sceneState } from '$extensions/scene';
 	import { logGltf } from '$extensions/logger';
 	import CarHeadlights from './CarHeadlights.svelte';
 	import CarExhaustFlames from './CarExhaustFlames.svelte';
@@ -223,8 +222,6 @@
 	usePhysicsTask((delta) => {
 		const body = carBody;
 		if (!body) return;
-		// Keep-alive: never drive the car from another scene's frames.
-		if (sceneState.currentScene !== 'testGame') return;
 
 		// First driven step = the spawn pose. Restart teleports the body back here.
 		if (!spawnCaptured) {
@@ -525,12 +522,13 @@
 
 	// Restart button: pose and motion back to the captured spawn, nothing else —
 	// gear/lights/instruments are left alone and self-correct from the body next
-	// step. No scene gate here on purpose: gating would re-run this on every scene
-	// re-entry after the first restart.
+	// step. The spawnCaptured guard drops a stale token from an earlier mount: the
+	// body is a fresh one at the authored pose then, and spawnPos is still {0,0,0}
+	// until the task above captures it.
 	$effect(() => {
 		if (carRestart.token === 0) return;
 		const body = carBody;
-		if (!body) return;
+		if (!body || !spawnCaptured) return;
 		body.setTranslation(spawnPos, true);
 		body.setRotation(spawnRot, true);
 		body.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -538,20 +536,18 @@
 		body.resetForces(true);
 	});
 
-	// Leaving the scene parks the instruments — the HUD unmounts with them, but the
-	// mirror is module state and would otherwise still read 180 km/h on the way back in.
+	// Unmount parks the instruments — the HUD unmounts with them, but the mirror is
+	// module state and would otherwise still read 180 km/h on the way back in. The
+	// pedals too: the keyup for a held key never fires after the listeners are gone.
 	$effect(() => {
-		if (sceneState.currentScene !== 'testGame') return;
 		return () => {
 			drivetrain.reset();
-			// The bottle too — the scene is KEEP-ALIVE (Scene.svelte), so this state
-			// survives a scene switch and must be parked to match the fresh carSim
-			// mirror above (and the task below is scene-gated, so it can't refill
-			// itself while away).
+			// The bottle as well, to match the fresh carSim mirror above.
 			nitrousBottle = 1;
 			nitrousFlow = 0;
 			startupTimer = 0;
 			resetCarTelemetry();
+			resetCarInput();
 		};
 	});
 </script>

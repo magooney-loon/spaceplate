@@ -12,7 +12,6 @@
 	import { CubeCamera, CubeRenderTarget } from 'three/webgpu';
 	import { FlakesTexture } from 'three/addons/textures/FlakesTexture.js';
 	import { logPhysics } from '$extensions/logger';
-	import { sceneState } from '$extensions/scene';
 	import { useSound } from '$extensions/sound/useSound';
 	import { settingsState, BASE_URL } from '$extensions/settings';
 	import { withoutReflection } from './mirrorFloor';
@@ -236,9 +235,6 @@
 	let ballClock = 1 / (DEMO_QUALITY.high.ballCaptureHz * 2);
 	useTask(
 		(delta) => {
-			// Keep-alive: this component stays mounted while other scenes are current —
-			// its captures must not run then (six scene renders each).
-			if (sceneState.currentScene !== 'demoScene') return;
 			if (!quality.ballCapture) return;
 			const period = 1 / quality.ballCaptureHz;
 			ballClock += delta;
@@ -287,8 +283,6 @@
 	useTask(
 		(delta) => {
 			if (!mirrorMesh) return;
-			// Keep-alive: skip the six-face capture while another scene is current.
-			if (sceneState.currentScene !== 'demoScene') return;
 			const period = 1 / quality.mirrorCaptureHz;
 			captureClock += delta;
 			if (captureClock < period) return;

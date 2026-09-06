@@ -398,7 +398,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   car) + a small rearward roll off the spinning tyre (rears roll harder);
   perlin roil + cellular clumps + soft radial rim, aging shader-side against
   uTime. World-anchored at TestGame root (`target={chaseAnchor}`, same
-  body-space wheel offsets as SkidMarks); scene gate hides the pool.
+  body-space wheel offsets as SkidMarks); unmounting the scene hides the pool.
 - **`CarExhaustFlames.svelte` pops fire on downshifts and limiter bangs**
   (adapted from three's `webgpu_tsl_vfx_flames`). The exhaust tips are
   MEASURED, not placed by hand: the GLB's Draco `Nickel_Smooth` mesh decoded
@@ -441,7 +441,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   a soft radial rim; aging is shader-side against the shared uTime, the task
   only drifts (with drag), grows and billboards (camera quaternion copy).
   Puffs update BEFORE the tips-visible early return — a puff outlives its
-  bang — and the scene gate hides the pool on exit. While a pop is visible the component owns
+  bang. While a pop is visible the component owns
   an `invalidate()` reason (stationary rev-match case — driving is already
   covered by the chase camera). Noise textures:
   `public/textures/noises/{voronoi,perlin}.png`, copied from the vendored
@@ -514,8 +514,8 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   three.js example is offline batch (process whole buffer → read back → play
   once); live rpm needs per-frame pitch, which three's `setPlaybackRate`
   (setTargetAtTime-smoothed resampling) already does on the audio thread with
-  zero readback latency. Keep-alive rules apply: the tick is scene-gated, the
-  scene-exit cleanup parks the loops (paused progress kept), and tab-hide parks
+  zero readback latency. The tick lives only while the scene is mounted, the
+  unmount cleanup parks the loops (paused progress kept), and tab-hide parks
   too (rAF stops, the AudioContext doesn't). `LAYER_RPM` anchors are guesses at
   the wavs — tune by ear; if layers ever get compute-processed, `<PositionalAudio>`
   `src` accepts a raw AudioBuffer at the mount site.

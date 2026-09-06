@@ -540,9 +540,8 @@
 	// compiles land before frame 0 and the far end of the path is warmed too.
 	//
 	// It runs through the normal render loop, one pose per rendered frame (applyPose
-	// invalidates, which pins it), rather than through bootState.warmVersion: that
-	// $effect drops any bump arriving while it is still warming, so a burst of them
-	// would silently warm one pose and skip the rest.
+	// invalidates, which pins it), so every pose is actually drawn and compiled before
+	// the take arms.
 
 	const PREROLL_FRAMES = 12;
 

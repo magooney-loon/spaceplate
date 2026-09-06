@@ -3,7 +3,6 @@
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import { attribute, clamp, positionWorld, smoothstep, texture, uniform, vec2 } from 'three/tsl';
-	import { sceneState } from '$extensions/scene';
 	import { BASE_URL } from '$extensions/settings';
 	import { GR86, UNITS_PER_METER } from './gr86';
 	import { carSim } from './carTelemetry.svelte';
@@ -224,7 +223,6 @@
 
 	useTask(
 		(delta) => {
-			if (sceneState.currentScene !== 'testGame') return;
 			now += delta;
 			uTime.value = now;
 
