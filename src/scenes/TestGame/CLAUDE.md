@@ -383,8 +383,13 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   ends does `carIgnition.ready` flip true and the idle bed fade in — throttle,
   brake and shifting are gated on `ready`. N cuts instantly: bed silences under
   the turnoff shot, `ready` clears, the car coasts to a stop. Edge-triggered: the
-  keydown, the bed cuts instantly on turnoff so the shot lands over silence. TC
-  LAMP: the cluster's `spinning` indicator gates on the tune's `tractionControl`
+  keydown, the bed cuts instantly on turnoff so the shot lands over silence.
+  TYRES: `tires_squal_loop.opus`, one voice under the car (axle height at the CG) —
+  level = the LOOSEST of wheelspin (ramping from the TC lamp's own 0.15), |slip
+  angle| (8°–25°, speed-gated; the cluster's slide flag reads 10°) and
+  handbrake-at-speed; sources never sum (the looseness model's own rule). Attack
+  12/s vs release 4/s with a snap to 0 so the release asymptote can't hiss. Not
+  gated on ignition — tyres aren't combustive. TC LAMP: the cluster's `spinning` indicator gates on the tune's `tractionControl`
   flag — in Drift mode `tractionControl` is false, so wheelspin there is the setup,
   not a system intervening, and the lamp stays off. The pop wavs are PEAK-NORMALIZED to -3 dBFS
   offline (+6.03/+8.05 dB pure gain — a transient must slam past the bed's

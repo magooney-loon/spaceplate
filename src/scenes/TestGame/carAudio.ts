@@ -6,7 +6,8 @@
 // shared keymapper: scene-owned until the audio layer grows per-scene needs.
 //
 // THE CONTRACT (weatherAudio.ts is the precedent): CarEngineAudio.svelte mounts the
-// six <PositionalAudio> loops and the pop/nitrous one-shots inside the car, hands
+// six <PositionalAudio> loops, the tyre-squeal loop and the pop/nitrous one-shots
+// inside the car, hands
 // them over via the attach functions below, and its task calls `tickCarAudio(delta)` —
 // never an `$effect` (carSim is plain state; an effect would run once at mount
 // and never again).
@@ -196,6 +197,44 @@ const IGNITION_GAIN = 0.9;
 		turnOffSound = audio;
 	};
 
+// ── Tyres ────────────────────────────────────────────────────────────────────
+//
+// The squeal loop: ONE voice under the car, not per-corner — RWD wheelspin is a
+// rear-axle sound, a drift is the whole car, and per-corner voices would need
+// per-wheel slip the sim doesn't publish. Level = the LOOSEST of three sources,
+// never a sum (the looseness model's own rule, handling.ts: sources that stack
+// make a gentle cornering slide scream):
+//   - WHEELSPIN: carSim.slip past the TC lamp's own 0.15 — lamp and squeal agree
+//     the rears are lit.
+//   - SLIDE: |drift| ramped 8°→25° (the cluster's slide flag reads 10°; a few
+//     degrees is just a car cornering), gated on road speed — slip angle at a
+//     standstill is noise.
+//   - HANDBRAKE: locked rears scaled by speed, so the yank is audible before the
+//     slip angle has developed.
+// NOT gated on ignition — tyres are not combustive (the module's own rule); a
+// handbrake slide with the engine off still squeals. Attack outruns release:
+// squeal arrives with the slide and lingers a beat while the rubber catches up.
+
+/** Squeal level at full slip — under the bed's redline presence. Dial by ear. */
+const SQUEAL_GAIN = 0.6;
+/** 1/s — attack (with the slide) vs release (the rubber catching up). */
+const SQUEAL_ATTACK = 12;
+const SQUEAL_RELEASE = 4;
+/** Wheelspin floor — the TC lamp's own number (CarCluster), so the two agree. */
+const SQUEAL_SLIP_ON = 0.15;
+/** Slip-angle floor/ceiling, rad — 8° is cornering, 25° is a held drift. */
+const SQUEAL_DRIFT_ON = (8 * Math.PI) / 180;
+const SQUEAL_DRIFT_FULL = (25 * Math.PI) / 180;
+
+/** The mounted squeal loop. Set by the component. */
+let tireSqueal: ThreePositionalAudio | undefined;
+/** Smoothed squeal level — asymmetric slew. */
+let squealLevel = 0;
+
+export const attachTireSqueal = (audio: ThreePositionalAudio): void => {
+	tireSqueal = audio;
+};
+
 /**
  * Voice one pop. `energy` 0..1 sizes it (downshift bursts big, limiter stutters
  * small), `right` picks the pipe it speaks from (the visual pop's dominant tip).
@@ -251,6 +290,8 @@ export const detachCarAudio = (): void => {
 	nitroReleased = false;
 	turnOnSound = undefined;
 	turnOffSound = undefined;
+	tireSqueal = undefined;
+	squealLevel = 0;
 	// Sync, not reset — ignition is a latched switch and must survive remounts;
 	// syncing (not zeroing) is what stops a phantom turn-on shot at re-entry.
 	ignPrev = carIgnition.on;
@@ -288,6 +329,10 @@ export const parkCarAudio = (): void => {
 	ignPrev = carIgnition.on;
 	if (turnOnSound?.isPlaying) turnOnSound.stop();
 	if (turnOffSound?.isPlaying) turnOffSound.stop();
+	// Tyres too — the loop pauses (progress kept), the level resets so re-entry
+	// doesn't fade in a squeal the car isn't making.
+	squealLevel = 0;
+	if (tireSqueal?.isPlaying) tireSqueal.pause();
 };
 
 export const tickCarAudio = (delta: number): void => {
@@ -392,6 +437,31 @@ export const tickCarAudio = (delta: number): void => {
 			if (!nitroDrain.isPlaying) nitroDrain.play();
 		} else if (nitroDrain.isPlaying) {
 			nitroDrain.pause();
+		}
+	}
+
+	// ── Tyres: the loosest source wins, eased, then the loop rides it. ─────────
+	const speed = Math.abs(carSim.speedMs);
+	const spin = clamp((carSim.slip - SQUEAL_SLIP_ON) / (1 - SQUEAL_SLIP_ON), 0, 1);
+	const slide =
+		clamp((Math.abs(carSim.drift) - SQUEAL_DRIFT_ON) / (SQUEAL_DRIFT_FULL - SQUEAL_DRIFT_ON), 0, 1) *
+		clamp(speed / 4, 0, 1);
+	const hand = carSim.handbrake ? 0.8 * clamp(speed / 10, 0, 1) : 0;
+	const squeal = Math.max(spin, slide, hand);
+	squealLevel += (squeal - squealLevel) * damp(squeal > squealLevel ? SQUEAL_ATTACK : SQUEAL_RELEASE, delta);
+	// The release asymptote never lands on 0 — snap it, or the loop hisses at ~0
+	// for the rest of the session after the first slide.
+	if (squeal === 0 && squealLevel < 0.01) squealLevel = 0;
+
+	if (tireSqueal?.buffer) {
+		// The bed's contract: volume and rate first, then play/pause. Rate rides
+		// the level — the harder the slide, the more frantic the squeal.
+		tireSqueal.setVolume(squealLevel * SQUEAL_GAIN * master);
+		tireSqueal.setPlaybackRate(0.85 + 0.4 * squealLevel);
+		if (squealLevel > AUDIBLE_WEIGHT && master > 0) {
+			if (!tireSqueal.isPlaying) tireSqueal.play();
+		} else if (tireSqueal.isPlaying) {
+			tireSqueal.pause();
 		}
 	}
 

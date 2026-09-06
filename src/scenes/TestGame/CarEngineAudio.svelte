@@ -11,6 +11,7 @@
 		attachNitroEnd,
 		attachNitroStart,
 		attachPopAudio,
+		attachTireSqueal,
 		attachTurnOffSound,
 		attachTurnOnSound,
 		detachCarAudio,
@@ -18,9 +19,10 @@
 		tickCarAudio
 	} from './carAudio';
 
-	// The engine's speakers. Mounts the positional rpm bed inside the car and
-	// nothing else — every mixing decision (rpm crossfade, pitch, throttle load)
-	// lives in carAudio.ts, ticked by the task below. Positional because the
+	// The engine's speakers. Mounts the positional voices inside the car — the
+	// rpm bed, the tyre-squeal loop and the pop/nitrous one-shots — and nothing
+	// else; every mixing decision (rpm crossfade, pitch, tyre squeal) lives in
+	// carAudio.ts, ticked by the task below. Positional because the
 	// AudioListener rides the camera (core/Camera.svelte): the engine falls behind
 	// with the car and panners HRTF around it. Same <PositionalAudio> component
 	// DemoScene's orbiting mirror sphere uses.
@@ -157,5 +159,22 @@
 		rolloffFactor={ROLLOFF}
 		maxDistance={MAX_DISTANCE}
 		oncreate={(a: ThreePositionalAudio) => attachPopAudio(1, a)}
+	/>
+</T.Group>
+
+<!-- The tyre-squeal loop: under the car, not the engine bay — tyres speak from
+     the contact patches, so axle height between the axles (the CG). One voice
+     for all four corners; level = the loosest of wheelspin / slide / handbrake,
+     slewed by the tick like the bed. -->
+<T.Group position={[0, 0.3, 0]} userData={{ hideInTree: true, selectable: false }}>
+	<PositionalAudio
+		src={ENGINE_URL + 'tires_squal_loop.opus'}
+		loop
+		autoplay={false}
+		volume={0}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachTireSqueal(a)}
 	/>
 </T.Group>
