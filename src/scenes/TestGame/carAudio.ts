@@ -49,7 +49,7 @@ export const LAYER_FILES = [
  * These are guesses at the wavs — dial them BY EAR: a wrong anchor is a layer
  * that speaks in the wrong octave while it holds the crossfade.
  */
-const LAYER_RPM = [850, 1800, 3000, 4300, 5600, 6900];
+const LAYER_RPM = [850, 1800, 3000, 4300, 5900, 7500];
 
 /** Safety clamps for the derived rates (idle dips and limiter overshoots). */
 const RATE_MIN = 0.7;
@@ -165,8 +165,9 @@ const playOneShot = (audio: ThreePositionalAudio | undefined, gain: number, mast
 // M on / N off (carInput's latched switch). The bed, pops and nitrous all gate
 // on `carIgnition.ready` — no combustion, no noise — and the one-shots voice
 // the transitions. M starts a realistic startup: the turnon sound cranks, the
-// physics task ramps RPM to ~2k then settles, and only when the sound ends does
-// `ready` flip true and the idle bed fade in. N cuts instantly: bed silences
+// physics task ramps RPM to ~2k then settles, and the idle bed fades in under
+// the crank recording's tail (last STARTUP_BLEND seconds), so the two blend
+// instead of hard-cutting when `ready` flips on the sound's end. N cuts instantly: bed silences
 // under the turnoff shot, `ready` clears, the car coasts to a stop.
 
 /** Turn-on/off one-shot level. Files peak near 0 dBFS as delivered. */
@@ -176,6 +177,11 @@ const IGNITION_GAIN = 0.9;
 	let turnOffSound: ThreePositionalAudio | undefined;
 	/** Previous tick's ignition — edge detect for the one-shots. */
 	let ignPrev = carIgnition.on;
+	/** AudioContext time the crank recording started — drives the bed's
+	 * fade-in under the recording's tail (see tick). */
+	let turnOnStart = 0;
+	/** Seconds of the bed fading in under the crank tail before `ready` flips. */
+	const STARTUP_BLEND = 0.9;
 
 	export const attachTurnOnSound = (audio: ThreePositionalAudio): void => {
 		turnOnSound = audio;
@@ -294,14 +300,26 @@ export const tickCarAudio = (delta: number): void => {
 	const master = settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0;
 	// Ignition gates everything combustive — bed, pops, nitrous. The one-shots
 	// below still play through this (they ARE the transitions), so they take
-	// `master` directly, not `audible`. The bed waits for `ready` (startup
-	// sequence complete) — it must not overlap the turnon recording.
+	// `master` directly, not `audible`. The bed fades in under the crank
+	// recording's tail (startupBlend 0→1 over its last STARTUP_BLEND seconds)
+	// instead of cutting in when the recording ends — ready still flips onEnded
+	// and still gates driving, just not the bed's fade.
 	const audible = master > 0 && carIgnition.ready;
+	let startupBlend = carIgnition.ready ? 1 : 0;
+	if (carIgnition.on && !carIgnition.ready && turnOnSound?.buffer && turnOnSound.isPlaying) {
+		const elapsed = turnOnSound.context.currentTime - turnOnStart;
+		const remaining = turnOnSound.buffer.duration - elapsed;
+		startupBlend = clamp(1 - remaining / STARTUP_BLEND, 0, 1);
+	}
+	const bedAudible = audible || startupBlend > 0;
 
 	// ── Ignition edges: voice the transitions, bed handles the rest. ──────────
 	if (carIgnition.on !== ignPrev) {
 		ignPrev = carIgnition.on;
 		playOneShot(carIgnition.on ? turnOnSound : turnOffSound, IGNITION_GAIN, master);
+		if (carIgnition.on) {
+			turnOnStart = turnOnSound?.context.currentTime ?? 0;
+		}
 		if (!carIgnition.on) {
 			// Engine dies NOW, not after the shot — the turnoff recording expects a
 			// silent bed under it. Also clear ready so the cluster dims instantly.
@@ -338,10 +356,10 @@ export const tickCarAudio = (delta: number): void => {
 		// starts a silent source that refuses the real one (weatherAudio).
 		if (!audio?.buffer) continue;
 		const weight = j === band ? 1 - s : j === band + 1 ? s : 0;
-		if (weight > AUDIBLE_WEIGHT && audible) {
+		if (weight > AUDIBLE_WEIGHT && bedAudible) {
 			// Volume and rate first, then play — otherwise a layer entering the
 			// crossfade gets a buffer's worth at whatever level was left over.
-			audio.setVolume(weight * level * master);
+			audio.setVolume(weight * level * startupBlend * master);
 			audio.setPlaybackRate(clamp(rpm / LAYER_RPM[j], RATE_MIN, RATE_MAX));
 			if (!audio.isPlaying) audio.play();
 		} else if (audio.isPlaying) {
