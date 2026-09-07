@@ -48,6 +48,10 @@
 	//           ~150 ms. The same flash value blows the flame's width up at
 	//           birth (width ×(1 + 0.5·flash)) — that initial expansion is
 	//           what makes a pop read as a BANG instead of a torch.
+	//   light — a real PointLight on that same flash, so the bang throws light on
+	//           the road and the car's rear instead of glowing at nothing. One
+	//           lamp for both pipes, permanently mounted; the rules are strict and
+	//           they are at POP_LIGHT_* below. Read them before touching it.
 	// The whole group scales with intensity (the jet stretches rearward), so
 	// the physics task only touches group scale/visible — no per-vertex work
 	// after mount. Each tip gets its OWN material instances (uniform values
@@ -106,6 +110,48 @@
 	const ONE_SIDED_CHANCE = 0.18;
 	/** 1/s — how fast the ignition flash (glow + width boost) dies. */
 	const FLASH_DECAY = 14;
+
+	// ── The pop LIGHT ───────────────────────────────────────────────────────────
+	// A bang throws light on the road, the barriers and the car's own rear — the
+	// additive quads glow but illuminate nothing, so without this a night pop is a
+	// sticker floating in the dark. Driven by the SAME flash value as the glow
+	// halo, so the light is the bang by construction: full at ignition, gone in
+	// ~150 ms, and floored by the nitrous pilot so a spray keeps a steady blue
+	// wash under the car.
+	//
+	// **IT IS MOUNTED PERMANENTLY AND ONLY ITS `intensity` MOVES.** Never gate a
+	// light with `visible`, and never toggle `castShadow`: three's `_projectObject`
+	// skips invisible objects before `renderList.pushLight()`
+	// (`Renderer.js:3082`), and `LightsNode.customCacheKey()` hashes every light's
+	// `id` and `castShadow` — so removing one from the list changes the cache key
+	// of EVERY lit material in the scene and rebuilds all of their shaders. On a
+	// per-pop toggle that is a full recompile several times a second. Modulating
+	// intensity touches a uniform and nothing else. (`CarHeadlights` already does
+	// this — `light.intensity = on ? m.intensity : 0`.)
+	//
+	// The standing cost is one more light evaluated per fragment of every lit
+	// material, always, even at intensity 0 — there is no way to have the light
+	// available and not pay for it. This is the FIFTH light in the scene (sky key +
+	// sky fill + two headlight projectors), so it is over the three-light guideline
+	// in DOCS/best-practices.md §4; the budget that bought it is §1.1 of
+	// DOCS/testperf.md, which took 313 725 triangles out of the shadow pass. No
+	// shadow on this one — a shadow-casting PointLight is SIX shadow renders.
+	//
+	// ONE light, not one per pipe: two point sources 0.9 m apart, lit for 150 ms,
+	// are not resolvable. The per-pipe asymmetry `fire()` rolls is kept by sliding
+	// this single light toward the dominant pipe instead (see `fire`).
+	/** Candela at full flash. Physical falloff (`intensity / d²` at decay 2), same
+	 *  order as the headlights' main beam. Tuned by eye — turn it down if a pop
+	 *  blows out the tarmac at night. */
+	const POP_LIGHT_INTENSITY = 900;
+	/** Cutoff radius. **WORLD units, not the model metres everything else in this
+	 *  file is authored in** — three compares `light.distance` against a view-space
+	 *  length (`PointLightNode` `cutoffDistanceNode`), so the car's ×2.5 group does
+	 *  not scale it. Keeps the flash local instead of tinting the whole city. */
+	const POP_LIGHT_DISTANCE = 30;
+	const POP_LIGHT_DECAY = 2;
+	/** Model metres rearward of the tips, so the lamp is not buried in the bumper. */
+	const POP_LIGHT_BEHIND = 0.35;
 
 	// amplitude range, decay 1/s, jet length range, width scale, double-bang chance
 	const POP_STYLES = [
@@ -419,6 +465,20 @@
 	const tipL = makeTip(TIP_L);
 	const tipR = makeTip(TIP_R);
 
+	// The pop light (see the constants above for the mounting rules). Colour
+	// crossfades to the nitrous palette with the flames, so a blue bang throws
+	// blue light. Pre-allocated ends — `lerpColors` writes in place, no allocation
+	// in the task.
+	const POP_LIGHT_WARM = new THREE.Color(1, 0.45, 0.18);
+	const POP_LIGHT_COLD = new THREE.Color(0.18, 0.45, 1);
+	// `color.copy`, not a hex in the ctor: the ctor's hex path runs sRGB → working
+	// space, while `new Color(r, g, b)` sets working-space components directly —
+	// passing `WARM.getHex()` would round-trip through 8-bit sRGB for nothing.
+	const popLight = new THREE.PointLight(0xffffff, 0, POP_LIGHT_DISTANCE, POP_LIGHT_DECAY);
+	popLight.color.copy(POP_LIGHT_WARM);
+	popLight.castShadow = false; // six shadow renders; and it is in the cache key
+	popLight.position.set(0, TIP_L.y, TIP_L.z + POP_LIGHT_BEHIND);
+
 	// Positioning aids — wireframe cones AT the measured tips, pointing +Z.
 	const tipCones = [TIP_L, TIP_R].map((p) => {
 		const geo = new THREE.ConeGeometry(0.035, 0.14, 12);
@@ -553,6 +613,11 @@
 		tipL.dyn.phase.value = Math.random();
 		tipR.dyn.phase.value = Math.random();
 
+		// Slide the single pop light toward whichever pipe banged harder — this is
+		// how one light keeps the one-sided pops' asymmetry (see POP_LIGHT_*). A
+		// mirrored pop lands it dead centre, a one-sided one lands it on that pipe.
+		popLight.position.x = TIP_L.x + (TIP_R.x - TIP_L.x) * (shareR / (shareL + shareR));
+
 		// Voice it — same energy roll, same dominant pipe, so the bang comes from
 		// the flame that reads loudest (carAudio picks/jitters the take).
 		triggerExhaustPop(clamp(amp, 0, 1), shareR >= shareL);
@@ -642,6 +707,16 @@
 			tipL.dyn.flash.value = Math.max(flashL, nitro * 0.35);
 			tipR.dyn.flash.value = Math.max(flashR, nitro * 0.35);
 
+			// The pop light rides the loudest pipe's flash — the same value the glow
+			// halo uses, nitrous floor included, so the light IS the bang and a spray
+			// leaves a steady blue wash. Written unconditionally and BEFORE the
+			// tips-visible early return below: `flash` decays smoothly to ~0 on its
+			// own, so the lamp is self-clearing and can never be left glowing after
+			// the tips have gone. The invalidate is already owed by the tips.
+			const lightFlash = Math.max(tipL.dyn.flash.value, tipR.dyn.flash.value);
+			popLight.intensity = lightFlash * POP_LIGHT_INTENSITY;
+			if (lightFlash > 0) popLight.color.lerpColors(POP_LIGHT_WARM, POP_LIGHT_COLD, nitro);
+
 			tipL.group.visible = iL > 0.02 || flashL > 0.02;
 			tipR.group.visible = iR > 0.02 || flashR > 0.02;
 			// Boot warm window (see `warm`): force the tips visible at their default
@@ -687,6 +762,7 @@
 		for (const tip of [tipL, tipR]) {
 			for (const m of tip.materials) m.dispose();
 		}
+		popLight.dispose();
 		gradientTex.dispose();
 		nitroGradientTex.dispose();
 		// cellularTex/perlinTex are SHARED across the scene's fx — never disposed
@@ -695,6 +771,10 @@
 	});
 </script>
 
+<!-- Car-local, model metres, like its siblings. The light is ALWAYS here — never
+     put it behind an {#if} or a `visible` toggle, or every lit material in the
+     scene recompiles on the frame it appears (see POP_LIGHT_* above). -->
+<T is={popLight} />
 <T is={tipL.group} />
 <T is={tipR.group} />
 {#if DEBUG_TIPS}

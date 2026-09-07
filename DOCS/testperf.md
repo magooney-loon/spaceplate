@@ -336,6 +336,41 @@ readings.
 
 ---
 
+## 3b. The scene's light budget, and the trap under it
+
+TestGame mounts **five** lights: the sky's key `DirectionalLight` and hemisphere
+fill, the two headlight `ProjectorLight`s, and the exhaust pop's `PointLight`.
+That is over `best-practices.md` §4's three-light guideline, knowingly — §1.1
+freed the budget by taking the whole city out of the shadow pass. None of them
+casts a shadow except the sky key; a shadow-casting `PointLight` is **six**
+shadow renders.
+
+**The trap, verified in three 0.185's source:** the set of lights in the scene is
+part of every lit material's shader cache key.
+
+```js
+// Renderer.js:3082 — _projectObject
+if (object.visible === false) return; // …before renderList.pushLight( object )
+
+// LightsNode.js — customCacheKey()
+_hashData.push(light.id);
+_hashData.push(light.castShadow ? 1 : 0);
+```
+
+So **`light.visible = false` and `light.castShadow = ...` are not runtime knobs.**
+Flipping either changes `LightsNode.customCacheKey()`, which changes the
+`RenderObject` cache key of every lit material in the scene, which recompiles all
+of them. Doing that per exhaust pop would be a full shader rebuild several times a
+second — the §1.2 disease, but scene-wide and on a repeating trigger.
+
+The rule: **mount lights permanently and modulate `intensity`.** A light at
+intensity 0 still costs a per-fragment evaluation in every lit material and there
+is no way around that; accept the standing cost or do not mount the light.
+`CarHeadlights` (`light.intensity = on ? m.intensity : 0`) and the exhaust pop
+light both follow it.
+
+---
+
 ## 4. Rules for new TestGame content
 
 The scene's own additions to `best-practices.md` §4, each earned above:
@@ -352,3 +387,5 @@ The scene's own additions to `best-practices.md` §4, each earned above:
 - **A transparent mesh with nothing to show must leave the frame.** Alpha 0 is
   not free. (§1.5)
 - **Shared assets are loaded once and disposed never.** (§1.6)
+- **Lights are mounted once and driven by `intensity`.** `visible` and
+  `castShadow` are shader-cache-key inputs, not runtime knobs. (§3b)

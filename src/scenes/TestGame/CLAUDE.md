@@ -543,8 +543,35 @@ honest answer, not a bigger map.
   birth, which is the bang. Per-tip material instances — identical node
   graphs, so shared compiled programs, but independent intensity/flash/phase
   uniforms, which is how one pipe can bang harder than the other. No
-  billboarding (the jet shoots REARWARD with the car) and no extra light (the
-  scene is at the three-light cap). The trigger is the physics task watching
+  billboarding (the jet shoots REARWARD with the car).
+  **THE POP THROWS REAL LIGHT** — one `PointLight` on the same flash value as
+  the glow halo (nitrous floor included, colour crossfading to blue with the
+  palette), so a bang lights the road and the car's rear instead of glowing at
+  nothing, and a spray leaves a steady blue wash. Three rules come with it, all
+  spelled out at `POP_LIGHT_*` in the file:
+  - **It is mounted permanently and only `intensity` moves.** Gating a light
+    with `visible` — or toggling `castShadow` — RECOMPILES EVERY LIT MATERIAL
+    IN THE SCENE. three's `_projectObject` skips invisible objects before
+    `renderList.pushLight()` (`Renderer.js:3082`), and
+    `LightsNode.customCacheKey()` hashes each light's `id` and `castShadow`, so
+    the lights array is part of every material's cache key. Per-pop toggling
+    would be a full recompile several times a second. `CarHeadlights` already
+    follows this (`light.intensity = on ? m.intensity : 0`); now both do.
+  - **It is the FIFTH light** (sky key + sky fill + two headlight projectors),
+    i.e. deliberately over `DOCS/best-practices.md` §4's three-light guideline.
+    The standing cost is one more light evaluated per fragment of every lit
+    material, always, even at intensity 0 — there is no way to have it
+    available and not pay. What bought it is `DOCS/testperf.md` §1.1, which
+    took 313 725 triangles out of the shadow pass. It does not cast shadows: a
+    shadow-casting PointLight is six shadow renders.
+  - **ONE lamp for both pipes**, because two sources 0.9 m apart lit for 150 ms
+    are not resolvable. The per-pipe asymmetry survives anyway — `fire()`
+    slides the light along X toward whichever pipe won the energy roll.
+  - `POP_LIGHT_DISTANCE` is in **WORLD units, not the model metres the rest of
+    the file is authored in**: `PointLightNode` compares `light.distance`
+    against a view-space length, so the car's ×2.5 group does not scale it.
+
+  The trigger is the physics task watching
   `carSim.gear` drops into ≥1 (N/R never pop) sized by rpm, plus `limiting`
   rising edges. NO TWO POPS ALIKE: every pop rolls a STYLE — CRACK (short,
   sharp, can double-bang 60–130 ms later), BURN (long, lazy, slow noise) or
@@ -591,6 +618,7 @@ honest answer, not a bigger map.
   scene-entry veil. It lives INSIDE the visual task, after that task's own
   visibility write — anything set at mount would be overwritten before a frame
   ever rendered. The smoke pool needs no warming any more (see puffPool).
+
 - **`audio/CarEngineAudio.svelte` + `audio/carAudio.ts` are the engine NOTE, positional**. Six
   loops (`public/sounds/engine/`: `idle` + `rpm1..5`) crossfaded by rpm — the two
   layers bracketing the tacho blend while each plays at `rate = rpm/anchor`, so
