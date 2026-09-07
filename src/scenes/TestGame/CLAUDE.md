@@ -30,8 +30,8 @@ sim/                    — the driving model, car-agnostic
   handling.ts           — the HandlingTune CONTRACT + cornering-model rules + modes
                          (the GR86's tunes live in its spec)
   carInput.svelte.ts    — this scene's own keymap (arrows / Space / Q / E / Shift) +
-                         the latched switches (lights, ignition, handling tune) +
-                         the HUD → scene restart signal
+                         the latched switches (lights, ignition, handling tune,
+                         B view mode) + the HUD → scene restart signal
   carTelemetry.svelte.ts — carSim (per-physics-step plain object) / carHud (30 Hz $state
                          mirror)
   carMath.ts            — `clamp` / `damp`, shared by the sim modules
@@ -51,6 +51,13 @@ fx/                     — the car's visual effects
   CarHeadlights.svelte  — car-local lights (nose is -Z); lamp anchors from the spec
   NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
                          boost from the nitrous flow (the lensState contract)
+debug/
+  DebugRig.svelte       — the car's SKELETON (B view: model → rig → both): wheels /
+                         half-shafts + diffs / driveshaft / struts at the spec's
+                         patches, steered & rolled from carSim, strut compression
+                         MEASURED from the body's world accel — pure visualization,
+                         never feeds physics (complements the Studio-gated Rapier
+                         collider debug in extensions/physics)
 audio/                  — the engine NOTE
   CarEngineAudio.svelte — the car's positional engine bed, mounted inside the
                          visual-scale group; all mixing lives in carAudio.ts
@@ -90,7 +97,8 @@ should not be guessed at without the cars to tune against.
 ## Controls
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
-Shift nitrous, L headlights, K main beam, G handling setup, M/N ignition on/off.
+Shift nitrous, L headlights, K main beam, G handling setup, M/N ignition on/off,
+B view (model → debug rig → both).
 Launching is a ritual: sit in N, rev into the 4–6k window (the shift lights
 turn green and fill as you go), tap E — a REV-MATCH LAUNCH drops the clutch
 clean, and the closer to 6k the harder it plants (≈1 g at the top; the cluster
@@ -508,6 +516,39 @@ honest answer, not a bigger map.
   unwritten quad is degenerate and invisible, but it still pays a vertex
   transform in every pass. Enter/exit hysteresis (MARK_ON 0.3 / MARK_EXIT 0.22) stops
   threshold chatter laying confetti.
+- **`debug/DebugRig.svelte` is the car's SKELETON** — what the kinematic model
+  actually drives, drawn at the RigidBody's unscaled level (world-unit body
+  space, so it inherits Rapier's interpolated pose). B cycles the view:
+  `model` → `rig` → `both` (`carView` in carInput.svelte.ts, a latched switch).
+  Wheels sit at the spec's `wheelPatches` (front pair steered at
+  `carSim.steerAngle` — the same radians CarWheels renders, never re-derived),
+  rolling fronts at road speed and rears with the drivetrain's `slip` — the
+  rears LOCK under handbrake (the model wheels keep spinning: one of the rig's
+  honest divergences). Axles are HALF-SHAFTS out of a centre diff per end plus a
+  finned driveshaft — independent suspension means a solid bar couldn't follow
+  both hubs. Strut compression is MEASURED, not modelled: finite difference of
+  the rig root's world pose → body-frame accel (one-pole smoothed) → squat/dive
+  front-to-rear and roll left-to-right, clamped to a gauge range — a display of
+  the load transfer the model applies, not a spring. The chassis box is drawn
+  at the collider group's mount and at the TRUE dilated extents
+  (`(h−r)·UPM + r`, the `dilated` helper) — Threlte's `scaleColliderArgs`
+  scales shape args POSITIONALLY against [x,y,z], so a roundCuboid's FOURTH
+  arg (border radius) gets no scale component and stays in model metres;
+  computing `h·UPM` instead puts the drawn box (and the floor line, and the
+  wheels) 0.27 world units through the floor while the real collider sits
+  just above the tyre plane. The task runs at
+  `{ before: autoRenderTask }` (render time) for the CarWheels reason — a
+  physics-task integration pulses against the interpolated body. 'rig' view
+  hides the car's MESHES and only meshes: the headlight projectors and exhaust
+  pop PointLight live in the same subtree, and toggling a LIGHT's visibility
+  changes the lights array hashed into every lit material's cache key → full
+  scene recompile (the POP_LIGHT rule). Only meshes VISIBLE at hide time are
+  recorded and restored — a blanket hide-all/restore-all re-shows the GLB's
+  merged wheel meshes that CarWheels keeps hidden after baking, and since
+  CarWheels mutates the SHARED material those ghosts roll with it: duplicate
+  spinning wheels in 'model' and 'both' after a rig visit. The Rapier collider debug
+  (extensions/physics panel, Studio-gated) draws world colliders; this draws
+  the car's kinematics — they complement.
 - **`fx/puffPool.ts` is the smoke primitive** — ONE mesh, ONE material, ONE draw
   call, shared by TireSmoke and the exhaust puffs. Read its header before
   touching either: it replaced two pools of N meshes with N material instances

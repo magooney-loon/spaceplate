@@ -123,10 +123,27 @@ export const cycleHandlingMode = (): void => {
 	carHandling.mode = HANDLING_MODES[next];
 };
 
-export type CarToggleAction = 'lights' | 'highBeam' | 'handling' | 'ignition';
+// --- View -----------------------------------------------------------------------
+//
+// What the camera looks AT: the full car model, the debug rig (wheels / axles /
+// suspension — the kinematics the driving model actually computes, see
+// debug/DebugRig.svelte), or both overlaid. A latched switch like the lights:
+// it survives `resetCarInput` — the view you chose is the view you come back to.
+
+export const VIEW_MODES = ['model', 'rig', 'both'] as const;
+export type CarViewMode = (typeof VIEW_MODES)[number];
+
+export const carView = $state({ mode: 'model' as CarViewMode });
+
+export const cycleCarView = (): void => {
+	const next = (VIEW_MODES.indexOf(carView.mode) + 1) % VIEW_MODES.length;
+	carView.mode = VIEW_MODES[next];
+};
+
+export type CarToggleAction = 'lights' | 'highBeam' | 'handling' | 'ignition' | 'view';
 
 /**
- * e.code → switch. L, K and G are free of both Studio's dev binds (w a s z t r c v m)
+ * e.code → switch. L, K, G and B are free of both Studio's dev binds (w a s z t r c v m)
  * and the engine's own Ctrl+H (UI toggle); M is IN Studio's set — see carIgnition's
  * note. M alone flips the ignition.
  */
@@ -134,7 +151,8 @@ export const CAR_TOGGLE_KEYS: Record<string, CarToggleAction> = {
 	KeyL: 'lights',
 	KeyK: 'highBeam',
 	KeyG: 'handling',
-	KeyM: 'ignition'
+	KeyM: 'ignition',
+	KeyB: 'view'
 };
 
 /** Edge-triggered: call once per keydown, never on auto-repeat. */
@@ -155,6 +173,10 @@ export const applyCarToggle = (action: CarToggleAction): void => {
 			carIgnition.on = true;
 			carIgnition.ready = false;
 		}
+		return;
+	}
+	if (action === 'view') {
+		cycleCarView();
 		return;
 	}
 	// Flicking to main beam turns the lamps on — a dead key with the lights off is

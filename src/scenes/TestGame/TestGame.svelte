@@ -14,6 +14,7 @@
 	import CarExhaustFlames from './fx/CarExhaustFlames.svelte';
 	import CarEngineAudio from './audio/CarEngineAudio.svelte';
 	import CarWheels from './fx/CarWheels.svelte';
+	import DebugRig from './debug/DebugRig.svelte';
 	import ChaseCamera from './ChaseCamera.svelte';
 	import SkidMarks from './fx/SkidMarks.svelte';
 	import TireSmoke from './fx/TireSmoke.svelte';
@@ -23,6 +24,7 @@
 		CAR_TOGGLE_KEYS,
 		applyCarToggle,
 		carRestart,
+		carView,
 		resetCarInput,
 		setCarInputKey
 	} from './sim/carInput.svelte';
@@ -184,6 +186,8 @@
 	let carBody = $state.raw<RapierRigidBody>();
 	/** What ChaseCamera follows — an empty parented to the chassis body, see below. */
 	let chaseAnchor = $state.raw<THREE.Object3D>();
+	/** The visual car group (model + fx) — see the rig-view effect below. */
+	let visualRoot = $state.raw<THREE.Group>();
 
 	const controller = createCarController(car);
 
@@ -191,6 +195,34 @@
 		const body = carBody;
 		if (!body) return;
 		controller.step(delta, body);
+	});
+
+	// ── Rig view (B): hide the MODEL, keep everything else alive ──────────────
+	//
+	// 'rig' hides the car's MESHES so the debug skeleton (debug/DebugRig.svelte)
+	// is the car. It hides meshes, never the group: the headlights' projectors and
+	// the exhaust pop's PointLight live inside this subtree, and toggling a
+	// LIGHT's visibility removes it from the render list — which is part of every
+	// lit material's cache key and recompiles the scene's materials (the
+	// POP_LIGHT_* rule in fx/CarExhaustFlames.svelte). Only meshes that are
+	// VISIBLE at the moment of hiding are recorded and restored: a blanket
+	// hide-all/restore-all re-shows the GLB's merged wheel meshes that CarWheels
+	// keeps hidden after baking its own — and since CarWheels mutates the SHARED
+	// material, those re-shown meshes roll with it: duplicate ghost wheels.
+	let hiddenByRig: THREE.Mesh[] = [];
+	$effect(() => {
+		const root = visualRoot;
+		const mode = carView.mode;
+		for (const mesh of hiddenByRig) mesh.visible = true;
+		hiddenByRig = [];
+		if (root && mode === 'rig') {
+			root.traverse((obj) => {
+				const mesh = obj as THREE.Mesh;
+				if (!mesh.isMesh || !mesh.visible) return; // already-hidden stays hidden
+				mesh.visible = false;
+				hiddenByRig.push(mesh);
+			});
+		}
 	});
 
 	// Restart button (HUD → carRestart token): pose and motion back to the
@@ -262,7 +294,7 @@
 			enabledRotations={[false, true, false]}
 			ccd={true}
 		>
-			<T.Group scale={car.model.scale}>
+			<T.Group bind:ref={visualRoot} scale={car.model.scale}>
 				<T is={$carModel.scene} />
 				<!-- Steerable/rolling wheels — shader-driven, see fx/CarWheels.svelte.
 				     visualScale must match this group's scale: the roll rate divides
@@ -311,6 +343,12 @@
 					frictionCombineRule={CoefficientCombineRule.Min}
 				/>
 			</T.Group>
+
+			<!-- The debug skeleton — wheels/axles/suspension at the spec's patches,
+			     steered and rolled from the same carSim values as CarWheels, struts
+			     gauged by MEASURED body acceleration. Drawn in 'rig' and 'both' view
+			     modes (B cycles: model → rig → both); it never touches physics. -->
+			<DebugRig active={carView.mode !== 'model'} />
 
 			<!-- What the chase camera looks at. An empty inside the RigidBody rather than
 			     the visual group: this level is UNSCALED, so the offset is world units and
