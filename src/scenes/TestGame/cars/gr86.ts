@@ -45,9 +45,16 @@ export const gr86 = {
 		 *  at all. */
 		engineInertia: 0.2,
 		/** kg·m² — both driven-axle wheels, tyres, driveshafts and the diff
-		 * together. All that is left once the clutch is open, which is why a
-		 * shift hooks the car back up. */
+		 *  together. All that is left once the clutch is open, which is why a
+		 *  shift hooks the car back up. */
 		wheelInertia: 1.4,
+		/** kg·m² — chassis yaw inertia. Catalog-scale figure for the platform;
+		 *  the roundCuboid this replaced implied ~2280 (a box's m/12·(w² + l²)),
+		 *  so contact-driven rotation firms up ~8% — steering is setAngvel and
+		 *  never notices. The COM it ships with (chassisMassProperties) is the
+		 *  53/47 lever rule: 15.5 cm ahead of the origin, where the old box's
+		 *  z=0 centre never was. */
+		yawInertia: 2100,
 		/** m/s — 1st tops out ~12 m/s of spin at the limiter, 2nd ~10 after a long
 		 *  pull, 3rd cannot spin at all: 10 puts 1st fully lit and 2nd only there
 		 *  if you hold it, which is the contrast the tunes want. */

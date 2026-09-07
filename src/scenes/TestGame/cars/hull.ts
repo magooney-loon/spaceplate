@@ -34,6 +34,7 @@
 
 import * as THREE from 'three/webgpu';
 import type { CarSpec } from './types';
+import { UNITS_PER_METER } from '../units';
 
 /** Sample budget fed to quickhull (per-mesh bbox corners included). */
 const MAX_POINTS = 4096;
@@ -45,6 +46,12 @@ export type CarHull = {
 	points: Float32Array;
 	/** World-unit border radius for `roundConvexHull`. */
 	margin: number;
+	/** World-unit AABB of the point cloud (per-mesh bbox corners make the
+	 *  extremes exact) — feeds the pitch/roll inertia placeholders below. */
+	bounds: {
+		min: [number, number, number];
+		max: [number, number, number];
+	};
 };
 
 export function buildCarHull(root: THREE.Object3D, spec: CarSpec): CarHull | undefined {
@@ -77,8 +84,19 @@ export function buildCarHull(root: THREE.Object3D, spec: CarSpec): CarHull | und
 	const stride = Math.max(1, Math.ceil(totalVerts / (MAX_POINTS - meshes.length * 8)));
 
 	const out: number[] = [];
+	const bmin: [number, number, number] = [Infinity, Infinity, Infinity];
+	const bmax: [number, number, number] = [-Infinity, -Infinity, -Infinity];
 	const push = (p: THREE.Vector3) => {
-		out.push(p.x * spec.model.scale, p.y * spec.model.scale, p.z * spec.model.scale);
+		const x = p.x * spec.model.scale;
+		const y = p.y * spec.model.scale;
+		const z = p.z * spec.model.scale;
+		out.push(x, y, z);
+		if (x < bmin[0]) bmin[0] = x;
+		if (y < bmin[1]) bmin[1] = y;
+		if (z < bmin[2]) bmin[2] = z;
+		if (x > bmax[0]) bmax[0] = x;
+		if (y > bmax[1]) bmax[1] = y;
+		if (z > bmax[2]) bmax[2] = z;
 	};
 
 	for (const mesh of meshes) {
@@ -101,5 +119,59 @@ export function buildCarHull(root: THREE.Object3D, spec: CarSpec): CarHull | und
 				}
 	}
 
-	return { points: new Float32Array(out), margin: HULL_MARGIN * spec.model.scale };
+	return { points: new Float32Array(out), margin: HULL_MARGIN * spec.model.scale, bounds: { min: bmin, max: bmax } };
+}
+
+/** The collider's explicit mass properties — the `mass` + `centerOfMass` +
+ *  `principalAngularInertia` + `angularInertiaLocalFrame` set Threlte's
+ *  Collider switches to (all three extras or it silently falls back to
+ *  `setMass`, geometry-derived). The body's mass properties become the SPEC'S
+ *  facts instead of a side effect of collider geometry:
+ *
+ *  - COM: x 0 (symmetric car), y `cogHeight`, z from the weight-bias lever rule
+ *    (`frontAxleZ + wheelbase·rearWeightBias` — the GR86's 53/47 puts it
+ *    15.5 cm ahead of the origin, where no hull centroid would land).
+ *  - Yaw inertia: the spec's `yawInertia` — the one component that is dynamic
+ *    here, and even then only for contact-driven rotation (steering is DIRECT
+ *    yaw-rate control via `setAngvel`, which inertia does not shape).
+ *  - Pitch/roll: `enabledRotations` locks both axes, so those components never
+ *    integrate — they are box-equivalent placeholders computed from the hull's
+ *    bounds, honest in scale, inert in effect.
+ *
+ *  UNITS: the collider lives in world units with kg mass, so inertia must be
+ *  kg·(world-unit)² — SI kg·m² × UNITS_PER_METER² — and the COM in world
+ *  units (units.ts's documented boundary, applied here because these values
+ *  feed Rapier directly). */
+export type ChassisMassProperties = {
+	centerOfMass: [number, number, number];
+	principalAngularInertia: [number, number, number];
+	/** Euler radians — [0,0,0] keeps the principal axes on the body's own. */
+	angularInertiaLocalFrame: [number, number, number];
+};
+
+export function chassisMassProperties(spec: CarSpec, hull: CarHull): ChassisMassProperties {
+	const { mass, cogHeight, rearWeightBias } = spec.hardware;
+	const { frontAxleZ, rearAxleZ } = spec.geometry;
+	const UPM = UNITS_PER_METER;
+
+	const hx = (hull.bounds.max[0] - hull.bounds.min[0]) / 2;
+	const hy = (hull.bounds.max[1] - hull.bounds.min[1]) / 2;
+	const hz = (hull.bounds.max[2] - hull.bounds.min[2]) / 2;
+	// Solid-box equivalents about each axis (full-extent squares — m/12·(a² + b²)).
+	const ixx = (mass / 12) * ((2 * hy) ** 2 + (2 * hz) ** 2); // pitch
+	const izz = (mass / 12) * ((2 * hx) ** 2 + (2 * hy) ** 2); // roll
+	const iyy = spec.hardware.yawInertia * UPM * UPM; // yaw — the spec's own fact
+
+	return {
+		centerOfMass: [
+			0,
+			cogHeight * UPM,
+			// Lever rule off the ACTUAL axle positions (their span IS the wheelbase):
+			// the rear axle carries `rearWeightBias` of the weight, so the COM sits
+			// that fraction of the span behind the front axle.
+			(frontAxleZ + (rearAxleZ - frontAxleZ) * rearWeightBias) * UPM
+		],
+		principalAngularInertia: [ixx, iyy, izz],
+		angularInertiaLocalFrame: [0, 0, 0]
+	};
 }

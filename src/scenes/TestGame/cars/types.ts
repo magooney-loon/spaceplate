@@ -48,6 +48,15 @@ export type CarSpec = {
 		engineInertia: number;
 		/** kg·m² — driven-axle wheels, tyres, shafts and diff together. */
 		wheelInertia: number;
+		/** kg·m² — the chassis' yaw (vertical-axis) inertia, fed to Rapier
+		 *  explicitly (hull.ts's chassisMassProperties) so the body's mass
+		 *  properties are the car's facts, not a side effect of collider
+		 *  geometry. Steering is DIRECT yaw-rate control (`setAngvel`), so this
+		 *  never shapes steering response — what it scales is everything that
+		 *  torque-drives the body outside that control, barrier contacts
+		 *  chiefly. Pitch/roll are locked on the body; their inertia components
+		 *  are box-equivalent placeholders from the hull's bounds. */
+		yawInertia: number;
 		/** m/s of wheel overspeed that reads as TOTAL wheelspin — the normalizer the
 		 *  drivetrain's `slip` state is measured against (1 = a tyre doing nothing
 		 *  but smoke). Sized off what the gearing can actually reach: the GR86's 1st

@@ -32,7 +32,7 @@
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
 	import { buildTrackColliders } from './trackColliders';
-	import { buildCarHull } from './cars/hull';
+	import { buildCarHull, chassisMassProperties } from './cars/hull';
 	import { resetCarTelemetry } from './sim/carTelemetry.svelte';
 
 	// Test Game 3D scene — the driving prototype's composition layer. The driving
@@ -76,6 +76,12 @@
 	// world-unit points. Rebuilt only when the model changes; undefined only if
 	// the GLB had no non-wheel meshes at all.
 	const carHull = $derived($carModel?.scene ? buildCarHull($carModel.scene, car) : undefined);
+
+	// The hull collider's EXPLICIT mass properties (mass + COM + inertia + frame —
+	// the full set Threlte's Collider needs or it falls back to geometry-derived
+	// `setMass`): COM from cogHeight × the weight-bias lever, yaw inertia from the
+	// spec, pitch/roll as locked-axis placeholders. See cars/hull.ts.
+	const carMassProps = $derived(carHull ? chassisMassProperties(car, carHull) : undefined);
 
 	$effect(() => {
 		if ($track?.scene) logGltf.info('TestGame track loaded');
@@ -387,20 +393,30 @@
 			     the car + 4 cm — body sheet 0.91 + 0.04 = 0.95 at the doors (the old
 			     box's hx), a touch wider at the mirrors (see hull.ts) — and its edges
 			     GLANCE off kerbs and barrier bases instead of face-stopping.
-			     MASS: still the sole mass carrier — `setMass` derives COM and inertia
-			     from the hull geometry at the spec's total (mass props are
-			     truthiness-guarded in Threlte; density would be the density-0 escape
-			     hatch if this ever needed to be massless). Friction props carry what
+			     MASS: still the sole mass carrier, now with EXPLICIT properties —
+			     mass + centerOfMass + principalAngularInertia + angularInertiaLocalFrame
+			     (Threlte takes that branch only when ALL THREE extras are present;
+			     otherwise it silently `setMass`es and derives from geometry). The COM
+			     is the spec's own (cogHeight, the 53/47 lever rule) and the yaw inertia
+			     is the spec's hardware.yawInertia — steering is DIRECT setAngvel
+			     control, so these scale contact response (barrier hits), never the
+			     driving model. Pitch/roll are locked (enabledRotations) so their
+			     inertia components are box-equivalent placeholders from the hull's
+			     bounds. All world-unit/kg·wu² — the units.ts boundary, applied in
+			     hull.ts's chassisMassProperties. Friction props carry what
 			     the box ran (1 × Multiply → the track collider's own μ): contacts are
 			     bump stop and barrier hits, never grip — that lives in the
 			     drivetrain/task and the raycast springs.
 			     NOT the ground contact — the springs are; the hull's belly rides
 			     ~12 cm off the rest line and meets geometry only on real hits. -->
-			{#if carHull}
+			{#if carHull && carMassProps}
 				<Collider
 					shape="roundConvexHull"
 					args={[carHull.points, carHull.margin]}
 					mass={car.hardware.mass}
+					centerOfMass={carMassProps.centerOfMass}
+					principalAngularInertia={carMassProps.principalAngularInertia}
+					angularInertiaLocalFrame={carMassProps.angularInertiaLocalFrame}
 					friction={1}
 					frictionCombineRule={CoefficientCombineRule.Multiply}
 				/>

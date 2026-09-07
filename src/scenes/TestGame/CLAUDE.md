@@ -406,9 +406,15 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   undertray box's `rounding` reborn: Rapier DILATES round hulls by the border
   radius, so the collider is the car + 4 cm — body half-width 0.91 + 0.04 =
   0.95, exactly the old box's hx — and edges GLANCE off kerbs instead of
-  face-stopping. It is the sole MASS carrier (`mass` prop → `setMass` derives
-  COM/inertia from the hull geometry; `mass` is truthiness-guarded in Threlte,
-  `density` is the `!== undefined`-guarded zero-mass escape hatch). THE POINTS
+  face-stopping. It is the sole MASS carrier, with EXPLICIT properties — mass +
+  centerOfMass (cogHeight × the weight-bias lever rule, 15.5 cm ahead of the
+  origin on the GR86) + principalAngularInertia (yaw = the spec's
+  `hardware.yawInertia`; pitch/roll are LOCKED axes, their components are
+  box-equivalent placeholders from the hull bounds) + identity frame — because
+  Threlte's Collider only takes that branch when ALL THREE extras are present;
+  missing one silently falls back to geometry-derived `setMass`. Steering is
+  DIRECT yaw-rate control (`setAngvel`), so inertia scales contact response
+  only — the driving model never feels these numbers move. THE POINTS
   ARE PRE-BAKED to world units (×model.scale) and the Collider sits at WORLD
   SCALE 1 with no scaled group: Threlte's `scaleColliderArgs` vertex-scales
   `convexHull` args but NOT `roundConvexHull` — it falls into the positional
