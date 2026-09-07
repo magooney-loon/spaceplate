@@ -9,6 +9,9 @@
 // `publishCarHud` counts SECONDS, not steps, so the 30 Hz holds at any rate.
 
 import { currentCar } from '../cars';
+import { G } from '../units';
+import { carView } from './carInput.svelte';
+import type { Suspension } from './suspension';
 
 /** Written every physics step. Read by CarWheels and the mirror below — never by the HUD. */
 export const carSim = {
@@ -72,7 +75,45 @@ export const carSim = {
 	 *  left-hand corner. The sideways bleed the grip model actually applied this
 	 *  step, clamped at μ·g like everything else — so it saturates exactly when
 	 *  the tyres do, and a car sliding at the limit stops leaning harder. */
-	accelLat: 0
+	accelLat: 0,
+
+	// ── The debug feed ────────────────────────────────────────────────────────
+	// Everything below exists because `debug/DebugRig.svelte` draws it and the
+	// HUD's debug panel prints it. The driving model computed all of it already —
+	// these are publishes, not new physics — but each is a number the rig would
+	// otherwise have had to GUESS at, and a rig that guesses is a rig that lies.
+	// (The rig's wheel roll used to fake wheelspin as `speedMs × (1 + slip·0.8)`;
+	// `spin` below is the real overspeed the drivetrain integrated.)
+
+	/** m/s — how much faster the DRIVEN contact patch is running than the road,
+	 *  signed along the nose (drivetrain `state.spin`). The rig rolls its driven
+	 *  wheels at `speedMs + spin` and its undriven wheels at `speedMs`, which is
+	 *  the whole "which wheels are turning" reading. */
+	spin: 0,
+	/** m/s — velocity component along body +X, straight off the controller's
+	 *  `vLateral` with no sign games: whatever side +X is, this is the car's
+	 *  motion along it. The rig's velocity arrow is `(velLat, 0, -speedMs)`. */
+	velLat: 0,
+	/** rad/s — the yaw rate actually commanded on the body this step. */
+	yawRate: 0,
+	/** N along the nose, signed — engine + engine braking, traction-clipped. */
+	driveForce: 0,
+	/** N along the nose, signed — brakes + drag + rolling; always opposes motion. */
+	resistForce: 0,
+	/** 0..1 — the FRICTION CIRCLE at the driven axle: the share of its grip budget
+	 *  the drive force is spending. Tints the rig's driveline and drives the
+	 *  looseness the cornering model reads. */
+	powerLoad: 0,
+	/** 0..1 — lateral grip left after wheelspin/brake/throttle/looseness. */
+	gripFactor: 0,
+	/** 0..1 — how loose the rear is right now (the loosest source wins). */
+	loose: 0,
+	/** The LIVE lateral μ the sideways bleed is capped at this step — what the
+	 *  rig's friction circle is drawn at. Falls toward `handbrakeMuLat` as the
+	 *  rear lets go. */
+	muLat: 0,
+	/** 0 = clutch on the floor (mid-shift), 1 = fully home. */
+	clutch: 1
 };
 
 /** The HUD's reactive view. Quantised, ~30 Hz. */
@@ -101,14 +142,67 @@ export const carHud = $state({
 	launchTier: 0
 });
 
+/**
+ * The DEBUG panel's reactive view — the same 30 Hz mirror discipline as `carHud`,
+ * for the numbers the debug rig draws as geometry. Separate object, and PUBLISHED
+ * ONLY WHILE THE RIG IS UP (`carView.mode !== 'model'`): it is roughly twice the
+ * field count of the cluster's, all of it invisible in normal play, and a $state
+ * write nobody reads is still an invalidation. The panel that reads it
+ * (TestGameHud) is mounted on the same condition, so the gate and the consumer
+ * can't drift apart.
+ *
+ * Per-corner arrays are FL, FR, RL, RR — the `wheelPatches` order, everywhere.
+ */
+export const carDebugHud = $state({
+	/** 'rwd' | 'fwd' | 'awd' — constant, but the panel names the driveline it is
+	 *  explaining and nothing else in the HUD carries it. */
+	layout: currentCar().layout as string,
+	/** N along the nose. */
+	driveForce: 0,
+	resistForce: 0,
+	/** g — the model's own longitudinal and lateral accelerations. */
+	accelFwd: 0,
+	accelLat: 0,
+	/** m/s along body +X. */
+	velLat: 0,
+	/** °/s. */
+	yawRate: 0,
+	/** m/s — driven contact-patch overspeed. */
+	spin: 0,
+	/** 0..1. */
+	slip: 0,
+	powerLoad: 0,
+	gripFactor: 0,
+	latLoad: 0,
+	loose: 0,
+	clutch: 0,
+	/** The live lateral μ, and the tyre's full one for comparison. */
+	muLat: 0,
+	/** N (world force units) — total upward force the four springs handed Rapier. */
+	springForce: 0,
+	/** Per corner: PHYSICAL compression 0..1, and whether the ray found ground. */
+	load: [0, 0, 0, 0],
+	grounded: [false, false, false, false]
+});
+
 const HUD_INTERVAL = 1 / 30;
 let elapsed = 0;
 
-/** Push `carSim` into `carHud` at most 30×/s, only where a shown value changed. */
-export function publishCarHud(dt: number): void {
+/**
+ * Push `carSim` into `carHud` at most 30×/s, only where a shown value changed.
+ *
+ * `suspension` is optional and only exists for the debug mirror — the four
+ * springs' state lives on the controller's instance rather than in `carSim`
+ * (the rig reads that instance directly; only the HUD, a sibling tree that can
+ * reach neither, needs it mirrored). Callers that have it should pass it; the
+ * shape of the cluster's feed is unchanged either way.
+ */
+export function publishCarHud(dt: number, suspension?: Suspension): void {
 	elapsed += dt;
 	if (elapsed < HUD_INTERVAL) return;
 	elapsed = 0;
+
+	if (suspension && carView.mode !== 'model') publishDebug(suspension);
 
 	const speed = Math.abs(carSim.speedMs);
 	const kmh = Math.round(speed * 3.6);
@@ -137,6 +231,55 @@ export function publishCarHud(dt: number): void {
 	if (carHud.launchTier !== carSim.launchTier) carHud.launchTier = carSim.launchTier;
 }
 
+/** Round to `places` decimals — the debug panel's quantiser. Coarser than the
+ *  raw value on purpose: a field that re-renders on the 4th decimal is a field
+ *  nobody can read, and every write is an invalidation. */
+const q = (v: number, places: number): number => {
+	const f = 10 ** places;
+	return Math.round(v * f) / f;
+};
+
+/** The debug mirror's half of the 30 Hz publish. Called from `publishCarHud`
+ *  above, never on its own — one accumulator, so the two mirrors stay in step. */
+function publishDebug(suspension: Suspension): void {
+	const d = carDebugHud;
+	const driveForce = Math.round(carSim.driveForce);
+	if (d.driveForce !== driveForce) d.driveForce = driveForce;
+	const resistForce = Math.round(carSim.resistForce);
+	if (d.resistForce !== resistForce) d.resistForce = resistForce;
+	const accelFwd = q(carSim.accelFwd / G, 2);
+	if (d.accelFwd !== accelFwd) d.accelFwd = accelFwd;
+	const accelLat = q(carSim.accelLat / G, 2);
+	if (d.accelLat !== accelLat) d.accelLat = accelLat;
+	const velLat = q(carSim.velLat, 2);
+	if (d.velLat !== velLat) d.velLat = velLat;
+	const yawRate = q(carSim.yawRate * (180 / Math.PI), 1);
+	if (d.yawRate !== yawRate) d.yawRate = yawRate;
+	const spin = q(carSim.spin, 2);
+	if (d.spin !== spin) d.spin = spin;
+	const slip = q(carSim.slip, 2);
+	if (d.slip !== slip) d.slip = slip;
+	const powerLoad = q(carSim.powerLoad, 2);
+	if (d.powerLoad !== powerLoad) d.powerLoad = powerLoad;
+	const gripFactor = q(carSim.gripFactor, 2);
+	if (d.gripFactor !== gripFactor) d.gripFactor = gripFactor;
+	const latLoad = q(carSim.latLoad, 2);
+	if (d.latLoad !== latLoad) d.latLoad = latLoad;
+	const loose = q(carSim.loose, 2);
+	if (d.loose !== loose) d.loose = loose;
+	const clutch = q(carSim.clutch, 2);
+	if (d.clutch !== clutch) d.clutch = clutch;
+	const muLat = q(carSim.muLat, 2);
+	if (d.muLat !== muLat) d.muLat = muLat;
+	const springForce = Math.round(suspension.force);
+	if (d.springForce !== springForce) d.springForce = springForce;
+	for (let i = 0; i < 4; i++) {
+		const load = q(suspension.loadRatio(i), 2);
+		if (d.load[i] !== load) d.load[i] = load;
+		if (d.grounded[i] !== suspension.grounded[i]) d.grounded[i] = suspension.grounded[i];
+	}
+}
+
 /** Park the instruments — used when the scene stops driving (scene switch, blur). */
 export function resetCarTelemetry(): void {
 	carSim.speedMs = 0;
@@ -160,6 +303,39 @@ export function resetCarTelemetry(): void {
 	carSim.launch = 0;
 	carSim.accelFwd = 0;
 	carSim.accelLat = 0;
+	carSim.spin = 0;
+	carSim.velLat = 0;
+	carSim.yawRate = 0;
+	carSim.driveForce = 0;
+	carSim.resistForce = 0;
+	carSim.powerLoad = 0;
+	carSim.gripFactor = 0;
+	carSim.loose = 0;
+	carSim.muLat = 0;
+	carSim.clutch = 1;
 	elapsed = HUD_INTERVAL;
 	publishCarHud(0);
+	// The debug mirror has no `suspension` to publish from here (the controller
+	// is being torn down), so it is parked directly — otherwise the panel still
+	// reads the last corner loads on the way back into the scene.
+	const d = carDebugHud;
+	d.driveForce = 0;
+	d.resistForce = 0;
+	d.accelFwd = 0;
+	d.accelLat = 0;
+	d.velLat = 0;
+	d.yawRate = 0;
+	d.spin = 0;
+	d.slip = 0;
+	d.powerLoad = 0;
+	d.gripFactor = 0;
+	d.latLoad = 0;
+	d.loose = 0;
+	d.clutch = 0;
+	d.muLat = 0;
+	d.springForce = 0;
+	for (let i = 0; i < 4; i++) {
+		d.load[i] = 0;
+		d.grounded[i] = false;
+	}
 }

@@ -454,12 +454,15 @@
 			     were — the body itself is excluded, and the track's colliders are still
 			     only Asphalt/Metal trimesh + the Ground floor (trackColliders.ts). -->
 
-			<!-- The debug skeleton — wheels/axles/suspension at the spec's patches,
-			     steered and rolled from the same carSim values as CarWheels, struts
-			     gauged by MEASURED body acceleration, chassis drawn as the collider's
-			     own hull wireframe. Drawn in 'rig' and 'both' view modes (B cycles:
-			     model → rig → both); it never touches physics. -->
-			<DebugRig active={carView.mode !== 'model'} {suspension} hull={carHull} />
+			<!-- The debug skeleton — wheels/driveline/suspension at the spec's
+			     patches, steered and rolled from the same carSim values as CarWheels,
+			     struts riding the shared suspension, chassis drawn as the collider's
+			     own hull wireframe. It takes the VIEW MODE rather than a boolean,
+			     because it draws two layers: the skeleton in both 'rig' and 'both',
+			     and the analysis overlays (suspension rays, CG vectors, friction
+			     circle) only in 'rig', where there is no car for them to bury.
+			     B cycles model → rig → both; it never touches physics. -->
+			<DebugRig view={carView.mode} {suspension} hull={carHull} />
 
 			<!-- What the chase camera looks at. An empty inside the RigidBody rather than
 			     the visual group: this level is UNSCALED, so the offset is world units and

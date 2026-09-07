@@ -18,7 +18,8 @@ cars/                   — THE GARAGE: everything car-specific is data here
   gr86.ts               — the GR86 spec: real-car hardware, measured geometry,
                          the two tunes (values + inline comments = source of truth)
   spec.ts               — spec math: gearRatio/rpmInGear/engineTorque +
-                         layout-aware drivenAxleLoad + wheelPatches (shared layout)
+                         layout-aware drivenAxleLoad/drivenAxles + centerOfMass +
+                         wheelPatches (shared layout)
   garage.svelte.ts      — CARS registry + carGarage.currentId ($state) + currentCar()
   index.ts              — barrel (directory imports can't resolve .svelte.ts)
 sim/                    — the driving model, car-agnostic
@@ -38,7 +39,8 @@ sim/                    — the driving model, car-agnostic
                          the latched switches (lights, ignition, handling tune,
                          B view mode) + the HUD → scene restart signal
   carTelemetry.svelte.ts — carSim (per-physics-step plain object) / carHud (30 Hz $state
-                         mirror)
+                         mirror for the cluster) / carDebugHud (the second 30 Hz
+                         mirror, published only while the rig is up)
   carMath.ts            — `clamp` / `damp`, shared by the sim modules
 fx/                     — the car's visual effects
   puffPool.ts           — the smoke primitive: one mesh / one material / one draw
@@ -56,13 +58,26 @@ fx/                     — the car's visual effects
   CarHeadlights.svelte  — car-local lights (nose is -Z); lamp anchors from the spec
   NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
                          boost from the nitrous flow (the lensState contract)
-debug/
-  DebugRig.svelte       — the car's SKELETON (B view: model → rig → both): wheels /
-                         half-shafts + diffs / driveshaft / struts at the spec's
-                         patches, steered & rolled from carSim, strut compression
-                         MEASURED from the body's world accel — pure visualization,
-                         never feeds physics (complements the Studio-gated Rapier
-                         collider debug in extensions/physics)
+debug/                  — the debug TOOL, both halves: the 3D rig and its readout.
+                         Both are on the same B switch (`carView`), and the HUD
+                         one is the only HTML component outside the HUD shell —
+                         it belongs with the rig it explains, not with the
+                         scene's chrome
+  DebugHud.svelte       — the NUMBERS behind the rig, bottom-left. Reads
+                         `carDebugHud` (the 30 Hz mirror, published only while
+                         this is up) + `carHud`, never `carSim`. SELF-GATED on
+                         `carView.mode`, so TestGameHud mounts it unconditionally
+                         and stays a shell: driveline / grip / forces / the four
+                         corner load bars / the wheel-ring legend
+  DebugRig.svelte       — the car's SKELETON, in two layers (B view: model → rig →
+                         both). SKELETON (rig + both): hull wireframe / wheels with
+                         per-corner STATUS RINGS / the LAYOUT'S driveline, torque-
+                         tinted / struts. ANALYSIS (rig only): the four suspension
+                         RAYS + contact patches, and at the CG the heading /
+                         velocity / accel vectors, the slip-angle wedge and the
+                         friction circle. Pure visualization, never feeds physics
+                         (complements the Studio-gated Rapier collider debug in
+                         extensions/physics)
 audio/                  — the engine NOTE
   CarEngineAudio.svelte — the car's positional engine bed, mounted inside the
                          visual-scale group; all mixing lives in carAudio.ts
@@ -94,9 +109,12 @@ Engine audio files are SHARED across cars — a new car voices them via
 `audio.layerRpm` (where each layer sits on ITS tacho) + `audio.pitchScale`.
 
 `layout` is spec-level plumbing: RWD is the fully implemented, validated model.
-The drivetrain's driven-axle load is layout-aware (`spec.ts` `drivenAxleLoad`:
-RWD rear-bias + transfer, FWD front-bias − transfer, AWD full weight), but FWD
-and AWD HANDLING FEEL (front-slip understeer, torque split, handbrake-while-
+Two things read it, and both must: the drivetrain's driven-axle LOAD
+(`spec.ts` `drivenAxleLoad`: RWD rear-bias + transfer, FWD front-bias −
+transfer, AWD full weight) and the debug rig's driveline (`spec.ts`
+`drivenAxles` — which axle, as `[front, rear]`). The rig used to hard-code the
+GR86's RWD driveline, so an FWD spec would have been drawn with a live rear
+axle it does not have. But FWD and AWD HANDLING FEEL (front-slip understeer, torque split, handbrake-while-
 driven) is deliberately unwritten — the current model is rear-slip-centric
 (looseness, driftAlign, "the fronts are never the axle that lets go") and
 should not be guessed at without the cars to tune against.
@@ -105,7 +123,11 @@ should not be guessed at without the cars to tune against.
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
 Shift nitrous, L headlights, K main beam, G handling setup, M/N ignition on/off,
-B view (model → debug rig → both).
+B view (model → debug rig → both). B is also the debug switch: the rig's
+skeleton and its bottom-left readout (`debug/DebugHud.svelte` — both halves of
+the tool live in `debug/`) come up together in `rig` and `both`, and
+the rig's analysis overlays (suspension rays, CG vectors, friction circle) only
+in `rig`.
 Launching is a ritual: sit in N, rev into the 4–6k window (the shift lights
 turn green and fill as you go), tap E — a REV-MATCH LAUNCH drops the clutch
 clean, and the closer to 6k the harder it plants (≈1 g at the top; the cluster
@@ -553,6 +575,24 @@ inherit the GR86's ride.
   `CarCluster.svelte` (`publishCarHud` counts SECONDS, so the 30 Hz holds at any
   physics rate). The HUD must never read `carSim` — one Svelte invalidation per
   field per step, for a needle nobody can follow.
+  - **`carSim` also carries a DEBUG FEED** — `spin`, `velLat`, `yawRate`,
+    `driveForce`, `resistForce`, `powerLoad`, `gripFactor`, `loose`, `muLat`,
+    `clutch`. All of it was already computed by the drivetrain or the controller;
+    publishing it is what lets the debug rig draw the model instead of guessing at
+    it. **That is the rig's one rule and it has been broken twice** — its steer
+    angle was once `steer × maxSteerAngle` (showing the Grip lock while Drift
+    steered at 0.62 rad) and its wheel spin was once `speedMs × (1 + slip·0.8)`
+    (a fudge for the real overspeed `drivetrain.state.spin` integrates). If the
+    rig needs a number, publish the number.
+  - **`carDebugHud` is a SECOND 30 Hz mirror**, for `debug/DebugHud.svelte`, and
+    it is published **only while the rig is up** (`carView.mode !== 'model'`,
+    gated inside `publishCarHud` — the same condition the panel self-gates on, so
+    the mirror and its one consumer cannot drift apart). It is roughly twice the
+    cluster's field count and invisible in normal play, and a `$state` write
+    nobody reads is still an invalidation. `publishCarHud(dt, suspension?)` takes
+    the suspension for it: the four springs live on the controller's instance
+    (the rig reads that directly), and the HUD is a sibling tree that can reach
+    neither.
 - **`CarWheels.svelte` deforms vertices in `positionNode`**, so it also writes
   `positionPrevious` — a vertex-deforming material owns both ends of the
   velocity buffer or motion blur smears it against its rest pose. Its steer
@@ -624,26 +664,70 @@ inherit the GR86's ride.
   actually drives, drawn at the RigidBody's unscaled level (world-unit body
   space, so it inherits Rapier's interpolated pose). B cycles the view:
   `model` → `rig` → `both` (`carView` in carInput.svelte.ts, a latched switch).
-  THE RIG WHEELS ARE THE CONTACT BALLS — same patches, hub height and radius as
-  TestGame.svelte's colliders, so what you see rolling is what the car stands
-  on. Front pair steered at `carSim.steerAngle` (the same radians CarWheels
-  renders, never re-derived), rolling fronts at road speed and rears with the
-  drivetrain's `slip` — the rears LOCK under handbrake (the model wheels keep
-  spinning: one of the rig's honest divergences). Axles are HALF-SHAFTS out of
-  a centre diff per end plus a finned driveshaft — independent suspension means
-  a solid bar couldn't follow both hubs. Strut compression is MEASURED, not
-  modelled: finite difference of the rig root's world pose → body-frame accel
-  (one-pole smoothed) → squat/dive front-to-rear and roll left-to-right,
-  clamped to a gauge range — a display of the load transfer the model applies,
-  not a spring. That model now lives in **`sim/suspension.ts`** (below) and the
-  rig only READS it, so the skeleton and the car it is drawn over in 'both' view
-  cannot lean differently. The chassis is drawn as the wireframe HULL — the
-  same point cloud the collider is built from, passed in by the scene, so the
-  shape Rapier holds and the shape drawn cannot drift apart (the 4 cm margin
-  is not drawn) — and it is the one part
-  whose pose is now the gauge rather than the collider's: the real body cannot
-  pitch or roll (`enabledRotations` leaves only yaw), so the attitude is drawn
-  ON the shape instead of beside it — rest pose and size still true.
+  It takes the VIEW MODE, not a boolean, because it draws **two layers**: the
+  SKELETON in both `rig` and `both`, and the ANALYSIS overlays only in `rig`,
+  where there is no car for them to bury. The analysis math is SKIPPED in `both`,
+  not merely hidden.
+  - **THE RIG NEVER GUESSES.** Everything it draws is published by the model —
+    `carSim` plus the shared `suspension` instance. See the `carTelemetry` bullet
+    above for the two times that rule was broken and what it cost.
+  - **The DRIVELINE is the LAYOUT'S** (`drivenAxles(spec)`), which is the whole
+    "which wheels are turning" reading. A DRIVEN axle gets a diff, two
+    half-shafts and a driveshaft from the transfer puck (AWD grows a second one
+    forward, and a front-driven car's puck moves forward to the axle it feeds);
+    an UNDRIVEN axle gets **nothing** — a dead axle really is just hubs and
+    struts, and total absence is the least ambiguous answer. Driven wheels roll
+    at `speedMs + carSim.spin`, undriven at `speedMs`, so wheelspin visibly
+    happens at one end of the car. The live driveline is tinted by torque (dim
+    bronze coasting → gold on `powerLoad` → red on `slip`). The HANDBRAKE locks
+    the REAR wheels whatever the layout, because a handbrake is a rear brake, and
+    on a rear-driven car it stops the driveshaft with them (the model wheels keep
+    spinning: one of the rig's honest divergences, and a reason to look at the
+    rig). Half-shafts rather than a solid bar because independent suspension means
+    one bar could not follow both hubs. Roll is accumulated PER WHEEL, not per
+    axle — a shared accumulator snaps a locked rear back on release.
+  - **Each wheel wears a STATUS RING** on its outboard face, and the priority
+    order is a hierarchy of "the worst thing true of this wheel": airborne
+    (violet, from `suspension.grounded`) → locked (blue) → spinning (red) →
+    braking (orange) → driving (green→amber by `powerLoad`) → coasting (grey).
+    `debug/DebugHud.svelte`'s legend repeats it, and the two orders have to be
+    kept in step by eye — the panel is HTML hex, the rig is `THREE.Color`.
+  - **The four SUSPENSION RAYS are drawn** (analysis layer) from where they are
+    cast to what they hit, with a contact-patch disc sized and tinted by
+    `suspension.loadRatio(i)` — the PHYSICAL compression, deliberately a different
+    reading from the `compressionRatio` the struts show. The rays ARE the car's
+    ground contact and were the one part of the model with no picture at all; an
+    airborne wheel used to look exactly like a loaded one. `suspension` exposes
+    `rayOriginY` / `maxToi` / `wheelRadius` / `loadRatio` for this and nothing else.
+  - **At the CENTRE OF MASS** (`centerOfMass(spec)` — the same point cars/hull.ts
+    hands Rapier; one lever rule, two consumers): heading, velocity and combined
+    acceleration arrows, the slip-angle WEDGE between heading and velocity (a
+    triangle fan whose rim is rewritten per frame — the angle is the reading), and
+    the FRICTION CIRCLE: a ring at the live `muLat`·g inside a dim ring at the
+    tune's full μ. The accel arrow uses the SAME units per g as the rings, so the
+    arrow reaching the bright ring IS the tyre saturating and the gap between the
+    rings is the grip wheelspin/brake/looseness has cost. It is a LATERAL budget —
+    the longitudinal cap is the drivetrain's own `tireMuLong × drivenAxleLoad`, a
+    different number, so a braking arrow may honestly overshoot. **This group
+    takes the pose's TRANSLATION and not its rotation**: its arrows are physical
+    vectors in the body's yaw frame, and leaning them by a cosmetic roll would be
+    drawing the fake into the measurement.
+  - Strut compression is not modelled here — it was once (finite-differencing the
+    rig root's world pose), which is why the skeleton leaned and the car drawn
+    over it did not. That model lives in **`sim/suspension.ts`** and the rig only
+    READS it.
+  - The chassis is drawn as the wireframe HULL — the same point cloud the
+    collider is built from, passed in by the scene, so the shape Rapier holds and
+    the shape drawn cannot drift apart (the 5 cm margin is not drawn) — and it is
+    the one part whose pose is the gauge rather than the collider's: the real body
+    cannot pitch or roll (`enabledRotations` leaves only yaw), so the attitude is
+    drawn ON the shape instead of beside it. Rest pose and size still true.
+  - **~24 materials**, all `MeshBasicNodeMaterial`. Identical node graphs share a
+    compiled program, but each material still builds its own graph the first time
+    it RENDERS (the `fx/puffPool.ts` lesson), so the first press of B pays them in
+    one frame — a debug tool hitching once on the frame you asked for it. Hidden
+    layers cost nothing until shown (`_projectObject` skips them).
+
   The task runs at
   `{ before: autoRenderTask }` (render time) for the CarWheels reason — a
   physics-task integration pulses against the interpolated body. 'rig' view

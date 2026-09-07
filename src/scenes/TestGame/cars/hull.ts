@@ -47,6 +47,7 @@
 
 import * as THREE from 'three/webgpu';
 import type { CarSpec } from './types';
+import { centerOfMass } from './spec';
 import { UNITS_PER_METER } from '../units';
 
 /** Sample budget fed to quickhull (≈ sum of per-mesh quotas; the floors can
@@ -142,7 +143,11 @@ export function buildCarHull(root: THREE.Object3D, spec: CarSpec): CarHull | und
 		}
 	}
 
-	return { points: new Float32Array(out), margin: HULL_MARGIN * spec.model.scale, bounds: { min: bmin, max: bmax } };
+	return {
+		points: new Float32Array(out),
+		margin: HULL_MARGIN * spec.model.scale,
+		bounds: { min: bmin, max: bmax }
+	};
 }
 
 /** The collider's explicit mass properties — the `mass` + `centerOfMass` +
@@ -151,9 +156,11 @@ export function buildCarHull(root: THREE.Object3D, spec: CarSpec): CarHull | und
  *  `setMass`, geometry-derived). The body's mass properties become the SPEC'S
  *  facts instead of a side effect of collider geometry:
  *
- *  - COM: x 0 (symmetric car), y `cogHeight`, z from the weight-bias lever rule
- *    (`frontAxleZ + wheelbase·rearWeightBias` — the GR86's 53/47 puts it
- *    15.5 cm ahead of the origin, where no hull centroid would land).
+ *  - COM: `centerOfMass(spec)` (cars/spec.ts) — x 0, y `cogHeight`, z from the
+ *    weight-bias lever rule (the GR86's 53/47 puts it 15.5 cm ahead of the
+ *    origin, where no hull centroid would land). It lives there rather than
+ *    here because the debug rig hangs its force arrows off the same point, and
+ *    a lever rule written out twice is a lever rule that drifts.
  *  - Yaw inertia: the spec's `yawInertia` — the one component that is dynamic
  *    here, and even then only for contact-driven rotation (steering is DIRECT
  *    yaw-rate control via `setAngvel`, which inertia does not shape).
@@ -173,8 +180,7 @@ export type ChassisMassProperties = {
 };
 
 export function chassisMassProperties(spec: CarSpec, hull: CarHull): ChassisMassProperties {
-	const { mass, cogHeight, rearWeightBias } = spec.hardware;
-	const { frontAxleZ, rearAxleZ } = spec.geometry;
+	const { mass } = spec.hardware;
 	const UPM = UNITS_PER_METER;
 
 	const hx = (hull.bounds.max[0] - hull.bounds.min[0]) / 2;
@@ -185,15 +191,10 @@ export function chassisMassProperties(spec: CarSpec, hull: CarHull): ChassisMass
 	const izz = (mass / 12) * ((2 * hx) ** 2 + (2 * hy) ** 2); // roll
 	const iyy = spec.hardware.yawInertia * UPM * UPM; // yaw — the spec's own fact
 
+	const com = centerOfMass(spec);
+
 	return {
-		centerOfMass: [
-			0,
-			cogHeight * UPM,
-			// Lever rule off the ACTUAL axle positions (their span IS the wheelbase):
-			// the rear axle carries `rearWeightBias` of the weight, so the COM sits
-			// that fraction of the span behind the front axle.
-			(frontAxleZ + (rearAxleZ - frontAxleZ) * rearWeightBias) * UPM
-		],
+		centerOfMass: [com[0], com[1], com[2]],
 		principalAngularInertia: [ixx, iyy, izz],
 		angularInertiaLocalFrame: [0, 0, 0]
 	};

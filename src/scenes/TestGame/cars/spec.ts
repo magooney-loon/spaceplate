@@ -79,6 +79,46 @@ export function drivenAxleLoad(spec: CarSpec, transferForceN: number): number {
 	}
 }
 
+/**
+ * Which axle(s) the layout drives, as `[front, rear]`. The companion to
+ * `drivenAxleLoad` above: that answers "how much load is under the driven
+ * tyres", this answers "WHICH tyres". The debug rig draws its diffs,
+ * half-shafts, driveshafts and per-wheel spin from this — the skeleton used to
+ * hard-code the GR86's RWD driveline, so an FWD spec would have been drawn with
+ * a live rear axle it does not have.
+ */
+export function drivenAxles(spec: CarSpec): readonly [front: boolean, rear: boolean] {
+	switch (spec.layout) {
+		case 'fwd':
+			return [true, false];
+		case 'awd':
+			return [true, true];
+		default:
+			return [false, true];
+	}
+}
+
+/**
+ * Centre of mass in WORLD-UNIT body space: x 0 (a symmetric car), y `cogHeight`,
+ * z from the weight-bias lever rule off the ACTUAL axle positions (their span IS
+ * the wheelbase, so the rule needs no separate wheelbase number). The GR86's
+ * 53/47 puts it 15.5 cm ahead of the model origin, where no hull centroid would
+ * land.
+ *
+ * TWO consumers read this and neither may re-derive it: the collider's explicit
+ * mass properties (cars/hull.ts) and the debug rig, which hangs its force and
+ * velocity arrows off the same point the physics is actually pushing.
+ */
+export function centerOfMass(spec: CarSpec): readonly [number, number, number] {
+	const { frontAxleZ, rearAxleZ } = spec.geometry;
+	const { cogHeight, rearWeightBias } = spec.hardware;
+	return [
+		0,
+		cogHeight * UNITS_PER_METER,
+		(frontAxleZ + (rearAxleZ - frontAxleZ) * rearWeightBias) * UNITS_PER_METER
+	];
+}
+
 /** The four tyre contact patches — FL, FR, RL, RR — as [x, z] in WORLD-UNIT
  *  body space (spec metres × UNITS_PER_METER; nose −Z, +X left). The shared
  *  layout the skid marks and the tyre smoke both lay at; was a duplicated

@@ -238,7 +238,8 @@ export function createCarController(spec: CarSpec, world: World) {
 			carSim.nitrousTank = nitrousBottle;
 			carSim.accelFwd = 0;
 			carSim.accelLat = 0;
-			publishCarHud(delta);
+			parkDebugTelemetry();
+			publishCarHud(delta, suspension);
 			return;
 		}
 
@@ -277,7 +278,12 @@ export function createCarController(spec: CarSpec, world: World) {
 			// Parked: the suspension has nothing to lean on, so it rests.
 			carSim.accelFwd = 0;
 			carSim.accelLat = 0;
-			publishCarHud(delta);
+			// The DEBUG feed parks too — but the springs do NOT: `resetForces` above
+			// cast the four rays, so the panel and the rig still show a parked car
+			// standing on four loaded corners, which is exactly what it is doing.
+			parkDebugTelemetry();
+			carSim.clutch = drivetrain.state.clutch;
+			publishCarHud(delta, suspension);
 			return;
 		}
 
@@ -442,7 +448,45 @@ export function createCarController(spec: CarSpec, world: World) {
 		carSim.limiting = drivetrain.state.limiting;
 		carSim.nitrous = nitrousFlow;
 		carSim.nitrousTank = nitrousBottle;
-		publishCarHud(delta);
+
+		// ── The debug feed ──────────────────────────────────────────────────
+		// Publishes only — every number here was already computed above. They
+		// exist because `debug/DebugRig.svelte` draws them and the HUD's debug
+		// panel prints them, and because a rig that re-derives them from what IS
+		// published ends up showing a car the physics never drove: its wheel
+		// spin used to be `speedMs × (1 + slip·0.8)`, a fudge for the real
+		// overspeed `state.spin` carries.
+		carSim.spin = drivetrain.state.spin;
+		carSim.clutch = drivetrain.state.clutch;
+		carSim.driveForce = out.driveForce;
+		carSim.resistForce = out.resistForce;
+		carSim.powerLoad = out.powerLoad;
+		carSim.gripFactor = out.gripFactor;
+		carSim.loose = loose;
+		carSim.muLat = muLat;
+		// The yaw rate actually COMMANDED this step (`ang.y` is post-damp, i.e.
+		// what went into `setAngvel`), and the sideways velocity in body +X —
+		// straight through, no sign games: whichever side +X is, the rig's
+		// velocity arrow is `(velLat, 0, -speedMs)` in the same frame it draws in.
+		carSim.yawRate = ang.y;
+		carSim.velLat = vLateral / UNITS_PER_METER;
+
+		publishCarHud(delta, suspension);
+	}
+
+	/** Zero the debug feed on the paths that never reach the drivetrain (startup
+	 *  and parked). The SPRING half is deliberately left alone — the rays ran. */
+	function parkDebugTelemetry(): void {
+		carSim.spin = 0;
+		carSim.velLat = 0;
+		carSim.yawRate = 0;
+		carSim.driveForce = 0;
+		carSim.resistForce = 0;
+		carSim.powerLoad = 0;
+		carSim.gripFactor = 1;
+		carSim.loose = 0;
+		carSim.muLat = latMu(spec.tunes[carHandling.mode]);
+		carSim.clutch = 1;
 	}
 
 	/**

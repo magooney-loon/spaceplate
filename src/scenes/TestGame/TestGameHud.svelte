@@ -2,6 +2,7 @@
 	import { sceneActions } from '$extensions/scene';
 	import { soundActions } from '$core';
 	import CarCluster from './CarCluster.svelte';
+	import DebugHud from './debug/DebugHud.svelte';
 	import { requestCarRestart } from './sim/carInput.svelte';
 	import { carHud } from './sim/carTelemetry.svelte';
 
@@ -38,7 +39,10 @@
 		<p>
 			↑ throttle · ↓ brake · Space handbrake · Q/E shift · ⇧ nitrous · M ignition · L/K lights/beams
 		</p>
-		<p>G setup (Grip / Drift) · B view (model / rig / both) · drag tilt · right-drag raise/lower · wheel zoom</p>
+		<p>
+			G setup (Grip / Drift) · B debug view (model / rig / both) · drag tilt · right-drag
+			raise/lower · wheel zoom
+		</p>
 	</div>
 
 	<!-- Speed / gear / rpm — bottom right. -->
@@ -52,6 +56,11 @@
 	{#if carHud.perfectLaunch}
 		<div class="launch-flash">{LAUNCH_LABELS[carHud.launchTier] ?? 'PERFECT LAUNCH'}</div>
 	{/if}
+
+	<!-- Debug telemetry — the numbers behind the rig's geometry (debug/DebugHud).
+	     Mounted unconditionally: it self-gates on the same `carView.mode` B switch
+	     the rig is on, so this shell does not need to know about the debug view. -->
+	<DebugHud />
 </div>
 
 <style>

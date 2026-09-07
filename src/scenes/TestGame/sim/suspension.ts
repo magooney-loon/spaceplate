@@ -119,6 +119,18 @@ export function createSuspension(spec: CarSpec) {
 	 * the controller creates it and the scene passes it down (CarWheels, the rig).
 	 */
 	const suspension = {
+		// ── Ray geometry, constant — for whoever needs to DRAW the cast ──────────
+		/** World units, body space — where each corner's ray starts (above the hub,
+		 *  see `RAY_UP`). The debug rig draws the cast from here; the model itself
+		 *  never needs it, which is why it was a private constant until the rig
+		 *  started showing the springs it stands on. */
+		rayOriginY: RAY_ORIGIN_Y,
+		/** World units — the longest a ray is cast. `hitDist` reads exactly this
+		 *  when the corner is airborne. */
+		maxToi: MAX_TOI,
+		/** World units — the tyre radius the hub rides above whatever the ray found. */
+		wheelRadius: R,
+
 		// ── Written by the PHYSICS half ──────────────────────────────────────────
 		/** Ray distance per corner, world units. `MAX_TOI` when airborne. */
 		hitDist: [MAX_TOI, MAX_TOI, MAX_TOI, MAX_TOI],
@@ -155,7 +167,8 @@ export function createSuspension(spec: CarSpec) {
 		step,
 		update,
 		reset,
-		compressionRatio
+		compressionRatio,
+		loadRatio
 	};
 
 	// ── Physics half ────────────────────────────────────────────────────────────
@@ -355,6 +368,19 @@ export function createSuspension(spec: CarSpec) {
 	 */
 	function compressionRatio(i: number): number {
 		return clamp((suspension.comp[i] - COMP_MIN) / (COMP_MAX - COMP_MIN), 0, 1);
+	}
+
+	/**
+	 * PHYSICAL spring compression at corner `i`, 0 (slack, or airborne) … 1 (on
+	 * the bump stop). NOT the same reading as `compressionRatio` above, and the
+	 * difference is the point: that one is the VISUAL body displacement the lean
+	 * is built from, this is what the ray actually measured and what the force
+	 * handed to Rapier was computed from. The debug rig sizes its contact patches
+	 * by this one, so a wheel dropping into a dip shrinks its patch even while the
+	 * body's visual corner is still on its way down.
+	 */
+	function loadRatio(i: number): number {
+		return clamp(suspension.load[i] / MAX_COMP, 0, 1);
 	}
 
 	/** Park everything — scene exit and Restart, so the next mount starts level. */
