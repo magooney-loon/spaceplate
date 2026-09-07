@@ -221,9 +221,10 @@
 
 {#if $city}
 	<T.Group name="City" scale={1.5} position={[0, 0, 0]} rotation={[0, -1.0472, 0]}>
-		<!-- The track GLB: Ground/Asphalt planes, Metal barriers, trees, decals — one
-		     trimesh per mesh, transforms baked (cityColliders.ts). Bare <Collider>s
-		     attach to an implicit fixed body, exactly like AutoColliders did. -->
+		<!-- The track GLB: Ground/Asphalt planes and Metal barriers get trimesh
+		     colliders; Decals (road paint) and foliage are excluded — see
+		     cityColliders.ts. Bare <Collider>s attach to an implicit fixed body,
+		     exactly like AutoColliders did. -->
 		<T is={$city.scene} />
 		{#each cityColliders as c (c.id)}
 			<Collider shape="trimesh" args={c.args} />

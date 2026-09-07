@@ -389,6 +389,18 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   effectively ONE-SIDED — a track GLB with flipped winding would let bodies fall
   through. Known seam: `Ground` sits 1.1 cm below `Asphalt` in the track GLB — a
   small lip at asphalt edges the balls roll over.
+- **Only Ground/Asphalt/Metal meshes collide** (`COLLIDER_MATERIALS` in
+  `cityColliders.ts`, filtered by material name — exporter node names are not
+  stable). The GLB's other two meshes are deliberately OUT: `Decals` is 31 k
+  triangles of road paint a hair off the deck — as its own collider every decal
+  boundary edge is a REAL edge (FIX_INTERNAL_EDGES only smooths edges within one
+  trimesh), and the chassis rolling over paint was a ghost-contact factory
+  (the "sometimes snags on nothing" stutter); `Leafs_Mat` foliage is thin
+  double-sided quads along the roads — edge-on at speed, invisible walls. The
+  cost: the car drives through bushes (and whatever tall geometry rides on the
+  Decals mesh) — acceptable, the barriers still stop it. A new mesh in a
+  re-export collides only if its material is in the set — check the set before
+  blaming collision oddities.
 - **The track GLB is measured, not guessed**: car spans model y 0.01 (tire
   bottoms) .. 1.31 (roof), wheel centres at y 0.335, axles z ±wheelbase/2, track
   x ±0.78. The chassis collider offsets come from those numbers; if the model

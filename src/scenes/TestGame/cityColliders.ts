@@ -20,6 +20,20 @@
 import * as THREE from 'three/webgpu';
 import { TriMeshFlags } from '@dimforge/rapier3d-compat';
 
+// WHICH meshes collide — the drivable surfaces and the solid ones. The GLB has
+// five meshes: Ground (dirt plane), Asphalt (road), Metal (barriers/fences),
+// Decals (road paint) and Leafs_Mat (foliage). The last two are EXCLUDED:
+//  - Decals are 31 k triangles of paint lying a hair off the deck. A decal
+//    strip is its OWN collider here, so its boundary edges are real edges to
+//    Rapier — FIX_INTERNAL_EDGES only smooths edges shared WITHIN one trimesh —
+//    and the chassis rolling over paint was a ghost-contact factory (the
+//    "car sometimes snags on nothing" class of stutter).
+//  - Leafs_Mat foliage is thin double-sided quads along the roads: edge-on at
+//    speed they are invisible walls.
+// Filtered by MATERIAL, not node name: Ground/Asphalt/Metal are semantic and
+// survive a re-export; Object_6-style exporter names do not.
+const COLLIDER_MATERIALS = new Set(['Ground', 'Asphalt', 'Metal']);
+
 export interface CityTrimesh {
 	/** Stable key for the {#each} block. */
 	id: string;
@@ -37,13 +51,17 @@ export function buildCityColliders(root: THREE.Object3D): CityTrimesh[] {
 		const mesh = obj as THREE.Mesh;
 		if (!mesh.isMesh || !mesh.geometry) return;
 
+		const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+		if (!material || !COLLIDER_MATERIALS.has(material.name)) return;
+
 		const geometry = mesh.geometry;
 		const position = geometry.getAttribute('position');
 		if (!position) return;
 
-		// Clone + bake: vertices in the CITY frame, unscaled world units (the
-		// city group sits at scale 1, so the collider object's world scale is 1
-		// and `scaleColliderArgs` passes the arrays through untouched).
+		// Clone + bake: vertices in the CITY frame, GLB units. The city group's
+	// own scale/rotation (1.5, -60°) is NOT baked — Threlte's Collider picks
+	// both up from the object's world transform and scales the vertex array
+	// to match (scaleColliderArgs), so it must not be baked here too.
 		m.multiplyMatrices(rootInv, mesh.matrixWorld);
 		const baked = new Float32Array(position.array as ArrayLike<number>);
 		const v = new THREE.Vector3();
