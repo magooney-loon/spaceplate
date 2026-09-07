@@ -133,31 +133,8 @@ export interface DrivetrainState {
 	launch: number;
 }
 
-/**
- * m/s of overspeed the TRACTION CONTROL tolerates. Modelled as a ceiling on slip
- * rather than a torque-cut loop — the outcome is what matters, and a real ECU trims
- * torque precisely to stop the number here from growing. Deliberately generous: at
- * 2 m/s Grip's launch lands at `slip` 0.2, which is what its old force-ratio slip
- * peaked at, so Grip loses the same ~11% of lateral tyre off the line it always did
- * and the cluster's TC lamp (`slip > 0.15`) still lights when the ECU is working.
- */
-const TC_SLIP = 2;
 /** m/s under which the tyre is gripping rather than sliding. Noise floor. */
 const HOOKED = 0.05;
-/** Driven-axle μ bonus at the TOP of the window — the dump slams load onto the
- * driven axle and the tyre plants. Grip is the cap on thrust (full bite already
- * requests past the tyre), so the plant is most of the felt launch. */
-const LAUNCH_GRIP_GAIN = 1.0;
-/** WOT bonus at the TOP of the window, nitrous-style and inside the traction
- * limit — with the plant raising the cap, torque has to rise too or the μ
- * bonus is never spent. Together: ≈1 g off the line at the top, ~3× the soft
- * launch. */
-const LAUNCH_TORQUE_GAIN = 0.5;
-/** 1/s — how fast the boost decays once the clutch homes. The drop is the
- * launch, but the TAIL is what makes it feel like a slam instead of a blip:
- * the whole of 1st stays planted, handing over to normal pull as it fades
- * (~1.4 s at full quality). A lift or a gear change kills it instantly. */
-const LAUNCH_BOOST_DECAY = 0.7;
 
 export type Drivetrain = ReturnType<typeof createDrivetrain>;
 
@@ -196,7 +173,7 @@ export function createDrivetrain(spec: CarSpec) {
 	 * the driven-axle plant both scale with it. */
 	let launchQ = 0;
 	/** The live launch boost: `launchQ` held through the clutch drop, then
-	 * decaying into 1st (LAUNCH_BOOST_DECAY). Plant and torque gain read THIS —
+	 * decaying into 1st (spec `launchBoostDecay`). Plant and torque gain read THIS —
 	 * the slam must outlive the drop or it reads as a blip. Zeroed instantly on
 	 * a lift or gear change: no reward for aborted launches. */
 	let launchBoost = 0;
@@ -309,7 +286,7 @@ export function createDrivetrain(spec: CarSpec) {
 			}
 			if (launchHold > 0) launchBoost = launchQ;
 			else if (launchBoost > 0) {
-				launchBoost = Math.max(0, launchBoost - LAUNCH_BOOST_DECAY * dt);
+				launchBoost = Math.max(0, launchBoost - hw.launchBoostDecay * dt);
 			}
 			if (launchHold > 0 && !launchAnnounced) {
 				launchAnnounced = true;
@@ -354,7 +331,7 @@ export function createDrivetrain(spec: CarSpec) {
 				engineTorque(spec, state.rpm) *
 				lug *
 				(1 + hw.nitrousTorqueGain * input.nitrous) *
-				(1 + LAUNCH_TORQUE_GAIN * launchBoost);
+				(1 + hw.launchTorqueGain * launchBoost);
 			const drag = engineBrakeTorque(spec, state.rpm);
 			crankTorque = cut ? -drag : throttle * wot - (1 - throttle) * drag;
 		}
@@ -377,11 +354,12 @@ export function createDrivetrain(spec: CarSpec) {
 		// the limit. SLIDING, it gives full μ along the way the wheels are turning and
 		// the engine has no say at all — which is why a burnout keeps pulling through
 		// the limiter's fuel cut instead of braking the car (see the header).
-		// During a rev-match launch the driven-axle μ gains up to LAUNCH_GRIP_GAIN —
-		// the plant that makes the launch HARDER with depth in the window (the request
-		// at full bite is already past the tyre, so grip is the cap on thrust).
+		// During a rev-match launch the driven-axle μ gains up to the spec's
+		// `launchGripGain` — the plant that makes the launch HARDER with depth in
+		// the window (the request at full bite is already past the tyre, so grip
+		// is the cap on thrust).
 		const sliding = Math.abs(state.spin) > HOOKED;
-		const plant = 1 + launchBoost * LAUNCH_GRIP_GAIN;
+		const plant = 1 + launchBoost * hw.launchGripGain;
 		const driveForce = sliding
 			? Math.sign(state.spin) * traction * plant
 			: clamp(requested, -traction * plant, traction * plant);
@@ -405,7 +383,7 @@ export function createDrivetrain(spec: CarSpec) {
 		// TRACTION CONTROL, the setup's call. Grip runs the real car's, so the rears
 		// are caught the moment they step out. Drift has none — the whole point, and
 		// the only reason a donut can sit on the limiter.
-		if (tune.tractionControl) state.spin = clamp(state.spin, -TC_SLIP, TC_SLIP);
+		if (tune.tractionControl) state.spin = clamp(state.spin, -hw.tcSlipSpeed, hw.tcSlipSpeed);
 
 		prevDrive = driveForce;
 		// No filter on `slip` any more: `spin` carries the real rotating inertia, which

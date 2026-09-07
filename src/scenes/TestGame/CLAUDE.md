@@ -126,13 +126,14 @@ Either Shift is a wet nitrous kit on a throttle switch: it only sprays while hel
 WITH ↑ open in a forward gear (gear ≥ 1). Both Shift keys are ONE pedal — key
 edges go through `setCarInputKey` (held-code tracking), so releasing one while
 the other is down keeps the pedal down, and `resetCarInput` clears the held set
-so a Shift released while blurred can't stick it. Everything else about the
-system is owned by the controller's task (sim/controller.ts) — the bottle (4 s of full spray, ~14 s to
-refill, runs even while parked), the flow ramp (~0.13 s in, ~0.25 s out) and the
-telemetry publish. The one hardware number, `nitrousTorqueGain` in the car's spec
-(+45% crank torque), is applied by the drivetrain INSIDE its traction limit — so
-a shot in 1st/2nd becomes wheelspin, 3rd+ is real thrust, and Drift + spray in
-3rd lights the tyres. `carSim.nitrous` (flow) and `carSim.nitrousTank` (level)
+so a Shift released while blurred can't stick it. The kit's NUMBERS are the
+car's (spec hardware: `nitrousTorqueGain`, +45% crank torque, applied by the
+drivetrain INSIDE its traction limit — so a shot in 1st/2nd becomes wheelspin,
+3rd+ is real thrust, and Drift + spray in 3rd lights the tyres — plus the bottle,
+4 s of full spray and ~14 s to refill, and the flow ramp, ~0.13 s in / ~0.25 s
+out); the controller's task owns the live level (it refills even while parked),
+the smoothed flow and the telemetry publish. `carSim.nitrous` (flow) and
+`carSim.nitrousTank` (level)
 drive the blue flames, the cluster's N2O gauge, the chase camera's FOV kick and
 the afterimage smear (`NitrousAfterimage.svelte` easing `uAfterimageBoost` — the
 effect is default-enabled at damp 0, so the smear only exists while nitrous
@@ -294,7 +295,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   interpolated across the drivetrain's `gripFactor` = `(1 − slipGripLoss·slip) ×
 (1 − looseBase)`, so the handbrake slides and wheelspin steps the back out.
   Without the cap the bleed is an infinitely strong
-  constraint (~70 g at `GRIP_RATE`) that snaps the car straight no matter what
+  constraint (~70 g at the spec's `gripRate`) that snaps the car straight no matter what
   `gripFactor` says, and the handbrake becomes a turn-tighter button.
 - **On a PLANTED car the yaw cap and the bleed cap must use the same μ.** Holding
   the yaw cap costs exactly v·ω = μ·g of bleed per second, so they cancel and a
@@ -351,9 +352,9 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   follows lets the revs climb out of it, that climb is the player's timing)
   and the clutch drops CLEAN, with DEPTH in the window setting how hard
   (`launchQ` 0→1 across it): bite scales `clutchMinBite`→1, and the boost —
-  rear μ up to `LAUNCH_GRIP_GAIN` (+100%) plus WOT up to `LAUNCH_TORQUE_GAIN`
+  rear μ up to the spec's `launchGripGain` (+100%) plus WOT up to `launchTorqueGain`
   (+50%, nitrous-style, inside the traction limit) — is `launchBoost`: held
-  through the drop, then decaying at `LAUNCH_BOOST_DECAY` (~1.4 s tail) into
+  through the drop, then decaying at `launchBoostDecay` (~1.4 s tail) into
   1st so the slam outlives the engagement. At 6 k that is ≈1 g off the line,
   ~3× the soft launch's thrust; the window floor is barely above the street
   launch. The revs hold where you caught them until the clutch homes. The

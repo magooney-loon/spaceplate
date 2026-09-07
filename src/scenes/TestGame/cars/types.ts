@@ -55,6 +55,17 @@ export type CarSpec = {
 		 *  so 1st goes fully lit and 2nd only gets there if you hold it. A car with
 		 *  fatter torque or shorter gears wants this bigger, or every gear reads lit. */
 		fullSlipSpeed: number;
+		/** m/s of overspeed the TRACTION CONTROL tolerates. Modelled as a ceiling
+		 *  on slip rather than a torque-cut loop — the outcome is what matters, and
+		 *  a real ECU trims torque precisely to stop the number here from growing.
+		 *  Deliberately generous: at 2 m/s Grip's launch lands at `slip` 0.2, and
+		 *  the cluster's TC lamp (`slip > 0.15`) still lights when the ECU works. */
+		tcSlipSpeed: number;
+		/** 1/s — how fast leftover sideways velocity settles once it is back inside
+		 *  what the tyres can pull. A RATE, not a per-step fraction: the latter
+		 *  silently retunes the car whenever the physics framerate moves. The grip
+		 *  LIMIT is what makes a slide a slide; this is only the last little bit. */
+		gripRate: number;
 
 		idleRpm: number;
 		/** Fuel cut. */
@@ -77,6 +88,20 @@ export type CarSpec = {
 		 *  9k screamer and a torque diesel do not share a window. */
 		launchWindowMinRpm: number;
 		launchWindowMaxRpm: number;
+		/** Driven-axle μ bonus at the TOP of the launch window — the dump slams
+		 *  load onto the driven axle and the tyre plants. Grip is the cap on
+		 *  thrust (full bite already requests past the tyre), so the plant is most
+		 *  of the felt launch. */
+		launchGripGain: number;
+		/** WOT bonus at the TOP of the window, nitrous-style and inside the
+		 *  traction limit — with the plant raising the cap, torque has to rise too
+		 *  or the μ bonus is never spent. */
+		launchTorqueGain: number;
+		/** 1/s — how fast the boost decays once the clutch homes. The drop is the
+		 *  launch, but the TAIL is what makes it feel like a slam instead of a
+		 *  blip: the whole of 1st stays planted, handing over to normal pull as
+		 *  it fades. A lift or a gear change kills it instantly. */
+		launchBoostDecay: number;
 		/** 1/s — how fast rpm chases its target when the clutch is engaged. */
 		rpmResponse: number;
 		/** 1/s — free-revving (neutral or mid-shift): spin-up, then trailing-off. */
@@ -111,9 +136,20 @@ export type CarSpec = {
 
 		/** Wide-open-throttle crank torque curve, ascending by rpm. */
 		torqueCurve: readonly TorquePoint[];
-		/** Crank torque multiplier at full nitrous spray (the one nitrous HARDWARE
-		 *  number; bottle/regen/ramp are gameplay and live in the controller). */
+		/** Crank torque multiplier at full nitrous spray — applied by the
+		 *  drivetrain INSIDE its traction limit, so a shot in 1st is wheelspin,
+		 *  a shot in 3rd is thrust, and Drift + spray in 3rd is smoke. The kit's
+		 *  other numbers follow; the controller owns only the live bottle level,
+		 *  the smoothed flow and the throttle-switch gating. */
 		nitrousTorqueGain: number;
+		/** s of full spray in a full bottle. */
+		nitrousCapacity: number;
+		/** bottle fraction per s, back while not spraying. ~14 s empty → full. */
+		nitrousRegen: number;
+		/** 1/s — flow ramps in fast (the hit should bite) … */
+		nitrousAttack: number;
+		/** … and tails off a touch slower, which reads as a sputter rather than a switch. */
+		nitrousRelease: number;
 	};
 
 	// ── Suspension — the springs the body rides on (sim/suspension.ts). Two ───

@@ -60,12 +60,6 @@ import { createSuspension } from './suspension';
 // Every tuneable number lives in the car's `tunes` and is read FRESH each step: the
 // player can flip Grip ↔ Drift mid-corner and nothing here may cache it.
 const YAW_MIN_SPEED = 1.5; // m/s floor under the grip cap, so it can't divide by ~0
-// 1/s — how fast leftover sideways velocity settles once it is back inside what the
-// tyres can pull. A RATE, not a per-step fraction: the latter silently retunes the
-// car whenever the physics framerate moves, and that number is a knob
-// (`physicsState.framerate`, 60 by default). The
-// grip LIMIT below is what makes a slide a slide; this is only the last little bit.
-const GRIP_RATE = 138;
 // m/s — the slip angle fades in across `1 → 1 + this`. Forwards only, above walking
 // pace: under it the angle is numerical noise, and in reverse it reads inverted. A
 // ramp rather than an `if`, because a step here is a kick in the steering.
@@ -75,19 +69,11 @@ const DRIFT_GATE_RAMP = 2;
 // ── Nitrous (Shift) ──────────────────────────────────────────────────────────
 // A wet kit on a throttle switch: Shift alone does nothing — it sprays only while
 // the throttle is open in a forward gear, and only while the bottle has anything
-// left. The controller owns everything gameplay-shaped here (bottle, ramp); the one
-// hardware number — what spray does to torque — is `nitrousTorqueGain` in the
-// car's spec, and the drivetrain applies it inside its own traction limit. So a
-// shot in 1st is wheelspin, a shot in 3rd is thrust, and Drift + spray in 3rd is
-// smoke.
-/** s of full spray in a full bottle. */
-const NITROUS_CAPACITY = 4;
-/** bottle fraction per s, back while not spraying. ~14 s empty → full. */
-const NITROUS_REGEN = 1 / 14;
-/** 1/s — flow ramps in fast (the hit should bite) … */
-const NITROUS_ATTACK = 8;
-/** … and tails off a touch slower, which reads as a sputter rather than a switch. */
-const NITROUS_RELEASE = 4;
+// left. The KIT is the car's (spec hardware: torque gain, bottle size, regen, the
+// flow ramp — `hw.nitrous*`); the controller owns the live state — bottle level,
+// smoothed flow — and the gating. The drivetrain applies the torque gain inside
+// its own traction limit. So a shot in 1st is wheelspin, a shot in 3rd is thrust,
+// and Drift + spray in 3rd is smoke.
 /** Below this the bottle counts as dry and the switch opens. */
 const NITROUS_DRY = 0.01;
 
@@ -183,11 +169,12 @@ export function createCarController(spec: CarSpec, world: World) {
 			drivetrain.state.gear >= 1 &&
 			nitrousBottle > NITROUS_DRY;
 		nitrousFlow +=
-			((spraying ? 1 : 0) - nitrousFlow) * damp(spraying ? NITROUS_ATTACK : NITROUS_RELEASE, delta);
+			((spraying ? 1 : 0) - nitrousFlow) *
+			damp(spraying ? hw.nitrousAttack : hw.nitrousRelease, delta);
 		if (spraying) {
-			nitrousBottle = Math.max(0, nitrousBottle - (nitrousFlow * delta) / NITROUS_CAPACITY);
+			nitrousBottle = Math.max(0, nitrousBottle - (nitrousFlow * delta) / hw.nitrousCapacity);
 		} else {
-			nitrousBottle = Math.min(1, nitrousBottle + NITROUS_REGEN * delta);
+			nitrousBottle = Math.min(1, nitrousBottle + hw.nitrousRegen * delta);
 		}
 
 		body.linvel(_lin);
@@ -394,8 +381,8 @@ export function createCarController(spec: CarSpec, world: World) {
 
 		// Grip — bleed the sideways velocity, but never faster than the tyres could
 		// actually pull it back. That LIMIT is the whole cornering model: the bleed used
-		// to be a bare exponential, which is an infinitely strong constraint (at
-		// GRIP_RATE it removes ~70 g), so even the drift end still snapped the car
+		// to be a bare exponential, which is an infinitely strong constraint (at the
+		// car's gripRate it removes ~70 g), so even the drift end still snapped the car
 		// straight inside a tenth of a second and the handbrake read as a turn-tighter
 		// button rather than a slide. μ is what a slide IS — full grip when planted,
 		// `handbrakeMuLat` with the rears locked, interpolated across the drivetrain's
@@ -406,7 +393,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		// Vertical motion (gravity, slopes) passes through untouched.
 		const muLat =
 			tune.handbrakeMuLat + (latGrip - tune.handbrakeMuLat) * clamp(out.gripFactor, 0, 1);
-		const settle = vLateral * damp(GRIP_RATE, delta);
+		const settle = vLateral * damp(hw.gripRate, delta);
 		const bleedLimit = muLat * G * UNITS_PER_METER * delta; // m/s² → world units/s this step
 		// The share of the lateral budget this corner demands — demanded bleed over
 		// the cap. Pins at 1 exactly at max banking (v·ω = μ·g at the yaw cap), sits

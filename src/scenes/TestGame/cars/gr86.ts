@@ -52,6 +52,12 @@ export const gr86 = {
 		 *  pull, 3rd cannot spin at all: 10 puts 1st fully lit and 2nd only there
 		 *  if you hold it, which is the contrast the tunes want. */
 		fullSlipSpeed: 10,
+		/** m/s — the GR86's ECU is a patient one: 2 m/s of overspeed before the
+		 *  TC ceiling bites, so Grip's launch lands at `slip` 0.2 and the lamp
+		 *  still lights when it is working. */
+		tcSlipSpeed: 2,
+		/** 1/s — the tyres snap the car back in line sharply once it hooks up. */
+		gripRate: 138,
 
 		// ── Engine (FA24, 2.4 l naturally aspirated) ─────────────────────────
 		idleRpm: 800,
@@ -73,6 +79,16 @@ export const gr86 = {
 		 *  harder the launch (street launches sit just under the floor). */
 		launchWindowMinRpm: 4000,
 		launchWindowMaxRpm: 6000,
+		/** +100% driven-axle μ at the top of the window — the plant that makes
+		 *  the launch HARDER with depth (the request at full bite is already past
+		 *  the tyre, so grip is the cap on thrust). */
+		launchGripGain: 1.0,
+		/** +50% WOT at the top, inside the traction limit — torque has to rise
+		 *  with the plant or the μ bonus is never spent. */
+		launchTorqueGain: 0.5,
+		/** 1/s — ~1.4 s of planted tail into 1st at full quality; a lift or a
+		 *  gear change kills it instantly. */
+		launchBoostDecay: 0.7,
 		/** 1/s — how fast rpm chases its target when the clutch is engaged. */
 		rpmResponse: 22,
 		/** 1/s — free-revving (neutral or mid-shift): spin-up, then trailing-off. */
@@ -140,13 +156,21 @@ export const gr86 = {
 		/**
 		 * Aftermarket wet nitrous kit — emphatically NOT real GR86 hardware (the
 		 * FA24 is naturally aspirated; the demo car just has a bottle in the boot).
-		 * The one HARDWARE number lives here: crank torque multiplier at full
-		 * spray. ≈ +45% ≈ +112 Nm on peak (≈ 360 Nm, ~100 hp on top) — big enough
-		 * to light up 2nd in Grip and 3rd in Drift, honest enough that 3rd+ in
-		 * Grip still hooks. Everything else about the system (bottle size, regen,
-		 * ramp) is gameplay and lives in the controller (sim/controller.ts).
+		 * ≈ +45% ≈ +112 Nm on peak (≈ 360 Nm, ~100 hp on top) — big enough to light
+		 * up 2nd in Grip and 3rd in Drift, honest enough that 3rd+ in Grip still
+		 * hooks. The kit's bottle/regen/ramp numbers live here with it; the
+		 * controller owns only the live level, the smoothed flow and the gating.
 		 */
-		nitrousTorqueGain: 0.45
+		nitrousTorqueGain: 0.45,
+		/** s of full spray in a full bottle. */
+		nitrousCapacity: 4,
+		/** bottle fraction per s back while not spraying — ~14 s empty → full. */
+		nitrousRegen: 1 / 14,
+		/** 1/s — flow ramps in fast (the hit should bite) … */
+		nitrousAttack: 8,
+		/** … and tails off a touch slower, which reads as a sputter rather than
+		 * a switch. */
+		nitrousRelease: 4
 	},
 
 	// ── Suspension — stock-ish sports-car springs (sim/suspension.ts reads
