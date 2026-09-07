@@ -190,8 +190,8 @@ export const gr86 = {
 		scale: 2.5,
 		/** Hand-tuned spawn pose, world units / radians. */
 		spawn: {
-			position: [1.4599, 8.661, -3.4031],
-			rotation: [-0.0079, -2.5, -0.0197]
+			position: [15, 2, 0],
+			rotation: [0, 0, 0]
 		},
 		/** The GLB's wheel materials are `WheelFLMtl` etc — prefix match. */
 		wheelMaterialPrefix: 'wheel',
@@ -205,7 +205,7 @@ export const gr86 = {
 		 *  cars, the anchors are per-car). */
 		layerRpm: [1050, 1950, 3250, 4650, 6050, 7000],
 		/** The GR86 is the car the bed was recorded from — no shift. */
-		pitchScale: 1
+		pitchScale: 1.1
 	},
 
 	cluster: {

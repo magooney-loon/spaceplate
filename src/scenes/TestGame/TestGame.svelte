@@ -220,7 +220,7 @@
 <svelte:window onkeydown={onKeydown} onkeyup={onKeyup} onblur={resetCarInput} />
 
 {#if $city}
-	<T.Group name="City" scale={1.5} position={[101.4641, 8.7, -102.459]} rotation={[0, -1.0472, 0]}>
+	<T.Group name="City" scale={1.5} position={[0, 0, 0]} rotation={[0, -1.0472, 0]}>
 		<!-- The track GLB: Ground/Asphalt planes, Metal barriers, trees, decals — one
 		     trimesh per mesh, transforms baked (cityColliders.ts). Bare <Collider>s
 		     attach to an implicit fixed body, exactly like AutoColliders did. -->
