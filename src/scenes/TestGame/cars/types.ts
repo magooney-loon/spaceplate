@@ -48,6 +48,13 @@ export type CarSpec = {
 		engineInertia: number;
 		/** kg·m² — driven-axle wheels, tyres, shafts and diff together. */
 		wheelInertia: number;
+		/** m/s of wheel overspeed that reads as TOTAL wheelspin — the normalizer the
+		 *  drivetrain's `slip` state is measured against (1 = a tyre doing nothing
+		 *  but smoke). Sized off what the gearing can actually reach: the GR86's 1st
+		 *  tops out ~12 m/s of spin at the limiter, 2nd ~10, 3rd cannot spin at all,
+		 *  so 1st goes fully lit and 2nd only gets there if you hold it. A car with
+		 *  fatter torque or shorter gears wants this bigger, or every gear reads lit. */
+		fullSlipSpeed: number;
 
 		idleRpm: number;
 		/** Fuel cut. */
@@ -64,6 +71,12 @@ export type CarSpec = {
 		launchSpeed: number;
 		/** Fraction of crank torque a fully slipping clutch still passes. */
 		clutchMinBite: number;
+		/** rpm — REV-MATCH LAUNCH window, floor and ceiling: slot 1st out of N with
+		 *  the revs inside it and the clutch drops CLEAN, with DEPTH in the window
+		 *  setting how hard (see drivetrain.ts). An engine fact, not a setup — a
+		 *  9k screamer and a torque diesel do not share a window. */
+		launchWindowMinRpm: number;
+		launchWindowMaxRpm: number;
 		/** 1/s — how fast rpm chases its target when the clutch is engaged. */
 		rpmResponse: number;
 		/** 1/s — free-revving (neutral or mid-shift): spin-up, then trailing-off. */
@@ -101,6 +114,44 @@ export type CarSpec = {
 		/** Crank torque multiplier at full nitrous spray (the one nitrous HARDWARE
 		 *  number; bottle/regen/ramp are gameplay and live in the controller). */
 		nitrousTorqueGain: number;
+	};
+
+	// ── Suspension — the springs the body rides on (sim/suspension.ts). Two ───
+	//    halves like the module: the PHYSICS numbers hold the car up, the VISUAL
+	//    numbers shape how the body leans. Lengths are SI metres (the factory
+	//    converts to world units); ratios and rates are dimensionless. ─────────
+	suspension: {
+		/** m — static spring deflection at rest. THE one knob for ride softness:
+		 *  the natural frequency is `sqrt(g / restSag)`, so bigger = softer = more
+		 *  kerb absorbed, at the cost of reaching the undertray bump stop sooner. */
+		restSag: number;
+		/** Damping ratio of the physical spring. Cars run soft; stability-first. */
+		dampZeta: number;
+		/** m — force saturation. Past this compression the undertray collider
+		 *  takes over as the bump stop — which is what an undertray is for. */
+		maxComp: number;
+		/** m — how far a wheel may hang below rest before it counts as airborne. */
+		droop: number;
+		/** m — how far a wheel may be pushed UP into the arch before the visual gives up. */
+		maxLift: number;
+
+		/** m — load-transfer travel limit, droop side (short). */
+		compMin: number;
+		/** m — load-transfer travel limit, compression side (longer). */
+		compMax: number;
+		/** m per g — body movement per g of load transfer. The lean feel knob. */
+		squatPerG: number;
+		/** Fraction of the road's per-corner height difference the body follows.
+		 *  1.0 is a body that tracks camber exactly. */
+		roadFollow: number;
+		/** m — cap on the road-follow term, so a kerb strike or a wall of a hit
+		 *  cannot throw the model at an angle the car never reaches. */
+		roadMax: number;
+		/** 1/s² — visual spring rate: how fast the body chases an attitude. */
+		springK: number;
+		/** Visual spring damping ratio. Under 1 so the body bobs into place;
+		 *  at 1 a soft slide, over 1 mush. */
+		springZeta: number;
 	};
 
 	// ── Geometry — measured off the GLB, model metres, nose -Z. ───────────────

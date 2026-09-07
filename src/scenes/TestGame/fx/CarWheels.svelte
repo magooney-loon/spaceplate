@@ -18,7 +18,7 @@
 	import { currentCar } from '../cars';
 	import { UNITS_PER_METER } from '../units';
 	import { carSim } from '../sim/carTelemetry.svelte';
-	import { suspension } from '../sim/suspension';
+	import type { Suspension } from '../sim/suspension';
 
 	// Steerable + rolling wheels, generic over the car's spec (wheel-material
 	// prefix + radius fallback come from cars/).
@@ -34,7 +34,11 @@
 	// vertex-deforming material owns BOTH ends of the velocity buffer or motion blur
 	// smears it against its own rest pose. See buildWheelNodes.
 
-	let { scene, visualScale = 1 }: { scene: THREE.Group; visualScale?: number } = $props();
+	let {
+		scene,
+		visualScale = 1,
+		suspension
+	}: { scene: THREE.Group; visualScale?: number; suspension: Suspension } = $props();
 
 	// Which materials are wheels — the spec's prefix (the GR86's are
 	// `WheelFLMtl` etc), case-insensitive.
@@ -339,8 +343,9 @@
 			// Suspension travel. The module's numbers are WORLD units (body space);
 			// this material deforms the model's own baked geometry, which the parent
 			// group scales by `visualScale` — so divide, exactly like the roll rate
-			// above multiplies. The scene's task owns `updateSuspension` and mounted
-			// first, so these are this frame's values, not last frame's.
+			// above multiplies. The scene's task advances the suspension instance
+			// (this prop) and mounted first, so these are this frame's values, not
+			// last frame's.
 			const t = suspension.travel;
 			uTravel.value.set(
 				t[0] / visualScale,

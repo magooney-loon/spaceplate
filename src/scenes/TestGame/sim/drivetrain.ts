@@ -12,8 +12,9 @@
 //   or nobody cares which gear they are in.
 // - A slipping clutch below `launchSpeed`, so pulling away from a light holds
 //   the launch rpm instead of bogging at idle.
-// - A REV-MATCH LAUNCH: slot 1st out of N with the revs in the 4–6k window and
-//   the clutch drops CLEAN — bite and driven-axle plant both scale with DEPTH in
+// - A REV-MATCH LAUNCH: slot 1st out of N with the revs inside the car's launch
+//   window (spec `launchWindowMinRpm/MaxRpm`) and the clutch drops CLEAN — bite
+//   and driven-axle plant both scale with DEPTH in
 //   the window, so the closer to the top the harder the launch. Miss the window
 //   and the soft slip above eats the excess like every other launch.
 // - Engine BRAKING off-throttle, scaled by the gear you are in. Lifting in 2nd
@@ -103,9 +104,9 @@ export interface DrivetrainState {
 	rpm: number;
 	/** 0 = clutch on the floor (mid-shift), 1 = fully home. */
 	clutch: number;
-	/** 0…1 — how LIT the driven tyres are: wheel overspeed over `FULL_SLIP`, so 1 is
-	 *  a tyre doing nothing but smoke. Feeds lateral grip here, looseness in the
-	 *  controller, and the cluster's TC lamp. */
+	/** 0…1 — how LIT the driven tyres are: wheel overspeed over the spec's
+	 *  `fullSlipSpeed`, so 1 is a tyre doing nothing but smoke. Feeds lateral
+	 *  grip here, looseness in the controller, and the cluster's TC lamp. */
 	slip: number;
 	/** m/s — how much faster the driven contact patch is running than the road,
 	 *  signed along the nose. The state `slip` is a normalised view of; the revs
@@ -133,14 +134,6 @@ export interface DrivetrainState {
 }
 
 /**
- * m/s of wheel overspeed that reads as TOTAL wheelspin — `slip` = 1, and the tyre
- * has given up whatever `slipGripLoss` says it gives up. Sized off what the gearing
- * can actually reach: 1st tops out ~12 m/s of spin at the limiter, 2nd ~10 after a
- * long pull, 3rd cannot spin at all. So 1st goes fully lit and 2nd only gets there
- * if you hold it, which is the contrast the tune wants.
- */
-const FULL_SLIP = 10;
-/**
  * m/s of overspeed the TRACTION CONTROL tolerates. Modelled as a ceiling on slip
  * rather than a torque-cut loop — the outcome is what matters, and a real ECU trims
  * torque precisely to stop the number here from growing. Deliberately generous: at
@@ -151,12 +144,6 @@ const FULL_SLIP = 10;
 const TC_SLIP = 2;
 /** m/s under which the tyre is gripping rather than sliding. Noise floor. */
 const HOOKED = 0.05;
-/** rpm window for a REV-MATCH LAUNCH: slot 1st out of N inside it and the
- * clutch drops clean — bite, plant and torque all scale with DEPTH in the
- * window (`launchQ`, 0 at the floor → 1 at the top). Too low bogs, too high and
- * the soft slip eats the excess. */
-export const PERFECT_LAUNCH_MIN = 4000;
-export const PERFECT_LAUNCH_MAX = 6000;
 /** Driven-axle μ bonus at the TOP of the window — the dump slams load onto the
  * driven axle and the tyre plants. Grip is the cap on thrust (full bite already
  * requests past the tyre), so the plant is most of the felt launch. */
@@ -227,13 +214,17 @@ export function createDrivetrain(spec: CarSpec) {
 		launchHold =
 			gear === 1 &&
 			state.gear === 0 &&
-			state.rpm >= PERFECT_LAUNCH_MIN &&
-			state.rpm <= PERFECT_LAUNCH_MAX
+			state.rpm >= hw.launchWindowMinRpm &&
+			state.rpm <= hw.launchWindowMaxRpm
 				? state.rpm
 				: 0;
 		launchQ =
 			launchHold > 0
-				? clamp((state.rpm - PERFECT_LAUNCH_MIN) / (PERFECT_LAUNCH_MAX - PERFECT_LAUNCH_MIN), 0, 1)
+				? clamp(
+						(state.rpm - hw.launchWindowMinRpm) / (hw.launchWindowMaxRpm - hw.launchWindowMinRpm),
+						0,
+						1
+					)
 				: 0;
 		launchBoost = launchQ;
 		state.gear = gear;
@@ -422,7 +413,7 @@ export function createDrivetrain(spec: CarSpec) {
 		// lifting still catches the slide — off throttle the surplus goes sharply
 		// negative (engine braking pulling one way, the sliding tyre the other), so a
 		// lit 1st gear hooks back up in about 0.7 s and 2nd in a quarter of that.
-		state.slip = clamp(Math.abs(state.spin) / FULL_SLIP, 0, 1);
+		state.slip = clamp(Math.abs(state.spin) / hw.fullSlipSpeed, 0, 1);
 		// Friction circle: the share of the driven axle's budget the drive force is
 		// using, AFTER the clip (so it saturates at 1 exactly when the tyre lets go).
 		// Off throttle this is just engine braking, a tenth or so — which is the

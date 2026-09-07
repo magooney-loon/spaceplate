@@ -13,8 +13,8 @@ TestGame.svelte         — the scene: track + car composition + the physics-tas
 TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart) + the
                          upper-middle launch flash (STREET / JUICY / PERFECT)
 cars/                   — THE GARAGE: everything car-specific is data here
-  types.ts              — CarSpec: the contract (hardware/geometry/model/audio/
-                         cluster/tunes + layout 'rwd'|'fwd'|'awd')
+  types.ts              — CarSpec: the contract (hardware/suspension/geometry/
+                         model/audio/cluster/tunes + layout 'rwd'|'fwd'|'awd')
   gr86.ts               — the GR86 spec: real-car hardware, measured geometry,
                          the two tunes (values + inline comments = source of truth)
   spec.ts               — spec math: gearRatio/rpmInGear/engineTorque +
@@ -29,10 +29,11 @@ sim/                    — the driving model, car-agnostic
                          (createDrivetrain(spec); layout-aware load)
   handling.ts           — the HandlingTune CONTRACT + cornering-model rules + modes
                          (the GR86's tunes live in its spec)
-  suspension.ts         — the body ATTITUDE: four spring-damped corners fed by the
-                         model's own accelerations → heave/pitch/roll + the wheel
-                         counter-travel. Visual only; one owner, three consumers
-                         (the car model, CarWheels, DebugRig)
+  suspension.ts         — the RIDE + body attitude, PER CAR (createSuspension(spec);
+                         the controller owns the instance beside its drivetrain):
+                         four raycast springs hold the car up in physics, the
+                         spring-damped corners lean it in render. Every knob is
+                         spec data; three pose consumers (model, CarWheels, rig)
   carInput.svelte.ts    — this scene's own keymap (arrows / Space / Q / E / Shift) +
                          the latched switches (lights, ignition, handling tune,
                          B view mode) + the HUD → scene restart signal
@@ -346,7 +347,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   transfer (flooring 1st spins the wheels; the leftover is `slip`, which the
   controller turns into lost lateral grip). See `sim/drivetrain.ts`'s header.
 - **REV-MATCH LAUNCH**: slot 1st out of N with the revs in the 4–6k window
-  (`PERFECT_LAUNCH_MIN/MAX`, judged at the SHIFT TAP — the 0.28 s cut that
+  (spec `launchWindowMinRpm/MaxRpm`, judged at the SHIFT TAP — the 0.28 s cut that
   follows lets the revs climb out of it, that climb is the player's timing)
   and the clutch drops CLEAN, with DEPTH in the window setting how hard
   (`launchQ` 0→1 across it): bite scales `clutchMinBite`→1, and the boost —
@@ -469,7 +470,11 @@ honest answer, not a bigger map.
 `sim/suspension.ts` is the ONE owner of the car's body attitude, and its three
 consumers are the car MODEL (TestGame.svelte poses the visual group), the WHEELS
 (`fx/CarWheels.svelte`) and the debug rig. It used to live inside DebugRig, which
-meant the skeleton leaned and the car drawn over it did not.
+meant the skeleton leaned and the car drawn over it did not. It is a PER-CAR
+instance now (`createSuspension(spec)` — the controller creates it beside its
+drivetrain, the scene advances the visual half and passes the instance down):
+every tuning knob is the spec's `suspension` block, so a second car cannot
+inherit the GR86's ride.
 
 - **It produces no forces.** The chassis is one dynamic box with
   `enabledRotations={[false, true, false]}` — the PHYSICS car cannot pitch or
@@ -485,12 +490,12 @@ meant the skeleton leaned and the car drawn over it did not.
   saturates at μ·g, so a car already sliding at the limit stops leaning harder.
 - **Each corner is a SPRING-DAMPER, not a one-pole**, and that is the difference
   between the body arriving at an attitude and MOVING to one — stab the brakes
-  and the nose dives, overshoots ~7% and settles. `SPRING_ZETA` (0.62) buys the
+  and the nose dives, overshoots ~7% and settles. `springZeta` (spec, 0.62) buys the
   overshoot; at 1 it is a soft slide into place, over 1 it is mush. Semi-implicit
   Euler with `delta` clamped to 1/30, so a backgrounded tab doesn't return to a
   car mid-pogo; verified identical at 60/30/20 fps.
 - **The four compressions convert to heave/pitch/roll over the car's REAL lever
-  arms**, so the feel needs one constant (`SQUAT_PER_G`) rather than separate
+  arms**, so the feel needs one constant (`squatPerG`, spec) rather than separate
   pitch and roll gains. Measured: 1.6° nose-down at 0.8 g braking, 1.2° nose-up
   under power, ~4.5° roll at the cornering limit, hard-stopped at 3.1°/5.2°. A
   real GR86 rolls 3-4° at max lateral.
@@ -513,7 +518,7 @@ meant the skeleton leaned and the car drawn over it did not.
   CarWheels rule (`ceil(accumulator / rate)` substeps per frame is never
   constant, so a spring integrated in physics time pulses against the body Rapier
   is interpolating underneath it).
-- `resetSuspension()` on scene exit AND on Restart — the springs hold state across
+- `suspension.reset()` on scene exit AND on Restart — the springs hold state across
   a teleport otherwise, and a car restarted mid-brake respawns nose-down.
 
 ## Telemetry, wheels, camera

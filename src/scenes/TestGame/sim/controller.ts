@@ -26,7 +26,7 @@ import { createDrivetrain } from './drivetrain';
 import { carSim, publishCarHud } from './carTelemetry.svelte';
 import { carHandling, carIgnition, carInput } from './carInput.svelte';
 import { clamp, damp } from './carMath';
-import { stepSuspension } from './suspension';
+import { createSuspension } from './suspension';
 
 // ── Driving ──────────────────────────────────────────────────────────────────
 //
@@ -93,6 +93,11 @@ const NITROUS_DRY = 0.01;
 
 export function createCarController(spec: CarSpec, world: World) {
 	const drivetrain = createDrivetrain(spec);
+	// Per car, like the drivetrain — the springs are spec data (cars/types.ts,
+	// `suspension`), so this is where a second car stops sharing the GR86's
+	// ride. The controller steps the PHYSICS half; the scene's render task owns
+	// the VISUAL half and hands the instance to the wheel/rig consumers.
+	const suspension = createSuspension(spec);
 	const hw = spec.hardware;
 
 	/**
@@ -106,7 +111,7 @@ export function createCarController(spec: CarSpec, world: World) {
 	 */
 	function resetForces(body: RapierRigidBody, wake: boolean): void {
 		body.resetForces(wake);
-		stepSuspension(body, world);
+		suspension.step(body, world);
 	}
 
 	// Nitrous + startup state — the scene used to own these locals.
@@ -479,7 +484,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		startupTimer = 0;
 	}
 
-	return { step, restart, park, drivetrain };
+	return { step, restart, park, drivetrain, suspension };
 }
 
 export type CarController = ReturnType<typeof createCarController>;

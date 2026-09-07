@@ -45,9 +45,13 @@ export const gr86 = {
 		 *  at all. */
 		engineInertia: 0.2,
 		/** kg·m² — both driven-axle wheels, tyres, driveshafts and the diff
-		 *  together. All that is left once the clutch is open, which is why a
-		 *  shift hooks the car back up. */
+		 * together. All that is left once the clutch is open, which is why a
+		 * shift hooks the car back up. */
 		wheelInertia: 1.4,
+		/** m/s — 1st tops out ~12 m/s of spin at the limiter, 2nd ~10 after a long
+		 *  pull, 3rd cannot spin at all: 10 puts 1st fully lit and 2nd only there
+		 *  if you hold it, which is the contrast the tunes want. */
+		fullSlipSpeed: 10,
 
 		// ── Engine (FA24, 2.4 l naturally aspirated) ─────────────────────────
 		idleRpm: 800,
@@ -65,6 +69,10 @@ export const gr86 = {
 		launchSpeed: 4.5,
 		/** Fraction of crank torque a fully slipping clutch still passes to the wheels. */
 		clutchMinBite: 0.45,
+		/** rpm — the FA24's rev-match window: 4–6k, and the closer to the top the
+		 *  harder the launch (street launches sit just under the floor). */
+		launchWindowMinRpm: 4000,
+		launchWindowMaxRpm: 6000,
 		/** 1/s — how fast rpm chases its target when the clutch is engaged. */
 		rpmResponse: 22,
 		/** 1/s — free-revving (neutral or mid-shift): spin-up, then trailing-off. */
@@ -139,6 +147,40 @@ export const gr86 = {
 		 * ramp) is gameplay and lives in the controller (sim/controller.ts).
 		 */
 		nitrousTorqueGain: 0.45
+	},
+
+	// ── Suspension — stock-ish sports-car springs (sim/suspension.ts reads
+	// these; SI metres, so a soft car is a big restSag). The values are the
+	// module's old constants expressed in real units — 72 mm of sag is a ~1.9 Hz
+	// spring (sqrt(g / sag)), soft enough to drink a 3 cm kerb lip without
+	// putting the undertray on it. A luxury barge wants double the sag and half
+	// the visual spring; a track car the reverse.
+	suspension: {
+		/** m — static deflection: ~1.9 Hz, the stiff-sports-car ride. */
+		restSag: 0.072,
+		/** Physical damping — stability-first, the body supplies the drama. */
+		dampZeta: 0.55,
+		/** m — past this compression the undertray collider IS the bump stop. */
+		maxComp: 0.176,
+		/** m — wheel hang below rest that still counts as grounded. */
+		droop: 0.12,
+		/** m — visual lift budget into the arch before the wheel gives up. */
+		maxLift: 0.14,
+
+		/** m — droop-side limit of the load-transfer lean. */
+		compMin: -0.05,
+		/** m — compression-side limit of the load-transfer lean. */
+		compMax: 0.11,
+		/** m per g — 4.5 cm per g: the lean you can feel, not a boat. */
+		squatPerG: 0.045,
+		/** Tracks camber exactly — a sports car holds its ground. */
+		roadFollow: 1,
+		/** m — ~4.4° of roll at full follow; the kerb-strike cap. */
+		roadMax: 0.12,
+		/** 1/s² — the body chases an attitude in ~0.1 s, then bobs. */
+		springK: 60,
+		/** Under-critically damped, so the settle reads as a bob, not a slide. */
+		springZeta: 0.62
 	},
 
 	geometry: {

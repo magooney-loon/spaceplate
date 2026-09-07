@@ -7,7 +7,7 @@
 	import { wheelPatches } from '../cars/spec';
 	import { UNITS_PER_METER } from '../units';
 	import { carSim } from '../sim/carTelemetry.svelte';
-	import { compressionRatio, suspension } from '../sim/suspension';
+	import type { Suspension } from '../sim/suspension';
 
 	// The debug rig — the car's SKELETON, drawn instead of (or over) the model.
 	//
@@ -57,7 +57,7 @@
 	// The Rapier collider debug (physics extension panel, Studio-gated) draws the
 	// world's colliders; this draws the car's kinematics. They complement.
 
-	let { active = false }: { active?: boolean } = $props();
+	let { active = false, suspension }: { active?: boolean; suspension: Suspension } = $props();
 
 	const spec = currentCar();
 	const UPM = UNITS_PER_METER;
@@ -106,13 +106,7 @@
 	// roundCuboid shape Rapier holds, dilation included. It rides ~13 cm off the
 	// rest line (the WHEELS are the ground contact); the drawn wheels coincide
 	// with the contact balls exactly.
-	const boxGeo = new RoundedBoxGeometry(
-		HX_PHYS * 2,
-		HY_PHYS * 2,
-		HZ_PHYS * 2,
-		4,
-		ROUNDING_PHYS
-	);
+	const boxGeo = new RoundedBoxGeometry(HX_PHYS * 2, HY_PHYS * 2, HZ_PHYS * 2, 4, ROUNDING_PHYS);
 	geos.push(boxGeo);
 
 	const wheelMat = new THREE.MeshBasicNodeMaterial({ color: 0x1c1f24 });
@@ -290,7 +284,7 @@
 				const [x, z] = patches[i];
 				_t.copy(towerRest[i]).applyMatrix4(pose);
 				stretch(struts[i], _t.x, _t.y, _t.z, x, wheelY[i], z);
-				strutMats[i].color.copy(cTmp.copy(cGreen).lerp(cRed, compressionRatio(i)));
+				strutMats[i].color.copy(cTmp.copy(cGreen).lerp(cRed, suspension.compressionRatio(i)));
 			}
 
 			// ── Axles: body-borne diff, half-shafts down to the wheels ───────
@@ -299,15 +293,7 @@
 				diffs[end].position.copy(_t.copy(diffRest[end]).applyMatrix4(pose));
 				const d = diffs[end].position;
 				stretch(halfShafts[end][0], d.x, d.y, d.z, patches[end * 2][0], wheelY[end * 2], z);
-				stretch(
-					halfShafts[end][1],
-					d.x,
-					d.y,
-					d.z,
-					patches[end * 2 + 1][0],
-					wheelY[end * 2 + 1],
-					z
-				);
+				stretch(halfShafts[end][1], d.x, d.y, d.z, patches[end * 2 + 1][0], wheelY[end * 2 + 1], z);
 			}
 
 			// ── Driveshaft: transfer puck → rear diff, spinning ───────────────

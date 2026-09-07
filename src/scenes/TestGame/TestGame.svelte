@@ -33,7 +33,6 @@
 	import { createCarController } from './sim/controller';
 	import { buildTrackColliders } from './trackColliders';
 	import { resetCarTelemetry } from './sim/carTelemetry.svelte';
-	import { resetSuspension, suspension, updateSuspension } from './sim/suspension';
 
 	// Test Game 3D scene — the driving prototype's composition layer. The driving
 	// model itself lives in sim/ (controller.ts owns the physics task's brain,
@@ -195,6 +194,10 @@
 	// query. `useRapier` has to be called during component init like any hook.
 	const { world } = useRapier();
 	const controller = createCarController(car, world);
+	// The controller's suspension instance (created from the same spec — per car,
+	// like its drivetrain). The task below advances its VISUAL half; the physics
+	// half is stepped from inside the controller's own resetForces.
+	const suspension = controller.suspension;
 
 	usePhysicsTask((delta) => {
 		const body = carBody;
@@ -212,7 +215,7 @@
 	// matching counter-travel (CarWheels) so the tyres stay on the road while the
 	// car moves around them.
 	//
-	// THIS TASK IS THE SUSPENSION'S ONE OWNER, and it lives here rather than in a
+	// THIS TASK IS THE SUSPENSION'S VISUAL HALF'S ONE OWNER, and it lives here rather than in a
 	// child because two children need it — the car model and the debug rig, and
 	// the rig is only mounted in two of the three view modes. Registering it on
 	// the scene means it always runs, and runs FIRST: among tasks sharing a
@@ -228,7 +231,7 @@
 
 	useTask(
 		(delta) => {
-			updateSuspension(delta);
+			suspension.update(delta);
 			const root = visualRoot;
 			if (!root) return;
 			root.position.y = -suspension.heave;
@@ -280,7 +283,7 @@
 		if (body) controller.restart(body);
 		// The springs hold state across a teleport otherwise — a car restarted
 		// mid-brake respawns nose-down and bobs back up.
-		resetSuspension();
+		suspension.reset();
 	});
 
 	// Unmount parks the instruments — the HUD unmounts with them, but the mirror is
@@ -290,7 +293,7 @@
 		return () => {
 			controller.park();
 			resetCarTelemetry();
-			resetSuspension();
+			suspension.reset();
 			resetCarInput();
 		};
 	});
@@ -346,7 +349,7 @@
 				<!-- Steerable/rolling wheels — shader-driven, see fx/CarWheels.svelte.
 				     visualScale must match this group's scale: the roll rate divides
 				     world speed by the world-space wheel radius. -->
-				<CarWheels scene={$carModel.scene} visualScale={car.model.scale} />
+				<CarWheels scene={$carModel.scene} visualScale={car.model.scale} {suspension} />
 				<!-- Car-local units on purpose (nose is -Z — see fx/CarHeadlights.svelte). -->
 				<CarHeadlights />
 				<!-- Exhaust pops on downshifts/limiter — tips from the car's spec, see
@@ -421,7 +424,7 @@
 			     steered and rolled from the same carSim values as CarWheels, struts
 			     gauged by MEASURED body acceleration. Drawn in 'rig' and 'both' view
 			     modes (B cycles: model → rig → both); it never touches physics. -->
-			<DebugRig active={carView.mode !== 'model'} />
+			<DebugRig active={carView.mode !== 'model'} {suspension} />
 
 			<!-- What the chase camera looks at. An empty inside the RigidBody rather than
 			     the visual group: this level is UNSCALED, so the offset is world units and

@@ -2,7 +2,6 @@
 	import { currentCar } from './cars';
 	import { carHud } from './sim/carTelemetry.svelte';
 	import { carHandling, carIgnition } from './sim/carInput.svelte';
-	import { PERFECT_LAUNCH_MIN, PERFECT_LAUNCH_MAX } from './sim/drivetrain';
 
 	// Bottom-right instrument cluster: tacho ring, gear, speed — styled after an
 	// aftermarket gauge pod (ice-blue numerals, red needle/redline, backlit LCD
@@ -31,6 +30,9 @@
 	// geometry starts here.
 	const CAR = currentCar();
 	const { maxRpm, redlineRpm, limiterRpm } = CAR.hardware;
+	// The rev-match launch window is the car's too (spec `launchWindowMinRpm/MaxRpm`).
+	const LAUNCH_MIN = CAR.hardware.launchWindowMinRpm;
+	const LAUNCH_MAX = CAR.hardware.launchWindowMaxRpm;
 
 	const TICKS = Array.from({ length: maxRpm / 1000 + 1 }, (_, i) => i * 1000);
 	/** Shift lights, evenly spaced from "getting on with it" to the fuel cut. */
@@ -107,16 +109,10 @@
 	// (5.6–6 k) would otherwise paint red and read "shift" exactly when the
 	// answer is "drop the clutch".
 	const launchWindow = $derived(
-		carHud.gear === 0 && carHud.rpm >= PERFECT_LAUNCH_MIN && carHud.rpm <= PERFECT_LAUNCH_MAX
+		carHud.gear === 0 && carHud.rpm >= LAUNCH_MIN && carHud.rpm <= LAUNCH_MAX
 	);
 	const launchLit = $derived(
-		Math.max(
-			1,
-			Math.ceil(
-				(SHIFT_LIGHTS * (carHud.rpm - PERFECT_LAUNCH_MIN)) /
-					(PERFECT_LAUNCH_MAX - PERFECT_LAUNCH_MIN)
-			)
-		)
+		Math.max(1, Math.ceil((SHIFT_LIGHTS * (carHud.rpm - LAUNCH_MIN)) / (LAUNCH_MAX - LAUNCH_MIN)))
 	);
 	// TC lamps when the ECU is working — which it never is in Drift: the tune
 	// runs `tractionControl: false`, so wheelspin there is the SETUP, not a system
