@@ -372,7 +372,7 @@
 						args={[car.model.wheelRadiusFallback * car.model.scale]}
 						density={0}
 						friction={0}
-						frictionCombineRule={CoefficientCombineRule.Min}
+						frictionCombineRule={CoefficientCombineRule.Multiply}
 					/>
 				</T.Group>
 			{/each}
