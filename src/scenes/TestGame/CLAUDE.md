@@ -550,9 +550,22 @@ honest answer, not a bigger map.
   modelled: finite difference of the rig root's world pose → body-frame accel
   (one-pole smoothed) → squat/dive front-to-rear and roll left-to-right,
   clamped to a gauge range — a display of the load transfer the model applies,
-  not a spring. The undertray is drawn as a wireframe ROUNDED box at the
+  not a spring. **THE COMPRESSION MOVES THE BODY, NOT THE HUBS**, and having it
+  the other way round is what made the rig read inverted (dive under power,
+  squat under braking, leaning INTO corners): the corner compressions were
+  right, but the wrong END of the strut was moving. The hubs are the CONTACT
+  BALLS — on the road, immovable — so a compressed corner brings the BODY down
+  to meet its hub, and the four compressions become heave + pitch + roll on the
+  chassis (~1.4°/2.4° at the clamp, a real car's order of magnitude). Every
+  body-mounted part rides that transform (box, strut towers, both diffs, the
+  transfer puck); struts and half-shafts articulate between it and the fixed
+  hubs. The undertray is drawn as a wireframe ROUNDED box at the
   collider group's mount and TRUE extents (`h·UPM` — the rounding arg is
-  pre-scaled at the call site; see the collider rules). The task runs at
+  pre-scaled at the call site; see the collider rules), and it is the one part
+  whose pose is now the gauge rather than the collider's: the real body cannot
+  pitch or roll (`enabledRotations` leaves only yaw), so the attitude is drawn
+  ON the shape instead of beside it — rest pose, size and rounding still true.
+  The task runs at
   `{ before: autoRenderTask }` (render time) for the CarWheels reason — a
   physics-task integration pulses against the interpolated body. 'rig' view
   hides the car's MESHES and only meshes: the headlight projectors and exhaust
