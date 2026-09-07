@@ -73,18 +73,73 @@
 		if ($carModel?.scene) logGltf.info(`TestGame car loaded (${car.label})`);
 	});
 
-	// Shadows — both cast and receive. SkyLight auto-fits its shadow frustum to the
-	// visible casters, so scene-sized geometry just lands on a bigger quantised radius
-	// band; nothing to configure here.
+	// ── Shadow casting is a POLICY, not a blanket flag ──────────────────────────
+	//
+	// This used to be `castShadow = receiveShadow = true` on every mesh in both
+	// GLBs, and that was wrong in both directions at once. `SkyLight` auto-fits
+	// its ONE shadow cascade to the bounding sphere of the visible CASTERS
+	// (core/skybox/CLAUDE.md), clamped at `maxShadowRadius` = 400 world units.
+	// The track's `Metal` mesh spans ~2 970 × 2 540 world units, so:
+	//
+	//   • the fit saturated at 400 and centred on the caster bounds — roughly
+	//     (-1086, ., -118) world, about 1 090 units from where the car spawns
+	//     and drives. The car sat entirely OUTSIDE the shadow frustum, so it
+	//     cast no shadow, and the asphalt received none either. There were no
+	//     sun shadows anywhere the player could go;
+	//   • and the engine paid for that every single frame: `needsUpdate` is
+	//     armed each frame (the car moves), so all 313 725 city triangles and
+	//     324 640 car triangles — 5 + 29 draw calls — were re-rendered into the
+	//     2048² map to produce nothing.
+	//
+	// So: THE CAR CASTS, THE WORLD RECEIVES. With the city out of the caster
+	// set the fit collapses to the `shadowRadius` floor (20) centred on the car,
+	// which is a 2 cm texel instead of a 39 cm one — the car finally has a sharp
+	// shadow — and the shadow pass draws the car alone.
+	//
+	// Flip this on to get building/tree shadows back, and read the paragraph
+	// above first: at this city's size the single cascade cannot serve both, and
+	// `CSMShadowNode` (DOCS/best-practices.md §2.6) is the honest answer.
+	const CITY_CASTS_SHADOWS = false;
+	/** Which city materials would cast, if they did. Ground/Asphalt are the flat
+	 *  surfaces the shadows land ON, and Decals are painted onto them — 51 062
+	 *  triangles that can only ever shadow themselves. */
+	const CITY_CASTERS = new Set(['Metal', 'Leafs_Mat']);
+	/** Car materials that are interior or engine: never part of the car's
+	 *  silhouette, so they cast nothing the bodywork doesn't already cast.
+	 *  117 176 of the model's 324 640 triangles, and 14 of its 29 meshes, out of
+	 *  the shadow pass for no visible difference. */
+	const CAR_NON_CASTERS = new Set([
+		'Engine',
+		'Engine_Alpha',
+		'Interior_Plastic',
+		'Interior_Accents',
+		'Leather',
+		'Leather_2',
+		'Seat',
+		'Seat_Belt',
+		'Carpet',
+		'Carpet_2',
+		'Speaker',
+		'Screen',
+		'Screen_2',
+		'Mirror'
+	]);
+
+	const materialName = (mesh: Mesh): string =>
+		(mesh.material as THREE.Material | undefined)?.name ?? '';
+
 	$effect(() => {
-		for (const root of [$city?.scene, $carModel?.scene]) {
+		const roots: [THREE.Object3D | undefined, (mesh: Mesh) => boolean][] = [
+			[$city?.scene, (mesh) => CITY_CASTS_SHADOWS && CITY_CASTERS.has(materialName(mesh))],
+			[$carModel?.scene, (mesh) => !CAR_NON_CASTERS.has(materialName(mesh))]
+		];
+		for (const [root, casts] of roots) {
 			if (!root) continue;
 			root.traverse((obj) => {
 				const mesh = obj as Mesh;
-				if (mesh.isMesh) {
-					mesh.castShadow = true;
-					mesh.receiveShadow = true;
-				}
+				if (!mesh.isMesh) return;
+				mesh.castShadow = casts(mesh);
+				mesh.receiveShadow = true;
 			});
 		}
 	});

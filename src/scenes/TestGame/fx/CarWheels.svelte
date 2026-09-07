@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { usePhysicsTask } from '@threlte/rapier';
+	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import {
 		Fn,
@@ -255,14 +255,33 @@
 		bakedMeshes = [];
 	});
 
-	// ── Per-step uniform updates ─────────────────────────────────────────────────
+	// ── Per-FRAME uniform updates ────────────────────────────────────────────────
 	//
 	// Both values come from `carSim`, the driving model's plain per-step feed
 	// (carTelemetry.svelte.ts). Deriving them here again would mean the visual lock
 	// could disagree with the angle the physics actually steered at — and it did:
 	// this used to read raw key state, so the wheels sat at full lock while the
-	// speed-sensitive rack was using a third of it. TestGame is the parent, so its
-	// physics task registers (and runs) first — `carSim` is fresh here, not a frame old.
+	// speed-sensitive rack was using a third of it.
+	//
+	// THE ROLL MUST BE INTEGRATED IN RENDER TIME, NOT PHYSICS TIME. This used to be
+	// a `usePhysicsTask`, and that was a visible car-only stutter. Threlte's
+	// simulation stage runs `ceil(accumulator / rate)` substeps per frame, so at the
+	// 200 Hz the scene ran on then, against 60 fps, it stepped 4/3/3/4/3/3… —
+	// meaning a physics-time integration advanced the wheels by 20 ms, 15 ms, 15 ms
+	// of rotation on consecutive frames. A ±17% pulse in wheel rotation, while the
+	// chassis under it was being smoothly INTERPOLATED to the frame's own time by
+	// Rapier's synchronization stage (@threlte/rapier `createPhysicsTasks`). Body
+	// smooth, wheels pulsing, on the one object the player is staring at. Running
+	// here at `{ before: autoRenderTask }` the integration uses the frame's delta
+	// and sits after that synchronization, so the wheels and the body agree.
+	//
+	// The cost is that `carSim` is now up to one physics substep old rather than
+	// exactly current. That is invisible; the pulse was not.
+	//
+	// The default rate is 60 Hz now, which does NOT retire this — `ceil` means the
+	// substep count per frame is never constant at any rate, and at 60 Hz on a
+	// high-refresh display it is 0 or 1: frames where a physics-time integration
+	// would not advance the wheels AT ALL. A 100% pulse instead of a 17% one.
 
 	const TAU = Math.PI * 2;
 	const wrapAngle = (a: number): number => {
@@ -270,19 +289,29 @@
 		return wrapped > Math.PI ? wrapped - TAU : wrapped < -Math.PI ? wrapped + TAU : wrapped;
 	};
 
-	usePhysicsTask((delta) => {
-		// Already in radians — the rack fraction AND the tune's full lock are both the
-		// physics task's, so multiplying them out here again would show the Grip lock
-		// while the Drift tune was steering at 0.62 rad.
-		uSteer.value = carSim.steerAngle;
+	const { invalidate, autoRenderTask } = useThrelte();
 
-		// Roll from road speed, plus whatever the rear tyres are spinning past it —
-		// the same slip term the drivetrain feeds the tacho, so wheelspin looks like
-		// wheelspin. The angle lives in car-local space and the speed is in METRES, so
-		// it converts to world units and divides by the WORLD radius (model radius ×
-		// visualScale) — miss either and the wheels spin 2.5× off and strobe into mush.
-		// Wrapped to ±π so the f32 sin/cos in the shader keeps its precision on long drives.
-		const surfaceSpeed = carSim.speedMs * (1 + carSim.slip * 0.8) * UNITS_PER_METER;
-		uRoll.value = wrapAngle(uRoll.value - (surfaceSpeed / (wheelRadius * visualScale)) * delta);
-	});
+	useTask(
+		(delta) => {
+			// Already in radians — the rack fraction AND the tune's full lock are both the
+			// physics task's, so multiplying them out here again would show the Grip lock
+			// while the Drift tune was steering at 0.62 rad.
+			const steered = uSteer.value !== carSim.steerAngle;
+			uSteer.value = carSim.steerAngle;
+
+			// Roll from road speed, plus whatever the rear tyres are spinning past it —
+			// the same slip term the drivetrain feeds the tacho, so wheelspin looks like
+			// wheelspin. The angle lives in car-local space and the speed is in METRES, so
+			// it converts to world units and divides by the WORLD radius (model radius ×
+			// visualScale) — miss either and the wheels spin 2.5× off and strobe into mush.
+			// Wrapped to ±π so the f32 sin/cos in the shader keeps its precision on long drives.
+			const surfaceSpeed = carSim.speedMs * (1 + carSim.slip * 0.8) * UNITS_PER_METER;
+			uRoll.value = wrapAngle(uRoll.value - (surfaceSpeed / (wheelRadius * visualScale)) * delta);
+
+			// On-demand discipline: the wheels turning IS a visual change, and this is
+			// its one owner. A parked car with the wheels straight costs nothing.
+			if (steered || surfaceSpeed !== 0) invalidate();
+		},
+		{ before: autoRenderTask, autoInvalidate: false }
+	);
 </script>

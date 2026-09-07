@@ -39,12 +39,25 @@ const WORLD_DEFAULTS = {
 	gravityX: 0,
 	gravityY: -30.0,
 	gravityZ: 0,
-	// 200 Hz fixed, not 'varying': fixed steps are the deterministic ones (same input,
-	// same result, whatever the monitor refresh), and Threlte interpolates the visual
-	// transform back to render time so the extra substeps cost simulation, not smoothness.
-	// Anything integrating PER STEP rather than per second changes feel when this moves —
-	// see the rate constants in scenes/TestGame/TestGame.svelte.
-	framerate: 200 as PhysicsFramerate,
+	// FIXED, not 'varying'. That is the whole determinism question: a number here
+	// steps the world at exactly `1 / n` seconds regardless of monitor refresh or
+	// frame time, so the same inputs give the same result; `'varying'` feeds
+	// rAF's jittery delta straight into `world.timestep` and no two runs match.
+	// 60, 120 and 200 are ALL deterministic — the choice between them is cost and
+	// resolution, not repeatability.
+	//
+	// 60 is the default because it is one step per frame at 60 fps instead of
+	// four. Every `usePhysicsTask` in the app runs once per rendered frame rather
+	// than 3–4 times, and Rapier steps its trimesh sets once — the single biggest
+	// CPU lever the physics side has. It is also Rapier's own design point.
+	//
+	// This is safe to move ONLY because nothing integrates a per-step FRACTION.
+	// Every damping constant in the driving model is a rate in 1/s applied as
+	// `damp(rate, dt)` = `1 - exp(-rate * dt)` (scenes/TestGame/sim/carMath.ts) and
+	// every timer is in seconds (the rev limiter's `limiterCut`, the shift cut, the
+	// nitrous bottle). A "fraction kept per step" constant anywhere would silently
+	// retune the game the moment this number changes — keep it that way.
+	framerate: 60 as PhysicsFramerate,
 	debug: false
 };
 

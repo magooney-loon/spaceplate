@@ -3,7 +3,7 @@
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import { attribute, clamp, positionWorld, smoothstep, texture, uniform, vec2 } from 'three/tsl';
-	import { BASE_URL } from '$extensions/settings';
+	import { perlinNoise } from './noiseTextures';
 	import { currentCar } from '../cars';
 	import { wheelPatches } from '../cars/spec';
 	import { UNITS_PER_METER } from '../units';
@@ -96,15 +96,14 @@
 	const age = uTime.sub(aMark.x);
 
 	// The scratch/mottle: two samples of the vendored perlin PNG at different
-	// WORLD scales (public/textures/noises/ — already shipped for exactly this
-	// kind of thing), multiplied together. World-anchored, so it is stable — no
+	// WORLD scales, multiplied together. World-anchored, so it is stable — no
 	// shimmer — and continuous along the strip; the product of two scales reads
-	// as scratched, patchy rubber rather than one obvious pattern.
-	const noiseMap = new THREE.TextureLoader().load(`${BASE_URL}textures/noises/perlin.png`, () =>
-		invalidate()
-	);
-	noiseMap.wrapS = noiseMap.wrapT = THREE.RepeatWrapping;
-	noiseMap.colorSpace = THREE.NoColorSpace;
+	// as scratched, patchy rubber rather than one obvious pattern. The texture is
+	// SHARED with TireSmoke and CarExhaustFlames (fx/noiseTextures.ts) — one
+	// fetch and one GPU texture instead of three — and is therefore never
+	// disposed here.
+	const { invalidate, autoRenderTask } = useThrelte();
+	const noiseMap = perlinNoise(() => invalidate());
 	const n1 = texture(noiseMap, vec2(positionWorld.x.mul(0.22), positionWorld.z.mul(0.22))).r;
 	const n2 = texture(
 		noiseMap,
@@ -136,6 +135,17 @@
 		1
 	);
 
+	// World-anchored: the mesh never moves, the vertices are laid in world space.
+	// frustumCulled off — the ring buffer's bounds are meaningless, and one mesh's
+	// culling test is cheaper than maintaining a bounding sphere over live writes.
+	// Starts INVISIBLE: nothing is laid yet, and the task below owns the flag.
+	const mesh = new THREE.Mesh(geometry, material);
+	mesh.frustumCulled = false;
+	mesh.renderOrder = 1;
+	mesh.visible = false;
+	mesh.userData = { hideInTree: true, selectable: false };
+	geometry.setDrawRange(0, 0);
+
 	// ── Per-wheel state, all pre-allocated ──────────────────────────────────────
 	const last = new Float64Array(4 * 2); // last lay point, XZ
 	const lastY = new Float64Array(4); // its height (slopes)
@@ -143,6 +153,11 @@
 	const prevI = [0, 0, 0, 0]; // previous segment's intensity — the strip's smoothing
 	const prevG = [0, 0, 0, 0]; // previous segment's grain — ditto
 	let head = 0; // ring cursor, shared — overwrite order is all that matters
+	// How much of the ring has ever been written. The draw range follows it until
+	// the ring first wraps, so a fresh scene submits 0 triangles instead of all
+	// 16 384 — the untouched quads are degenerate (all-zero) and invisible, but
+	// they still cost a vertex transform every frame in every pass.
+	let everLaid = 0;
 
 	// Scene clock — `delta` from the task, never performance.now() (banned in
 	// task bodies, core/utils/CLAUDE.md).
@@ -214,9 +229,11 @@
 		posAttr.addUpdateRange(pOff, 12);
 		markAttr.addUpdateRange(mOff, 16);
 		head = (head + 1) % TOTAL_SEGS;
+		if (everLaid < TOTAL_SEGS) {
+			everLaid++;
+			geometry.setDrawRange(0, everLaid * 6);
+		}
 	};
-
-	const { invalidate } = useThrelte();
 
 	useTask(
 		(delta) => {
@@ -318,27 +335,31 @@
 				lastLay = now;
 			}
 
+			// THE MESH IS ONLY IN THE FRAME WHILE A MARK CAN STILL BE SEEN. An expired
+			// quad is NOT free: `transparent` + `depthWrite: false` means it is still
+			// rasterised and still blended — a lit standard material with two texture
+			// fetches, writing alpha 0 over the road. Once every mark has aged past
+			// LIFETIME there is nothing to draw, so the whole ring leaves the render
+			// list instead of costing 16 384 blended triangles forever.
+			const live = now - lastLay < LIFETIME + 1;
+			if (live !== mesh.visible) {
+				mesh.visible = live;
+				invalidate();
+			}
+
 			// On-demand discipline: frames only while marks are being laid or are
 			// still fading — settled marks cost nothing, the loop goes back to sleep.
-			if (now - lastLay < LIFETIME + 1) invalidate();
+			if (live) invalidate();
 		},
-		{ autoInvalidate: false }
+		{ before: autoRenderTask, autoInvalidate: false }
 	);
 
 	onDestroy(() => {
 		geometry.dispose();
 		material.dispose();
-		noiseMap.dispose();
+		// noiseMap is SHARED (fx/noiseTextures.ts) — never disposed by one consumer.
 	});
 </script>
 
-<!-- World-anchored: the mesh never moves, the vertices are laid in world space.
-     frustumCulled off — the ring buffer's bounds are meaningless, and one mesh's
-     culling test is cheaper than maintaining a bounding sphere over live writes. -->
-<T.Mesh
-	{geometry}
-	{material}
-	frustumCulled={false}
-	renderOrder={1}
-	userData={{ hideInTree: true, selectable: false }}
-/>
+<!-- Built in the script (above) so the task can own `visible` and the draw range. -->
+<T is={mesh} />

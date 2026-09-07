@@ -32,9 +32,13 @@ sim/                    — the driving model, car-agnostic
   carInput.svelte.ts    — this scene's own keymap (arrows / Space / Q / E / Shift) +
                          the latched switches (lights, ignition, handling tune) +
                          the HUD → scene restart signal
-  carTelemetry.svelte.ts — carSim (200 Hz plain object) / carHud (30 Hz $state mirror)
+  carTelemetry.svelte.ts — carSim (per-physics-step plain object) / carHud (30 Hz $state
+                         mirror)
   carMath.ts            — `clamp` / `damp`, shared by the sim modules
 fx/                     — the car's visual effects
+  puffPool.ts           — the smoke primitive: one mesh / one material / one draw
+                         call, per-vertex puff attributes (TireSmoke + exhaust)
+  noiseTextures.ts      — the two vendored noise PNGs, loaded ONCE for the scene
   CarWheels.svelte      — per-vertex steering/rolling wheel deformation (TSL); finds
                          wheels by the spec's material prefix in the GLB
   SkidMarks.svelte      — world-anchored ring buffer of rubber quads at the tyre
@@ -159,9 +163,9 @@ mid-corner is legal.
 > quicker steering response, and an easier-to-trigger, easier-to-catch drift. The
 > exact numbers below are current; the specific MEASURED figures throughout this
 > section (peak yaw °/s, circle diameters, settle times) predate that revision and
-haven't been re-measured — treat them as illustrating the mechanism, not as
-current numbers. The spec's own inline comments (in `cars/gr86.ts`) are the
-source of truth.
+> haven't been re-measured — treat them as illustrating the mechanism, not as
+> current numbers. The spec's own inline comments (in `cars/gr86.ts`) are the
+> source of truth.
 
 - **Grip** is the car (0-60 in 5.7 s, 140 mph governed — both the drivetrain's,
   unaffected by this file), tuned friendlier than the real car for cornering grip
@@ -302,11 +306,20 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   the Grip tune**: 0-60 mph 5.7 s (6.1 published), 140 mph governed, redline in
   1st at ~50 km/h. Drift is a setup, not a claim about the car — don't re-validate
   against it.
-- **Physics runs at a fixed 200 Hz** (`physicsState.framerate`), so a
-  `usePhysicsTask` runs 0..n times per rendered frame. Every damping constant in
-  the driving model is therefore a RATE in 1/s applied as `exp(-rate * delta)`,
-  never a "fraction kept per step" — the latter silently retunes the car whenever
-  the physics framerate moves.
+- **Physics runs at a FIXED rate — 60 Hz by default** (`physicsState.framerate`;
+  the Studio panel also offers 120 and 200). Fixed is what makes it deterministic;
+  the number itself is a cost/resolution choice, not a repeatability one. A
+  `usePhysicsTask` therefore runs 0..n times per rendered frame — `ceil` of the
+  accumulator, so the count is NEVER constant. Every damping constant in the
+  driving model is consequently a RATE in 1/s applied as `damp(rate, delta)` =
+  `1 - exp(-rate * delta)`, and every timer is in SECONDS (the limiter's 0.05 s
+  fuel cut, the 0.28 s shift cut, the nitrous bottle) — never a "fraction kept per
+  step" or a step count, either of which silently retunes the car the moment the
+  rate moves. That discipline is what makes the rate a free knob; keep it.
+  The rate was 200 while the driving model was being tuned, and the tune was
+  re-validated as rate-independent by construction rather than by re-measuring:
+  the numbers in this file (0-60, yaw °/s, circle diameters) are claims about the
+  MODEL, and the model is the same at any fixed rate.
 - **The gearbox is fully manual** — Q/E walk R ↔ N ↔ 1…6 with no auto-engage and
   no auto-drop to 1st. You can slot any gear while standing, and a 5 m/s grace
   window (up from 3, for friendlier shifting) lets you shift R/N ↔ 1st while still
@@ -382,19 +395,63 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   is ever replaced, re-measure (the accessor min/max in the GLB JSON is
   readable without decoding Draco).
 
+## Shadows — the car casts, the world receives
+
+`DOCS/testperf.md` is this scene's performance reference; read it before
+touching anything on the frame path. The one rule that lives here because it is
+a scene-content decision, not an engine one:
+
+**`castShadow` is a policy in `TestGame.svelte`, never a blanket flag.** It used
+to be `castShadow = receiveShadow = true` on every mesh in both GLBs, and that
+was wrong in both directions at once. `SkyLight` fits its ONE cascade to the
+bounding sphere of the visible CASTERS, capped at `maxShadowRadius` = 400 world
+units. The track's `Metal` mesh spans ~2 970 × 2 540 world units, so the fit
+saturated at 400 and centred ~1 090 units from where the car actually drives:
+**the car was outside its own shadow frustum, so nothing in the drivable area
+cast or received a sun shadow at all** — while the renderer re-rendered all
+313 725 city triangles into the 2048² map every frame to achieve it (the car
+moves, so `needsUpdate` is armed every frame).
+
+Now: the city does not cast (`CITY_CASTS_SHADOWS`), the car does, and the car's
+interior/engine materials (`CAR_NON_CASTERS` — 117 176 of its 324 640 triangles,
+never in its silhouette) do not either. The fit collapses to the `shadowRadius`
+floor of 20 centred on the car — a 2 cm texel instead of 39 cm — so the car
+finally has a sharp shadow, and the shadow pass draws the car alone. Turning
+city shadows back on means confronting that a single cascade cannot serve a
+3 km city and a 4 m car; `CSMShadowNode` (`DOCS/best-practices.md` §2.6) is the
+honest answer, not a bigger map.
+
 ## Telemetry, wheels, camera
 
 - **`carTelemetry.svelte.ts` is the plain-object / `$state`-mirror split** the
-  sky uses: `carSim` is written every physics step (200 Hz) and read by
+  sky uses: `carSim` is written every physics step and read by
   `CarWheels`; `carHud` is quantised and published at 30 Hz for
-  `CarCluster.svelte`. The HUD must never read `carSim` — 200 Svelte
-  invalidations/second per field for a needle nobody can follow.
+  `CarCluster.svelte` (`publishCarHud` counts SECONDS, so the 30 Hz holds at any
+  physics rate). The HUD must never read `carSim` — one Svelte invalidation per
+  field per step, for a needle nobody can follow.
 - **`CarWheels.svelte` deforms vertices in `positionNode`**, so it also writes
   `positionPrevious` — a vertex-deforming material owns both ends of the
   velocity buffer or motion blur smears it against its rest pose. Its steer
   angle and roll rate come from `carSim`, not from raw key state — the rack is
   speed-sensitive, so re-deriving it here would show full lock while the physics
-  used a third.
+  used a third. **THE ROLL IS INTEGRATED IN RENDER TIME, NOT PHYSICS TIME**, and
+  that distinction was a visible car-only stutter. Threlte's simulation stage
+  takes `ceil(accumulator / rate)` substeps per frame, so at the 200 Hz the scene
+  ran on then, against 60 fps, it stepped 4/3/3/4/3/3… — a `usePhysicsTask`
+  integration advanced the wheels by 20 ms, then 15 ms, then 15 ms of rotation on
+  consecutive frames. A ±17% pulse in wheel rotation on a 20 Hz beat, underneath a
+  chassis that
+  Rapier's synchronization stage was smoothly INTERPOLATING to the frame's own
+  time — body smooth, wheels pulsing, on the object the player is staring at.
+  It is a `{ before: autoRenderTask }` task now, which uses the frame's delta and
+  runs after that synchronization. The cost is that `carSim` is up to one substep
+  old rather than exactly current: invisible, where the pulse was not.
+  **Dropping to 60 Hz did not retire this fix, it made it load-bearing.** The
+  substep count per frame is `ceil`, so it is never constant at any rate — and at
+  60 Hz on a high-refresh display it is 0 or 1, i.e. frames where a physics-time
+  integration would not advance the wheels AT ALL. A 100% pulse instead of a 17%
+  one. The rule is rate-independent: a physics task moves simulation state, a
+  render-stage task moves pixels.
 - **`SkidMarks.svelte` (fx/) lays rubber while the car slides** — one world-anchored
   mesh (mounted beside ChaseCamera, NOT in the car: marks never move with the
   body), a fixed ring buffer of quads written at the tyre contact patches.
@@ -418,41 +475,60 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   near-black at night. THE QUADS ARE INDEXED, NOT 6-VERT — four verts per
   segment (aL, aR, bL, bR) with both a-verts carrying the previous segment's
   values: the 6-vert version's shared diagonal was a visible triangle/diamond
-  pattern. ORGANIC LOOK = lay-time randomness + the vendored perlin PNG
-  (public/textures/noises/, first consumer): two world-space samples at
+  pattern. ORGANIC LOOK = lay-time randomness + the vendored perlin PNG (from
+  the shared `fx/noiseTextures.ts`, so it is never disposed here): two
+  world-space samples at
   different scales multiply into a scratch/mottle that also raggers the soft
   rim — stable (world-anchored, no shimmer), continuous along the strip, and
   not one obvious pattern. Plus per-segment width jitter ±12%, tapered starts
   from 0, and one SHORT tail-off segment where a slide ends (capped at
-  TAIL_MAX). Enter/exit hysteresis (MARK_ON 0.3 / MARK_EXIT 0.22) stops
+  TAIL_MAX). **THE MESH LEAVES THE FRAME WHEN THE LAST MARK HAS FADED**, and
+  the draw range follows the ring until it first wraps. An expired quad is NOT
+  free: `transparent` + `depthWrite: false` means it is still rasterised and
+  still blended — a lit standard material with two texture fetches, writing
+  alpha 0 over the road — so ungated, one slide cost 16 384 blended triangles
+  a frame for the rest of the session. Same reason for the draw range: an
+  unwritten quad is degenerate and invisible, but it still pays a vertex
+  transform in every pass. Enter/exit hysteresis (MARK_ON 0.3 / MARK_EXIT 0.22) stops
   threshold chatter laying confetti.
-- **`TireSmoke.svelte` (fx/) is the squeal made visible** — a pool of 32 billboarded
-  quads (the exhaust puffs' architecture: per-puff material instances with dyn
-  uniforms, one node graph/one program), spawned CONTINUOUSLY at the contact
-  patches while a wheel slides: rate = 2 + 8×intensity puffs/s per wheel, so a
-  brief squeak is a wisp and a burnout builds a proper cloud. Intensity is the
-  squeal/marks TWIN with ALL SIX sources — cornering load included (max
-  banking sings hot enough to smoke a little): rears get
-  wheelspin/slide/handbrake/launch/brake/cornering, fronts
+- **`fx/puffPool.ts` is the smoke primitive** — ONE mesh, ONE material, ONE draw
+  call, shared by TireSmoke and the exhaust puffs. Read its header before
+  touching either: it replaced two pools of N meshes with N material instances
+  (32 + 16), and the reason that was expensive is not the reason it looks like.
+  Identical node graphs really do share a compiled WGSL program and pipeline
+  (three keys them by generated source), but each MATERIAL still builds its own
+  node graph the first time it renders — a main-thread NodeBuilder analyze +
+  WGSL generation, per material, paid on the frame that material first becomes
+  visible. A burnout spawns ~40 puffs/s, so 31 of those builds landed in the
+  first second of the first slide. That was the first-puff hitch. Geometry is
+  the SkidMarks pattern: `count` quads, positions in WORLD space written per
+  frame, per-vertex `aPuff` (birth, life, strength, seed) written once at spawn
+  and aged shader-side against `uTime`. Billboarding is CPU-side against the
+  camera's right/up basis — the same arithmetic the per-mesh
+  `quaternion.copy(camera.quaternion)` did, minus N matrix compositions. **No
+  boot warm any more**: the mesh is permanently in the graph, so its one
+  pipeline compiles on the scene's first rendered frame for free, and dead
+  puffs are DEGENERATE (four verts on a point) rather than hidden. The one
+  accepted difference: puffs in a pool no longer sort against each other by
+  depth, because they are one mesh — at these alphas it reads as more stable,
+  not wrong.
+- **`TireSmoke.svelte` (fx/) is the squeal made visible** — a `puffPool` of 32,
+  spawned CONTINUOUSLY at the contact patches while a wheel slides: rate =
+  2 + 8×intensity puffs/s per wheel, so a brief squeak is a wisp and a burnout
+  builds a proper cloud. Intensity is the squeal/marks TWIN with ALL SIX
+  sources — cornering load included (max banking sings hot enough to smoke a
+  little): rears get wheelspin/slide/handbrake/launch/brake/cornering, fronts
   slide/brake/cornering. LIT, not unlit (the skid-marks lesson):
   MeshStandardNodeMaterial, near-white albedo — bright gray against day
-  asphalt, dims with the environment at night instead of glowing; the
-  billboard quaternion (copied off the app camera per update) orients the
-  plane's +Z normal at the camera for free, so no normalNode. Velocity = lazy
-  rise + a LAGGED share of the car's motion (smoke trails behind a moving
-  car) + a small rearward roll off the spinning tyre (rears roll harder);
-  perlin roil + cellular clumps + soft radial rim, aging shader-side against
-  uTime. World-anchored at TestGame root (`target={chaseAnchor}`, same
-  body-space wheel offsets as SkidMarks — both from the spec's geometry via
-  `wheelPatches`, one shared source); unmounting the scene hides the pool.
-  **BOOT WARM**: the pool's materials are invisible until the first spawn, and
-  on-demand rendering never compiles them until then — the FIRST burnout paid
-  the whole pipeline compile as a visible hitch. Fix: the pool's LAST slot is
-  visible-by-default at zero alpha (its dyn defaults: birth −99, strength 0),
-  and a short task-time warm window (~0.3 s) keeps invalidating so it renders
-  behind the scene-entry veil, compiling the pipeline before the player can
-  ever spawn a puff. The window is TIME-based, not tick-based — physics steps
-  run several per rendered frame, so counting ticks races the renderer.
+  asphalt, dims with the environment at night instead of glowing; the billboard
+  normal points at the camera, so no normalNode. Velocity = lazy rise + a
+  LAGGED share of the car's motion (smoke trails behind a moving car) + a small
+  rearward roll off the spinning tyre (rears roll harder); perlin roil +
+  cellular clumps + soft radial rim. World-anchored at TestGame root
+  (`target={chaseAnchor}`, same body-space wheel offsets as SkidMarks — both
+  from the spec's geometry via `wheelPatches`, one shared source). The task runs
+  `{ before: autoRenderTask }`, i.e. after Rapier's synchronization, so a puff
+  spawns at the pose that is about to be drawn.
 - **`CarExhaustFlames.svelte` (fx/) pops fire on downshifts and limiter bangs**
   (adapted from three's `webgpu_tsl_vfx_flames`). The exhaust tips are
   MEASURED, not placed by hand: the GLB's Draco `Nickel_Smooth` mesh decoded
@@ -483,30 +559,38 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   bang blue. The same flow floors both tips' energy (a steady PILOT jet, no
   style roll — max(), so a pop on top still reads as a bang) and floors the
   flash faintly so the glow halos stay lit while spraying. SMOKE: every bang
-  also coughs puffs — a pool of 16 billboarded quads, one material instance
-  per puff with dyn uniforms (birth/life/strength/seed — the tips' own
-  one-node-graph/one-program trick). WORLD-ANCHORED, unlike the flames:
+  also coughs puffs — a `puffPool` of 16 (see the puffPool bullet above).
+  WORLD-ANCHORED, unlike the flames:
   parented to the scene root (not the car), spawned at the tip's world
   position, so a puff hangs in the air while the car drives away; velocity
   inherits a lagged share of the car's motion plus a rearward jet (at speed
   they nearly cancel — the puff hangs where it was coughed). NORMAL blending
   (smoke dims what is behind it — the opposite job to the additive flames),
   graphite colour, perlin ROIL crawling through the quad + cellular clumps +
-  a soft radial rim; aging is shader-side against the shared uTime, the task
-  only drifts (with drag), grows and billboards (camera quaternion copy).
-  Puffs update BEFORE the tips-visible early return — a puff outlives its
-  bang. While a pop is visible the component owns
+  a soft radial rim. Puffs update BEFORE the tips-visible early return — a puff
+  outlives its bang. While a pop is visible the component owns
   an `invalidate()` reason (stationary rev-match case — driving is already
-  covered by the chase camera). Noise textures:
-  `public/textures/noises/{voronoi,perlin}.png`, copied from the vendored
-  three.js-dev example assets. **BOOT WARM** (the TireSmoke lesson, same
-  disease): the tips and the smoke pool are invisible until the first pop, so
-  their pipelines compiled on it — a visible hitch on the first downshift. Same
-  fix: a ~0.3 s task-time warm window force-shows both tips and one smoke slot
-  at their zero-alpha defaults (intensity/flash/strength all 0), behind the
-  scene-entry veil. The window lives INSIDE the physics task, after its own
-  per-step visibility write — anything set at mount would be overwritten within
-  one 200 Hz step, before a frame ever rendered.
+  covered by the chase camera). Noise textures come from `fx/noiseTextures.ts`
+  (`public/textures/noises/{voronoi,perlin}.png`, copied from the vendored
+  three.js-dev example assets), SHARED with SkidMarks and TireSmoke — one fetch
+  and one GPU texture per file for the whole scene, and therefore never
+  disposed by a single consumer.
+  **TWO TASKS, ON PURPOSE.** The TRIGGER stays in `usePhysicsTask`: a limiter
+  bounce is a rising edge of `carSim.limiting` that can come and go inside one
+  rendered frame, so polling it per frame would silently drop bangs. Everything
+  VISUAL — energy decay, the uniforms, tip visibility, the group scale, the
+  smoke pool, the `invalidate()` — is a `{ before: autoRenderTask }` task. All
+  of it used to sit in the physics task, which meant it ran 3–4× per drawn
+  frame (the simulation stage takes `ceil(accumulator / rate)` substeps), and
+  worse, `uTime` advanced by the SUBSTEP TOTAL — 20 ms / 15 ms / 15 ms on
+  consecutive frames at 200 Hz against 60 fps — so the flame's own noise
+  animation pulsed on a 20 Hz beat. **BOOT WARM** (still needed, for the TIPS
+  only): the six tip materials are invisible until the first pop, so their
+  pipelines compiled on it — a visible hitch on the first downshift. A ~0.3 s
+  warm window force-shows both tips at their zero-alpha defaults, behind the
+  scene-entry veil. It lives INSIDE the visual task, after that task's own
+  visibility write — anything set at mount would be overwritten before a frame
+  ever rendered. The smoke pool needs no warming any more (see puffPool).
 - **`audio/CarEngineAudio.svelte` + `audio/carAudio.ts` are the engine NOTE, positional**. Six
   loops (`public/sounds/engine/`: `idle` + `rpm1..5`) crossfaded by rpm — the two
   layers bracketing the tacho blend while each plays at `rate = rpm/anchor`, so

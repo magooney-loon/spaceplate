@@ -7,7 +7,8 @@
 	// into an eased boost value.
 	//
 	// WHY A COMPONENT AND NOT A PHYSICS-TASK LINE IN TestGame.svelte: the write is
-	// per RENDER frame, not per physics step (200 Hz uniform writes are pointless),
+	// per RENDER frame, not per physics step (a uniform written more than once per
+	// drawn frame is written for nothing),
 	// and this keeps the scene's driving task free of post-processing wiring — the
 	// same separation LensDriver.svelte has from the weather model.
 	//

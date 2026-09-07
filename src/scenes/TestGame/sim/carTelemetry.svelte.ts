@@ -1,10 +1,12 @@
 // The car's instrument feed — the same split the sky uses (`core/skybox`): a
 // PLAIN object written by the physics task, and a `$state` MIRROR for the HUD.
 //
-// Physics runs at a fixed 200 Hz. Writing $state 200×/s means 200 Svelte
-// invalidations per second per field for a needle no eye can follow, so the
+// Physics runs at a FIXED rate (`physicsState.framerate`, 60 by default and
+// settable to 200). Writing $state at the physics rate means one Svelte
+// invalidation per field per step for a needle no eye can follow, so the
 // mirror is published at ~30 Hz and each field is quantised to what the dial can
 // actually show. A value that rounds to the same number is not written at all.
+// `publishCarHud` counts SECONDS, not steps, so the 30 Hz holds at any rate.
 
 import { currentCar } from '../cars';
 

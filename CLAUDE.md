@@ -16,9 +16,11 @@ src/module_bindings/ — Generated client bindings — DO NOT EDIT, regenerate i
 public/            — Static assets (sounds, models, textures)
 patches/           — pnpm patches for @threlte/extras and @threlte/studio
 DOCS/              — webgpu-notes.md (WebGPU/Studio gotchas — read before debugging
-                     anything renderer-shaped), RAPIER.md (Rapier physics notes) and
+                     anything renderer-shaped), RAPIER.md (Rapier physics notes),
                      best-practices.md (performance reference: what the engine already
-                     handles, the open gaps, and the rules for new scene content)
+                     handles, the open gaps, and the rules for new scene content) and
+                     testperf.md (the TestGame scene's own performance audit — what it
+                     spends its frame on, what was fixed and what is still open)
                      are the permanent references. post-processing.md,
                      weather-system.md and scene-environment.md are superseded
                      plans — their content lives in the CLAUDE.md files now and they
@@ -52,14 +54,14 @@ Client connection host/db come from `VITE_SPACETIMEDB_HOST` / `VITE_SPACETIMEDB_
 
 Defined in both `vite.config.ts` and `tsconfig.json` — keep the two in sync when adding one.
 
-| Alias | Path |
-|-------|------|
-| `$root` | `src/` |
-| `$core` | `src/core/` |
-| `$extensions` | `src/extensions/` |
-| `$scenes` | `src/scenes/` |
-| `$lib` | `src/lib/` |
-| `$bindings` | `src/module_bindings/` |
+| Alias         | Path                   |
+| ------------- | ---------------------- |
+| `$root`       | `src/`                 |
+| `$core`       | `src/core/`            |
+| `$extensions` | `src/extensions/`      |
+| `$scenes`     | `src/scenes/`          |
+| `$lib`        | `src/lib/`             |
+| `$bindings`   | `src/module_bindings/` |
 
 ## Conventions
 

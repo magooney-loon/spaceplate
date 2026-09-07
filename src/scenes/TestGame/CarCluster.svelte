@@ -14,7 +14,7 @@
 	// comment by MINI_CX below.
 	//
 	// Everything real is driven by `carHud`, the 30 Hz quantised mirror in
-	// carTelemetry.svelte.ts — never `carSim`, which changes 200×/s. No CSS or
+	// carTelemetry.svelte.ts — never `carSim`, which changes every physics step. No CSS or
 	// Svelte transitions anywhere (repo convention): the needle moves because the
 	// number moved, and at 30 Hz with 20 rpm buckets that already reads smooth.
 	// Anything tweened here would also lag the engine note by its own duration.

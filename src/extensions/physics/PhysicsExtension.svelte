@@ -56,10 +56,10 @@
 				label="Framerate"
 				value={physicsState.framerate}
 				options={[
-					{ value: 'varying', text: 'Varying (default)' },
-					{ value: 60, text: '60 Hz' },
+					{ value: 'varying', text: 'Varying (NOT deterministic)' },
+					{ value: 60, text: '60 Hz (default)' },
 					{ value: 120, text: '120 Hz' },
-					{ value: 200, text: '200 Hz (deterministic)' }
+					{ value: 200, text: '200 Hz' }
 				]}
 				on:change={(e) => physicsActions.setFramerate(e.detail.value as PhysicsFramerate)}
 			/>

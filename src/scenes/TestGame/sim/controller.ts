@@ -56,7 +56,8 @@ import { clamp, damp } from './carMath';
 const YAW_MIN_SPEED = 1.5; // m/s floor under the grip cap, so it can't divide by ~0
 // 1/s — how fast leftover sideways velocity settles once it is back inside what the
 // tyres can pull. A RATE, not a per-step fraction: the latter silently retunes the
-// car whenever the physics framerate moves, and the world runs a fixed 200 Hz. The
+// car whenever the physics framerate moves, and that number is a knob
+// (`physicsState.framerate`, 60 by default). The
 // grip LIMIT below is what makes a slide a slide; this is only the last little bit.
 const GRIP_RATE = 138;
 // m/s — the slip angle fades in across `1 → 1 + this`. Forwards only, above walking
@@ -386,7 +387,7 @@ export function createCarController(spec: CarSpec) {
 		_vel.addScaledVector(_right, -clamp(settle, -bleedLimit, bleedLimit));
 		body.setLinvel({ x: _vel.x, y: _vel.y, z: _vel.z }, true);
 
-		// Instruments — plain object at 200 Hz, $state mirror at 30 (carTelemetry).
+		// Instruments — plain object at the physics rate, $state mirror at 30 (carTelemetry).
 		carSim.speedMs = speedMs;
 		carSim.rpm = drivetrain.state.rpm;
 		// Engine off while moving — decay RPM to 0 (sharp but not instant).
