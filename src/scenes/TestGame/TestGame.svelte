@@ -388,11 +388,19 @@
 			     vertex-scales `convexHull` args but NOT `roundConvexHull` — it falls
 			     into the positional [x,y,z] branch and would multiply the point array
 			     by a scalar (the old roundCuboid fourth-arg quirk's bigger sibling).
-			     The MARGIN (hull.ts HULL_MARGIN) is the old box's `rounding` reborn:
-			     Rapier DILATES round hulls by the border radius, so the collider is
-			     the car + 4 cm — body sheet 0.91 + 0.04 = 0.95 at the doors (the old
-			     box's hx), a touch wider at the mirrors (see hull.ts) — and its edges
-			     GLANCE off kerbs and barrier bases instead of face-stopping.
+			     The MARGIN (hull.ts HULL_MARGIN, 5 cm model) is a small edge FILLET:
+			     Rapier DILATES round hulls by the border radius, so every edge —
+			     nose, tail, belly, roofline — carries a ~0.13-unit fillet that
+			     GLANCES off kerbs and barrier bases instead of face-stopping. The
+			     point cloud is REAL surface vertices ONLY (what AutoColliders
+			     feeds convexHull, decimated — no synthetic bbox corners: those put
+			     phantom roof-height points at the nose/tail tips and were exactly
+			     the boxy-too-big hull). The BELLY is CLAMPED to pay for the
+			     dilation: points below the line are lifted so the dilated bottom
+			     stays on the old box's ~13 cm bump-stop line — the margin can never
+			     push the hull below the springs' reach and make the body a ground
+			     contact. The doors sit at 0.91 + 0.05 = 0.96 (the old box's 0.95),
+			     the mirrors a touch wider still (see hull.ts).
 			     MASS: still the sole mass carrier, now with EXPLICIT properties —
 			     mass + centerOfMass + principalAngularInertia + angularInertiaLocalFrame
 			     (Threlte takes that branch only when ALL THREE extras are present;
@@ -408,7 +416,8 @@
 			     bump stop and barrier hits, never grip — that lives in the
 			     drivetrain/task and the raycast springs.
 			     NOT the ground contact — the springs are; the hull's belly rides
-			     ~12 cm off the rest line and meets geometry only on real hits. -->
+			     ~13 cm off the rest line (clamped, see above) and meets geometry
+			     only on real hits. -->
 			{#if carHull && carMassProps}
 				<Collider
 					shape="roundConvexHull"

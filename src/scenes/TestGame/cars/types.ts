@@ -227,8 +227,9 @@ export type CarSpec = {
 		};
 		// NO chassis-collider block any more: the collider is ONE rounded convex
 		// hull computed from the GLB at load (cars/hull.ts) — every mesh except
-		// the wheels, dilated by a 4 cm margin. A car's silhouette is its model;
-		// measuring a box by hand was a proxy for exactly this.
+		// the wheels, plus a 5 cm edge fillet whose belly is clamped to the old
+		// bump-stop line. A car's silhouette is its model; measuring a box by
+		// hand was a proxy for exactly this.
 	};
 
 	// ── Model — where the GLB is and how it sits in the world. ────────────────

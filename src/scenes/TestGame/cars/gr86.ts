@@ -251,10 +251,10 @@ export const gr86 = {
 		}
 		// No collider numbers: the chassis is ONE rounded convex hull built from
 		// the GLB itself at load (cars/hull.ts) — the measured silhouette (body x
-		// ±0.91, greenhouse tapering to the roof at 1.31, mirrors to ±0.99 kept,
-		// wheels excluded so the body is never a ground contact) + a 4 cm dilating
-		// margin that keeps the old box's width (0.95) and its glance-off-kerb
-		// rounding. See TestGame.svelte's chassis comment for the full contract.
+		// ±0.91, greenhouse tapering to the roof at 1.31, mirrors to ±0.996 kept,
+		// wheels excluded so the body is never a ground contact) + a 5 cm edge
+		// fillet, belly clamped to the old 0.134 bump-stop line.
+		// See TestGame.svelte's chassis comment for the full contract.
 	},
 
 	model: {

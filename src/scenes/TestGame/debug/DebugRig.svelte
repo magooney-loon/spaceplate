@@ -109,10 +109,10 @@
 
 	// Chassis: the collider's own HULL as a wireframe — built from the same
 	// world-unit point cloud the scene hands the Collider (cars/hull.ts), so the
-	// shape Rapier holds and the shape drawn cannot drift apart. The 4 cm
-	// rounding margin is not drawn (invisible at this scale); it rides
-	// ~12 cm off the rest line (the WHEELS are the ground contact); the drawn
-	// wheels coincide with the ray patches exactly.
+	// shape Rapier holds and the shape drawn cannot drift apart. The 5 cm
+	// rounding margin is not drawn (still small at wireframe scale); it rides
+	// on the old box's ~13 cm bump-stop line (the WHEELS are the ground
+	// contact); the drawn wheels coincide with the ray patches exactly.
 	// Read-once ON PURPOSE: the rig mounts inside `{#if $carModel}` (the parent
 	// computes the hull from that same GLB in the same flush) and the garage
 	// writes the car exactly once at boot — there is no second hull to catch.

@@ -13,11 +13,18 @@
 //    sheet is ±0.91), so the collider is a touch wider than the old box at
 //    beltline height; a convex shape cannot have mirror-stalk concavities
 //    anyway.
-//  - The MARGIN is the old undertray box's `rounding` reborn: Rapier DILATES a
-//    round hull by its border radius, so the collider is the car + 4 cm — body
-//    half-width 0.91 + 0.04 = 0.95, exactly the old box's hx — and its edges
-//    GLANCE off kerbs and barrier bases instead of face-stopping. The belly
-//    lands at ~0.12 model m, within ~1.5 cm of the old box's bump-stop line.
+//  - The MARGIN is a small edge FILLET: Rapier DILATES a round hull by its
+//    border radius, so every edge — nose, tail, belly, roofline — glances
+//    off kerbs and barrier bases instead of face-stopping. Now that the
+//    envelope is the REAL surface (see the decimation note), 5 cm is enough —
+//    the collider is the car + 5 cm: doors 0.91 + 0.05 = 0.96, essentially
+//    the old box's 0.95, and the ends keep their true taper.
+//  - THE BELLY IS CLAMPED to pay for it: dilation is OUTWARD in every
+//    direction, so a big margin would push the hull's bottom (body sill,
+//    0.156 model m) below the rest line and make the body a ground contact
+//    fighting the raycast springs. Points below `BELLY_LINE + HULL_MARGIN`
+//    are clamped UP so the dilated bottom lands exactly on the old box's
+//    bump-stop line — the margin can grow freely and the belly never moves.
 //
 // UNITS — the points leave here in WORLD units (model metres ×
 // spec.model.scale) and the Collider must sit at WORLD SCALE 1 (directly under
@@ -27,19 +34,35 @@
 // class of quirk as the old roundCuboid fourth-arg rule; the scaling just
 // happens here instead.
 //
-// Decimation: the GLB is ~325 k triangles; quickhull gets at most MAX_POINTS
-// samples (one global stride) plus every mesh's 8 bounding-box corners, so
-// outer extremes survive an unlucky stride and a tiny outer mesh is never lost
-// entirely. ~4 k points build once per load, well under a frame.
+// Decimation: the GLB is ~325 k triangles; quickhull gets ~MAX_POINTS REAL
+// surface vertices — the same thing <AutoColliders> feeds
+// `ColliderDesc.convexHull`, decimated — and NOTHING SYNTHETIC. An earlier
+// cut added every mesh's 8 bounding-box corners "to survive the stride",
+// and those corners are NOT on the surface: the Paint mesh's bbox planted
+// phantom roof-height points at the nose and tail tips, and every curved
+// bumper grew box corners — the hull was boxier and wider than the car, and
+// no amount of margin fixes points that were never real. Each mesh gets a
+// share of the budget proportional to its vertex count with a per-mesh floor
+// (a small outer mesh still gets real samples), sampled on its own stride.
 
 import * as THREE from 'three/webgpu';
 import type { CarSpec } from './types';
 import { UNITS_PER_METER } from '../units';
 
-/** Sample budget fed to quickhull (per-mesh bbox corners included). */
-const MAX_POINTS = 4096;
-/** model m — the rounding margin; DILATES the hull outward (see header). */
-export const HULL_MARGIN = 0.04;
+/** Sample budget fed to quickhull (≈ sum of per-mesh quotas; the floors can
+ *  push it a few % over — harmless). */
+const MAX_POINTS = 8192;
+/** Per-mesh floor on samples — real surface points, so a small outer mesh
+ *  (badges, mirrors) keeps its voice in the hull. */
+const MIN_PER_MESH = 24;
+/** model m — the rounding margin; DILATES the hull outward (see header).
+ *  Small on purpose now that the envelope is the real surface: it is only
+ *  the edge FILLET, not a compensation for phantom box corners. */
+export const HULL_MARGIN = 0.05;
+/** model m — the collider belly's outer line: the old box's bump-stop height,
+ *  ~13 cm above the rest line. The point cloud is clamped so that the
+ *  dilated margin lands back on it (see header). */
+const BELLY_LINE = 0.134;
 
 export type CarHull = {
 	/** World-unit vertices — Rapier computes the convex hull from these. */
@@ -79,44 +102,44 @@ export function buildCarHull(root: THREE.Object3D, spec: CarSpec): CarHull | und
 	});
 	if (meshes.length === 0 || totalVerts === 0) return undefined;
 
-	// One global stride so the sample total lands near the budget however the
-	// triangles are distributed between meshes.
-	const stride = Math.max(1, Math.ceil(totalVerts / (MAX_POINTS - meshes.length * 8)));
-
 	const out: number[] = [];
 	const bmin: [number, number, number] = [Infinity, Infinity, Infinity];
 	const bmax: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+	const clampY = BELLY_LINE + HULL_MARGIN; // +: dilation pushes the bottom DOWN by the margin
 	const push = (p: THREE.Vector3) => {
+		// Clamp BEFORE scaling — BELLY_LINE is model metres. Clamped points keep
+		// their x/z, so nothing protrudes past the real envelope; the hull's
+		// bottom simply becomes the flat undertray it always was.
+		const y = Math.max(p.y, clampY);
 		const x = p.x * spec.model.scale;
-		const y = p.y * spec.model.scale;
+		const yy = y * spec.model.scale;
 		const z = p.z * spec.model.scale;
-		out.push(x, y, z);
+		out.push(x, yy, z);
 		if (x < bmin[0]) bmin[0] = x;
-		if (y < bmin[1]) bmin[1] = y;
+		if (yy < bmin[1]) bmin[1] = yy;
 		if (z < bmin[2]) bmin[2] = z;
 		if (x > bmax[0]) bmax[0] = x;
-		if (y > bmax[1]) bmax[1] = y;
+		if (yy > bmax[1]) bmax[1] = yy;
 		if (z > bmax[2]) bmax[2] = z;
 	};
+	// Per-mesh proportional quotas (with a floor), each sampled on its own
+	// stride — see the header for why the quota is REAL points only.
+	const quotas = meshes.map((mesh) =>
+		Math.max(
+			MIN_PER_MESH,
+			Math.floor((MAX_POINTS * mesh.geometry.getAttribute('position').count) / totalVerts)
+		)
+	);
 
-	for (const mesh of meshes) {
+	for (let mi = 0; mi < meshes.length; mi++) {
+		const mesh = meshes[mi];
 		m.multiplyMatrices(rootInv, mesh.matrixWorld);
 		const position = mesh.geometry.getAttribute('position');
+		const stride = Math.max(1, Math.ceil(position.count / quotas[mi]));
 		for (let i = 0; i < position.count; i += stride) {
 			v.fromBufferAttribute(position, i).applyMatrix4(m);
 			push(v);
 		}
-		// The mesh's own extremes, stride-proof.
-		if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-		const bb = mesh.geometry.boundingBox;
-		if (!bb) continue;
-		for (let xi = 0; xi < 2; xi++)
-			for (let yi = 0; yi < 2; yi++)
-				for (let zi = 0; zi < 2; zi++) {
-					v.set(xi ? bb.max.x : bb.min.x, yi ? bb.max.y : bb.min.y, zi ? bb.max.z : bb.min.z)
-						.applyMatrix4(m);
-					push(v);
-				}
 	}
 
 	return { points: new Float32Array(out), margin: HULL_MARGIN * spec.model.scale, bounds: { min: bmin, max: bmax } };

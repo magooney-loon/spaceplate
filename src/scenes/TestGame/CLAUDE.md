@@ -402,11 +402,19 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   filtered — tyre bottoms at model y 0.01 would make the body a ground contact
   and fight the rays), decimated to ≤ ~4 k points (one global stride + every
   mesh's 8 bbox corners so extremes survive the stride), interior meshes cost
-  nothing (quickhull discards inside points). The 4 cm MARGIN is the old
-  undertray box's `rounding` reborn: Rapier DILATES round hulls by the border
-  radius, so the collider is the car + 4 cm — body half-width 0.91 + 0.04 =
-  0.95, exactly the old box's hx — and edges GLANCE off kerbs instead of
-  face-stopping. It is the sole MASS carrier, with EXPLICIT properties — mass +
+  nothing (quickhull discards inside points) — decimated to ~8 k REAL
+  surface vertices (what <AutoColliders> feeds `ColliderDesc.convexHull`, but
+  one hull for the whole car; an early cut also added every mesh's 8 bbox
+  corners and those phantom points — roof-height corners at the nose/tail
+  tips, box corners on every curved bumper — were exactly the boxy-too-big
+  hull). The 5 cm MARGIN is a small edge FILLET: Rapier DILATES round hulls by
+  the border radius, so every edge — nose, tail, belly, roofline — GLANCES
+  OUTWARD everywhere, so the point cloud's belly is CLAMPED (points below
+  `BELLY_LINE + HULL_MARGIN` lift up) to land the dilated bottom exactly on
+  the old box's 0.134 bump-stop line — the margin can grow and the hull can
+  never become a ground contact ahead of the springs. Net size: doors at
+  0.91 + 0.05 = 0.96 (the old box's 0.95), mirrors a touch wider, roof
+  1.31 + 0.05, ends at their true taper + 5 cm. It is the sole MASS carrier, with EXPLICIT properties — mass +
   centerOfMass (cogHeight × the weight-bias lever rule, 15.5 cm ahead of the
   origin on the GR86) + principalAngularInertia (yaw = the spec's
   `hardware.yawInertia`; pitch/roll are LOCKED axes, their components are
