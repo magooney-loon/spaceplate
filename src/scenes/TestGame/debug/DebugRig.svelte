@@ -11,10 +11,10 @@
 
 	// The debug rig — the car's SKELETON, drawn instead of (or over) the model.
 	//
-	// The driving model is KINEMATIC: one dynamic body for the chassis (no jointed
-	// wheels, no sprung suspension — the grip lives in the drivetrain/task, and the
-	// chassis roundCuboid IS the ground contact). The model is the illusion; this
-	// rig draws what is actually being driven:
+	// The driving model is one dynamic body for the chassis, standing on FOUR
+	// RAYCAST SPRINGS (sim/suspension.ts) with the grip modelled in the
+	// drivetrain/task rather than in any contact. The car model is the illusion;
+	// this rig draws what is actually being driven:
 	//   - four wheels at the spec's wheel patches, front pair steered at
 	//     `carSim.steerAngle` (the same radians CarWheels renders — never
 	//     re-derived, so rig and model can't disagree), rolling at road speed
@@ -28,10 +28,11 @@
 	//     off the same matrix, so the skeleton can never lean differently from
 	//     the car drawn over it in 'both' view;
 	//   - the UNDERTRAY box as a wireframe ROUNDED box at the collider group's
-	//     own mount — the actual roundCuboid shape Rapier holds — and the wheels
-	//     ARE the four contact balls (same patches, same hub height, same radius
-	//     as TestGame.svelte's colliders), so the rig shows exactly what the car
-	//     stands on.
+	//     own mount — the actual roundCuboid shape Rapier holds, and now the car's
+	//     ONLY collider — while each wheel rides its own ray, one tyre radius
+	//     above the ground that ray found. So the rig shows exactly what the car
+	//     stands on, which is four springs rather than four balls, and it is the
+	//     only place you can watch them work over a kerb.
 	//
 	// THE COMPRESSION MOVES THE BODY, NOT THE HUBS. This was inverted at first
 	// and read as a car that dived under power and squatted under braking, and
@@ -68,9 +69,8 @@
 	// ── Constants (world units unless noted) ─────────────────────────────────
 	const R = spec.model.wheelRadiusFallback * UPM; // tyre radius
 	const TREAD = spec.geometry.tyreHalfWidth * 2 * UPM; // tyre width
-	// THE RIG WHEELS ARE THE CONTACT BALLS: the physics wheels are ball colliders
-	// at these same patches, at hubY, with this same R (TestGame.svelte) — so what
-	// you see rolling here IS what the car stands on.
+	// Hub height AT REST. The live height is `suspension.wheelY[i]` (the ray), and
+	// this is only where the groups are parked before the first frame poses them.
 	const HUB_REST = spec.geometry.hubY * UPM;
 	// The undertray box's TRUE world extents. The rounding arg is PRE-SCALED at the
 	// call site (Threlte's scaleColliderArgs scales args positionally against
@@ -273,28 +273,41 @@
 			if (!rearLocked) rollRear -= (rearSurface / R) * delta;
 			shaftRoll -= (rearSurface / R) * delta;
 
-			// The hub y never moves — it is the contact ball, and it is on the road.
+			// The hub rides its RAY: one tyre radius above whatever ground that
+			// corner found. Climbs kerbs, hangs in dips, holds full droop in the
+			// air — the rig is the only place you can watch the four raycast
+			// springs work, which is most of what it is for now.
+			const wheelY = suspension.wheelY;
 			for (let i = 0; i < 4; i++) {
 				const w = wheelGroups[i];
+				w.position.y = wheelY[i];
 				w.rotation.y = i < 2 ? carSim.steerAngle : 0;
 				w.rotation.x = i < 2 ? rollFront : rollRear;
 			}
 
-			// ── Struts: body-borne tower → pinned hub, tinted by compression ──
+			// ── Struts: body-borne tower → the wheel, tinted by load ─────────
 			for (let i = 0; i < 4; i++) {
 				const [x, z] = patches[i];
 				_t.copy(towerRest[i]).applyMatrix4(pose);
-				stretch(struts[i], _t.x, _t.y, _t.z, x, HUB_REST, z);
+				stretch(struts[i], _t.x, _t.y, _t.z, x, wheelY[i], z);
 				strutMats[i].color.copy(cTmp.copy(cGreen).lerp(cRed, compressionRatio(i)));
 			}
 
-			// ── Axles: body-borne diff, half-shafts down to the pinned hubs ──
+			// ── Axles: body-borne diff, half-shafts down to the wheels ───────
 			for (let end = 0; end < 2; end++) {
 				const z = end === 0 ? zFront : zRear;
 				diffs[end].position.copy(_t.copy(diffRest[end]).applyMatrix4(pose));
 				const d = diffs[end].position;
-				stretch(halfShafts[end][0], d.x, d.y, d.z, patches[end * 2][0], HUB_REST, z);
-				stretch(halfShafts[end][1], d.x, d.y, d.z, patches[end * 2 + 1][0], HUB_REST, z);
+				stretch(halfShafts[end][0], d.x, d.y, d.z, patches[end * 2][0], wheelY[end * 2], z);
+				stretch(
+					halfShafts[end][1],
+					d.x,
+					d.y,
+					d.z,
+					patches[end * 2 + 1][0],
+					wheelY[end * 2 + 1],
+					z
+				);
 			}
 
 			// ── Driveshaft: transfer puck → rear diff, spinning ───────────────

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { useGltf, useDraco, useKtx2, useMeshopt } from '@threlte/extras';
-	import { Collider, RigidBody, usePhysicsTask } from '@threlte/rapier';
+	import { Collider, RigidBody, useRapier, usePhysicsTask } from '@threlte/rapier';
 	import {
 		CoefficientCombineRule,
 		type RigidBody as RapierRigidBody
@@ -29,7 +29,6 @@
 		setCarInputKey
 	} from './sim/carInput.svelte';
 	import { currentCar } from './cars';
-	import { wheelPatches } from './cars/spec';
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
 	import { buildTrackColliders } from './trackColliders';
@@ -191,7 +190,11 @@
 	/** The visual car group (model + fx) — see the rig-view effect below. */
 	let visualRoot = $state.raw<THREE.Group>();
 
-	const controller = createCarController(car);
+	// The controller needs the Rapier world, not just the body: the car's ground
+	// contact is four RAYCASTS now (sim/suspension.ts), and a raycast is a world
+	// query. `useRapier` has to be called during component init like any hook.
+	const { world } = useRapier();
+	const controller = createCarController(car, world);
 
 	usePhysicsTask((delta) => {
 		const body = carBody;
@@ -391,34 +394,28 @@
 				/>
 			</T.Group>
 
-			<!-- WHEEL-CONTACT BALLS — the car's four contact points and its ONLY ground
-			     contact. At `wheelPatches` (the same layout the marks/smoke/rig use) at
-			     the spec's `hubY`, radius = the VISUAL wheel — so at rest the tyres KISS
-			     the road (the old box-belly contact sat the visual tyres ~4.5 cm into
-			     it) and the debug rig's wheels are these colliders exactly.
-			     FRICTIONLESS + Min like the box (grip is the drivetrain's, never the
-			     contacts') and DENSITY 0, not mass 0 — Threlte's mass prop is guarded by
-			     truthiness (`if (collider && mass)`) so mass={0} silently never applies
-			     and the balls would carry Rapier's default density-1 phantom mass
-			     (~2.35 each); density is guarded by `!== undefined` and zeroes properly
-			     (the box stays the sole mass carrier — ball mass would change what the
-			     controller's forces push). A ball ROLLS over the asphalt↔dirt lip
-			     (Ground sits 1.1 cm below Asphalt) where the box belly caught and
-			     janked. The earlier reverted attempt (CLAUDE.md) put balls ON TOP of a
-			     still-touching box — five competing contacts; raised as an undertray,
-			     the box no longer competes. Mounted UNSCALED (world-unit body space) so
-			     radius/positions are literal world numbers. -->
-			{#each wheelPatches(car) as [x, z], i (i)}
-				<T.Group position={[x, car.geometry.hubY * UNITS_PER_METER, z]}>
-					<Collider
-						shape="ball"
-						args={[car.model.wheelRadiusFallback * car.model.scale]}
-						density={0}
-						friction={0}
-						frictionCombineRule={CoefficientCombineRule.Multiply}
-					/>
-				</T.Group>
-			{/each}
+			<!-- THERE ARE NO WHEEL COLLIDERS. The car's ground contact is FOUR
+			     RAYCAST SPRINGS (sim/suspension.ts), cast down at `wheelPatches` from
+			     the controller's physics step; their summed force is what holds the
+			     car up, and the undertray box above is now purely the bump stop and
+			     the thing that hits barriers.
+
+			     This replaced four frictionless ball colliders at the same patches. The
+			     balls were geometrically right — the tyres kissed the road, and a ball
+			     rolled over the asphalt↔dirt lip where the old box belly caught — but a
+			     rigid ball is an infinitely stiff spring, and `enabledRotations` leaves
+			     the body no pitch or roll to absorb an uneven contact with. A 3 cm kerb
+			     under ONE wheel therefore had to lift the whole car 3 cm inside a single
+			     step: that was the stutter, and it got worse with speed because the
+			     contact was discovered further into the lip each step. A spring takes
+			     ~0.2 s over the same lip, and a ray cannot manufacture a ghost contact
+			     at a trimesh's internal edges the way a shape sweep can.
+
+			     The ride height did not move: the spring's static sag is built into its
+			     rest length, so equilibrium still sits the hub exactly one tyre radius
+			     above the road. What the rays hit is filtered the same way the balls
+			     were — the body itself is excluded, and the track's colliders are still
+			     only Asphalt/Metal trimesh + the Ground floor (trackColliders.ts). -->
 
 			<!-- The debug skeleton — wheels/axles/suspension at the spec's patches,
 			     steered and rolled from the same carSim values as CarWheels, struts

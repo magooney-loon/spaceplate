@@ -12,7 +12,12 @@
 // moved here verbatim in spirit — the driving-model rules are load-bearing
 // documentation (see CLAUDE.md's driving-model section).
 
-import type { RigidBody as RapierRigidBody, Rotation, Vector } from '@dimforge/rapier3d-compat';
+import type {
+	RigidBody as RapierRigidBody,
+	Rotation,
+	Vector,
+	World
+} from '@dimforge/rapier3d-compat';
 import * as THREE from 'three/webgpu';
 import type { CarSpec } from '../cars/types';
 import { G, UNITS_PER_METER } from '../units';
@@ -21,6 +26,7 @@ import { createDrivetrain } from './drivetrain';
 import { carSim, publishCarHud } from './carTelemetry.svelte';
 import { carHandling, carIgnition, carInput } from './carInput.svelte';
 import { clamp, damp } from './carMath';
+import { stepSuspension } from './suspension';
 
 // ── Driving ──────────────────────────────────────────────────────────────────
 //
@@ -85,9 +91,23 @@ const NITROUS_RELEASE = 4;
 /** Below this the bottle counts as dry and the switch opens. */
 const NITROUS_DRY = 0.01;
 
-export function createCarController(spec: CarSpec) {
+export function createCarController(spec: CarSpec, world: World) {
 	const drivetrain = createDrivetrain(spec);
 	const hw = spec.hardware;
+
+	/**
+	 * Clear Rapier's force accumulator and immediately re-apply what holds the car
+	 * up. THE CAR HAS NO GROUND COLLIDERS — `sim/suspension.ts` casts four rays
+	 * and the summed spring force IS the contact — so `resetForces` and the
+	 * suspension are one operation, and every early return below goes through
+	 * here. Splitting them is how the parked car ends up on its undertray.
+	 * `wake` is passed through: the idle branch must not wake a sleeping body
+	 * just to hold up a car that is already resting.
+	 */
+	function resetForces(body: RapierRigidBody, wake: boolean): void {
+		body.resetForces(wake);
+		stepSuspension(body, world);
+	}
 
 	// Nitrous + startup state — the scene used to own these locals.
 	let nitrousBottle = 1; // 0..1
@@ -194,7 +214,7 @@ export function createCarController(spec: CarSpec) {
 		// ~2000 (a realistic crank-and-fire) then settles back to idle. No drive
 		// force, no shifting — the car stays put until `ready`.
 		if (carIgnition.on && !carIgnition.ready) {
-			body.resetForces(false);
+			resetForces(body, false);
 			// Rev to 2000 over ~0.4 s, then decay back to idle over ~0.8 s.
 			// Using a simple timer that counts up from 0; the turnon sound is ~1.2 s.
 			startupTimer += delta;
@@ -242,7 +262,7 @@ export function createCarController(spec: CarSpec) {
 			!carInput.shiftUp &&
 			!carInput.shiftDown;
 		if (idle && _vel.lengthSq() < 0.25) {
-			body.resetForces(false);
+			resetForces(body, false);
 			if (ignOn) {
 				drivetrain.idle(delta);
 				carSim.rpm = drivetrain.state.rpm;
@@ -285,7 +305,7 @@ export function createCarController(spec: CarSpec) {
 
 		// Longitudinal — one force along the nose. Newtons → world (a_world = a_si·UPM).
 		const longitudinal = (out.driveForce + out.resistForce) * UNITS_PER_METER;
-		body.resetForces(true);
+		resetForces(body, true);
 		body.addForce(
 			{
 				x: _forward.x * longitudinal,

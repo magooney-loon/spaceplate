@@ -56,10 +56,26 @@ export type TrackCollider =
 // car is on the dirt (the foliage areas ride on the same plane — there was
 // never a foliage contact, the dirt UNDER the trees was the jitter). The dirt
 // is perfectly FLAT, so it does not need triangles at all: it becomes an
-// analytical cuboid floor — ideal contacts, no BVH, no winding, no edges. The
-// top face sits exactly at the plane's height, so the known 1.1 cm lip at
-// asphalt edges (Asphalt sits that much higher than Ground) is unchanged.
+// analytical cuboid floor — ideal contacts, no BVH, no winding, no edges.
 const FLOOR_HALF_Y = 25; // GLB units of thickness downward — past caring
+
+/**
+ * THE ASPHALT LIP, HALVED. Both planes are dead flat and the GLB puts them at
+ * different heights — Ground at track-frame y −0.00755, Asphalt at +0.00252, so
+ * every asphalt edge is a ~0.0101-unit step (about 6 mm at this track's scale)
+ * that the wheels have to climb.
+ *
+ * The floor's top face used to sit exactly at the dirt plane's own height, which
+ * made the step real. Raising it all the way to the asphalt would remove the
+ * step and float the car above the dirt MESH by the same amount instead. This
+ * splits it: half the step, half the float, neither big enough to see or feel.
+ * Measured from the geometry rather than written down, so a re-export moves it.
+ *
+ * It only ever RAISES the floor — if a future track puts Ground above Asphalt,
+ * lowering the dirt to meet it would sink the car into the mesh, which is the
+ * one failure worth refusing.
+ */
+const LIP_SHARE = 0.5;
 
 export function buildTrackColliders(root: THREE.Object3D): TrackCollider[] {
 	root.updateMatrixWorld(true);
@@ -67,6 +83,12 @@ export function buildTrackColliders(root: THREE.Object3D): TrackCollider[] {
 	const m = new THREE.Matrix4();
 
 	const out: TrackCollider[] = [];
+	// The floor is fixed up after the traverse: the lip it is levelled against is
+	// the ASPHALT's height, and traversal order does not promise which comes first.
+	let floor: Extract<TrackCollider, { kind: 'floor' }> | undefined;
+	let floorTop = 0;
+	let asphaltMinY = Infinity;
+
 	root.traverse((obj) => {
 		const mesh = obj as THREE.Mesh;
 		if (!mesh.isMesh || !mesh.geometry) return;
@@ -110,13 +132,21 @@ export function buildTrackColliders(root: THREE.Object3D): TrackCollider[] {
 				minZ = Math.min(minZ, baked[i + 2]);
 				maxZ = Math.max(maxZ, baked[i + 2]);
 			}
-			out.push({
+			floorTop = maxY;
+			floor = {
 				kind: 'floor',
 				id: mesh.uuid,
 				center: [(minX + maxX) / 2, maxY - FLOOR_HALF_Y, (minZ + maxZ) / 2],
 				half: [(maxX - minX) / 2, FLOOR_HALF_Y, (maxZ - minZ) / 2]
-			});
+			};
+			out.push(floor);
 			return;
+		}
+
+		if (material.name === 'Asphalt') {
+			for (let i = 1; i < baked.length; i += 3) {
+				if (baked[i] < asphaltMinY) asphaltMinY = baked[i];
+			}
 		}
 
 		// Non-indexed geometry: trivial 0..n-1 indices.
@@ -131,5 +161,12 @@ export function buildTrackColliders(root: THREE.Object3D): TrackCollider[] {
 			args: [baked, indices, TriMeshFlags.FIX_INTERNAL_EDGES]
 		});
 	});
+
+	// Split the asphalt lip (see LIP_SHARE). Raise only, and only when there is
+	// actually a step to split.
+	if (floor && Number.isFinite(asphaltMinY) && asphaltMinY > floorTop) {
+		floor.center[1] = floorTop + (asphaltMinY - floorTop) * LIP_SHARE - FLOOR_HALF_Y;
+	}
+
 	return out;
 }
