@@ -291,7 +291,7 @@ export const gr86 = {
 			// tenth of a second, which is why it read as a turn-tighter button.
 			handbrakeMuLat: 0.15,
 			// Wheelspin nearly wipes the lateral tyre, so power deepens a slide sharply.
-			slipGripLoss: 0.95,
+			slipGripLoss: 0.69,
 			// OFF. Nothing trims the surplus torque, so the rears spin up for real: 1st is
 			// on the limiter in a blink, 2nd builds over a couple of seconds of held
 			// throttle, 3rd and up still cannot out-pull the tyre. A donut now sits at the
@@ -302,11 +302,11 @@ export const gr86 = {
 			tractionControl: false,
 			// A little livelier than before — the car has a hint of playfulness even
 			// coasting, without giving up the planted-until-provoked contrast.
-			looseBase: 0.15,
+			looseBase: 0.05,
 			// Up from 0.55: the throttle takes the tail out quicker and with less pedal
 			// precision — you don't have to bury it to feel the rear step out, which is
 			// the whole point of an easy drift control.
-			throttleLoose: 0.7,
+			throttleLoose: 0.6,
 			// Up from 0.8, closer to the handbrake's 1: trail-braking into a corner
 			// triggers a slide more readily — an easier, more generous "tap ↓ to set the
 			// car" entry.
@@ -339,12 +339,12 @@ export const gr86 = {
 			powerYawBoost: 2.6,
 			// Up from 1.6: a firmer auto-catch, so a slide is less likely to run away into
 			// a spin and opposite lock does more of the work for you.
-			driftAlign: 2.2,
+			driftAlign: 0.15,
 			// Up from 0.9: the drift can hold a bigger angle before the catch fully takes
 			// over, for a more dramatic slide before it settles. The handbrake held at full
 			// lock still spins the car out to fully sideways, which is what that input
 			// should do.
-			maxDriftAngle: 1.05
+			maxDriftAngle: 2.45
 		}
 	}
 } as const satisfies CarSpec;
