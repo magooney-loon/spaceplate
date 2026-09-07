@@ -29,6 +29,7 @@
 		setCarInputKey
 	} from './sim/carInput.svelte';
 	import { currentCar } from './cars';
+	import { wheelPatches } from './cars/spec';
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
 	import { buildTrackColliders } from './trackColliders';
@@ -310,25 +311,28 @@
 				<CarEngineAudio />
 			</T.Group>
 
-			<!-- Chassis: ONE rounded box instead of per-mesh hulls (the model is dozens
+			<!-- Undertray: ONE rounded box instead of per-mesh hulls (the model is dozens
 			     of meshes — seats, glass, engine — each a silly collider). Args are in
 			     model meters, scaled by the parent group to match the visual; both come
 			     from the car's spec (geometry.collider — measured off the GLB).
-			     ROUNDED (spec `rounding`): a plain cuboid's square edges catch on
-			     triangle seams, kerbs and barrier lips — each edge contact is a
-			     wall-faced stop. The rounding is DILATING in rapier (total half-extent
-			     = h + r), so each half-extent has r subtracted to preserve the outer
-			     size; the subtraction happens here so the spec holds the real, readable
-			     measurements. FRICTIONLESS (Min rule → min(0, μ_road) = 0) on purpose:
-			     the chassis is one box, so contact friction is STATIC friction against
-			     the COM drive force — at real gravity the cap sits ABOVE the
-			     drivetrain's entire force range and every Newton of throttle was
-			     cancelled (the car could not move at all; verified against rapier in
-			     isolation — see CLAUDE.md's collider rules). Grip belongs to the
-			     drivetrain (driven-axle traction clip, rolling resistance, brakes) and
+			     ROUNDED (spec `rounding`): what lets the box GLANCE off what it hits
+			     instead of face-stopping. THE ROUNDING ARG IS PRE-SCALED (×model.scale):
+			     Threlte's scaleColliderArgs multiplies shape args POSITIONALLY against
+			     [x,y,z] — a roundCuboid's FOURTH arg has no matching scale component and
+			     passes through UNSCALED, so it is handed world units directly. The
+			     rounding is DILATING in rapier (total half-extent = h + r), so each
+			     half-extent has r subtracted to preserve the outer size; the subtraction
+			     happens here so the spec holds the real, readable measurements.
+			     FRICTIONLESS (Min rule → min(0, μ_road) = 0) on purpose: contact friction
+			     is static friction against the COM drive force — at real gravity the cap
+			     sits ABOVE the drivetrain's entire force range and every Newton of
+			     throttle was cancelled (the car could not move at all; verified against
+			     rapier in isolation — see CLAUDE.md's collider rules). Grip belongs to
+			     the drivetrain (driven-axle traction clip, rolling resistance, brakes) and
 			     the lateral velocity damp; contacts keep their normal impulses only.
-			     (Wheel-contact balls at the measured pivots were tried on top of this
-			     and reverted — see git history before revisiting.) -->
+			     NOT the ground contact — the wheel balls below are; this box rides
+			     ~13 cm off the rest line (spec mountY) and meets geometry only on real
+			     hits. -->
 			<T.Group position={[0, car.geometry.collider.mountY, 0]} scale={car.model.scale}>
 				<Collider
 					shape="roundCuboid"
@@ -336,13 +340,42 @@
 						car.geometry.collider.hx - car.geometry.collider.rounding,
 						car.geometry.collider.hy - car.geometry.collider.rounding,
 						car.geometry.collider.hz - car.geometry.collider.rounding,
-						car.geometry.collider.rounding
+						car.geometry.collider.rounding * car.model.scale
 					]}
 					mass={car.hardware.mass}
 					friction={0}
 					frictionCombineRule={CoefficientCombineRule.Min}
 				/>
 			</T.Group>
+
+			<!-- WHEEL-CONTACT BALLS — the car's four contact points and its ONLY ground
+			     contact. At `wheelPatches` (the same layout the marks/smoke/rig use) at
+			     the spec's `hubY`, radius = the VISUAL wheel — so at rest the tyres KISS
+			     the road (the old box-belly contact sat the visual tyres ~4.5 cm into
+			     it) and the debug rig's wheels are these colliders exactly.
+			     FRICTIONLESS + Min like the box (grip is the drivetrain's, never the
+			     contacts') and DENSITY 0, not mass 0 — Threlte's mass prop is guarded by
+			     truthiness (`if (collider && mass)`) so mass={0} silently never applies
+			     and the balls would carry Rapier's default density-1 phantom mass
+			     (~2.35 each); density is guarded by `!== undefined` and zeroes properly
+			     (the box stays the sole mass carrier — ball mass would change what the
+			     controller's forces push). A ball ROLLS over the asphalt↔dirt lip
+			     (Ground sits 1.1 cm below Asphalt) where the box belly caught and
+			     janked. The earlier reverted attempt (CLAUDE.md) put balls ON TOP of a
+			     still-touching box — five competing contacts; raised as an undertray,
+			     the box no longer competes. Mounted UNSCALED (world-unit body space) so
+			     radius/positions are literal world numbers. -->
+			{#each wheelPatches(car) as [x, z], i (i)}
+				<T.Group position={[x, car.geometry.hubY * UNITS_PER_METER, z]}>
+					<Collider
+						shape="ball"
+						args={[car.model.wheelRadiusFallback * car.model.scale]}
+						density={0}
+						friction={0}
+						frictionCombineRule={CoefficientCombineRule.Min}
+					/>
+				</T.Group>
+			{/each}
 
 			<!-- The debug skeleton — wheels/axles/suspension at the spec's patches,
 			     steered and rolled from the same carSim values as CarWheels, struts

@@ -38,7 +38,7 @@
 
 	let { target }: { target?: THREE.Object3D } = $props();
 
-	// ── Layout (body space — the shared wheelPatches twin of SkidMarks) ────────
+	// ── Layout (body space — the shared wheelPatches twin of SkidMarks) ──────
 	const WHEELS = wheelPatches(currentCar());
 
 	// ── Tuning ──────────────────────────────────────────────────────────────────

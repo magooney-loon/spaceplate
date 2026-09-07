@@ -107,6 +107,10 @@ export type CarSpec = {
 	geometry: {
 		/** m — half the rear track (tyre patch x for both rear wheels). */
 		halfTrack: number;
+		/** m — wheel-centre height in model space. The WHEEL-CONTACT colliders'
+		 *  mount height: their bottoms are the car's only ground contact, so the
+		 *  resting tyres kiss the road (see TestGame.svelte). */
+		hubY: number;
 		/** m — front axle centre, z in model space (negative: ahead of the origin). */
 		frontAxleZ: number;
 		/** m — rear axle centre, z in model space. */

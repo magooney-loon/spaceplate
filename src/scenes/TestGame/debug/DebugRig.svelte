@@ -2,6 +2,7 @@
 	import { onDestroy } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
+	import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 	import { currentCar } from '../cars';
 	import { wheelPatches } from '../cars/spec';
 	import { G, UNITS_PER_METER } from '../units';
@@ -25,10 +26,11 @@
 	//     squat/dive front-to-rear and roll left-to-right. The honest visual of
 	//     the load transfer the drivetrain applies — clamped, because there is no
 	//     physical travel to match; it is a gauge, not a spring;
-	//   - the chassis collider as line edges at the collider group's own mount,
-	//     at the TRUE dilated extents — see the `dilated` helper below for the
-	//     unscaled-radius quirk in Threlte's collider arg scaling (the box and
-	//     the Rapier debug overlay agree; h·UPM instead puts it through the floor).
+	//   - the UNDERTRAY box as a wireframe ROUNDED box at the collider group's
+	//     own mount — the actual roundCuboid shape Rapier holds — and the wheels
+	//     ARE the four contact balls (same patches, same hub height, same radius
+	//     as TestGame.svelte's colliders), so the rig shows exactly what the car
+	//     stands on.
 	//
 	// VISUALIZATION ONLY — nothing here feeds back into physics. The task runs at
 	// `{ before: autoRenderTask }` (render time) for the same reason CarWheels
@@ -50,24 +52,19 @@
 	// ── Constants (world units unless noted) ─────────────────────────────────
 	const R = spec.model.wheelRadiusFallback * UPM; // tyre radius
 	const TREAD = spec.geometry.tyreHalfWidth * 2 * UPM; // tyre width
-	// The collider's TRUE world half-extents. Threlte's scaleColliderArgs scales
-	// shape args POSITIONALLY against [x, y, z] — a roundCuboid's FOURTH arg
-	// (the border radius) has no matching scale component and stays in MODEL
-	// metres, so the dilated half-extent is (h−r)·UPM + r, not h·UPM. Verified
-	// against the Rapier debug overlay: with h·UPM the drawn box sat 0.27 world
-	// units through the floor while the real collider sat just above the tyre
-	// plane (the documented ~5 cm resting tire sink).
+	// THE RIG WHEELS ARE THE CONTACT BALLS: the physics wheels are ball colliders
+	// at these same patches, at hubY, with this same R (TestGame.svelte) — so what
+	// you see rolling here IS what the car stands on.
+	const HUB_REST = spec.geometry.hubY * UPM;
+	// The undertray box's TRUE world extents. The rounding arg is PRE-SCALED at the
+	// call site (Threlte's scaleColliderArgs scales args positionally against
+	// [x,y,z] — a roundCuboid's FOURTH arg would stay in model metres), so here the
+	// dilation is the full r·UPM and the total half-extent is simply h·UPM.
 	const c = spec.geometry.collider;
-	const dilated = (h: number): number => (h - c.rounding) * UPM + c.rounding;
-	const HX_PHYS = dilated(c.hx);
-	const HY_PHYS = dilated(c.hy);
-	const HZ_PHYS = dilated(c.hz);
-	/** The floor line in body space at rest: the collider's flat bottom. */
-	const GROUND_Y = c.mountY - HY_PHYS;
-	/** Rest hub height: wheels stand ON the floor line. (The MODEL's tyres sink
-	 *  ~5 cm past it — the known visual fudge; in 'both' view the rig wheels sit
-	 *  on the true floor while the model's tyres are in it. That is correct.) */
-	const HUB_REST = GROUND_Y + R;
+	const HX_PHYS = c.hx * UPM;
+	const HY_PHYS = c.hy * UPM;
+	const HZ_PHYS = c.hz * UPM;
+	const ROUNDING_PHYS = c.rounding * UPM;
 	// Suspension GAUGE range — compression clamps here. No physical travel exists.
 	const COMP_MIN = -0.05 * UPM;
 	const COMP_MAX = 0.11 * UPM;
@@ -95,20 +92,28 @@
 	const stripeGeo = new THREE.BoxGeometry(TREAD * 0.55, R * 1.9, R * 0.14);
 	geos.push(stripeGeo);
 
-	// Chassis collider edges — the TRUE dilated extents (sharp corners; the
-	// Rapier debug overlay shows the rounding if you want it), at the collider
-	// group's own mount.
-	const boxGeo = new THREE.BoxGeometry(HX_PHYS * 2, HY_PHYS * 2, HZ_PHYS * 2);
-	const edgesGeo = new THREE.EdgesGeometry(boxGeo);
-	boxGeo.dispose();
-	geos.push(edgesGeo);
+	// Chassis: the UNDERTRAY as a rounded box (wireframe) — the actual
+	// roundCuboid shape Rapier holds, dilation included. It rides ~13 cm off the
+	// rest line (the WHEELS are the ground contact); the drawn wheels coincide
+	// with the contact balls exactly.
+	const boxGeo = new RoundedBoxGeometry(
+		HX_PHYS * 2,
+		HY_PHYS * 2,
+		HZ_PHYS * 2,
+		4,
+		ROUNDING_PHYS
+	);
+	geos.push(boxGeo);
 
 	const wheelMat = new THREE.MeshBasicNodeMaterial({ color: 0x1c1f24 });
 	const stripeMat = new THREE.MeshBasicNodeMaterial({ color: 0xff3355 });
 	const axleMat = new THREE.MeshBasicNodeMaterial({ color: 0xff9a1f });
 	const shaftMat = new THREE.MeshBasicNodeMaterial({ color: 0xffd23f });
-	const edgeMat = new THREE.LineBasicNodeMaterial({ color: 0x3fd0ff });
-	mats.push(wheelMat, stripeMat, axleMat, shaftMat, edgeMat);
+	const boxMat = new THREE.MeshBasicNodeMaterial({
+		color: 0x3fd0ff,
+		wireframe: true // supported under WebGPU — the renderer converts to a line-list index
+	});
+	mats.push(wheelMat, stripeMat, axleMat, shaftMat, boxMat);
 	// One strut material per corner — compression tints it green → red.
 	const strutMats = patches.map(() => new THREE.MeshBasicNodeMaterial({ color: 0x22ff88 }));
 	mats.push(...strutMats);
@@ -125,8 +130,8 @@
 	rig.name = 'DebugRig';
 	// Start hidden — the $effect below owns visibility from the first flush.
 
-	const chassis = new THREE.LineSegments(edgesGeo, edgeMat);
-	chassis.position.y = spec.geometry.collider.mountY;
+	const chassis = new THREE.Mesh(boxGeo, boxMat);
+	chassis.position.y = c.mountY;
 	rig.add(chassis);
 
 	// Per corner: a wheel group (steer + roll; 'YXZ' so the roll happens in the

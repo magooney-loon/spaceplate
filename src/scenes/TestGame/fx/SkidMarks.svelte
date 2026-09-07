@@ -27,18 +27,22 @@
 
 	let { target }: { target?: THREE.Object3D } = $props();
 
-	// ── Layout (body space: world units, y=0 is the road at the car) ────────────
+	// ── Layout (body space, world units) ────────────────────────────────────
 	// From the car's spec (geometry.axleZ / halfTrack) via the shared wheelPatches
 	// helper — the smoke's twin layout, one source.
 	const WHEELS = wheelPatches(currentCar());
+	// The mark height is the EMPIRICALLY TUNED LIFT, restored: a road line
+	// derived from the wheel-contact colliders (hubY − wheelRadius + epsilon)
+	// checked out against rapier in isolation but rendered UNDER the surface
+	// in-browser. Don't re-derive without explaining that first.
+	const LAY_Y = 0.8;
 
-	// ── Tuning ──────────────────────────────────────────────────────────────────
+	// ── Tuning ──────────────────────────────────────────────────────────────
 	const HALF_WIDTH = currentCar().geometry.tyreHalfWidth * UNITS_PER_METER;
 	const MARK_ON = 0.3; // source intensity before rubber is laid
 	const MARK_EXIT = 0.22; // hysteresis — chatter at the threshold lays confetti
 	const SEG_MIN = 0.35; // world units between laid segments
 	const TAIL_MAX = 0.25; // a tapering tail is never longer than this
-	const LIFT = 0.9; // above the road plane, against z-fighting
 	const FADE_IN = 0.25; // s — a mark arrives at full darkness almost at once
 	const LIFETIME = 15; // s — then it is gone; keep in sync with the TSL below
 	const BURNOUT_ON = 0.55; // rear intensity + near-standstill = the burnout case
@@ -120,7 +124,17 @@
 		depthWrite: false,
 		side: THREE.DoubleSide,
 		metalness: 0,
-		roughness: 0.95
+		roughness: 0.95,
+		// THE DECAL TRICK, not a lift: the marks sit ~0.06 above a flat road, but
+		// the camera's near plane is 0.001 — at chase distance (~20 u) a 24-bit
+		// depth buffer resolves ~0.024 u, so a bare geometric offset of a few
+		// hundredths is ONE depth quantum and z-fights (an earlier 0.03 epsilon
+		// lost the fight and the marks rendered UNDER the road). polygonOffset
+		// biases the depth test itself, so the marks win deterministically at any
+		// distance while staying visually ON the surface.
+		polygonOffset: true,
+		polygonOffsetFactor: -2,
+		polygonOffsetUnits: -2
 	});
 	material.color.setRGB(0.05, 0.05, 0.055); // albedo — the lighting owns the rest
 	material.opacityNode = clamp(
@@ -195,16 +209,16 @@
 		// Written straight into the ring buffer: no temp arrays in the task body.
 		const p = positions;
 		p[pOff] = ax - px;
-		p[pOff + 1] = ay + LIFT;
+		p[pOff + 1] = ay;
 		p[pOff + 2] = az - pz;
 		p[pOff + 3] = ax + px;
-		p[pOff + 4] = ay + LIFT;
+		p[pOff + 4] = ay;
 		p[pOff + 5] = az + pz;
 		p[pOff + 6] = bx - px;
-		p[pOff + 7] = by + LIFT;
+		p[pOff + 7] = by;
 		p[pOff + 8] = bz - pz;
 		p[pOff + 9] = bx + px;
-		p[pOff + 10] = by + LIFT;
+		p[pOff + 10] = by;
 		p[pOff + 11] = bz + pz;
 		// aMark per vertex [birth, intensity, edge, grain]: the a-end carries the
 		// LAST segment's intensity/grain so both interpolate down the strip; a
@@ -264,7 +278,7 @@
 			let laid = false;
 			for (let w = 0; w < 4; w++) {
 				const intensity = w >= 2 ? rearI : frontI;
-				_v.set(WHEELS[w][0], 0, WHEELS[w][1]);
+				_v.set(WHEELS[w][0], LAY_Y, WHEELS[w][1]);
 				body.localToWorld(_v);
 
 				// Hysteresis: enter at MARK_ON, leave at MARK_EXIT — a slide

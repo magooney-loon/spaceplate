@@ -153,6 +153,12 @@ export const gr86 = {
 		// simply be written down.
 		frontAxleZ: -2.575 * (1 - 0.47),
 		rearAxleZ: 2.575 * 0.47,
+		/** m — wheel-centre height in model space (measured off the GLB: wheel
+		 *  centres at y 0.335). The WHEEL-CONTACT colliders' height — their
+		 *  bottoms (radius `model.wheelRadiusFallback`) are the car's ONLY ground
+		 *  contact, so at rest the visual tyres kiss the road instead of sinking
+		 *  into it. */
+		hubY: 0.335,
 		/** m — half of 215 mm (the tyre); the skid ribbon's width. */
 		tyreHalfWidth: 0.108,
 		/** Measured, not placed by hand: the GLB's Draco `Nickel_Smooth` mesh
@@ -170,16 +176,22 @@ export const gr86 = {
 			/** A real 2023 GR86 runs LED projectors — cool white. */
 			color: [0.88, 0.93, 1.0]
 		},
-		/** The chassis box spans model y 0.06..1.16 (measured; the belly IS the
-		 *  ground contact, a touch above the tire plane so the resting tires sink
-		 *  ~5 cm — imperceptible from the chase cam). mountY is in WORLD units
-		 *  (the collider group sits outside the visual scale group). */
+		/** The UNDERTRAY box — NOT the ground contact (four wheel-contact balls
+		 *  are; see TestGame.svelte): it meets geometry only on real hits, riding
+		 *  ~13 cm above the rest line so it clears seams and lips entirely. It is
+		 *  still FRICTIONLESS with the Min combine rule (see TestGame.svelte) and
+		 *  still the collider that carries the body's mass. ROUNDED (spec
+		 *  `rounding`): what lets the belly GLANCE off kerbs and barrier bases on
+		 *  the hits it does take. mountY is in WORLD units (the collider group
+		 *  sits outside the visual scale group); the rounding arg is pre-scaled
+		 *  at the call site — Threlte's collider-arg scaling is positional and
+		 *  would otherwise leave the radius in model metres. */
 		collider: {
 			hx: 0.95,
 			hy: 0.55,
 			hz: 2.1,
 			rounding: 0.18,
-			mountY: 1.23
+			mountY: 1.71
 		}
 	},
 
