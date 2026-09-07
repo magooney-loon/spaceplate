@@ -203,9 +203,9 @@ export const gr86 = {
 		/** Anchors are guesses at the shared wavs on THIS car's tacho — tune by
 		 *  ear (audio/carAudio.ts owns the file list; the FILES are shared across
 		 *  cars, the anchors are per-car). */
-		layerRpm: [1050, 1950, 3250, 4650, 6050, 7000],
+		layerRpm: [1400, 2600, 3800, 5000, 6200, 7400],
 		/** The GR86 is the car the bed was recorded from — no shift. */
-		pitchScale: 1.1
+		pitchScale: 1
 	},
 
 	cluster: {
