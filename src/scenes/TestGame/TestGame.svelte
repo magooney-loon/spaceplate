@@ -32,6 +32,7 @@
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
 	import { buildTrackColliders } from './trackColliders';
+	import { buildCarHull } from './cars/hull';
 	import { resetCarTelemetry } from './sim/carTelemetry.svelte';
 
 	// Test Game 3D scene — the driving prototype's composition layer. The driving
@@ -69,6 +70,12 @@
 	// which stops ghost bumps at internal triangle seams on the flat roads)
 	// can only be passed through explicit args. See trackColliders.ts.
 	const trackColliders = $derived($track?.scene ? buildTrackColliders($track.scene) : []);
+
+	// The chassis hull — the car's collider computed from its own GLB (see
+	// cars/hull.ts): every mesh except the wheels, decimated to a few thousand
+	// world-unit points. Rebuilt only when the model changes; undefined only if
+	// the GLB had no non-wheel meshes at all.
+	const carHull = $derived($carModel?.scene ? buildCarHull($carModel.scene, car) : undefined);
 
 	$effect(() => {
 		if ($track?.scene) logGltf.info('TestGame track loaded');
@@ -181,7 +188,7 @@
 	// ── The driving task — everything model-shaped lives in sim/controller.ts ───
 	// The header comment there carries the full driving-model rules (yaw-rate
 	// control, the stability argument, the grip cap); the markup below carries
-	// the body/collider contract (enabledRotations, frictionless chassis).
+	// the body/collider contract (enabledRotations, the hull collider).
 
 	let carBody = $state.raw<RapierRigidBody>();
 	/** What ChaseCamera follows — an empty parented to the chassis body, see below. */
@@ -360,47 +367,49 @@
 				<CarEngineAudio />
 			</T.Group>
 
-			<!-- Undertray: ONE rounded box instead of per-mesh hulls (the model is dozens
-			     of meshes — seats, glass, engine — each a silly collider). Args are in
-			     model meters, scaled by the parent group to match the visual; both come
-			     from the car's spec (geometry.collider — measured off the GLB).
-			     ROUNDED (spec `rounding`): what lets the box GLANCE off what it hits
-			     instead of face-stopping. THE ROUNDING ARG IS PRE-SCALED (×model.scale):
-			     Threlte's scaleColliderArgs multiplies shape args POSITIONALLY against
-			     [x,y,z] — a roundCuboid's FOURTH arg has no matching scale component and
-			     passes through UNSCALED, so it is handed world units directly. The
-			     rounding is DILATING in rapier (total half-extent = h + r), so each
-			     half-extent has r subtracted to preserve the outer size; the subtraction
-			     happens here so the spec holds the real, readable measurements.
-			     FRICTIONLESS (Min rule → min(0, μ_road) = 0) on purpose: contact friction
-			     is static friction against the COM drive force — at real gravity the cap
-			     sits ABOVE the drivetrain's entire force range and every Newton of
-			     throttle was cancelled (the car could not move at all; verified against
-			     rapier in isolation — see CLAUDE.md's collider rules). Grip belongs to
-			     the drivetrain (driven-axle traction clip, rolling resistance, brakes) and
-			     the lateral velocity damp; contacts keep their normal impulses only.
-			     NOT the ground contact — the wheel balls below are; this box rides
-			     ~13 cm off the rest line (spec mountY) and meets geometry only on real
-			     hits. -->
-			<T.Group position={[0, car.geometry.collider.mountY, 0]} scale={car.model.scale}>
+			<!-- Chassis: ONE ROUNDED CONVEX HULL computed from the GLB itself
+			     (cars/hull.ts builds the point cloud — every mesh except the wheels,
+			     whose tyre bottoms would make the body a ground contact and fight the
+			     raycast springs that ARE the contact). Replaces the authored
+			     roundCuboid: the collider now follows the real silhouette — tapered
+			     greenhouse, raked windshield, nose and tail — instead of a full-width
+			     slab to 4 cm under the roof. Not <AutoColliders>: that is per-mesh
+			     (29 colliders — seats, glass, engine — each silly on its own) and would
+			     hull the wheels into ground contacts.
+			     WORLD SCALE 1 ON PURPOSE: the points are PRE-BAKED to world units
+			     (×model.scale) in hull.ts and this Collider sits directly under the
+			     RigidBody with no scaled group, because Threlte's scaleColliderArgs
+			     vertex-scales `convexHull` args but NOT `roundConvexHull` — it falls
+			     into the positional [x,y,z] branch and would multiply the point array
+			     by a scalar (the old roundCuboid fourth-arg quirk's bigger sibling).
+			     The MARGIN (hull.ts HULL_MARGIN) is the old box's `rounding` reborn:
+			     Rapier DILATES round hulls by the border radius, so the collider is
+			     the car + 4 cm — body sheet 0.91 + 0.04 = 0.95 at the doors (the old
+			     box's hx), a touch wider at the mirrors (see hull.ts) — and its edges
+			     GLANCE off kerbs and barrier bases instead of face-stopping.
+			     MASS: still the sole mass carrier — `setMass` derives COM and inertia
+			     from the hull geometry at the spec's total (mass props are
+			     truthiness-guarded in Threlte; density would be the density-0 escape
+			     hatch if this ever needed to be massless). Friction props carry what
+			     the box ran (1 × Multiply → the track collider's own μ): contacts are
+			     bump stop and barrier hits, never grip — that lives in the
+			     drivetrain/task and the raycast springs.
+			     NOT the ground contact — the springs are; the hull's belly rides
+			     ~12 cm off the rest line and meets geometry only on real hits. -->
+			{#if carHull}
 				<Collider
-					shape="roundCuboid"
-					args={[
-						car.geometry.collider.hx - car.geometry.collider.rounding,
-						car.geometry.collider.hy - car.geometry.collider.rounding,
-						car.geometry.collider.hz - car.geometry.collider.rounding,
-						car.geometry.collider.rounding * car.model.scale
-					]}
+					shape="roundConvexHull"
+					args={[carHull.points, carHull.margin]}
 					mass={car.hardware.mass}
 					friction={1}
 					frictionCombineRule={CoefficientCombineRule.Multiply}
 				/>
-			</T.Group>
+			{/if}
 
 			<!-- THERE ARE NO WHEEL COLLIDERS. The car's ground contact is FOUR
 			     RAYCAST SPRINGS (sim/suspension.ts), cast down at `wheelPatches` from
 			     the controller's physics step; their summed force is what holds the
-			     car up, and the undertray box above is now purely the bump stop and
+			     car up, and the chassis hull above is now purely the bump stop and
 			     the thing that hits barriers.
 
 			     This replaced four frictionless ball colliders at the same patches. The
@@ -422,9 +431,10 @@
 
 			<!-- The debug skeleton — wheels/axles/suspension at the spec's patches,
 			     steered and rolled from the same carSim values as CarWheels, struts
-			     gauged by MEASURED body acceleration. Drawn in 'rig' and 'both' view
-			     modes (B cycles: model → rig → both); it never touches physics. -->
-			<DebugRig active={carView.mode !== 'model'} {suspension} />
+			     gauged by MEASURED body acceleration, chassis drawn as the collider's
+			     own hull wireframe. Drawn in 'rig' and 'both' view modes (B cycles:
+			     model → rig → both); it never touches physics. -->
+			<DebugRig active={carView.mode !== 'model'} {suspension} hull={carHull} />
 
 			<!-- What the chase camera looks at. An empty inside the RigidBody rather than
 			     the visual group: this level is UNSCALED, so the offset is world units and

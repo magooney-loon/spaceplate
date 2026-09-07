@@ -86,8 +86,10 @@ cluster, the scene) is car-agnostic and reads `currentCar()` once at init.
 for every field and its contract), plus one entry in `CARS` (garage.svelte.ts).
 No component edits. The GLB contract a new model must match: wheel materials
 named `<wheelMaterialPrefix>*` with all four wheels merged per mesh (CarWheels
-splits them by bounding box), nose −Z, ground plane at y=0; the measured
-anchors (axles, exhaust tips, lamps, collider box) go in the spec's geometry.
+splits them by bounding box — and the chassis hull EXCLUDES them, cars/hull.ts),
+nose −Z, ground plane at y=0; the measured anchors (axles, exhaust tips,
+lamps) go in the spec's geometry. The chassis collider needs no spec numbers —
+it IS the model (the hull is computed at load).
 Engine audio files are SHARED across cars — a new car voices them via
 `audio.layerRpm` (where each layer sits on ITS tacho) + `audio.pitchScale`.
 
@@ -375,39 +377,44 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
 
 ## Colliders — the hard-won rules
 
-- **The car's contacts are FRICTIONLESS** (`friction={0}` +
-  `CoefficientCombineRule.Min` → min(0, μ) with anything — the undertray box
-  AND the wheel balls alike). A body driven at the centre of mass has contact
-  friction acting as static friction against the drive force — at real gravity
-  the cap (≈0.65·m·g ≈ 20 500 world units) sits ABOVE the drivetrain's entire
-  force range (launch ≈ 3 800, traction limit ≈ 15 600) and every Newton was
-  cancelled: the car could not move at all. All grip — longitudinal AND lateral
-  — is modelled in the drivetrain/task; contacts keep normal impulses only.
-  Trade-off: a parked car can creep on slopes steeper than rolling resistance
-  holds (~0.75°); hold Space (handbrake force) or a brake key if that ever
-  matters.
-- **The WHEELS are the ground contact — four ball colliders** at
-  wheelPatches × the spec's `geometry.hubY`, radius `model.wheelRadiusFallback`
-  (the VISUAL wheel), DENSITY 0 (not `mass={0}` — Threlte's mass prop is guarded
-  by truthiness, a 0 silently never applies and the balls carry phantom
-  density-1 mass; density is guarded by `!== undefined` and zeroes properly —
-  the box stays the sole mass carrier) and frictionless like the
-  box. At rest the visual tyres KISS the road (the old box-belly contact sat
-  them ~4.5 cm into it), and the debug rig's wheels are these colliders
-  exactly. A ball ROLLS over the asphalt↔dirt lip where the box belly caught
-  and janked. History: an earlier attempt put four balls ON TOP of a
-  still-touching box and was reverted (five competing contacts — over-constrained,
-  never lined up); the current config is balls as the ONLY contact.
-- **The chassis is a `roundCuboid` UNDERTRAY** (r = 0.18 m), NOT the ground
-  contact — it rides ~13 cm above the rest line (spec `mountY`) and meets
-  geometry only on real hits, its rounding letting it GLANCE off kerbs and
-  barrier bases when it does. Rapier's rounding DILATES outward (total
-  half-extent = h + r), so r is subtracted from each half-extent to keep the
-  outer size — and the rounding ARG IS PRE-SCALED ×model.scale at the call
-  site, because Threlte's `scaleColliderArgs` scales shape args POSITIONALLY
-  against [x,y,z] and a roundCuboid's FOURTH arg would otherwise stay in model
-  metres (verified in isolation against the repo's own rapier3d-compat: with
-  the quirk the belly radius was 0.18 world instead of the intended 0.45).
+- **The car's contacts are NOT its grip — there are no ground contacts at
+  all.** The ground contact is FOUR RAYCAST SPRINGS (`sim/suspension.ts`, cast
+  at `wheelPatches` from the controller's step); the chassis collider is purely
+  the bump stop and the thing that hits barriers. History, because it explains
+  the friction props: when contacts WERE the ground contact (undertray box +
+  wheel balls) they had to be FRICTIONLESS (`friction={0}` + Min rule) — a body
+  driven at the centre of mass has contact friction acting as static friction
+  against the drive force, and at real gravity the cap (≈0.65·m·g) sat ABOVE
+  the drivetrain's entire force range: every Newton of throttle was cancelled
+  and the car could not move at all. The wheels then became rays (a rigid ball
+  is an infinitely stiff spring — a 3 cm kerb under one wheel had to lift the
+  whole car inside one step; a spring takes ~0.2 s over the same lip), and
+  with nothing left to fight the drivetrain the props moved to
+  `friction={1}` + Multiply (the track collider's own μ) so barrier scrapes
+  drag instead of slide. All grip — longitudinal AND lateral — is modelled in
+  the drivetrain/task; contacts keep their normal impulses plus cosmetic
+  friction. Trade-off: a parked car can creep on slopes steeper than rolling
+  resistance holds (~0.75°); hold Space (handbrake force) or a brake key if
+  that ever matters.
+- **The chassis is a ROUNDED CONVEX HULL computed from the car's own GLB**
+  (`cars/hull.ts`, fed to one `<Collider shape="roundConvexHull">` directly
+  under the RigidBody): every mesh except the wheels (material-prefix
+  filtered — tyre bottoms at model y 0.01 would make the body a ground contact
+  and fight the rays), decimated to ≤ ~4 k points (one global stride + every
+  mesh's 8 bbox corners so extremes survive the stride), interior meshes cost
+  nothing (quickhull discards inside points). The 4 cm MARGIN is the old
+  undertray box's `rounding` reborn: Rapier DILATES round hulls by the border
+  radius, so the collider is the car + 4 cm — body half-width 0.91 + 0.04 =
+  0.95, exactly the old box's hx — and edges GLANCE off kerbs instead of
+  face-stopping. It is the sole MASS carrier (`mass` prop → `setMass` derives
+  COM/inertia from the hull geometry; `mass` is truthiness-guarded in Threlte,
+  `density` is the `!== undefined`-guarded zero-mass escape hatch). THE POINTS
+  ARE PRE-BAKED to world units (×model.scale) and the Collider sits at WORLD
+  SCALE 1 with no scaled group: Threlte's `scaleColliderArgs` vertex-scales
+  `convexHull` args but NOT `roundConvexHull` — it falls into the positional
+  [x,y,z] branch and would multiply the point array by a scalar (the
+  roundCuboid fourth-arg quirk's bigger sibling, verified in the installed
+  @threlte/rapier source).
 - **Track collision is hand-rolled** (`trackColliders.ts`), not `<AutoColliders>`:
   the trimesh flags cannot be passed through AutoColliders, and without
   `TriMeshFlags.FIX_INTERNAL_EDGES` a flat tessellated road produces ghost
@@ -436,9 +443,11 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   check that before blaming collision oddities.
 - **The track GLB is measured, not guessed**: car spans model y 0.01 (tire
   bottoms) .. 1.31 (roof), wheel centres at y 0.335 (`geometry.hubY`), axles z
-  ±wheelbase/2, track x ±0.78. The chassis collider offsets come from those
-  numbers; if the model is ever replaced, re-measure (the accessor min/max in
-  the GLB JSON is readable without decoding Draco).
+  ±wheelbase/2, track x ±0.78. The spec's measured anchors (axles, lamps,
+  exhaust tips) come from those numbers; the chassis collider needs no
+  measuring any more — the hull IS the model (cars/hull.ts reads it at load).
+  If the model is ever replaced, re-measure the anchors (the accessor min/max
+  in the GLB JSON is readable without decoding Draco).
 
 ## Shadows — the car casts, the world receives
 
@@ -614,12 +623,13 @@ inherit the GR86's ride.
   clamped to a gauge range — a display of the load transfer the model applies,
   not a spring. That model now lives in **`sim/suspension.ts`** (below) and the
   rig only READS it, so the skeleton and the car it is drawn over in 'both' view
-  cannot lean differently. The undertray is drawn as a wireframe ROUNDED box at the
-  collider group's mount and TRUE extents (`h·UPM` — the rounding arg is
-  pre-scaled at the call site; see the collider rules), and it is the one part
+  cannot lean differently. The chassis is drawn as the wireframe HULL — the
+  same point cloud the collider is built from, passed in by the scene, so the
+  shape Rapier holds and the shape drawn cannot drift apart (the 4 cm margin
+  is not drawn) — and it is the one part
   whose pose is now the gauge rather than the collider's: the real body cannot
   pitch or roll (`enabledRotations` leaves only yaw), so the attitude is drawn
-  ON the shape instead of beside it — rest pose, size and rounding still true.
+  ON the shape instead of beside it — rest pose and size still true.
   The task runs at
   `{ before: autoRenderTask }` (render time) for the CarWheels reason — a
   physics-task integration pulses against the interpolated body. 'rig' view

@@ -184,7 +184,7 @@ export const gr86 = {
 		restSag: 0.072,
 		/** Physical damping — stability-first, the body supplies the drama. */
 		dampZeta: 0.55,
-		/** m — past this compression the undertray collider IS the bump stop. */
+		/** m — past this compression the chassis hull IS the bump stop. */
 		maxComp: 0.176,
 		/** m — wheel hang below rest that still counts as grounded. */
 		droop: 0.12,
@@ -241,24 +241,13 @@ export const gr86 = {
 			pitch: -0.045,
 			/** A real 2023 GR86 runs LED projectors — cool white. */
 			color: [0.88, 0.93, 1.0]
-		},
-		/** The UNDERTRAY box — NOT the ground contact (four wheel-contact balls
-		 *  are; see TestGame.svelte): it meets geometry only on real hits, riding
-		 *  ~13 cm above the rest line so it clears seams and lips entirely. It is
-		 *  still FRICTIONLESS with the Min combine rule (see TestGame.svelte) and
-		 *  still the collider that carries the body's mass. ROUNDED (spec
-		 *  `rounding`): what lets the belly GLANCE off kerbs and barrier bases on
-		 *  the hits it does take. mountY is in WORLD units (the collider group
-		 *  sits outside the visual scale group); the rounding arg is pre-scaled
-		 *  at the call site — Threlte's collider-arg scaling is positional and
-		 *  would otherwise leave the radius in model metres. */
-		collider: {
-			hx: 0.95,
-			hy: 0.55,
-			hz: 2.1,
-			rounding: 0.18,
-			mountY: 1.71
 		}
+		// No collider numbers: the chassis is ONE rounded convex hull built from
+		// the GLB itself at load (cars/hull.ts) — the measured silhouette (body x
+		// ±0.91, greenhouse tapering to the roof at 1.31, mirrors to ±0.99 kept,
+		// wheels excluded so the body is never a ground contact) + a 4 cm dilating
+		// margin that keeps the old box's width (0.95) and its glance-off-kerb
+		// rounding. See TestGame.svelte's chassis comment for the full contract.
 	},
 
 	model: {

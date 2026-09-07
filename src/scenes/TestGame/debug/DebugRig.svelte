@@ -2,9 +2,10 @@
 	import { onDestroy } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
-	import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+	import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 	import { currentCar } from '../cars';
 	import { wheelPatches } from '../cars/spec';
+	import type { CarHull } from '../cars/hull';
 	import { UNITS_PER_METER } from '../units';
 	import { carSim } from '../sim/carTelemetry.svelte';
 	import type { Suspension } from '../sim/suspension';
@@ -27,12 +28,14 @@
 	//     The rig does not compute its own any more: it and the car model pose
 	//     off the same matrix, so the skeleton can never lean differently from
 	//     the car drawn over it in 'both' view;
-	//   - the UNDERTRAY box as a wireframe ROUNDED box at the collider group's
-	//     own mount — the actual roundCuboid shape Rapier holds, and now the car's
-	//     ONLY collider — while each wheel rides its own ray, one tyre radius
-	//     above the ground that ray found. So the rig shows exactly what the car
-	//     stands on, which is four springs rather than four balls, and it is the
-	//     only place you can watch them work over a kerb.
+	//   - the CHASSIS as a wireframe CONVEX HULL — the same point cloud the
+	//     collider is built from, passed in by the scene (which computes it once
+	//     per load), so what you see is what Rapier holds, minus the 4 cm
+	//     rounding margin (too small to read at wireframe scale) — while each
+	//     wheel rides its own ray, one tyre radius above the ground that ray
+	//     found. So the rig shows exactly what the car stands on, which is four
+	//     springs rather than four balls, and it is the only place you can watch
+	//     them work over a kerb.
 	//
 	// THE COMPRESSION MOVES THE BODY, NOT THE HUBS. This was inverted at first
 	// and read as a car that dived under power and squatted under braking, and
@@ -57,7 +60,11 @@
 	// The Rapier collider debug (physics extension panel, Studio-gated) draws the
 	// world's colliders; this draws the car's kinematics. They complement.
 
-	let { active = false, suspension }: { active?: boolean; suspension: Suspension } = $props();
+	let {
+		active = false,
+		suspension,
+		hull
+	}: { active?: boolean; suspension: Suspension; hull?: CarHull } = $props();
 
 	const spec = currentCar();
 	const UPM = UNITS_PER_METER;
@@ -72,20 +79,18 @@
 	// Hub height AT REST. The live height is `suspension.wheelY[i]` (the ray), and
 	// this is only where the groups are parked before the first frame poses them.
 	const HUB_REST = spec.geometry.hubY * UPM;
-	// The undertray box's TRUE world extents. The rounding arg is PRE-SCALED at the
-	// call site (Threlte's scaleColliderArgs scales args positionally against
-	// [x,y,z] — a roundCuboid's FOURTH arg would stay in model metres), so here the
-	// dilation is the full r·UPM and the total half-extent is simply h·UPM.
-	const c = spec.geometry.collider;
-	const HX_PHYS = c.hx * UPM;
-	const HY_PHYS = c.hy * UPM;
-	const HZ_PHYS = c.hz * UPM;
-	const ROUNDING_PHYS = c.rounding * UPM;
-	// Strut tops ("spring towers") mount just inside the collider's box top and
-	// this far inboard of the hubs — real strut towers are body mounts, so the
-	// rig's towers hang off the drawn chassis, not from empty air above it.
+	// The undertray's box extents are gone with the box — the chassis hull is
+	// passed in from the scene (same point cloud the collider holds). What the
+	// rig still needs is where the BODY-MOUNTED parts park:
+	// Strut tops ("spring towers") mount just above the wheel they tower over
+	// (hub + tyre radius + 8 cm) and this far inboard of the hubs — real strut
+	// towers are body mounts above the arch, so the rig's towers hang off the
+	// drawn body, not from empty air above it.
 	const TOWER_INBOARD = 0.72; // × hub |x|
-	const TOWER_TOP_Y = c.mountY + HY_PHYS - 0.2;
+	const TOWER_TOP_Y = (spec.geometry.hubY + spec.model.wheelRadiusFallback + 0.08) * UPM;
+	// Transfer puck (between the seats, a hair behind mid-wheelbase).
+	const PUCK_Y = (spec.geometry.hubY + 0.25) * UPM;
+	const PUCK_Z = spec.geometry.rearAxleZ * 0.35 * UPM;
 
 	const UP = new THREE.Vector3(0, 1, 0);
 
@@ -102,12 +107,17 @@
 	const stripeGeo = new THREE.BoxGeometry(TREAD * 0.55, R * 1.9, R * 0.14);
 	geos.push(stripeGeo);
 
-	// Chassis: the UNDERTRAY as a rounded box (wireframe) — the actual
-	// roundCuboid shape Rapier holds, dilation included. It rides ~13 cm off the
-	// rest line (the WHEELS are the ground contact); the drawn wheels coincide
-	// with the contact balls exactly.
-	const boxGeo = new RoundedBoxGeometry(HX_PHYS * 2, HY_PHYS * 2, HZ_PHYS * 2, 4, ROUNDING_PHYS);
-	geos.push(boxGeo);
+	// Chassis: the collider's own HULL as a wireframe — built from the same
+	// world-unit point cloud the scene hands the Collider (cars/hull.ts), so the
+	// shape Rapier holds and the shape drawn cannot drift apart. The 4 cm
+	// rounding margin is not drawn (invisible at this scale); it rides
+	// ~12 cm off the rest line (the WHEELS are the ground contact); the drawn
+	// wheels coincide with the ray patches exactly.
+	// Read-once ON PURPOSE: the rig mounts inside `{#if $carModel}` (the parent
+	// computes the hull from that same GLB in the same flush) and the garage
+	// writes the car exactly once at boot — there is no second hull to catch.
+	const hullGeo = (() => (hull ? new ConvexGeometry(hullVectors(hull.points)) : undefined))();
+	if (hullGeo) geos.push(hullGeo);
 
 	const wheelMat = new THREE.MeshBasicNodeMaterial({ color: 0x1c1f24 });
 	const stripeMat = new THREE.MeshBasicNodeMaterial({ color: 0xff3355 });
@@ -122,6 +132,15 @@
 	const strutMats = patches.map(() => new THREE.MeshBasicNodeMaterial({ color: 0x22ff88 }));
 	mats.push(...strutMats);
 
+	/** Flat world-unit hull points → the Vector3[] ConvexGeometry wants. */
+	function hullVectors(points: Float32Array): THREE.Vector3[] {
+		const out: THREE.Vector3[] = [];
+		for (let i = 0; i < points.length; i += 3) {
+			out.push(new THREE.Vector3(points[i], points[i + 1], points[i + 2]));
+		}
+		return out;
+	}
+
 	/** Unit-height cylinder with a baked radius — stretched per frame. */
 	const stretchBar = (radius: number, material: THREE.Material): THREE.Mesh => {
 		const geometry = new THREE.CylinderGeometry(radius, radius, 1, 8);
@@ -129,14 +148,12 @@
 		return new THREE.Mesh(geometry, material);
 	};
 
-	// ── Build (imperative — the scene's own pattern: objects + <T is={...}>) ──
+	// ── Build (imperative — the scene's own pattern: objects + <T is={...}>) ───
 	const rig = new THREE.Group();
 	rig.name = 'DebugRig';
 	// Start hidden — the $effect below owns visibility from the first flush.
-
-	const chassis = new THREE.Mesh(boxGeo, boxMat);
-	chassis.position.y = c.mountY;
-	rig.add(chassis);
+	const chassis = hullGeo ? new THREE.Mesh(hullGeo, boxMat) : undefined;
+	if (chassis) rig.add(chassis);
 
 	// Per corner: a wheel group (steer + roll; 'YXZ' so the roll happens in the
 	// steered frame — the same order the CarWheels shader applies) PINNED at the
@@ -196,10 +213,10 @@
 	const puckGeo = new THREE.SphereGeometry(0.07 * UPM, 10, 8);
 	geos.push(puckGeo);
 	const transferPuck = new THREE.Mesh(puckGeo, shaftMat);
-	transferPuck.position.set(0, c.mountY, HZ_PHYS * 0.2);
+	transferPuck.position.set(0, PUCK_Y, PUCK_Z);
 	rig.add(transferPuck);
 	// Body-mounted too — rest pose in body space, posed by the same matrix.
-	const puckRest = new THREE.Vector3(0, c.mountY, HZ_PHYS * 0.2);
+	const puckRest = new THREE.Vector3(0, PUCK_Y, PUCK_Z);
 
 	// ── Per-frame pose math ──────────────────────────────────────────────────
 	//
@@ -252,8 +269,8 @@
 			// the car model is posed with. The chassis box is drawn AT it, and
 			// everything else bolted to the body is transformed BY it below.
 			const pose = suspension.matrix;
-			chassis.position.copy(_t.set(0, c.mountY, 0).applyMatrix4(pose));
-			chassis.rotation.set(suspension.pitch, 0, suspension.roll);
+			chassis?.position.copy(_t.set(0, 0, 0).applyMatrix4(pose));
+			chassis?.rotation.set(suspension.pitch, 0, suspension.roll);
 
 			// ── Wheels: steer (fronts) + roll ────────────────────────────────
 			// Same roll source as CarWheels: road speed for the fronts, the

@@ -163,7 +163,7 @@ export type CarSpec = {
 		restSag: number;
 		/** Damping ratio of the physical spring. Cars run soft; stability-first. */
 		dampZeta: number;
-		/** m — force saturation. Past this compression the undertray collider
+		/** m — force saturation. Past this compression the chassis hull
 		 *  takes over as the bump stop — which is what an undertray is for. */
 		maxComp: number;
 		/** m — how far a wheel may hang below rest before it counts as airborne. */
@@ -216,17 +216,10 @@ export type CarSpec = {
 			pitch: number;
 			color: readonly [number, number, number];
 		};
-		/** Chassis collider: a roundCuboid in model metres. `rounding` DILATES in
-		 *  rapier (total half-extent = h + r), so the scene subtracts it from each
-		 *  half-extent; `mountY` is the collider group's offset in WORLD units
-		 *  (inside the RigidBody, outside the visual scale group). */
-		collider: {
-			hx: number;
-			hy: number;
-			hz: number;
-			rounding: number;
-			mountY: number;
-		};
+		// NO chassis-collider block any more: the collider is ONE rounded convex
+		// hull computed from the GLB at load (cars/hull.ts) — every mesh except
+		// the wheels, dilated by a 4 cm margin. A car's silhouette is its model;
+		// measuring a box by hand was a proxy for exactly this.
 	};
 
 	// ── Model — where the GLB is and how it sits in the world. ────────────────
@@ -243,8 +236,9 @@ export type CarSpec = {
 			rotation: readonly [number, number, number];
 		};
 		/** Wheel materials in the GLB start with this prefix (case-insensitive) —
-		 *  fx/CarWheels finds and re-meshes them. A new GLB must match, or this
-		 *  and the measurement fallback below move together. */
+		 *  fx/CarWheels finds and re-meshes them, and the chassis hull excludes
+		 *  them (cars/hull.ts). A new GLB must match, or this, the measurement
+		 *  fallback below and the hull exclusion move together. */
 		wheelMaterialPrefix: string;
 		/** m — wheel radius fallback if runtime measurement fails. */
 		wheelRadiusFallback: number;
