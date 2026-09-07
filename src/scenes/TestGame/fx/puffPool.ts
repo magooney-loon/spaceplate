@@ -38,7 +38,7 @@
 // pool, no allocation in `update()`, `NodeMaterial` + TSL only.
 
 import * as THREE from 'three/webgpu';
-import { attribute, saturate, smoothstep, texture, uniform, uv, vec2 } from 'three/tsl';
+import { attribute, saturate, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
 import { perlinNoise, voronoiNoise } from './noiseTextures';
 
 export interface PuffPoolConfig {
@@ -63,6 +63,24 @@ export interface PuffPoolConfig {
 	roilDrift: readonly [number, number];
 	/** uv multiplier for the cellular clumps. */
 	clumpScale: number;
+	/**
+	 * How far the erosion cut climbs across a puff's life, in mottle units
+	 * (0..1). 0 disables it; ~0.85 leaves only the densest wisps at death.
+	 * This is what makes a puff DISSOLVE instead of dimming as a disc — a
+	 * uniform fade is the single biggest "that's a sticker" tell.
+	 */
+	erosion: number;
+	/** Softness of that cut. Wider = wispier edges, narrower = crisper holes. */
+	erosionSoft: number;
+	/**
+	 * Sphere-impostor strength for the LIT variant, 0..1. 0 leaves the quad
+	 * flat-shaded (what it was); 1 shades it as a full hemisphere. See the
+	 * `normalNode` block for why this matters more than anything else here.
+	 * Ignored when `lit` is false.
+	 */
+	bulge: number;
+	/** Max |spin| in rad/s. Each puff rolls at its own rate about the view axis. */
+	spin: number;
 	/** Called when a noise PNG lands, so the first frame after it is drawn. */
 	onTextureLoad?: () => void;
 }
@@ -81,6 +99,10 @@ interface Puff {
 	s0: number;
 	/** Size added across the puff's life. */
 	grow: number;
+	/** Roll about the view axis at birth, rad. */
+	roll: number;
+	/** Roll rate, rad/s. */
+	spin: number;
 }
 
 export interface PuffPool {
@@ -202,13 +224,51 @@ export function createPuffPool(cfg: PuffPoolConfig): PuffPool {
 		.mul(cfg.clumpScale)
 		.add(vec2(seed.mul(1.7), seed));
 	const clump = texture(cellularTex, clumpUv).r;
+
+	// The MOTTLE, 0..1 — the puff is never a clean disc. Both noises in one
+	// field, because the erosion below needs a single density to cut against.
+	const mottle = saturate(roil.mul(1.45)).mul(clump.mul(0.55).add(0.45));
+
+	// EROSION — the thing that stops a puff reading as a fading sticker. The cut
+	// level climbs from BELOW zero (nothing eaten at birth, so a new puff is a
+	// clean soft blob) to `erosion` (only the densest mottle survives), so the
+	// puff breaks into wisps and holes on its way out instead of dimming
+	// uniformly. Smoke dissipates by coming apart; it does not get more
+	// transparent all over at the same rate.
+	//
+	// `smoothstep(low, high, x)` with low < high always — reversed arguments are
+	// UNDEFINED on WebGPU, not flipped (DOCS/webgpu-notes.md §1.2), and
+	// `erosionSoft` is positive so the ordering holds by construction.
+	const cut = t.mul(cfg.erosion + cfg.erosionSoft).sub(cfg.erosionSoft);
+	const wisps = smoothstep(cut, cut.add(cfg.erosionSoft), mottle);
+
 	material.opacityNode = aPuff.z
 		.mul(cfg.alphaPeak)
 		.mul(fadeIn)
 		.mul(fadeOut)
 		.mul(rim)
-		.mul(saturate(roil.mul(1.45)))
-		.mul(clump.mul(0.55).add(0.45));
+		.mul(mottle.mul(0.55).add(0.45))
+		.mul(wisps);
+
+	// THE SPHERE IMPOSTOR — the single biggest look win available here, and it is
+	// nearly free. The quad was flat-shaded: one normal, constant across the
+	// puff, so every puff was a uniformly-lit gray disc no matter where the sun
+	// was. Faking a hemisphere's normal across the billboard gives each puff a
+	// real light-to-dark gradient, which is what the eye reads as VOLUME — and it
+	// means the smoke now catches the headlights and the exhaust pop light, not
+	// just the sky.
+	//
+	// It costs a dot, a sqrt and a normalize. `normalNode` is expected in VIEW
+	// space (`NodeMaterial.setupNormal()` falls back to `normalView`, and
+	// `NormalMapNode` outputs view space), and the quad is CPU-billboarded to
+	// face the camera — so its plane IS the view-space XY plane and the impostor
+	// normal is just the uv, no basis transform needed. `bulge` flattens it:
+	// a full hemisphere reads as a shiny ball, ~0.8 reads as smoke.
+	if (cfg.lit && cfg.bulge > 0) {
+		const d = c.mul(2); // -1..1 across the visible disc (rim dies at rad 0.5)
+		const z = d.x.mul(d.x).add(d.y.mul(d.y)).oneMinus().saturate().sqrt();
+		material.normalNode = vec3(d.x.mul(cfg.bulge), d.y.mul(cfg.bulge), z).normalize();
+	}
 
 	const mesh = new THREE.Mesh(geometry, material);
 	// World-space verts: the bounding sphere is meaningless and the mesh never
@@ -230,7 +290,9 @@ export function createPuffPool(cfg: PuffPoolConfig): PuffPool {
 			birth: 0,
 			life: 1,
 			s0: 0.3,
-			grow: 1
+			grow: 1,
+			roll: 0,
+			spin: 0
 		});
 	}
 	let head = 0;
@@ -262,6 +324,12 @@ export function createPuffPool(cfg: PuffPoolConfig): PuffPool {
 			p.life = life;
 			p.s0 = s0;
 			p.grow = grow;
+			// Per-puff roll about the view axis, plus a slow spin. Without this every
+			// puff is billboarded with the same up vector, so all of them share one
+			// noise ORIENTATION and the repetition is obvious in a cloud — the eye
+			// picks out the identical grain long before it picks out the shape.
+			p.roll = Math.random() * Math.PI * 2;
+			p.spin = (Math.random() - 0.5) * 2 * cfg.spin;
 			const seedValue = Math.random();
 			for (let v = 0; v < 4; v++) {
 				const o = base + v * 4;
@@ -311,15 +379,23 @@ export function createPuffPool(cfg: PuffPoolConfig): PuffPool {
 				p.y += p.vy * delta;
 				p.z += p.vz * delta;
 
-				// Half-extent along the camera's right/up axes. The old pool scaled a
-				// PlaneGeometry(1, 1) by (s0 + grow·age), so the half-extent is half it.
-				const h = (p.s0 + p.grow * age) * 0.5;
-				const ax = rx * h;
-				const ay = ry * h;
-				const az = rz * h;
-				const bx = ux * h;
-				const by = uy * h;
-				const bz = uz * h;
+				// Growth EASES OUT: a puff billows fast out of the contact patch and
+				// then loafs. Linear growth reads mechanical, because real smoke does
+				// most of its expanding in the first fraction of its life.
+				const eased = age * (2 - age);
+				// Half-extent along the camera's right/up axes, ROLLED by this puff's
+				// own angle. The old pool scaled a PlaneGeometry(1, 1) by
+				// (s0 + grow·age), so the half-extent is half it.
+				const h = (p.s0 + p.grow * eased) * 0.5;
+				const ang = p.roll + p.spin * (clock - p.birth);
+				const ca = Math.cos(ang) * h;
+				const sa = Math.sin(ang) * h;
+				const ax = rx * ca + ux * sa;
+				const ay = ry * ca + uy * sa;
+				const az = rz * ca + uz * sa;
+				const bx = ux * ca - rx * sa;
+				const by = uy * ca - ry * sa;
+				const bz = uz * ca - rz * sa;
 				const o = i * 12;
 				positions[o] = p.x - ax - bx;
 				positions[o + 1] = p.y - ay - by;

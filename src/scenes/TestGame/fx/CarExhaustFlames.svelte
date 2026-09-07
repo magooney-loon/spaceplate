@@ -515,6 +515,12 @@
 		roilScale: 1.6,
 		roilDrift: [0.22, 0.13],
 		clumpScale: 2.4,
+		// Gentler than the tyre smoke's: these are quick coughs that are gone in
+		// ~1 s, so heavy erosion just makes them look moth-eaten.
+		erosion: 0.5,
+		erosionSoft: 0.3,
+		bulge: 0, // unlit — no normals to shade
+		spin: 0.7,
 		onTextureLoad: () => invalidate()
 	});
 	smokeRoot.add(smoke.mesh);

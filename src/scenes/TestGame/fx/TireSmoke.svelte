@@ -45,7 +45,16 @@
 	const SMOKE_ON = 0.45; // slide intensity before a wheel smokes at all
 	const SPAWN_BASE = 2; // puffs/s per wheel at the threshold
 	const SPAWN_GAIN = 8; // extra puffs/s at full intensity (burnout ≈ 10/s/wheel)
-	const POOL = 32;
+	// THE POOL WAS STARVING THE CLOUD. At full intensity the spawn rate is 10/s
+	// per wheel and a puff lives ~1.3 s, so a two-wheel burnout wants ~26 alive
+	// and a four-wheel slide (rears spinning, fronts braking) wants ~52 — against
+	// a pool of 32, which recycled live puffs early and capped the cloud at a
+	// permanent thinness no shader change could fix. 32 was a sensible number
+	// when each puff was its own draw call; it is not one now that the whole pool
+	// is a single draw (fx/puffPool.ts). The remaining cost of raising it is FILL
+	// RATE — overlapping alpha-blended quads — which is why it is 64 and not 200,
+	// and why `alphaPeak` came down as the overlap went up.
+	const POOL = 64;
 	const SMOKE_LIFT = 0.2; // above the road plane — same reason as SkidMarks' LIFT
 	const DRAG = 1.5; // 1/s — how fast a puff's lateral drift bleeds off
 
@@ -55,11 +64,21 @@
 		count: POOL,
 		lit: true,
 		color: [0.78, 0.78, 0.8], // rubber smoke is white-gray
-		alphaPeak: 0.3, // per puff — overlaps build the cloud's density
+		alphaPeak: 0.24, // per puff — overlaps build the cloud's density
 		fadeOut: 1.4,
 		roilScale: 1.5,
 		roilDrift: [0.2, 0.12],
 		clumpScale: 2.2,
+		// Tyre smoke lives long enough to be watched coming apart, so it erodes
+		// hard; the exhaust's quick coughs erode gently.
+		erosion: 0.85,
+		erosionSoft: 0.3,
+		// The sphere impostor — what turns a flat gray disc into something with a
+		// lit side and a shadow side, and what makes the smoke catch the
+		// headlights and the exhaust pop light instead of only the sky. Under 1
+		// on purpose: a full hemisphere reads as a ball.
+		bulge: 0.8,
+		spin: 0.5, // rad/s — a lazy roll, not a pinwheel
 		onTextureLoad: () => invalidate()
 	});
 
