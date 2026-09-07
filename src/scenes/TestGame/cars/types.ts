@@ -144,7 +144,7 @@ export type CarSpec = {
 		url: string;
 		/** Scene name for the car's group (scene tree / logs). */
 		name: string;
-		/** Visual scale of the model-metre group (this city: == UNITS_PER_METER). */
+		/** Visual scale of the model-metre group (this track: == UNITS_PER_METER). */
 		scale: number;
 		/** Hand-tuned spawn pose in WORLD units / radians — RigidBody reads it at creation. */
 		spawn: {

@@ -147,7 +147,7 @@
 	/** Cutoff radius. **WORLD units, not the model metres everything else in this
 	 *  file is authored in** — three compares `light.distance` against a view-space
 	 *  length (`PointLightNode` `cutoffDistanceNode`), so the car's ×2.5 group does
-	 *  not scale it. Keeps the flash local instead of tinting the whole city. */
+	 *  not scale it. Keeps the flash local instead of tinting the whole track. */
 	const POP_LIGHT_DISTANCE = 30;
 	const POP_LIGHT_DECAY = 2;
 	/** Model metres rearward of the tips, so the lamp is not buried in the bumper. */

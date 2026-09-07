@@ -30,8 +30,9 @@
 
 	// World units (2.5/m): the chase cam trails ~8–15 u off the tail, so
 	// refDistance 10 keeps the engine at full presence at normal framing and lets
-	// it fall off across a city block. Scene-local numbers on purpose — when the
-	// engine's audio layer grows per-scene needs these move to the sound extension.
+	// it fall off across the far side of the track. Scene-local numbers on purpose
+	// — when the engine's audio layer grows per-scene needs these move to the
+	// sound extension.
 	const REF_DISTANCE = 10;
 	const ROLLOFF = 1.4;
 	const MAX_DISTANCE = 300;

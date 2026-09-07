@@ -24,7 +24,7 @@ Read straight out of the two GLBs' JSON chunks (accessor counts, node transforms
 Per-material, the parts that matter:
 
 ```
-CITY                          CAR (interior/engine — never in the silhouette)
+TRACK                         CAR (interior/engine — never in the silhouette)
 190 681  60.8%  Metal          30 568  Engine          22 747  Leather
  71 982  22.9%  Leafs_Mat      29 037  Interior_Plastic 21 698  Leather_2
  31 572  10.1%  Decals          5 088  Seat             4 216  Interior_Accents
@@ -35,7 +35,7 @@ CITY                          CAR (interior/engine — never in the silhouette)
 
 And the geometry that broke the shadow fit — `Metal`'s node is
 `scale 5.336, t (-64.5, -1.2, 236.5)` over a mesh spanning `x ∈ [-249, 122]`,
-`z ∈ [-68, 249]`, under a City group at `scale 1.5`:
+`z ∈ [-68, 249]`, under a Track group at `scale 1.5`:
 
 ```
 Metal, world:  ~2 970 × 2 540 units      caster-bounds centre ≈ (-1086, 25, -118)
@@ -48,25 +48,25 @@ Hold on to that 1 094 — it is §1.1.
 
 ## 1. Fixed
 
-### 1.1 The whole city cast shadows, and the car got none (the big one)
+### 1.1 The whole track cast shadows, and the car got none (the big one)
 
 **Symptom bucket:** steady-state cost, plus "the car has no shadow".
 
 `TestGame.svelte` set `castShadow = receiveShadow = true` on every mesh in both
 GLBs. `SkyLight` (`core/skybox/SkyLight.svelte`) fits its **one** shadow cascade
 to the bounding sphere of the visible **casters**, quantised to `shadowRadius`
-(20) and capped at `maxShadowRadius` (400). With the city in the caster set:
+(20) and capped at `maxShadowRadius` (400). With the track in the caster set:
 
 - the fitted sphere radius was ~1 950 units, so the fit **saturated at 400**, and
-- its centre landed on the city's bounds, **~1 094 units from the car**.
+- its centre landed on the track's bounds, **~1 094 units from the car**.
 
 ±400 around a point 1 094 units away does not contain the car. So the car cast no
 shadow, the asphalt received none, and there were **no sun shadows anywhere the
 player could drive** — while `light.shadow.needsUpdate` is armed every frame (the
-car moves), so all 313 725 city triangles across 5 draw calls were re-rendered
+car moves), so all 313 725 track triangles across 5 draw calls were re-rendered
 into the 2048² map every frame to produce exactly that.
 
-**Fix** (`TestGame.svelte`): `CITY_CASTS_SHADOWS = false`, plus a
+**Fix** (`TestGame.svelte`): `TRACK_CASTS_SHADOWS = false`, plus a
 `CAR_NON_CASTERS` set for the car's interior and engine materials. Everything
 still _receives_.
 
@@ -80,7 +80,7 @@ still _receives_.
 
 This is the rare change that is a large win on both axes at once. The cost is
 building and tree shadows, which were **already not being drawn**. Getting them
-back is not a flag flip: one cascade cannot serve a 3 km city and a 4 m car, and
+back is not a flag flip: one cascade cannot serve a 3 km track and a 4 m car, and
 `CSMShadowNode` (`best-practices.md` §2.6) is the honest answer.
 
 ### 1.2 Smoke pools were N meshes with N materials — the first-puff hitch
@@ -212,7 +212,7 @@ Ranked by (value × how cheap), same as `best-practices.md` §3.
 
 ### 2.1 Scene entry is a synchronous stall
 
-`buildCityColliders` walks the 31 MB track GLB, allocates a baked `Float32Array`
+`buildTrackColliders` walks the 31 MB track GLB, allocates a baked `Float32Array`
 per mesh and transforms **313 725 triangles' worth of vertices** in JS, and then
 Rapier builds a BVH per trimesh — all on the main thread, all inside one
 `$derived`, all while the player waits. This is the entry hitch, and it is
@@ -257,7 +257,7 @@ _(Moved out of §1: the change is made, the numbers are certain, the FEEL is not
 yet confirmed. It sits here until someone has driven it.)_
 
 `physicsState.framerate` was 200, so Rapier stepped 3–4× per rendered frame
-against the city's static trimesh set and every `usePhysicsTask` ran that many
+against the track's static collider set and every `usePhysicsTask` ran that many
 times. It is now **60** — one step per frame at 60 fps.
 
 **This was never about determinism.** Any fixed number is deterministic; only
@@ -341,7 +341,7 @@ readings.
 TestGame mounts **five** lights: the sky's key `DirectionalLight` and hemisphere
 fill, the two headlight `ProjectorLight`s, and the exhaust pop's `PointLight`.
 That is over `best-practices.md` §4's three-light guideline, knowingly — §1.1
-freed the budget by taking the whole city out of the shadow pass. None of them
+freed the budget by taking the whole track out of the shadow pass. None of them
 casts a shadow except the sky key; a shadow-casting `PointLight` is **six**
 shadow renders.
 

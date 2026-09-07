@@ -71,7 +71,7 @@ export interface HandlingTune {
 	tireMuLat: number;
 	/**
 	 * Multiplier the CORNERING model runs at over `tireMuLat`. The real 1.1 g needs
-	 * 148 m of road to turn at 40 m/s, and this is a tight city driven on a keyboard,
+	 * 148 m of road to turn at 40 m/s, and this is a tight track driven on a keyboard,
 	 * so the demo buys some back. **This is the knob for "the car won't turn at
 	 * speed"**; 1 is the real car. It feeds BOTH the yaw cap and the sideways bleed,
 	 * which have to agree — a cap asking for more cornering than the bleed can

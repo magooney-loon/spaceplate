@@ -1,6 +1,6 @@
 # TestGame (`src/scenes/TestGame/`)
 
-A standalone tech demo game: a drivable GR86 in a small city, on top of the engine
+A standalone tech demo game: a drivable GR86 on a small race track, on top of the engine
 (Threlte/Rapier/sky/on-demand rendering) but **not part of it**. Nothing here is
 engine architecture — do not generalise from this code into `core/` or
 `extensions/`, and keep engine docs free of TestGame specifics. The scene pair is
@@ -8,7 +8,7 @@ engine architecture — do not generalise from this code into `core/` or
 scene via `Scene.svelte` / `SceneHud.svelte`.
 
 ```
-TestGame.svelte         — the scene: city + car composition + the physics-task
+TestGame.svelte         — the scene: track + car composition + the physics-task
                          shell; the driving model itself is sim/controller.ts
 TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart) + the
                          upper-middle launch flash (STREET / JUICY / PERFECT)
@@ -62,8 +62,8 @@ ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + th
                          nitrous FOV kick, the launch dolly kick and the shift jolt
 CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed,
                          live N2O bottle gauge); dial facts from the spec
-cityColliders.ts        — hand-rolled static trimesh colliders for the track GLB
-units.ts                — UNITS_PER_METER + G: the SI ↔ world boundary (city scale)
+trackColliders.ts       — hand-rolled static colliders for the track GLB
+units.ts                — UNITS_PER_METER + G: the SI ↔ world boundary (track scale)
 ```
 
 ## Multi-car — the spec is the car
@@ -299,10 +299,10 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   numbers (torque curve, 6MT ratios, tyre μ, drag) in metres/kg/newtons, and
   the controller converts at exactly one boundary: `UNITS_PER_METER = 2.5`
   (units.ts), the
-  same 2.5 the car's visual group is scaled by (the city is authored at 2.5
+  same 2.5 the car's visual group is scaled by (the track is authored at 2.5
   units/metre). Forces and velocities scale by it, rad/s does not. The car's
   `gravityScale` is that constant too — the shared `<World>` pulls at 9.8
-  _units_/s², which in this city is 3.9 m/s². Validated against the real GR86 **on
+  _units_/s², which on this track is 3.9 m/s². Validated against the real GR86 **on
   the Grip tune**: 0-60 mph 5.7 s (6.1 published), 140 mph governed, redline in
   1st at ~50 km/h. Drift is a setup, not a claim about the car — don't re-validate
   against it.
@@ -380,7 +380,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   wheel-contact balls at measured pivots were tried on top of this and reverted
   — they never lined up with the visual wheels in-browser; see git history
   before revisiting.)
-- **City collision is hand-rolled** (`cityColliders.ts`), not `<AutoColliders>`:
+- **Track collision is hand-rolled** (`trackColliders.ts`), not `<AutoColliders>`:
   the trimesh flags cannot be passed through AutoColliders, and without
   `TriMeshFlags.FIX_INTERNAL_EDGES` a flat tessellated road produces ghost
   contacts at internal triangle edges — bumps and snags on perfectly flat
@@ -389,18 +389,23 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   effectively ONE-SIDED — a track GLB with flipped winding would let bodies fall
   through. Known seam: `Ground` sits 1.1 cm below `Asphalt` in the track GLB — a
   small lip at asphalt edges the balls roll over.
-- **Only Ground/Asphalt/Metal meshes collide** (`COLLIDER_MATERIALS` in
-  `cityColliders.ts`, filtered by material name — exporter node names are not
-  stable). The GLB's other two meshes are deliberately OUT: `Decals` is 31 k
-  triangles of road paint a hair off the deck — as its own collider every decal
-  boundary edge is a REAL edge (FIX_INTERNAL_EDGES only smooths edges within one
-  trimesh), and the chassis rolling over paint was a ghost-contact factory
-  (the "sometimes snags on nothing" stutter); `Leafs_Mat` foliage is thin
-  double-sided quads along the roads — edge-on at speed, invisible walls. The
-  cost: the car drives through bushes (and whatever tall geometry rides on the
-  Decals mesh) — acceptable, the barriers still stop it. A new mesh in a
-  re-export collides only if its material is in the set — check the set before
-  blaming collision oddities.
+- **Only Asphalt/Metal trimesh + a Ground FLOOR collide** (`trackColliders.ts`,
+  filtered by material name — exporter node names are not stable). The GLB's
+  other two meshes are deliberately OUT: `Decals` is 31 k triangles of road
+  paint a hair off the deck — as its own collider every decal boundary edge is
+  a REAL edge (FIX_INTERNAL_EDGES only smooths edges within one trimesh), and
+  the chassis rolling over paint was a ghost-contact factory (the "sometimes
+  snags on nothing" stutter); `Leafs_Mat` foliage is thin double-sided quads
+  along the roads — edge-on at speed, invisible walls (the car drives through
+  bushes now — acceptable, the barriers still stop it). **The `Ground` dirt
+  plane is NOT a trimesh at all**: the GLB's is a unit quad scaled ×230 — two
+  460 m triangles — and convex-vs-trimesh contact manifolds degrade when the
+  triangles are ~100× the dynamic collider, which read as rate-independent
+  micro-jitter on the dirt (it survived 200 Hz physics unchanged). It is flat,
+  so it becomes an analytical cuboid FLOOR (top face at the plane's own height;
+  the 1.1 cm lip at asphalt edges is unchanged). A new mesh in a re-export
+  collides only if its material is Asphalt/Metal (trimesh) or Ground (floor) —
+  check that before blaming collision oddities.
 - **The track GLB is measured, not guessed**: car spans model y 0.01 (tire
   bottoms) .. 1.31 (roof), wheel centres at y 0.335, axles z ±wheelbase/2, track
   x ±0.78. The chassis collider offsets come from those numbers; if the model
@@ -421,16 +426,16 @@ units. The track's `Metal` mesh spans ~2 970 × 2 540 world units, so the fit
 saturated at 400 and centred ~1 090 units from where the car actually drives:
 **the car was outside its own shadow frustum, so nothing in the drivable area
 cast or received a sun shadow at all** — while the renderer re-rendered all
-313 725 city triangles into the 2048² map every frame to achieve it (the car
+313 725 track triangles into the 2048² map every frame to achieve it (the car
 moves, so `needsUpdate` is armed every frame).
 
-Now: the city does not cast (`CITY_CASTS_SHADOWS`), the car does, and the car's
+Now: the track does not cast (`TRACK_CASTS_SHADOWS`), the car does, and the car's
 interior/engine materials (`CAR_NON_CASTERS` — 117 176 of its 324 640 triangles,
 never in its silhouette) do not either. The fit collapses to the `shadowRadius`
 floor of 20 centred on the car — a 2 cm texel instead of 39 cm — so the car
 finally has a sharp shadow, and the shadow pass draws the car alone. Turning
-city shadows back on means confronting that a single cascade cannot serve a
-3 km city and a 4 m car; `CSMShadowNode` (`DOCS/best-practices.md` §2.6) is the
+track shadows back on means confronting that a single cascade cannot serve a
+3 km track and a 4 m car; `CSMShadowNode` (`DOCS/best-practices.md` §2.6) is the
 honest answer, not a bigger map.
 
 ## Telemetry, wheels, camera

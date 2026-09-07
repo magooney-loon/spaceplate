@@ -1,7 +1,7 @@
 // 2023 Toyota GR86 — the demo's first car, as DATA (cars/types.ts is the
 // contract). Everything here is the real car's numbers in SI units (metres,
 // kilograms, newtons, seconds, rad); nothing in this file knows about world
-// units (../units.ts is the city's scale, shared by every car).
+// units (../units.ts is the track's scale, shared by every car).
 //
 // WHY SI: the driving model needs a torque curve, gear ratios and aero drag to
 // feel like a car, and those only compose if they share one unit system. The
@@ -186,7 +186,7 @@ export const gr86 = {
 	model: {
 		url: `${BASE_URL}models/testgame/2023_toyota_gr86_compressed.glb`,
 		name: 'GR86',
-		/** This city: model metres × 2.5 == world units (units.ts). */
+		/** This track: model metres × 2.5 == world units (units.ts). */
 		scale: 2.5,
 		/** Hand-tuned spawn pose, world units / radians. */
 		spawn: {

@@ -29,7 +29,7 @@
 	import { currentCar } from './cars';
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
-	import { buildCityColliders } from './cityColliders';
+	import { buildTrackColliders } from './trackColliders';
 	import { resetCarTelemetry } from './sim/carTelemetry.svelte';
 
 	// Test Game 3D scene — the driving prototype's composition layer. The driving
@@ -59,17 +59,17 @@
 
 	const decoders = { dracoLoader, meshoptDecoder, ktx2Loader };
 
-	const city = useGltf(`${BASE_URL}models/testgame/track.glb`, decoders);
+	const track = useGltf(`${BASE_URL}models/testgame/track.glb`, decoders);
 	const carModel = useGltf(car.model.url, decoders);
 
-	// Static collision for the city — built once when the GLB lands. Hand-rolled
+	// Static collision for the track — built once when the GLB lands. Hand-rolled
 	// instead of <AutoColliders> because the trimesh flags (FIX_INTERNAL_EDGES,
-	// which stops ghost bumps at internal triangle seams on the flat roads) can
-	// only be passed through explicit args. See cityColliders.ts.
-	const cityColliders = $derived($city?.scene ? buildCityColliders($city.scene) : []);
+	// which stops ghost bumps at internal triangle seams on the flat roads)
+	// can only be passed through explicit args. See trackColliders.ts.
+	const trackColliders = $derived($track?.scene ? buildTrackColliders($track.scene) : []);
 
 	$effect(() => {
-		if ($city?.scene) logGltf.info('TestGame track loaded');
+		if ($track?.scene) logGltf.info('TestGame track loaded');
 		if ($carModel?.scene) logGltf.info(`TestGame car loaded (${car.label})`);
 	});
 
@@ -87,23 +87,23 @@
 	//     cast no shadow, and the asphalt received none either. There were no
 	//     sun shadows anywhere the player could go;
 	//   • and the engine paid for that every single frame: `needsUpdate` is
-	//     armed each frame (the car moves), so all 313 725 city triangles and
+	//     armed each frame (the car moves), so all 313 725 track triangles and
 	//     324 640 car triangles — 5 + 29 draw calls — were re-rendered into the
 	//     2048² map to produce nothing.
 	//
-	// So: THE CAR CASTS, THE WORLD RECEIVES. With the city out of the caster
+	// So: THE CAR CASTS, THE WORLD RECEIVES. With the track out of the caster
 	// set the fit collapses to the `shadowRadius` floor (20) centred on the car,
 	// which is a 2 cm texel instead of a 39 cm one — the car finally has a sharp
 	// shadow — and the shadow pass draws the car alone.
 	//
 	// Flip this on to get building/tree shadows back, and read the paragraph
-	// above first: at this city's size the single cascade cannot serve both, and
+	// above first: at this track's size the single cascade cannot serve both, and
 	// `CSMShadowNode` (DOCS/best-practices.md §2.6) is the honest answer.
-	const CITY_CASTS_SHADOWS = false;
-	/** Which city materials would cast, if they did. Ground/Asphalt are the flat
+	const TRACK_CASTS_SHADOWS = false;
+	/** Which track materials would cast, if they did. Ground/Asphalt are the flat
 	 *  surfaces the shadows land ON, and Decals are painted onto them — 51 062
 	 *  triangles that can only ever shadow themselves. */
-	const CITY_CASTERS = new Set(['Metal', 'Leafs_Mat']);
+	const TRACK_CASTERS = new Set(['Metal', 'Leafs_Mat']);
 	/** Car materials that are interior or engine: never part of the car's
 	 *  silhouette, so they cast nothing the bodywork doesn't already cast.
 	 *  117 176 of the model's 324 640 triangles, and 14 of its 29 meshes, out of
@@ -130,7 +130,7 @@
 
 	$effect(() => {
 		const roots: [THREE.Object3D | undefined, (mesh: Mesh) => boolean][] = [
-			[$city?.scene, (mesh) => CITY_CASTS_SHADOWS && CITY_CASTERS.has(materialName(mesh))],
+			[$track?.scene, (mesh) => TRACK_CASTS_SHADOWS && TRACK_CASTERS.has(materialName(mesh))],
 			[$carModel?.scene, (mesh) => !CAR_NON_CASTERS.has(materialName(mesh))]
 		];
 		for (const [root, casts] of roots) {
@@ -219,15 +219,23 @@
 
 <svelte:window onkeydown={onKeydown} onkeyup={onKeyup} onblur={resetCarInput} />
 
-{#if $city}
-	<T.Group name="City" scale={1.5} position={[0, 0, 0]} rotation={[0, -1.0472, 0]}>
-		<!-- The track GLB: Ground/Asphalt planes and Metal barriers get trimesh
-		     colliders; Decals (road paint) and foliage are excluded — see
-		     cityColliders.ts. Bare <Collider>s attach to an implicit fixed body,
+{#if $track}
+	<T.Group name="Track" scale={1.5} position={[0, 0, 0]} rotation={[0, -1.0472, 0]}>
+		<!-- The track GLB: Asphalt and Metal barriers get trimesh colliders
+		     (transforms baked); the Ground dirt plane becomes an analytical
+		     cuboid FLOOR — two 460 m triangles were a contact-manifold jitter
+		     factory; Decals (road paint) and foliage are excluded — see
+		     trackColliders.ts. Bare <Collider>s attach to an implicit fixed body,
 		     exactly like AutoColliders did. -->
-		<T is={$city.scene} />
-		{#each cityColliders as c (c.id)}
-			<Collider shape="trimesh" args={c.args} />
+		<T is={$track.scene} />
+		{#each trackColliders as c (c.id)}
+			{#if c.kind === 'trimesh'}
+				<Collider shape="trimesh" args={c.args} />
+			{:else}
+				<T.Group position={c.center}>
+					<Collider shape="cuboid" args={c.half} />
+				</T.Group>
+			{/if}
 		{/each}
 	</T.Group>
 {/if}
@@ -241,7 +249,7 @@
 		     drivetrain now, and a blanket damping term on top of them is the same loss
 		     counted twice (it was also what capped the old top speed). gravityScale is
 		     UNITS_PER_METER because the shared <World> pulls at 9.8 units/s², which in
-		     this 2.5-units-to-the-metre city is 3.9 m/s² — moon gravity, and a car that
+		     this 2.5-units-to-the-metre track is 3.9 m/s² — moon gravity, and a car that
 		     floats over every kerb. Scene-local: the global value belongs to DemoScene too.
 		     enabledRotations: only yaw (world Y) is free — see sim/controller.ts's
 		     header for why pitch had to be locked too, not just roll. -->

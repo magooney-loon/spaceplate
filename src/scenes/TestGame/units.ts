@@ -1,13 +1,13 @@
 // Scene-wide unit constants — the SI ↔ world boundary every car in this scene
-// shares. (Was gr86.ts's header; it is CITY scale, not car data, so it lives
+// shares. (Was gr86.ts's header; it is TRACK scale, not car data, so it lives
 // here now that there is more than one conceptual car.)
 
 /**
  * World units per real metre in TestGame.
  *
  * The GLBs are authored in metres (the chassis collider args are a GR86 to the
- * centimetre), and the scene scales the car ×2.5 to sit right in the city. So
- * the city is built at 2.5 units/metre, and everything the player *perceives* —
+ * centimetre), and the scene scales the car ×2.5 to sit right on the track. So
+ * the track is built at 2.5 units/metre, and everything the player *perceives* —
  * speed, acceleration, gravity — is the world value divided by this.
  *
  * Consequences, all handled at the call site in the driving controller (sim/):
@@ -18,7 +18,7 @@
  *             car's RigidBody carries gravityScale={UNITS_PER_METER} to feel 1 g.
  *             (Scene-local — the global gravity belongs to every other scene too.)
  *
- * If the city model ever gets rescaled, this and the cars' visual scale move together.
+ * If the track model ever gets rescaled, this and the cars' visual scale move together.
  */
 export const UNITS_PER_METER = 2.5;
 
