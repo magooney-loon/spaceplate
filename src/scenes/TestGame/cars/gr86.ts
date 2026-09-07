@@ -217,7 +217,7 @@ export const gr86 = {
 		 *  cars, the anchors are per-car). */
 		layerRpm: [1400, 2600, 3800, 5000, 6200, 7400],
 		/** The GR86 is the car the bed was recorded from — no shift. */
-		pitchScale: 1
+		pitchScale: 1.1
 	},
 
 	cluster: {
