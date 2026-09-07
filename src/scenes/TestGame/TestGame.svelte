@@ -392,8 +392,8 @@
 						car.geometry.collider.rounding * car.model.scale
 					]}
 					mass={car.hardware.mass}
-					friction={0}
-					frictionCombineRule={CoefficientCombineRule.Min}
+					friction={1}
+					frictionCombineRule={CoefficientCombineRule.Multiply}
 				/>
 			</T.Group>
 
