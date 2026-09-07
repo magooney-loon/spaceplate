@@ -224,6 +224,8 @@ export function createCarController(spec: CarSpec) {
 			carSim.limiting = false;
 			carSim.nitrous = 0;
 			carSim.nitrousTank = nitrousBottle;
+			carSim.accelFwd = 0;
+			carSim.accelLat = 0;
 			publishCarHud(delta);
 			return;
 		}
@@ -260,6 +262,9 @@ export function createCarController(spec: CarSpec) {
 			carSim.limiting = false;
 			carSim.nitrous = nitrousFlow;
 			carSim.nitrousTank = nitrousBottle;
+			// Parked: the suspension has nothing to lean on, so it rests.
+			carSim.accelFwd = 0;
+			carSim.accelLat = 0;
 			publishCarHud(delta);
 			return;
 		}
@@ -384,8 +389,20 @@ export function createCarController(spec: CarSpec) {
 		// planted limit cornering has no drift angle and no wheelspin for any other
 		// source to see.
 		const latLoad = clamp(Math.abs(settle) / bleedLimit, 0, 1);
-		_vel.addScaledVector(_right, -clamp(settle, -bleedLimit, bleedLimit));
+		const bleed = clamp(settle, -bleedLimit, bleedLimit);
+		_vel.addScaledVector(_right, -bleed);
 		body.setLinvel({ x: _vel.x, y: _vel.y, z: _vel.z }, true);
+
+		// ── What the suspension leans on ────────────────────────────────────
+		// Both accelerations are the MODEL'S OWN, not a finite difference of the
+		// body's pose: this is the exact longitudinal force handed to Rapier over
+		// the mass, and the exact sideways delta-v the grip model just applied,
+		// over the step. Free, noiseless and one frame EARLIER than differencing
+		// the result would be. `-bleed` because the bleed is applied along
+		// `-_right` and the reaction the body feels points the other way — so
+		// this is positive in a left-hand corner, matching body +X.
+		carSim.accelFwd = (out.driveForce + out.resistForce) / hw.mass;
+		carSim.accelLat = -bleed / delta / UNITS_PER_METER;
 
 		// Instruments — plain object at the physics rate, $state mirror at 30 (carTelemetry).
 		carSim.speedMs = speedMs;

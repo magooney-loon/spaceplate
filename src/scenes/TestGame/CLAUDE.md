@@ -29,6 +29,10 @@ sim/                    — the driving model, car-agnostic
                          (createDrivetrain(spec); layout-aware load)
   handling.ts           — the HandlingTune CONTRACT + cornering-model rules + modes
                          (the GR86's tunes live in its spec)
+  suspension.ts         — the body ATTITUDE: four spring-damped corners fed by the
+                         model's own accelerations → heave/pitch/roll + the wheel
+                         counter-travel. Visual only; one owner, three consumers
+                         (the car model, CarWheels, DebugRig)
   carInput.svelte.ts    — this scene's own keymap (arrows / Space / Q / E / Shift) +
                          the latched switches (lights, ignition, handling tune,
                          B view mode) + the HUD → scene restart signal
@@ -460,6 +464,58 @@ track shadows back on means confronting that a single cascade cannot serve a
 3 km track and a 4 m car; `CSMShadowNode` (`DOCS/best-practices.md` §2.6) is the
 honest answer, not a bigger map.
 
+## The suspension — the car leans, the physics doesn't
+
+`sim/suspension.ts` is the ONE owner of the car's body attitude, and its three
+consumers are the car MODEL (TestGame.svelte poses the visual group), the WHEELS
+(`fx/CarWheels.svelte`) and the debug rig. It used to live inside DebugRig, which
+meant the skeleton leaned and the car drawn over it did not.
+
+- **It produces no forces.** The chassis is one dynamic box with
+  `enabledRotations={[false, true, false]}` — the PHYSICS car cannot pitch or
+  roll at all, and that lock is a real guarantee (see the driving-model section).
+  What leans is the model. Nothing here feeds back.
+- **The input is the model's own acceleration, not a measurement.**
+  `carSim.accelFwd` is `(driveForce + resistForce) / mass` — literally the
+  longitudinal force the controller hands Rapier — and `carSim.accelLat` is the
+  sideways delta-v the grip model applied, over the step. The first version
+  finite-differenced the body's interpolated world pose TWICE per frame and
+  needed a one-pole just to be readable. This is exact, noiseless, free, and
+  available a frame earlier. It also inherits the grip clamp: `accelLat`
+  saturates at μ·g, so a car already sliding at the limit stops leaning harder.
+- **Each corner is a SPRING-DAMPER, not a one-pole**, and that is the difference
+  between the body arriving at an attitude and MOVING to one — stab the brakes
+  and the nose dives, overshoots ~7% and settles. `SPRING_ZETA` (0.62) buys the
+  overshoot; at 1 it is a soft slide into place, over 1 it is mush. Semi-implicit
+  Euler with `delta` clamped to 1/30, so a backgrounded tab doesn't return to a
+  car mid-pogo; verified identical at 60/30/20 fps.
+- **The four compressions convert to heave/pitch/roll over the car's REAL lever
+  arms**, so the feel needs one constant (`SQUAT_PER_G`) rather than separate
+  pitch and roll gains. Measured: 1.6° nose-down at 0.8 g braking, 1.2° nose-up
+  under power, ~4.5° roll at the cornering limit, hard-stopped at 3.1°/5.2°. A
+  real GR86 rolls 3-4° at max lateral.
+- **THE COMPRESSION MOVES THE BODY, NOT THE WHEELS**, and having it the other way
+  round is the bug this all came out of: the rig dived under power, squatted
+  under braking and leaned INTO its corners. The corner compressions were right;
+  the wrong END of the strut was moving. The wheels ARE the contact balls — on
+  the road, immovable — so `suspension.travel` is the per-corner counter-offset
+  that keeps each tyre planted while the body moves around it, measured off the
+  attitude matrix rather than assumed equal to the compression (the matrix drops
+  the warp mode a rigid body can't express; a real chassis absorbs it in
+  torsion). `CarWheels` adds it in `positionNode`, divided by `visualScale`
+  because the module speaks world units and the baked wheel geometry is model
+  metres — the same conversion the roll rate does in the other direction.
+- **The update task lives on the SCENE, not on a child.** Two children need the
+  pose and one of them (DebugRig) is only mounted in two of the three view modes,
+  so the owner has to be something always mounted — and registering it on the
+  scene also makes it run FIRST, since tasks sharing a constraint fall back to
+  mount order and parents mount before children. Render stage, never physics: the
+  CarWheels rule (`ceil(accumulator / rate)` substeps per frame is never
+  constant, so a spring integrated in physics time pulses against the body Rapier
+  is interpolating underneath it).
+- `resetSuspension()` on scene exit AND on Restart — the springs hold state across
+  a teleport otherwise, and a car restarted mid-brake respawns nose-down.
+
 ## Telemetry, wheels, camera
 
 - **`carTelemetry.svelte.ts` is the plain-object / `$state`-mirror split** the
@@ -550,16 +606,9 @@ honest answer, not a bigger map.
   modelled: finite difference of the rig root's world pose → body-frame accel
   (one-pole smoothed) → squat/dive front-to-rear and roll left-to-right,
   clamped to a gauge range — a display of the load transfer the model applies,
-  not a spring. **THE COMPRESSION MOVES THE BODY, NOT THE HUBS**, and having it
-  the other way round is what made the rig read inverted (dive under power,
-  squat under braking, leaning INTO corners): the corner compressions were
-  right, but the wrong END of the strut was moving. The hubs are the CONTACT
-  BALLS — on the road, immovable — so a compressed corner brings the BODY down
-  to meet its hub, and the four compressions become heave + pitch + roll on the
-  chassis (~1.4°/2.4° at the clamp, a real car's order of magnitude). Every
-  body-mounted part rides that transform (box, strut towers, both diffs, the
-  transfer puck); struts and half-shafts articulate between it and the fixed
-  hubs. The undertray is drawn as a wireframe ROUNDED box at the
+  not a spring. That model now lives in **`sim/suspension.ts`** (below) and the
+  rig only READS it, so the skeleton and the car it is drawn over in 'both' view
+  cannot lean differently. The undertray is drawn as a wireframe ROUNDED box at the
   collider group's mount and TRUE extents (`h·UPM` — the rounding arg is
   pre-scaled at the call site; see the collider rules), and it is the one part
   whose pose is now the gauge rather than the collider's: the real body cannot

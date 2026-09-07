@@ -5,8 +5,9 @@
 	import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 	import { currentCar } from '../cars';
 	import { wheelPatches } from '../cars/spec';
-	import { G, UNITS_PER_METER } from '../units';
+	import { UNITS_PER_METER } from '../units';
 	import { carSim } from '../sim/carTelemetry.svelte';
+	import { compressionRatio, suspension } from '../sim/suspension';
 
 	// The debug rig — the car's SKELETON, drawn instead of (or over) the model.
 	//
@@ -21,11 +22,11 @@
 	//   - per-wheel half-shafts out of a centre diff at each axle line, plus a
 	//     driveshaft back to the rear diff — independent suspension means a solid
 	//     axle bar could not follow both hubs anyway;
-	//   - four suspension struts whose compression is MEASURED, not modelled:
-	//     finite difference of the body's world pose → body-frame acceleration →
-	//     squat/dive front-to-rear and roll left-to-right. The honest visual of
-	//     the load transfer the drivetrain applies — clamped, because there is no
-	//     physical travel to match; it is a gauge, not a spring;
+	//   - four suspension struts riding the SHARED suspension (sim/suspension.ts —
+	//     spring-damped corners fed by the driving model's own accelerations).
+	//     The rig does not compute its own any more: it and the car model pose
+	//     off the same matrix, so the skeleton can never lean differently from
+	//     the car drawn over it in 'both' view;
 	//   - the UNDERTRAY box as a wireframe ROUNDED box at the collider group's
 	//     own mount — the actual roundCuboid shape Rapier holds — and the wheels
 	//     ARE the four contact balls (same patches, same hub height, same radius
@@ -39,13 +40,13 @@
 	// BALLS — they sit on the road and cannot move — so a compressed corner has
 	// to bring the BODY down to meet its hub, exactly like the real thing. Every
 	// body-mounted part (chassis box, strut towers, both diffs, the transfer
-	// puck) therefore rides the chassis transform, and the half-shafts/struts
-	// articulate between that and the fixed hubs — which is what independent
-	// suspension looks like. The one honest cost: the wireframe box is no longer
-	// pixel-exact to the collider's pose. The collider does NOT pitch or roll
-	// (`enabledRotations` leaves only yaw free), so the ±1.4° pitch / ±2.4° roll
-	// here is the GAUGE, drawn on the shape rather than beside it. Its rest pose,
-	// size and rounding are still the true ones.
+	// puck) therefore rides the suspension's attitude matrix, and the
+	// half-shafts/struts articulate between that and the fixed hubs — which is
+	// what independent suspension looks like. The one honest cost: the wireframe
+	// box is no longer pixel-exact to the collider's pose. The collider does NOT
+	// pitch or roll (`enabledRotations` leaves only yaw free), so the couple of
+	// degrees of lean here is the GAUGE, drawn on the shape rather than beside
+	// it. Its rest pose, size and rounding are still the true ones.
 	//
 	// VISUALIZATION ONLY — nothing here feeds back into physics. The task runs at
 	// `{ before: autoRenderTask }` (render time) for the same reason CarWheels
@@ -80,23 +81,11 @@
 	const HY_PHYS = c.hy * UPM;
 	const HZ_PHYS = c.hz * UPM;
 	const ROUNDING_PHYS = c.rounding * UPM;
-	// Suspension GAUGE range — compression clamps here. No physical travel exists.
-	const COMP_MIN = -0.05 * UPM;
-	const COMP_MAX = 0.11 * UPM;
-	// Visual gain: squat/roll metres per g of MEASURED body acceleration.
-	const SQUAT_PER_G = 0.045 * UPM;
-	const ACCEL_SMOOTH = 8; // 1/s — one-pole over the finite differences
 	// Strut tops ("spring towers") mount just inside the collider's box top and
 	// this far inboard of the hubs — real strut towers are body mounts, so the
 	// rig's towers hang off the drawn chassis, not from empty air above it.
 	const TOWER_INBOARD = 0.72; // × hub |x|
-	// CHASSIS-LOCAL, because the towers ride the body now: the chassis mesh sits
-	// at (0, mountY, 0) in body space, so subtract nothing here — this y is
-	// already relative to it.
-	const TOWER_TOP_LOCAL_Y = HY_PHYS - 0.2;
-	// The two lever arms the corner compressions are converted to attitude over.
-	const HALF_TRACK = Math.abs(patches[0][0]);
-	const WHEELBASE = zRear - zFront;
+	const TOWER_TOP_Y = c.mountY + HY_PHYS - 0.2;
 
 	const UP = new THREE.Vector3(0, 1, 0);
 
@@ -162,8 +151,8 @@
 	// the corner takes load, because the tower comes down to meet the hub.
 	const wheelGroups: THREE.Group[] = [];
 	const struts: THREE.Mesh[] = [];
-	/** Strut tops in CHASSIS-LOCAL space — transformed by the body each frame. */
-	const towerLocal: THREE.Vector3[] = [];
+	/** Strut tops at REST in body space — posed by the attitude matrix each frame. */
+	const towerRest: THREE.Vector3[] = [];
 
 	patches.forEach(([x, z], i) => {
 		const wheel = new THREE.Group();
@@ -175,7 +164,7 @@
 
 		struts.push(stretchBar(0.05 * UPM, strutMats[i]));
 		rig.add(struts[i]);
-		towerLocal.push(new THREE.Vector3(x * TOWER_INBOARD, TOWER_TOP_LOCAL_Y, z));
+		towerRest.push(new THREE.Vector3(x * TOWER_INBOARD, TOWER_TOP_Y, z));
 	});
 
 	// Axle lines: a diff puck at each axle's centreline plus two half-shafts per
@@ -183,7 +172,7 @@
 	// rides the chassis transform); the hubs are pinned to the road — so the
 	// half-shafts articulate, which is the whole point of independent suspension.
 	const diffs: THREE.Mesh[] = [];
-	const diffLocal: THREE.Vector3[] = [];
+	const diffRest: THREE.Vector3[] = [];
 	const halfShafts: THREE.Mesh[][] = [];
 	for (const z of [zFront, zRear]) {
 		const diffGeo = new THREE.SphereGeometry(0.09 * UPM, 12, 8);
@@ -192,7 +181,7 @@
 		diff.position.set(0, HUB_REST, z);
 		rig.add(diff);
 		diffs.push(diff);
-		diffLocal.push(new THREE.Vector3(0, HUB_REST - c.mountY, z));
+		diffRest.push(new THREE.Vector3(0, HUB_REST, z));
 		halfShafts.push([stretchBar(0.035 * UPM, axleMat), stretchBar(0.035 * UPM, axleMat)]);
 		rig.add(halfShafts[halfShafts.length - 1][0], halfShafts[halfShafts.length - 1][1]);
 	}
@@ -215,31 +204,22 @@
 	const transferPuck = new THREE.Mesh(puckGeo, shaftMat);
 	transferPuck.position.set(0, c.mountY, HZ_PHYS * 0.2);
 	rig.add(transferPuck);
-	// Body-mounted too — it sits ON the chassis origin's height, so its local y is 0.
-	const puckLocal = new THREE.Vector3(0, 0, HZ_PHYS * 0.2);
+	// Body-mounted too — rest pose in body space, posed by the same matrix.
+	const puckRest = new THREE.Vector3(0, c.mountY, HZ_PHYS * 0.2);
 
 	// ── Per-frame pose math ──────────────────────────────────────────────────
 	//
-	// Everything derives from the rig root's own world transform — the
-	// INTERPOLATED body pose (Rapier's sync stage wrote it before this task:
-	// `{ before: autoRenderTask }` runs after it — the puffPool ordering lesson).
-	// `updateWorldMatrix` first: matrixWorld is stale until the render traverses.
+	// The ATTITUDE is not computed here any more — `sim/suspension.ts` owns it
+	// and the scene's task (which mounts first, so it has already run this frame)
+	// advances it. The rig just poses its body-mounted parts with that matrix,
+	// which is the same one the car MODEL is posed with: in 'both' view the
+	// skeleton and the car lean together by construction, not by two files
+	// agreeing on a constant.
 	const { invalidate, autoRenderTask } = useThrelte();
 
-	const _p = new THREE.Vector3();
-	const _q = new THREE.Quaternion();
-	const _v = new THREE.Vector3();
-	const _a = new THREE.Vector3();
 	const _dir = new THREE.Vector3();
 	const _mid = new THREE.Vector3();
 	const _t = new THREE.Vector3(); // body-space point of a body-mounted part
-
-	const prevPos = new THREE.Vector3();
-	const prevVel = new THREE.Vector3();
-	let hasPrev = false; // a previous POSITION exists
-	let hasVel = false; // a previous VELOCITY exists (accel needs both)
-	let accelFwd = 0; // body-frame, smoothed, m/s² (+ = accelerating forward)
-	let accelLat = 0; // + = turning left (body +X)
 
 	let rollFront = 0;
 	let rollRear = 0;
@@ -268,72 +248,18 @@
 		obj.quaternion.setFromUnitVectors(UP, _dir.divideScalar(len));
 	}
 
-	const damp = (rate: number, delta: number): number => 1 - Math.exp(-rate * delta);
-
 	useTask(
 		(delta) => {
-			if (!active) {
-				hasPrev = false;
-				hasVel = false;
-				return;
-			}
+			if (!active) return;
 
-			// ── Measured body acceleration (the suspension gauge input) ───────
-			rig.updateWorldMatrix(true, false);
-			_p.setFromMatrixPosition(rig.matrixWorld);
-			_q.setFromRotationMatrix(rig.matrixWorld);
-			if (hasPrev && delta > 0) {
-				_v.copy(_p).sub(prevPos).divideScalar(delta); // world velocity
-				if (hasVel) {
-					_a.copy(_v).sub(prevVel).divideScalar(delta); // world accel
-					_a.applyQuaternion(_q.invert()); // → body frame
-					// Nose is −Z; SI like the drivetrain. One-pole both: finite
-					// differences of an interpolated pose carry frame noise.
-					const fwd = -_a.z / UPM;
-					const lat = _a.x / UPM;
-					accelFwd += (fwd - accelFwd) * damp(ACCEL_SMOOTH, delta);
-					accelLat += (lat - accelLat) * damp(ACCEL_SMOOTH, delta);
-				}
-				prevVel.copy(_v);
-				hasVel = true;
-			}
-			prevPos.copy(_p);
-			hasPrev = true;
-
-			// Per-corner compression: squat/dive from longitudinal accel (accel
-			// squats the rear, brake dives the nose), roll from lateral accel
-			// (the outside corners compress). zSign: rear +1; xSign: left +1.
-			const comp = [0, 0, 0, 0];
-			for (let i = 0; i < 4; i++) {
-				const cLong = (accelFwd / G) * SQUAT_PER_G * (patches[i][1] > 0 ? 1 : -1);
-				const cLat = -(accelLat / G) * SQUAT_PER_G * (patches[i][0] > 0 ? 1 : -1);
-				comp[i] = Math.min(COMP_MAX, Math.max(COMP_MIN, cLong + cLat));
-			}
-
-			// ── Body attitude: the four compressions ARE the pose ────────────
-			// Small-angle, and the sign convention is worth writing down because
-			// getting it backwards is exactly what made this rig read inverted:
-			//   heave — compression is the body coming DOWN to the hub, so the
-			//           mean drops the chassis;
-			//   pitch — rotation about +X moves a point at z by −z·θ, so a rear
-			//           that compresses more than the front (θ > 0, since zRear
-			//           is behind and zFront is ahead) drops the tail and lifts
-			//           the NOSE. Accelerate → nose up. Brake → nose down;
-			//   roll  — rotation about +Z moves a point at x by +x·φ, and +X is
-			//           LEFT, so a compressed right side (φ > 0) drops the right
-			//           and lifts the left. Turn left → lean right, i.e. OUT of
-			//           the corner, onto the loaded wheels.
-			// The lever arms are the real ones, so the gauge range converts to
-			// ~1.4° of pitch and ~2.4° of roll — a real car's order of magnitude.
-			const heave = (comp[0] + comp[1] + comp[2] + comp[3]) / 4;
-			const pitch = (comp[2] + comp[3] - comp[0] - comp[1]) / 2 / WHEELBASE;
-			// patches x is +LEFT, and index 0/2 carry the negative x — so 0/2 are
-			// the RIGHT pair. Read the side off the sign, never off the name.
-			const roll = (comp[0] + comp[2] - comp[1] - comp[3]) / 2 / (2 * HALF_TRACK);
-			chassis.position.set(0, c.mountY - heave, 0);
-			chassis.rotation.set(pitch, 0, roll);
-			// Everything bolted to the body reads its transform below.
-			chassis.updateMatrix();
+			// ── Body attitude, from the SHARED suspension ────────────────────
+			// Already advanced this frame by the scene's task (it registers
+			// first — parents mount before children), and it is the same matrix
+			// the car model is posed with. The chassis box is drawn AT it, and
+			// everything else bolted to the body is transformed BY it below.
+			const pose = suspension.matrix;
+			chassis.position.copy(_t.set(0, c.mountY, 0).applyMatrix4(pose));
+			chassis.rotation.set(suspension.pitch, 0, suspension.roll);
 
 			// ── Wheels: steer (fronts) + roll ────────────────────────────────
 			// Same roll source as CarWheels: road speed for the fronts, the
@@ -357,16 +283,15 @@
 			// ── Struts: body-borne tower → pinned hub, tinted by compression ──
 			for (let i = 0; i < 4; i++) {
 				const [x, z] = patches[i];
-				_t.copy(towerLocal[i]).applyMatrix4(chassis.matrix);
+				_t.copy(towerRest[i]).applyMatrix4(pose);
 				stretch(struts[i], _t.x, _t.y, _t.z, x, HUB_REST, z);
-				const k = (comp[i] - COMP_MIN) / (COMP_MAX - COMP_MIN);
-				strutMats[i].color.copy(cTmp.copy(cGreen).lerp(cRed, k));
+				strutMats[i].color.copy(cTmp.copy(cGreen).lerp(cRed, compressionRatio(i)));
 			}
 
 			// ── Axles: body-borne diff, half-shafts down to the pinned hubs ──
 			for (let end = 0; end < 2; end++) {
 				const z = end === 0 ? zFront : zRear;
-				diffs[end].position.copy(_t.copy(diffLocal[end]).applyMatrix4(chassis.matrix));
+				diffs[end].position.copy(_t.copy(diffRest[end]).applyMatrix4(pose));
 				const d = diffs[end].position;
 				stretch(halfShafts[end][0], d.x, d.y, d.z, patches[end * 2][0], HUB_REST, z);
 				stretch(halfShafts[end][1], d.x, d.y, d.z, patches[end * 2 + 1][0], HUB_REST, z);
@@ -375,7 +300,7 @@
 			// ── Driveshaft: transfer puck → rear diff, spinning ───────────────
 			// Both ends are on the body, so it barely articulates — which is
 			// correct, and the contrast against the half-shafts is the point.
-			transferPuck.position.copy(_t.copy(puckLocal).applyMatrix4(chassis.matrix));
+			transferPuck.position.copy(_t.copy(puckRest).applyMatrix4(pose));
 			stretch(
 				driveshaftPivot,
 				transferPuck.position.x,

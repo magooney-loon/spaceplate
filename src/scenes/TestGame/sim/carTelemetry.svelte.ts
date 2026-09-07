@@ -62,7 +62,17 @@ export const carSim = {
 	 *  clutch drop (drivetrain.state.launch). Read by the tyre-squeal source
 	 *  (carAudio) and the launch camera kick (ChaseCamera); the cluster flash
 	 *  is the separate perfectLaunch countdown above. */
-	launch: 0
+	launch: 0,
+	/** m/s² along the nose, + = accelerating forward. THE MODEL'S OWN NUMBER —
+	 *  (driveForce + resistForce) / mass, i.e. exactly the longitudinal force the
+	 *  controller hands Rapier — not a finite difference of the body's pose. The
+	 *  suspension (sim/suspension.ts) reads it for squat/dive. */
+	accelFwd: 0,
+	/** m/s² across the car, + = pushed toward body +X (LEFT), i.e. positive in a
+	 *  left-hand corner. The sideways bleed the grip model actually applied this
+	 *  step, clamped at μ·g like everything else — so it saturates exactly when
+	 *  the tyres do, and a car sliding at the limit stops leaning harder. */
+	accelLat: 0
 };
 
 /** The HUD's reactive view. Quantised, ~30 Hz. */
@@ -148,6 +158,8 @@ export function resetCarTelemetry(): void {
 	carSim.perfectLaunch = 0;
 	carSim.launchTier = 0;
 	carSim.launch = 0;
+	carSim.accelFwd = 0;
+	carSim.accelLat = 0;
 	elapsed = HUD_INTERVAL;
 	publishCarHud(0);
 }

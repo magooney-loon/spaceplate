@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { T } from '@threlte/core/webgpu';
+	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { useGltf, useDraco, useKtx2, useMeshopt } from '@threlte/extras';
 	import { Collider, RigidBody, usePhysicsTask } from '@threlte/rapier';
 	import {
@@ -34,6 +34,7 @@
 	import { createCarController } from './sim/controller';
 	import { buildTrackColliders } from './trackColliders';
 	import { resetCarTelemetry } from './sim/carTelemetry.svelte';
+	import { resetSuspension, suspension, updateSuspension } from './sim/suspension';
 
 	// Test Game 3D scene — the driving prototype's composition layer. The driving
 	// model itself lives in sim/ (controller.ts owns the physics task's brain,
@@ -198,6 +199,44 @@
 		controller.step(delta, body);
 	});
 
+	// ── The body leans (sim/suspension.ts) ───────────────────────────────────
+	//
+	// The PHYSICS car cannot pitch or roll — `enabledRotations` leaves only yaw
+	// free, for the reasons in the markup below — so the lean is the MODEL's, and
+	// this is where it gets applied. The suspension springs run off the driving
+	// model's own accelerations (carSim.accelFwd/accelLat) and hand back one
+	// body-space attitude; the visual group takes it, and the wheels take the
+	// matching counter-travel (CarWheels) so the tyres stay on the road while the
+	// car moves around them.
+	//
+	// THIS TASK IS THE SUSPENSION'S ONE OWNER, and it lives here rather than in a
+	// child because two children need it — the car model and the debug rig, and
+	// the rig is only mounted in two of the three view modes. Registering it on
+	// the scene means it always runs, and runs FIRST: among tasks sharing a
+	// constraint the DAG falls back to mount order, and parents mount before
+	// children (src/CLAUDE.md), so CarWheels and DebugRig both read a pose that
+	// was rebuilt this frame.
+	//
+	// Render stage, not physics — same rule as CarWheels and the rig: the substep
+	// count per rendered frame is `ceil(accumulator / rate)` and therefore never
+	// constant, so a spring integrated in physics time pulses against the body
+	// Rapier is smoothly interpolating underneath it.
+	const { invalidate, autoRenderTask } = useThrelte();
+
+	useTask(
+		(delta) => {
+			updateSuspension(delta);
+			const root = visualRoot;
+			if (!root) return;
+			root.position.y = -suspension.heave;
+			root.rotation.set(suspension.pitch, 0, suspension.roll);
+			// The car leaning IS a visual change and this is its one reason; a
+			// settled car at rest costs nothing.
+			if (suspension.moved) invalidate();
+		},
+		{ before: autoRenderTask, autoInvalidate: false }
+	);
+
 	// ── Rig view (B): hide the MODEL, keep everything else alive ──────────────
 	//
 	// 'rig' hides the car's MESHES so the debug skeleton (debug/DebugRig.svelte)
@@ -236,6 +275,9 @@
 		if (carRestart.token === 0) return;
 		const body = carBody;
 		if (body) controller.restart(body);
+		// The springs hold state across a teleport otherwise — a car restarted
+		// mid-brake respawns nose-down and bobs back up.
+		resetSuspension();
 	});
 
 	// Unmount parks the instruments — the HUD unmounts with them, but the mirror is
@@ -245,6 +287,7 @@
 		return () => {
 			controller.park();
 			resetCarTelemetry();
+			resetSuspension();
 			resetCarInput();
 		};
 	});

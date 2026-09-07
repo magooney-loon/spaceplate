@@ -18,6 +18,7 @@
 	import { currentCar } from '../cars';
 	import { UNITS_PER_METER } from '../units';
 	import { carSim } from '../sim/carTelemetry.svelte';
+	import { suspension } from '../sim/suspension';
 
 	// Steerable + rolling wheels, generic over the car's spec (wheel-material
 	// prefix + radius fallback come from cars/).
@@ -39,9 +40,17 @@
 	// `WheelFLMtl` etc), case-insensitive.
 	const WHEEL_MAT = new RegExp(`^${currentCar().model.wheelMaterialPrefix}`, 'i');
 
-	// One shared uniform pair across all six wheel materials.
+	// One shared uniform set across all six wheel materials.
 	const uSteer = uniform(0);
 	const uRoll = uniform(0);
+	// SUSPENSION TRAVEL, in MODEL METRES, one component per wheel in the same
+	// order as `wheelPatches` and as the quadrant split below (x < split first).
+	// The body leans (TestGame.svelte poses the visual group off sim/suspension);
+	// the wheels are the contact balls and must NOT go with it, so this is the
+	// counter-offset that keeps each tyre on the road. Uploading four numbers is
+	// what makes the wheels visibly work in the arches instead of the whole car
+	// rotating as one rigid lump.
+	const uTravel = uniform(new THREE.Vector4());
 
 	let bakedMeshes: THREE.Mesh[] = [];
 	let wheelRadius = currentCar().model.wheelRadiusFallback;
@@ -182,6 +191,16 @@
 			const rearPivot = mix(RR, RL, leftF);
 			const pivot = mix(rearPivot, frontPivot, frontF);
 
+			// Suspension travel, selected by the SAME quadrant flags as the pivot —
+			// the uniform's components are in `wheelPatches` order and that order is
+			// this split (index 0/2 are the x < split side, 0/1 the front).
+			const travel = mix(
+				mix(uTravel.w, uTravel.z, leftF),
+				mix(uTravel.y, uTravel.x, leftF),
+				frontF
+			);
+			const lift = vec3(0, travel, 0);
+
 			const cr = cos(uRoll),
 				sr = sin(uRoll);
 			const cs = cos(uSteer),
@@ -201,7 +220,16 @@
 				);
 				return mix(rolled, steered, frontF);
 			};
-			const place = (src: any) => spin(src.sub(pivot).toVar()).add(pivot);
+			// Rotate about the wheel's own pivot, then lift the whole wheel by its
+			// corner's travel. The lift is AFTER the spin because it is the hub
+			// moving, not the tyre deforming — a wheel rolls the same at any ride
+			// height. Travel goes through `place`, so `positionPrevious` gets the
+			// CURRENT travel exactly like it gets the current steer and roll: the
+			// deformation contributes zero velocity and the wheels blur from the
+			// car's motion alone (see the Fn below). Suspension travel is a few cm
+			// against a car doing tens of m/s — carrying a second set of previous
+			// uniforms just for it would buy nothing visible.
+			const place = (src: any) => spin(src.sub(pivot).toVar()).add(pivot).add(lift);
 
 			// An Fn (a stack, webgpu-notes.md §1.3) rather than a pure expression for one
 			// reason: VELOCITY. VelocityNode measures ndc(positionLocal) − ndc(positionPrevious),
@@ -308,8 +336,23 @@
 			const surfaceSpeed = carSim.speedMs * (1 + carSim.slip * 0.8) * UNITS_PER_METER;
 			uRoll.value = wrapAngle(uRoll.value - (surfaceSpeed / (wheelRadius * visualScale)) * delta);
 
+			// Suspension travel. The module's numbers are WORLD units (body space);
+			// this material deforms the model's own baked geometry, which the parent
+			// group scales by `visualScale` — so divide, exactly like the roll rate
+			// above multiplies. The scene's task owns `updateSuspension` and mounted
+			// first, so these are this frame's values, not last frame's.
+			const t = suspension.travel;
+			uTravel.value.set(
+				t[0] / visualScale,
+				t[1] / visualScale,
+				t[2] / visualScale,
+				t[3] / visualScale
+			);
+
 			// On-demand discipline: the wheels turning IS a visual change, and this is
-			// its one owner. A parked car with the wheels straight costs nothing.
+			// its one owner. A parked car with the wheels straight costs nothing —
+			// the suspension's own movement is invalidated by the scene's task, which
+			// is also what moved the body these wheels are countering.
 			if (steered || surfaceSpeed !== 0) invalidate();
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
