@@ -1012,22 +1012,31 @@ inherit the GR86's ride.
   - **The RT holds RAW linear HDR** (render-target passes skip the output
     colour transform) and the quad is drawn by the base pass like any lit
     surface — so the mirror is tone-mapped exactly once, in pipeline AND
-    low-quality bypass mode. The image is FLIPPED HORIZONTALLY: a car
-    overtaking on the right appears on the right of the strip, as in a real
-    mirror — an unflipped backward camera would put it on the left.
+    low-quality bypass mode. The image is flipped on BOTH axes, for different
+    reasons: x for MIRROR semantics (a car overtaking on the right appears on
+    the right of the strip, as in a real mirror — an unflipped backward camera
+    would put it on the left), y because WebGPU's texture origin is top-left
+    while the plane's `uv()` is bottom-left — an RT sampled with a raw `uv()`
+    lands upside down (webgpu-notes.md §4's vertical-mirror warning).
   - **The overlay quad is `LENS_LAYER`'s first resident since the rain/frost
     lenses became post effects.** The active camera enables the bit while
     this component is up and gives it back on exit (`skyLayer.ts` keeps the
     layer for exactly this); every internal camera is constructed fresh with
     a layer-0 mask, so nothing re-samples the strip. `transparent` +
-    `renderOrder` 999 draws it after smoke and every other scene transparent;
-    depthTest/Write and fog are off. Known MRT trade (postprocessing/CLAUDE.md
-    §“Non-output attachments do not blend”): the opaque strip stamps its
-    ~zero velocity over the velocity attachment underneath it — nothing
-    visible is lost (the strip is opaque), motion blur leaves the mirror
-    sharp (reads as a digital mirror) and AO / bloom-Material-mode see the
-    quad's flat inputs under it. A pipeline composite would avoid that but is
-    engine surgery for one scene.
+    renderOrder 999 draws it after smoke and every other scene transparent;
+    depthTest/Write and fog are off. The CASING is a rounded-rectangle SDF
+    measured in pixel-proportional space (uv ×STRIP_ASPECT — the one space
+    where the corner radius and the ring thickness read uniform on a 4:1
+    strip), bottom→top shaded so it reads as a lit rim, with a faint shadow
+    onto the glass; the outer edge is an AA feather + `alphaTest` cutout —
+    DISCARDED fragments write nothing at all, so the MRT trade below is
+    bounded by the VISIBLE SHAPE, not the quad rectangle. Known MRT trade
+    (postprocessing/CLAUDE.md §“Non-output attachments do not blend”): the
+    retained pixels stamp their ~zero velocity over the velocity attachment
+    underneath — nothing visible is lost (opaque or the 1px AA band), motion
+    blur leaves the mirror sharp (reads as a digital mirror) and AO /
+    bloom-Material-mode see the quad's flat inputs under it. A pipeline
+    composite would avoid that but is engine surgery for one scene.
   - **Shadows are NOT suspended for the pass.** `SkyLight.svelte` arms
     `shadow.needsUpdate` once per frame and the first pass to render pays it;
     this pass is that first one, so the frame still renders the shadow map

@@ -31,13 +31,16 @@
 	// constructed fresh with the layer-0 mask, so nothing re-samples the strip —
 	// the same guarantee the lens quads used to rely on. `transparent` +
 	// renderOrder 999 draws it after the scene's transparents (smoke must not
-	// wash over it); depthTest/Write off, fog off. KNOWN MRT TRADE
-	// (postprocessing/CLAUDE.md §"Non-output attachments do not blend"): an
-	// in-scene overlay stamps its own ~zero velocity over the velocity
-	// attachment under the strip — the strip is opaque, so nothing visible is
-	// lost; motion blur leaves the mirror image sharp (a digital mirror — fine)
-	// and AO/bloom-Material-mode see the quad's flat inputs under it. A pipeline
-	// composite would avoid that but is engine surgery for one scene.
+	// wash over it); depthTest/Write off, fog off. The casing is a
+	// rounded-rectangle SDF with an alphaTest cutout — discarded fragments
+	// write NOTHING, so the velocity stamp below only covers the visible shape.
+	// KNOWN MRT TRADE (postprocessing/CLAUDE.md §"Non-output attachments do not
+	// blend"): the retained pixels stamp their ~zero velocity over the velocity
+	// attachment under the strip — nothing visible is lost (they are opaque or
+	// the 1px AA band); motion blur leaves the mirror image sharp (a digital
+	// mirror — fine) and AO / bloom-Material-mode see the quad's flat inputs
+	// under it. A pipeline composite would avoid that but is engine surgery for
+	// one scene.
 	//
 	// MIRROR SEMANTICS: the image is flipped horizontally — a car overtaking on
 	// the right appears on the right of the strip, as in a real mirror. A plain
@@ -70,6 +73,26 @@
 	const TOP_FRACTION = 0.045;
 	/** Camera-space distance to the quad — must clear the camera's near (1). */
 	const QUAD_DISTANCE = 2;
+
+	// ── The casing shape ───────────────────────────────────────────────────────
+	// All in STRIP HALF-HEIGHTS: the SDF below works in pixel-proportional
+	// space, so one unit is the same length in pixels on either axis and these
+	// read uniform on screen. Corner radius must stay ≤ 1 (the short half-extent).
+	/** Corner rounding of the casing — 0.55 ≈ pill-soft. */
+	const CORNER_RADIUS = 0.55;
+	/** Casing ring thickness. */
+	const CASING_WIDTH = 0.14;
+	/** Softness of the casing↔glass boundary. */
+	const CASING_SOFT = 0.04;
+	/** Anti-alias feather across the outer edge; alphaTest cuts beyond it. */
+	const EDGE_FEATHER = 0.03;
+	/** Glass brightness just inside the casing (its shadow), 1 = untouched. */
+	const GLASS_EDGE_LIGHT = 0.78;
+	/** How far that glass shading reaches inside the casing. */
+	const GLASS_SHADE_WIDTH = 0.06;
+	/** Casing tone, bottom → top (a lit rim reads as form, not a flat border). */
+	const CASING_BOTTOM: [number, number, number] = [0.016, 0.02, 0.03];
+	const CASING_TOP: [number, number, number] = [0.1, 0.115, 0.14];
 
 	// ── The mirror camera ─────────────────────────────────────────────────────
 	// Constructed fresh (never cloned): layer-0 mask only, so it skips LENS_LAYER
@@ -106,18 +129,50 @@
 	const quadGeometry = new THREE.PlaneGeometry(1, 1);
 	const quadMaterial = new THREE.MeshBasicNodeMaterial();
 	quadMaterial.name = 'RearViewMirror';
-	// Mirror flip on x (see header), soft bezel so it reads as a mirror. Built
-	// from plain floats/vec4s on purpose — TSL's promotion rules quietly widen
-	// mixed-length mixes (postprocessing/CLAUDE.md §"TSL silently widens").
-	const sampleUv = vec2(uv().x.oneMinus(), uv().y);
+	// Built from plain floats/vec4s on purpose — TSL's promotion rules quietly
+	// widen mixed-length mixes (postprocessing/CLAUDE.md §"TSL silently widens").
+	//
+	// THE SAMPLE FLIPS, both deliberate: x for MIRROR semantics (see header); y
+	// because WebGPU's texture origin is top-left while the plane's `uv()`
+	// origin is bottom-left — an RT sampled with a raw uv() lands upside down
+	// (webgpu-notes.md §4's vertical-mirror warning, browser-verified).
+	const sampleUv = vec2(uv().x.oneMinus(), uv().y.oneMinus());
 	const image = texture(rt.texture, sampleUv);
-	const edgeX = uv().x.sub(0.5).abs().mul(2);
-	const edgeY = uv().y.sub(0.5).abs().mul(2);
-	const bezel = smoothstep(0.94, 0.985, edgeX.max(edgeY));
-	quadMaterial.colorNode = mix(image, vec4(0.02, 0.024, 0.035, 1), bezel);
+
+	// THE SHAPE: a rounded-rectangle signed distance, measured in
+	// pixel-proportional space — uv scaled so one unit is the same PIXEL length
+	// on both axes (the quad is locked to STRIP_ASPECT, so ×STRIP_ASPECT on x is
+	// exact). That is what makes the corner radius and the casing ring read
+	// uniform on a 4:1 strip; in raw uv the ring would be 4× thicker on the long
+	// edges than the short ones.
+	const p = uv().mul(2).sub(1); // −1..1, y up
+	const s = vec2(p.x.mul(STRIP_ASPECT), p.y); // pixel-proportional: x ±4, y ±1
+	const box = vec2(STRIP_ASPECT - CORNER_RADIUS, 1 - CORNER_RADIUS);
+	// Outside distance to the rounded edge: 0 AT the edge, negative inside (the
+	// flat-edge distance is exact; the inside is conservative, which is all the
+	// masks need).
+	const d = s.abs().sub(box).max(0).length().sub(CORNER_RADIUS);
+
+	// Casing ring, shaded bottom→top so it reads as a lit rim rather than a
+	// flat border, plus a faint shadow it casts onto the glass just inside.
+	const shade = p.y.mul(0.5).add(0.5);
+	const casingColor = mix(vec4(...CASING_BOTTOM, 1), vec4(...CASING_TOP, 1), shade);
+	const casing = smoothstep(-CASING_WIDTH, -CASING_WIDTH + CASING_SOFT, d);
+	const innerClear = smoothstep(-CASING_WIDTH - GLASS_SHADE_WIDTH, -CASING_WIDTH, d);
+	const glass = image.mul(mix(GLASS_EDGE_LIGHT, 1, innerClear));
+	quadMaterial.colorNode = mix(glass, casingColor, casing);
+
+	// AA'd cutout: alpha fades across the edge, alphaTest discards past it — a
+	// DISCARDED fragment writes nothing, not even the velocity attachment, so
+	// the MRT trade in the header is bounded by the visible shape, not the
+	// quad's rectangle.
+	quadMaterial.opacityNode = smoothstep(-EDGE_FEATHER, EDGE_FEATHER, d).oneMinus();
+	quadMaterial.alphaTest = 0.5;
+
 	// The transparent list, sorted by renderOrder — after smoke and every other
-	// scene transparent. No blending actually happens (alpha 1); `transparent`
-	// is what puts the quad in the late list.
+	// scene transparent. The blending is real now (the casing's rounded corners
+	// and the AA band show the world through); `transparent` is also what puts
+	// the quad in the late list.
 	quadMaterial.transparent = true;
 	quadMaterial.depthTest = false;
 	quadMaterial.depthWrite = false;
