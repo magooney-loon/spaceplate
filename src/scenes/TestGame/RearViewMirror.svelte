@@ -160,7 +160,12 @@
 	const casing = smoothstep(-CASING_WIDTH, -CASING_WIDTH + CASING_SOFT, d);
 	const innerClear = smoothstep(-CASING_WIDTH - GLASS_SHADE_WIDTH, -CASING_WIDTH, d);
 	const glass = image.mul(mix(GLASS_EDGE_LIGHT, 1, innerClear));
-	quadMaterial.colorNode = mix(glass, casingColor, casing);
+	// Alpha is FORCED to 1 here: `image` is a full vec4 sample, and an RT's own
+	// alpha channel is clear-colour garbage (the dome and the sky's transparent
+	// layers write whatever they write) — feeding it through made the glass
+	// semi-transparent. The shape mask in `opacityNode` is the ONLY alpha this
+	// material may emit.
+	quadMaterial.colorNode = vec4(mix(glass, casingColor, casing).rgb, 1);
 
 	// AA'd cutout: alpha fades across the edge, alphaTest discards past it — a
 	// DISCARDED fragment writes nothing, not even the velocity attachment, so

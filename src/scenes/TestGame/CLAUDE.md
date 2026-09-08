@@ -1030,7 +1030,10 @@ inherit the GR86's ride.
     strip), bottom→top shaded so it reads as a lit rim, with a faint shadow
     onto the glass; the outer edge is an AA feather + `alphaTest` cutout —
     DISCARDED fragments write nothing at all, so the MRT trade below is
-    bounded by the VISIBLE SHAPE, not the quad rectangle. Known MRT trade
+    bounded by the VISIBLE SHAPE, not the quad rectangle. The glass forces
+    alpha 1 in its `colorNode` — an RT's own alpha channel is clear-colour
+    garbage, never an opacity (feeding it through made the mirror
+    semi-transparent); `opacityNode` carries the shape mask alone. Known MRT trade
     (postprocessing/CLAUDE.md §“Non-output attachments do not blend”): the
     retained pixels stamp their ~zero velocity over the velocity attachment
     underneath — nothing visible is lost (opaque or the 1px AA band), motion
