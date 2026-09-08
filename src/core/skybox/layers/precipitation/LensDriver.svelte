@@ -36,7 +36,15 @@
 		/** Seconds for the lens to bead up, and to dry off. Asymmetric on purpose. */
 		wetSeconds?: number;
 		drySeconds?: number;
-		/** Ceiling on wetness, so a downpour never turns the screen to soup. */
+		/**
+		 * Ceiling on wetness, so a downpour never turns the screen to soup.
+		 *
+		 * It buys less headroom than it looks: `wetness` is ALSO what the effect's layer
+		 * weights ramp against (`staticDrops` / `layer1` / `layer2` in rainLens.ts), so
+		 * lowering it thins the drop field as well as the blend. That is the intended
+		 * shape — heavier rain should mean more water, not a flat frame-wide wash — but it
+		 * means the ceiling is a look decision and not just a safety clamp.
+		 */
 		maxWetness?: number;
 		/**
 		 * How much frost snow puts on the glass with the camera standing still.
@@ -82,7 +90,7 @@
 		rainSpeedForFull = 7,
 		wetSeconds = 0.7,
 		drySeconds = 2.6,
-		maxWetness = 0.85,
+		maxWetness = 0.62,
 		standingFrost = 0.35,
 		snowSpeedForFull = 8,
 		freezeSeconds = 4,

@@ -246,6 +246,13 @@ Since then, two more things that are load-bearing rather than taste:
   is 2 rather than the source's 1.85, and why the `scale` param no longer sizes those
   layers (a zoom is `log(r) + log(k)`, a phase shift along the flow). Static drops stay
   in cartesian pattern space: they cling to the glass, they do not run.
+- **Its coverage is radial too, and applied to the BLEND, not to the field**
+  (`clearRadius`). The middle of the frame is where the airflow comes from — the last
+  place water reaches on a real windscreen — and it is what the player is looking
+  through; beading the whole frame equally reads as a dirty screen rather than as
+  weather. Weighting the final `mix` rather than the drop field is what lets drops enter
+  the covered region already formed instead of materialising at its boundary, and costs
+  one multiply (the field is evaluated either way).
 - **`uFlowTime` is a second clock, and the split is the point.** `uDropTime` is a drop's
   own life (beading, fading) and ticks whenever the glass is wet; `uFlowTime` is the
   airflow and all but stops with the camera. One clock either flowed while parked or

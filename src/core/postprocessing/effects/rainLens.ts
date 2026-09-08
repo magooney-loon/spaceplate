@@ -88,6 +88,20 @@ export type RainLensParams = {
 	/** Multiplier on the refraction offset. 0 keeps the drops but stops them bending. */
 	refraction: number;
 	/**
+	 * Radius of the CLEAR CENTRE, in half-frame-heights: 0.5 is the top and bottom edge,
+	 * ~0.89 the sides of a 16:9 frame, ~1.02 its corners. Coverage ramps from here to
+	 * `+ COVERAGE_BAND` and the effect is absent inside it.
+	 *
+	 * WHY THE MIDDLE IS EXEMPT. Two reasons that happen to agree. The centre of the frame
+	 * is where the airflow comes FROM, so on a real windscreen it is the last place water
+	 * reaches and the first place it leaves — and it is also what the player is looking
+	 * through. A lens that beads over the whole frame equally reads as a dirty screen; one
+	 * that closes in from the edges reads as weather and stays playable.
+	 *
+	 * Measured in FRAME units, not pattern units, so it does not move when `scale` does.
+	 */
+	clearRadius: number;
+	/**
 	 * Mip level sampled for the wet glass BETWEEN drops, at full wetness. The original runs
 	 * 3-6 here for a deliberately misted windscreen; this is tuned much lower, because a
 	 * game frame that goes soft whenever the player moves is unreadable.
@@ -108,11 +122,19 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 	role: 'chain',
 	order: 36,
 	requires: [],
-	params: () => ({ scale: 0.85, refraction: 1, glassBlur: 2.4, dropBlur: 0.3, inputClamp: 8 }),
+	params: () => ({
+		scale: 0.85,
+		refraction: 0.8,
+		clearRadius: 0.24,
+		glassBlur: 1.9,
+		dropBlur: 0.3,
+		inputClamp: 8
+	}),
 	defaultEnabled: true,
 	ranges: {
 		scale: { min: 0.2, max: 2, step: 0.05 },
 		refraction: { min: 0, max: 3, step: 0.05 },
+		clearRadius: { min: 0, max: 1, step: 0.01 },
 		glassBlur: { min: 0, max: 6, step: 0.1 },
 		dropBlur: { min: 0, max: 6, step: 0.1 },
 		inputClamp: { min: 0.5, max: 64, step: 0.5 }
@@ -276,10 +298,11 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 		 * evaluations share it and the refraction normal is still a screen-space gradient.
 		 */
 		const Drops = Fn(([uvIn, t, flow, l0, l1, l2]: [any, any, any, any, any, any]): any => {
-			// The centre of expansion is a singularity — the angular coordinate spins
-			// arbitrarily fast there — and it is also where a real flow has nothing moving
-			// yet. Fading the running layers over the first few percent of the frame buys
-			// off the aliasing with the physics rather than against it.
+			// The centre of expansion is a singularity: the angular coordinate spins
+			// arbitrarily fast there, so the field aliases into a spinning knot at the exact
+			// centre pixel. This is the guard for THAT, and nothing else — it is a couple of
+			// percent of the frame wide and sits well inside the clear middle that
+			// `coverage` (below) carves out for look reasons.
 			const r = uvIn.length();
 			const hub = smoothstep(float(0.012), float(0.09), r);
 			const uvFlow = flowUV(uvIn);
@@ -307,7 +330,17 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 		// The pattern lives in aspect-corrected space centred on the screen, exactly the
 		// original's `uv = (fragCoord - .5*iResolution.xy) / iResolution.y`.
 		const aspect = screenSize.x.div(screenSize.y);
-		const patternUV = shaderUV.sub(0.5).mul(vec2(aspect, 1)).mul(u.scale);
+		const frameUV = shaderUV.sub(0.5).mul(vec2(aspect, 1));
+		const patternUV = frameUV.mul(u.scale);
+
+		// COVERAGE IS RADIAL — see `clearRadius`. It is applied to the FINAL BLEND rather
+		// than to the drop field, which is the difference between a lens that is clear in
+		// the middle and a lens with no drops in the middle: the field still runs across
+		// the whole frame (drops enter the covered region already formed, instead of
+		// materialising at its boundary), it simply is not composited where the glass is
+		// clear. Cheap, too — the field is evaluated either way, and this is one mix.
+		const COVERAGE_BAND = 0.4;
+		const coverage = smoothstep(u.clearRadius, u.clearRadius.add(COVERAGE_BAND), frameUV.length());
 
 		// TWO CLOCKS, because the drops do two things. `t` is a drop's own life — beading
 		// and fading in place — and it ticks whenever the glass is wet. `flow` is the
@@ -360,6 +393,6 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 		// written out. Everything the effect does (refraction, blur, drops) arrives through
 		// this one number, and the base term is the UNCLAMPED colour so the sun keeps its
 		// real brightness wherever the lens is thin.
-		return mix(ctx.color, frame, uWetness);
+		return mix(ctx.color, frame, uWetness.mul(coverage));
 	}
 };
