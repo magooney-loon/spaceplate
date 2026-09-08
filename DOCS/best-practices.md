@@ -51,7 +51,7 @@ renders wrong), `RAPIER.md` (physics), and the per-area `CLAUDE.md` files.
 | 79                | Effect params are live-tweakable via uniform writes in place (no graph rebuild)                                                                                                                                                                                                                                                                                                        | `core/utils/Renderer.svelte`, `extensions/postprocessing`                                 |
 | 80                | Render scale is the `dpr` knob from the quality preset; **low quality bypasses the pipeline entirely** — no base-pass render target is allocated at all                                                                                                                                                                                                                                | `App.svelte`, `core/utils/Renderer.svelte` (`bypass`)                                     |
 | 82                | Native TSL post-processing IS this engine (`RenderPipeline` + TSL nodes)                                                                                                                                                                                                                                                                                                               | `core/utils/Renderer.svelte`, `core/postprocessing/`                                      |
-| 83, 85, 89        | One 3D scene is mounted at a time (`{#if}` routing in `Scene.svelte`); lazy-load/placeholder patterns for content sites do not apply to a full-canvas app                                                                                                                                                                                                                               | `Scene.svelte`, `Loader.svelte`                                                          |
+| 83, 85, 89        | One 3D scene is mounted at a time (`{#if}` routing in `Scene.svelte`); lazy-load/placeholder patterns for content sites do not apply to a full-canvas app                                                                                                                                                                                                                              | `Scene.svelte`, `Loader.svelte`                                                           |
 | 84                | Studio + every extension panel are dynamically imported behind `VITE_GAME_ENGINE` and never ship; three itself is needed at boot                                                                                                                                                                                                                                                       | `App.svelte`                                                                              |
 | 90                | R3F-specific (Svelte: `{#await}` / loaded flags)                                                                                                                                                                                                                                                                                                                                       | —                                                                                         |
 | 91, 97            | stats-gl integrated, including the WebGPU timestamp-query resolution gotcha (stats-gl never resolves the queries itself on a three `WebGPURenderer`)                                                                                                                                                                                                                                   | `extensions/stats/StatsExtension.svelte`                                                  |
@@ -390,11 +390,31 @@ Clear weather was unchanged, as the control. Two fixes, both layer-mask work:
 2. **The lens quads excluded from the floor reflector** (§2.8) — a second fullscreen
    `viewportMipTexture` pass per frame, and a rendering bug besides.
 
-**Then the main-pass overdraw**, which is where the rest of it lives: 11 000
-alpha-blended billboards with `depthWrite = false`, every fragment blended whether it
-contributes or not. Snow costs more than rain despite having _fewer_ particles, because
-rain's quads are thin streaks and snow's were squares, and snow's fragment shader is the
-heavier one. Three knobs, in order of effect — the first two are now shipped:
+**Then the main pass — and the diagnosis above was half right in a way worth keeping.**
+"A cost that vanishes at low resolution is fill rate" correctly rules out CPU and draw
+calls, but fill rate is fragments × the cost of a fragment, and the second factor is
+where snow's money was. **Snow's fragment shader was re-running the entire motion
+solve, per pixel.** TSL builds a node in whatever stage consumes it and only
+`AttributeNode` lifts itself to a varying, so naming `settle` or `wrapFade` in
+`opacityNode` — a fragment node — pulled two `fract` wraps, four sin/cos sway terms, the
+height-field texture fetch, three smoothsteps and two matrix multiplies into the fragment
+stage, for a value that is constant across the flake's quad. At these sprite sizes most
+of those fragments arrive in 2×2 quads the rasteriser shades whole. It also answers the
+puzzle the table above left open — snow costing more than rain with _fewer_ particles —
+and note that the table cannot see this: it counts triangles, which the fix does not
+change. **Re-measure snow with a frame timer, not a triangle counter.** One `varying()` carrying the product moves all of it to the vertex
+stage (`Snow.svelte`'s `flakeAlpha`); the value is identical at every vertex of an
+instance, so interpolating it is exact. **Rain's three materials still have the same
+shape** — same fix available, left for its own change.
+
+The rest is genuine overdraw: alpha-blended billboards with `depthWrite = false`, every
+fragment blended whether it contributes or not. Four knobs, in order of effect, all now
+shipped:
+
+- **Where the flakes are, before how many.** What reads is flakes per unit³ near the
+  camera; the box was 64×40×64 and spent a third of the field 25-45 units out, two or
+  three pixels per flake at full instance-and-blend price. 52×34×52 with 11 000 → 7 000
+  draws a third fewer at a higher local density.
 
 - **Resolution — the biggest lever, and the only one that costs sharpness rather than
   content.** `App.svelte` gave the high preset `window.devicePixelRatio` uncapped, which
@@ -408,14 +428,20 @@ heavier one. Three knobs, in order of effect — the first two are now shipped:
   instead: 17% fewer fragments, four extra vertices per instance, apothem 1 so the drawn
   disc and the shader are untouched. Verified by construction — `sides = 4` reproduces
   `CENTERED_QUAD` exactly, and the winding is CCW so `FrontSide` doesn't cull it.
-- **Count — the one that actually changes the look.** `PRECIPITATION` in `Skybox.svelte`;
-  the doc's own note that count is "the ONE knob that moves cost" is right, but it thins
-  the snowfall visibly, which is why it is last.
+- **Count — the one that actually changes the look, and never on its own.**
+  `PRECIPITATION` in `Skybox.svelte`. The old note that count is "the ONE knob that moves
+  cost" is what made this the reflex; it thins the snowfall visibly, which is why it is
+  last and why it moved together with the box rather than against it.
 
-`SnowLens` also keeps drawing for ≈30s after snow stops (`meltSeconds = 6` decaying to a
-`growth > 0.002` cutoff) — by design, "frost is a temperature", but it is a fullscreen
-pass evaluating the crystal field three times per pixel the whole time. Now paid once per
-frame instead of twice.
+**`SnowLens` used to keep drawing for ≈30s after snow stopped** (`meltSeconds` decaying to
+a `growth > 0.002` cutoff) — by design, "frost is a temperature", except that the frost
+front does not reach the corners of the frame until growth ~0.086, so most of that tail
+was a fullscreen pass whose output was provably its input. The activity latch is per lens
+now and its threshold is read off the effect's own geometry (`LensDriver.svelte`), which
+ends the pass when it stops being visible rather than ~24s later. The effect itself also
+stopped evaluating its cheap half in triplicate: only the crystal ridges need a gradient,
+so coverage is computed once and the ridges dropped to two octaves each (the third ran
+past the pixel grid and bought shimmer) — 27 noise octaves per pixel down to 14.
 
 ---
 

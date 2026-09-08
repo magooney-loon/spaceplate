@@ -32,6 +32,19 @@ export const uWetness = uniform(0);
  */
 export const uDropTime = uniform(0);
 
+/**
+ * The WINDSHIELD clock: how far the drop field has streamed outward from the centre of the
+ * frame, accumulated on the CPU for the same reason `uDropTime` is.
+ *
+ * SEPARATE FROM `uDropTime` BECAUSE IT MEANS SOMETHING ELSE. `uDropTime` is the drops'
+ * own life cycle — beading, running, fading — and it ticks on a lens that is merely wet.
+ * This one is the airflow: a drop lands on a moving windscreen and is blown outward from
+ * the point the vehicle is heading at, so its rate is dominated by SPEED and all but stops
+ * when the camera does. Driving them off one clock made either the pattern flow while
+ * parked or the drops freeze mid-life while moving.
+ */
+export const uFlowTime = uniform(0);
+
 // ── Snow ─────────────────────────────────────────────────────────────────────
 
 /** How far the frost front has advanced, 0 (clear) to 1 (past the centre of the frame). */

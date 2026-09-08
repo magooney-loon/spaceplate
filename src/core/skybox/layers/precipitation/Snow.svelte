@@ -34,6 +34,31 @@
 	// The mesh is recentered on the active camera every frame, as Rain is, so the box
 	// follows the player without a world-sized particle system. The quad is instanced
 	// (skyLayer.ts), as Rain's.
+	//
+	// ── "ZERO CPU PER FLAKE" WAS NEVER THE BILL, AND NEITHER WAS FILL RATE ────────────
+	//
+	// The layer read as a fill-rate problem for a long time (best-practices.md §3.6) and
+	// paid for it with quad area and instance counts. Those were real but small. THE
+	// ACTUAL COST WAS THAT THE ENTIRE MOTION SOLVE RAN AGAIN IN THE FRAGMENT STAGE,
+	// per blended pixel of every flake.
+	//
+	// TSL builds a node in whatever stage CONSUMES it, and only `AttributeNode` lifts
+	// itself to a varying (`AttributeNode.js` -> `varying(this)`); every piece of
+	// arithmetic on top of one is simply re-emitted. `opacityNode` is a fragment node, so
+	// naming `settle` or `wrapFade` in it dragged their whole dependency chain along:
+	// two `fract` wraps, four sin/cos sway terms, the height-field texture fetch, three
+	// smoothsteps and two matrix multiplies -- none of which vary across a flake's quad --
+	// recomputed for every fragment, and at these sprite sizes most fragments come in 2x2
+	// quads the rasteriser shades whole. A snow fragment cost tens of times what a rain
+	// one did, which is also the answer to the puzzle §3.6 left open: snow costing more
+	// than rain with FEWER particles. (The numbers in that table predate this; they
+	// measured triangles, which this does not change at all.)
+	//
+	// Everything except the `speck` falloff is constant over one flake, so it is computed
+	// ONCE PER VERTEX and interpolated (`flakeAlpha` below). The value is identical at all
+	// of the instance's vertices, so interpolating it is exact, not an approximation.
+	// **Rain's three materials still have the original shape** -- same trap, same fix
+	// available, deliberately left for its own change.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';
@@ -50,6 +75,7 @@
 		sqrt,
 		time,
 		uniform,
+		varying,
 		vec3,
 		vec4
 	} from 'three/tsl';
@@ -67,7 +93,15 @@
 
 	interface Props {
 		count?: number;
-		/** Local box around the camera. Keep it inside the camera far plane. */
+		/**
+		 * Local box around the camera. Keep it inside the camera far plane.
+		 *
+		 * WHAT MATTERS IS COUNT / VOLUME, not either number alone. The box was 64x40x64,
+		 * which spent a third of the field on flakes 25-45 units out -- 2-3 pixels each,
+		 * costing a full instance and a full blend to render as noise. Shrinking the box
+		 * faster than the count RAISES the density where snow actually reads (0.067
+		 * flakes/unit3 -> 0.076) while drawing a third fewer of them.
+		 */
 		width?: number;
 		height?: number;
 		depth?: number;
@@ -82,10 +116,10 @@
 	}
 
 	let {
-		count = 11000,
-		width = 64,
-		height = 40,
-		depth = 64,
+		count = 7000,
+		width = 52,
+		height = 34,
+		depth = 52,
 		minSpeed = 0.6,
 		maxSpeed = 1.7,
 		sizeWorld = 0.05,
@@ -312,15 +346,20 @@
 		const viewDistance = modelViewMatrix.mul(vec4(x, y, z, 1)).xyz.length();
 		const nearFade = smoothstep(float(NEAR_FADE_START), float(NEAR_FADE_END), viewDistance);
 
+		// THE ONE VARYING, and the header explains why it is the whole cost story: every
+		// term here is constant across a flake's quad, so it belongs in the vertex stage.
+		// `speck` is the only genuinely per-fragment factor -- it reads the interpolated
+		// quad corner -- and it stays outside.
+		//
+		// One varying rather than one per term: they are only ever multiplied together, so
+		// the product is the interpolant. Six varyings would carry the same information at
+		// six times the interpolation cost.
+		const flakeAlpha = varying(
+			opacity.mul(aBright).mul(twinkle).mul(settle).mul(wrapFade).mul(nearFade).mul(alive)
+		);
+
 		material.colorNode = uFlakeTint;
-		material.opacityNode = opacity
-			.mul(speck)
-			.mul(aBright)
-			.mul(twinkle)
-			.mul(settle)
-			.mul(wrapFade)
-			.mul(nearFade)
-			.mul(alive);
+		material.opacityNode = flakeAlpha.mul(speck);
 
 		// An octagon, not a quad: the speck below dies at radius 1, so a square's corners
 		// are 21.5% of every flake's fragments blended to nothing. See instancedDisc.

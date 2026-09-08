@@ -34,20 +34,29 @@
 // accumulator with asymmetric time constants, quick to wet and slow to dry, because a mask
 // that tracked speed directly would pop on and off every time the player stopped.
 //
+// ...WHICH IS ALSO WHY THE DROPS DO NOT FALL. If the lens only exists while the camera is
+// driving into the rain, then the force on the water is the airflow and not gravity, and
+// the drops stream OUTWARD from the point the camera is heading at -- a windscreen, not a
+// window. That is a change of coordinates rather than a change of shader; the whole
+// argument is at "The windshield" in `build` below.
+//
 // ORDER 36 -- after every geometry consumer (ao 10, dof 30, motionBlur 35), before bloom
 // (40). Both halves matter. AO/DoF/motion blur are SCENE-space and must see the un-lensed,
 // geometry-aligned frame; bloom is optics, and light scattered by water on the front
 // element is exactly the sort of thing that should then bloom.
 import {
 	Fn,
+	atan,
 	dot,
 	float,
 	floor,
 	fract,
+	log,
 	mix,
 	screenSize,
 	screenUV,
 	sin,
+	smoothstep,
 	sqrt,
 	vec2,
 	vec3,
@@ -58,6 +67,7 @@ import { HalfFloatType, LinearMipmapLinearFilter } from 'three/webgpu';
 import {
 	lensActivity,
 	uDropTime,
+	uFlowTime,
 	uWetness
 } from '$core/skybox/layers/precipitation/lensState.svelte';
 import type { EffectDef } from '../types';
@@ -67,6 +77,12 @@ export type RainLensParams = {
 	 * Zoom of the droplet pattern. The original animates this between 0.4 and 1.0 for its
 	 * demo; a fixed value reads as a fixed piece of glass, which is what this is. Larger =
 	 * drops spread further apart and appear bigger.
+	 *
+	 * IT ONLY SIZES THE STATIC DROPS NOW. The running layers live in log-polar space
+	 * (see "The windshield" in `build`), where a zoom of the pattern is `log(r) + log(k)` —
+	 * a phase shift along the flow and nothing else. Their size is set by `RADIAL_COLUMNS`,
+	 * which is a build constant rather than a param because the seam at ±π only closes on
+	 * an integer.
 	 */
 	scale: number;
 	/** Multiplier on the refraction offset. 0 keeps the drops but stops them bending. */
@@ -106,7 +122,7 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 	// because a dry lens still evaluates the droplet field three times per pixel,
 	// fullscreen — no uniform value avoids that. See `lensActivity`.
 	structuralTag: () => (lensActivity.rain ? 1 : 0),
-	note: 'Driven by weather + camera speed, not by these sliders — it only appears when you move through rain. Tuning here is the look of the glass; the wetting behaviour lives in LensDriver.svelte.',
+	note: 'Driven by weather + camera speed, not by these sliders — it only appears when you move through rain, and the drops stream outward from the centre of the frame as a windscreen does. Tuning here is the look of the glass; the wetting behaviour lives in LensDriver.svelte.',
 	build: (ctx, u) => {
 		// Dry glass: not in the graph at all. Returning the colour untouched makes this a
 		// pass-through, the same shape the LUT effect uses before its texture lands.
@@ -212,11 +228,65 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 			return vec2(mainDrop.add(droplets.mul(r).mul(trailFront)), trail);
 		});
 
-		/** Static drops plus two running layers at different scales. Returns (mask, trail). */
-		const Drops = Fn(([uvIn, t, l0, l1, l2]: [any, any, any, any, any]): any => {
+		// ── The windshield ───────────────────────────────────────────────────────────
+		//
+		// GRAVITY IS NOT WHAT MOVES WATER ON A MOVING WINDSCREEN. Drops land, the airflow
+		// catches them, and they are swept OUTWARD from the point the vehicle is heading
+		// at — which for a forward-facing camera is the centre of the frame. The port's
+		// drops ran straight down, which is what a parked car does; this lens only exists
+		// while the camera is moving (`uWetness` is measured from speed), so down was the
+		// wrong answer in every frame that ever showed it.
+		//
+		// The fix is a change of COORDINATES, not of the shader: the running layers are
+		// evaluated in screen-centred log-polar space, where the field's own "down" axis
+		// IS the radial direction. Every ported line below is untouched and every property
+		// of the original survives — the drops still run in lanes, still leave tapering
+		// trails behind them, still string droplets along those trails — except that the
+		// lanes are now spokes and "behind" points back at the centre of expansion.
+		//
+		// WHY LOG-POLAR RATHER THAN PLAIN POLAR. `(θ, log r)` is CONFORMAL: a square cell
+		// maps to a square patch of screen, so drops stay round instead of being stretched
+		// into arcs, and they grow as they travel out — which is the perspective the flow
+		// is a projection of. A constant scroll rate in `log r` is also an accelerating
+		// drop in screen space, exactly as a windscreen looks.
+		//
+		// THE SEAM IS NOT AN APPROXIMATION. At θ = ±π the coordinate jumps by the full
+		// circumference, and the pattern is periodic in x with period 1/12 (`grid.x`), so
+		// the two sides meet cell-for-cell as long as the circumference is an INTEGER
+		// number of columns. `RADIAL_COLUMNS` is that integer, `FLOW_SCALE` is what makes
+		// it so, and the second layer's multiplier is 2 rather than the original's 1.85 for
+		// the same reason. Neighbouring columns carry independent drops anyway (`N(id.x)`
+		// offsets each one), so cell-aligned is all "seamless" has ever meant here.
+		const RADIAL_COLUMNS = 96;
+		const FLOW_SCALE = RADIAL_COLUMNS / (24 * Math.PI);
+
+		/**
+		 * Pattern space → flow space. `x` is the angle around the centre of the frame, `y`
+		 * is the log of the distance from it, NEGATED so that the pattern's own downhill
+		 * direction points outward.
+		 */
+		const flowUV = (p: any) =>
+			vec2(atan(p.y, p.x).mul(FLOW_SCALE), log(p.length().max(1e-3)).mul(-FLOW_SCALE));
+
+		/**
+		 * Static drops (in pattern space, on the glass) plus two running layers (in flow
+		 * space, streaming outward). Returns (mask, trail).
+		 *
+		 * The transform lives HERE, inside the differenced function, so all three
+		 * evaluations share it and the refraction normal is still a screen-space gradient.
+		 */
+		const Drops = Fn(([uvIn, t, flow, l0, l1, l2]: [any, any, any, any, any, any]): any => {
+			// The centre of expansion is a singularity — the angular coordinate spins
+			// arbitrarily fast there — and it is also where a real flow has nothing moving
+			// yet. Fading the running layers over the first few percent of the frame buys
+			// off the aliasing with the physics rather than against it.
+			const r = uvIn.length();
+			const hub = smoothstep(float(0.012), float(0.09), r);
+			const uvFlow = flowUV(uvIn);
+
 			const s = StaticDrops(uvIn, t).mul(l0);
-			const m1 = DropLayer2(uvIn, t).mul(l1).toVar();
-			const m2 = DropLayer2(uvIn.mul(1.85), t).mul(l2).toVar();
+			const m1 = DropLayer2(uvFlow, flow).mul(l1.mul(hub)).toVar();
+			const m2 = DropLayer2(uvFlow.mul(2), flow).mul(l2.mul(hub)).toVar();
 
 			const c = S(float(0.3), float(1), s.add(m1.x).add(m2.x));
 			// `m1.y * l0` and `m2.y * l1` are the original's weights, and they do look like
@@ -239,14 +309,19 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 		const aspect = screenSize.x.div(screenSize.y);
 		const patternUV = shaderUV.sub(0.5).mul(vec2(aspect, 1)).mul(u.scale);
 
+		// TWO CLOCKS, because the drops do two things. `t` is a drop's own life — beading
+		// and fading in place — and it ticks whenever the glass is wet. `flow` is the
+		// airflow that carries the running layers outward, and it all but stops when the
+		// camera does. See `uFlowTime` in lensState.svelte.ts.
 		const t = uDropTime;
+		const flow = uFlowTime;
 
 		// Layer weights, as the original derives them from `rainAmount`.
 		const staticDrops = S(float(-0.5), float(1), uWetness).mul(2);
 		const layer1 = S(float(0.25), float(0.75), uWetness);
 		const layer2 = S(float(0), float(0.5), uWetness);
 
-		const c = Drops(patternUV, t, staticDrops, layer1, layer2).toVar();
+		const c = Drops(patternUV, t, flow, staticDrops, layer1, layer2).toVar();
 
 		// Normals by finite difference -- the original's "expensive" path. The cheap
 		// `dFdx`/`dFdy` variant is genuinely cheaper, but this pattern is built on `floor`
@@ -254,8 +329,8 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 		// stamping the grid into the refraction. Three evaluations is the honest price, and
 		// it is also why a dry lens must leave the graph rather than multiply out to zero.
 		const e = float(0.001);
-		const cx = Drops(patternUV.add(vec2(e, 0)), t, staticDrops, layer1, layer2).x;
-		const cy = Drops(patternUV.add(vec2(0, e)), t, staticDrops, layer1, layer2).x;
+		const cx = Drops(patternUV.add(vec2(e, 0)), t, flow, staticDrops, layer1, layer2).x;
+		const cy = Drops(patternUV.add(vec2(0, e)), t, flow, staticDrops, layer1, layer2).x;
 		const n = vec2(cx.sub(c.x), cy.sub(c.x)).mul(u.refraction);
 
 		// Blur: heaviest on the bare wet film, clearing along trails (`c.y`) and clearer

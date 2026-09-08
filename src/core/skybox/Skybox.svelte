@@ -36,9 +36,12 @@
 	// of thousands of blended quads; splashes carry two more instanced layers each. Both
 	// layers bake buffers and materials ONCE at mount from these props, so a change
 	// remounts them ({#key} below) -- fine for a settings click, never animate it.
+	// Snow's counts came DOWN with its box (Snow.svelte's `width`): what reads is
+	// flakes per unit3 near the camera, and the old box spent a third of the field on
+	// 2-pixel flakes 25-45 units out.
 	const PRECIPITATION: Record<QualityLevel, { rain: number; splashes: number; snow: number }> = {
-		high: { rain: 9000, splashes: 1500, snow: 11000 },
-		low: { rain: 4000, splashes: 600, snow: 5000 }
+		high: { rain: 9000, splashes: 1500, snow: 7000 },
+		low: { rain: 4000, splashes: 600, snow: 3200 }
 	};
 	// Identity is stable per preset (a reference into the table), so keying on it is safe.
 	const precipitation = $derived(PRECIPITATION[settingsState.graphics.quality]);

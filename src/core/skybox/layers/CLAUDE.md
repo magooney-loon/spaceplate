@@ -153,6 +153,17 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   at module scope so its identity is stable before any material bakes
   `texture(target.texture)` into its node graph — swapping a texture under a live
   material invalidates its cache key.
+- **"In the vertex node" was a claim about the CPU, and it was not true of the GPU.** TSL
+  builds a node in whatever stage CONSUMES it, and **only `AttributeNode` lifts itself to
+  a varying** — arithmetic on top of one is simply re-emitted per stage. `opacityNode` is
+  a fragment node, so naming a motion term in it dragged the whole solve along: Snow was
+  recomputing two `fract` wraps, four sin/cos sway terms, the height-field texture fetch,
+  three smoothsteps and two matrix multiplies **per blended fragment**, and at these
+  sprite sizes most fragments arrive in 2×2 quads the rasteriser shades whole. That, not
+  quad area and not instance count, was "snow at 24fps" (`DOCS/best-practices.md` §3.6).
+  The rule: **anything constant across a particle's quad goes through `varying()`**, as
+  one product rather than one varying per term — Snow's `flakeAlpha`. Rain's three
+  materials still have the original shape.
 - Rain/Snow animate entirely in the vertex node (a `fract()` sawtooth through a
   camera-anchored box, zero CPU per particle) — that design is why the height field
   exists as a texture rather than geometry queries. **This is why compute shaders are not
@@ -182,6 +193,12 @@ uWindSlant` swept the entire drop field sideways for the duration of any weather
 - Amounts come from `rainAmount`/`snowAmount` (the `precipitationType` split; sleet
   renders both). Snow's flakes dim with the light hints, so a night snowfall reads
   faint and cool.
+- **What reads is flakes per unit³ near the camera, not instance count.** Snow's box was
+  64×40×64, which spent a third of the field on flakes 25-45 units out — two or three
+  pixels each, at the price of a full instance and a full blend. Shrinking the box faster
+  than the count (52×34×52, 11 000 → 7 000) draws a third fewer flakes at a HIGHER
+  local density. Both numbers are baked at mount, so `Skybox.svelte` remounts the layer
+  on a preset change.
 
 #### The lenses left — and why that is not a relocation
 
@@ -215,6 +232,30 @@ read **linear working colour** rather than the encoded framebuffer (so the colou
 round trip is gone, but the input is unbounded HDR and needs bloom's `inputClamp`
 treatment), and the mip source is an `rtt()` rather than `viewportMipTexture`, which
 copies whatever target is bound and is meaningless mid-chain.
+
+Since then, two more things that are load-bearing rather than taste:
+
+- **The rain lens is a WINDSCREEN, not a window.** It only exists while the camera is
+  driving into the rain, so the force on the water is airflow, not gravity: the running
+  drop layers are evaluated in screen-centred **log-polar** space, where the ported
+  shader's own "down" axis is the radial direction and drops stream outward from the
+  point the camera is heading at. Log-polar because it is conformal (drops stay round and
+  GROW as they travel out, which is the perspective the flow is a projection of). Its
+  seam at ±π closes cell-for-cell only if the circumference is an INTEGER number of the
+  pattern's columns — that is what `RADIAL_COLUMNS` is, why the second layer's multiplier
+  is 2 rather than the source's 1.85, and why the `scale` param no longer sizes those
+  layers (a zoom is `log(r) + log(k)`, a phase shift along the flow). Static drops stay
+  in cartesian pattern space: they cling to the glass, they do not run.
+- **`uFlowTime` is a second clock, and the split is the point.** `uDropTime` is a drop's
+  own life (beading, fading) and ticks whenever the glass is wet; `uFlowTime` is the
+  airflow and all but stops with the camera. One clock either flowed while parked or
+  froze drops mid-life while moving.
+- **The activity latch threshold is per lens, read off each effect's geometry.** Wetness
+  is a blend factor, so any positive value shows and its floor can sit low. Growth is a
+  POSITION for the frost front, which does not reach the corners of the frame until
+  ~0.086 — below that the effect is a fullscreen pass whose output is provably its input.
+  The old shared 0.002 floor is what kept the snow lens drawing for ~30 s of melt after
+  every snowfall.
 
 ### `lightning/`
 

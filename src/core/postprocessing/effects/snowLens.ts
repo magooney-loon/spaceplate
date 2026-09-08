@@ -22,6 +22,13 @@
 // the whole crystal structure. Plain (unfolded) fbm gives smoke, which is what makes most
 // frost shaders look like a dirty window instead of a cold one.
 //
+// WHAT IT COSTS, because this one is fullscreen and unavoidable while it is snowing. The
+// first version evaluated the WHOLE field three times per pixel for the refraction
+// normal -- vignette, lobe noise, needles and plates, 27 noise octaves per pixel. Only the
+// crystal ridges have a gradient worth taking, so coverage is computed once and the ridges
+// dropped to two octaves each (the third ran past the pixel grid and produced shimmer):
+// 14 octaves, and the cheap half of the shader stopped being paid for in triplicate.
+//
 // THE FRONT is a threshold on a vignette: distance from the centre of the frame, pushed
 // around by a low-frequency noise so the growth edge is lobed rather than a clean circle,
 // against a level that `uGrowth` walks inward from beyond the corners to past the centre.
@@ -79,12 +86,16 @@ export const snowLensEffect: EffectDef<SnowLensParams> = {
 	role: 'chain',
 	order: 37,
 	requires: [],
+	// Tuned DOWN across the board from the first pass, which iced over hard enough to be
+	// the dominant thing in the frame. Frost is weather, not a filter: the ceiling on the
+	// blend below came down with these (0.92 -> 0.85), and the CPU side got the other half
+	// of the fix -- see `standingFrost` / `maxFrost` / `freezeSeconds` in LensDriver.svelte.
 	params: () => ({
 		scale: 1,
-		refraction: 0.4,
-		frostBlur: 3.4,
-		milk: 0.45,
-		sparkle: 0.55,
+		refraction: 0.3,
+		frostBlur: 2.2,
+		milk: 0.28,
+		sparkle: 0.3,
 		inputClamp: 8
 	}),
 	defaultEnabled: true,
@@ -117,48 +128,33 @@ export const snowLensEffect: EffectDef<SnowLensParams> = {
 				.clamp(0, 1);
 
 		/**
-		 * The frost field at a point, as (crystal, mask).
-		 *
-		 * `mask` is coverage -- 0 clear glass, 1 fully iced -- and every visible consequence
-		 * of this effect is scaled by it, so the un-frosted middle of the frame is untouched
-		 * rather than merely lightly affected. `crystal` is the dendrite structure, already
-		 * multiplied by the mask so its gradient carries the edge of the growth front too and
-		 * the refraction ramps up with the ice instead of snapping on at its boundary.
+		 * The dendrite structure alone -- fine needles over coarse plates. The powers sharpen
+		 * the ridges: without them `1 - |fbm|` is a fat band around each zero crossing and the
+		 * result is closer to marble than to ice.
 		 *
 		 * Inside `Fn` so it can be evaluated three times (see the finite differences below)
 		 * without three copies of the graph.
+		 *
+		 * TWO OCTAVES EACH, NOT THREE, and the second reason is the better one: at three, the
+		 * needle layer's top octave runs at 96 cycles across the frame, which is past what the
+		 * pixel grid can resolve -- it was buying shimmer, not detail, and paying a third of
+		 * the layer's cost for it.
 		 */
-		const Frost = Fn(([p]: [any]): any => {
-			// The vignette the front advances against: 0 at the centre, 1 at the top and
-			// bottom edges, ~1.9 at the corners of a 16:9 frame. Frost reaches the corners
-			// first for free, which is what it does on real glass.
-			const edge = p.length().mul(2);
-
-			// The noise domain, and ONLY the noise domain -- see `uPatternOffset` on why the
-			// vignette above reads the un-offset `p`.
-			const q = p.add(uPatternOffset);
-
-			// Lobes. Without this the front is a perfect circle closing in, which reads as a
-			// vignette effect rather than as something growing.
-			const lobes = mx_fractal_noise_float(vec3(q.mul(4.5), 0), 3, 2, 0.5, 1);
-
-			// At growth 0 the level sits past the far corners (2.7 against a maximum of about
-			// 1.9 + 0.55) so the glass is genuinely clear, not faintly hazed; at growth 1 it
-			// has swept beyond the centre.
-			const front = float(2.7).sub(uGrowth.mul(2.9));
-			const mask = smoothstep(float(0), float(0.5), edge.add(lobes.mul(0.55)).sub(front));
-
-			// Fine needles over coarse plates. The powers sharpen the ridges: without them
-			// `1 - |fbm|` is a fat band around each zero crossing and the result is closer to
-			// marble than to ice.
-			const needles = ridged(q, 24, 3);
-			const plates = ridged(q, 7.5, 3);
-			const crystal = pow(needles, float(3))
+		const Crystal = Fn(([q]: [any]): any =>
+			pow(ridged(q, 24, 2), float(3))
 				.mul(0.8)
-				.add(pow(plates, float(2)).mul(0.4));
+				.add(pow(ridged(q, 7.5, 2), float(2)).mul(0.4))
+		);
 
-			return vec2(crystal.mul(mask), mask);
-		});
+		// ── Coverage: computed ONCE, outside the finite differences ──────────────────
+		//
+		// This used to live inside the differenced function, so the vignette, the lobe fbm
+		// and the smoothstep all ran three times per pixel for a field that is
+		// low-frequency by construction. Only the CRYSTAL needs a gradient; the mask's own
+		// contribution to it was a soft ramp at the growth edge, and multiplying the
+		// finished normal by coverage below keeps that ramp without paying for its
+		// derivative. Fullscreen, that is the difference between 27 noise octaves per pixel
+		// and 14.
 
 		// The pattern lives in aspect-corrected space centred on the frame, so the crystals
 		// are square on screen and the vignette is a real distance rather than a stretched
@@ -168,23 +164,48 @@ export const snowLensEffect: EffectDef<SnowLensParams> = {
 		const aspect = screenSize.x.div(screenSize.y);
 		const patternUV = screenUV.sub(0.5).mul(vec2(aspect, 1)).mul(u.scale);
 
+		// The vignette the front advances against: 0 at the centre, 1 at the top and
+		// bottom edges, ~1.9 at the corners of a 16:9 frame. Frost reaches the corners
+		// first for free, which is what it does on real glass.
+		const edge = patternUV.length().mul(2);
+
+		// The noise domain, and ONLY the noise domain -- see `uPatternOffset` on why the
+		// vignette above reads the un-offset position.
+		const q = patternUV.add(uPatternOffset);
+
+		// Lobes. Without this the front is a perfect circle closing in, which reads as a
+		// vignette effect rather than as something growing.
+		const lobes = mx_fractal_noise_float(vec3(q.mul(4.5), 0), 2, 2, 0.5, 1);
+
+		// At growth 0 the level sits past the far corners (2.7 against a maximum of about
+		// 1.9 + 0.55) so the glass is genuinely clear, not faintly hazed; at growth 1 it
+		// has swept beyond the centre.
+		const front = float(2.7).sub(uGrowth.mul(2.9));
+		const mask = smoothstep(float(0), float(0.5), edge.add(lobes.mul(0.55)).sub(front)).toVar();
+
 		// Normals by finite difference, and unlike the rain lens this is a free choice rather
 		// than a forced one: the field is smooth fbm with no `floor`/`fract` grids in it, so
 		// `dFdx`/`dFdy` would be well-behaved here. Finite differences are used anyway because
 		// they are resolution-independent -- a screen-space derivative makes the refraction
 		// strength depend on the display's pixel density, and `refraction` would have to be
 		// retuned per monitor.
+		//
+		// The offsets go on the NOISE coordinate `q`, which is `patternUV` plus a constant --
+		// the same three points, one addition each cheaper.
 		const e = float(0.0015);
-		const c = Frost(patternUV).toVar();
-		const cx = Frost(patternUV.add(vec2(e, 0))).x;
-		const cy = Frost(patternUV.add(vec2(0, e))).x;
-		const n = vec2(cx.sub(c.x), cy.sub(c.x)).mul(u.refraction);
+		const crystal = Crystal(q).toVar();
+		const cx = Crystal(q.add(vec2(e, 0)));
+		const cy = Crystal(q.add(vec2(0, e)));
+		// Coverage scales the finished normal rather than each sample: the growth front's own
+		// ramp survives (refraction still comes up with the ice rather than snapping on at its
+		// boundary) without differencing the mask to get it.
+		const n = vec2(cx.sub(crystal), cy.sub(crystal)).mul(u.refraction).mul(mask);
 
 		// Blur rides coverage, so it is heaviest in the corners and absent in the clear
 		// middle. There is no counterpart to the rain lens's `dropBlur` -- water drops are
 		// lenses and resolve a sharper image than the film around them, but there is nothing
 		// you can see clearly THROUGH ice.
-		const focus = c.y.mul(u.frostBlur);
+		const focus = mask.mul(u.frostBlur);
 
 		// The mip source. See rainLens.ts on why this is configured in place rather than
 		// through `.sample()` / `.level()`.
@@ -203,10 +224,13 @@ export const snowLensEffect: EffectDef<SnowLensParams> = {
 		// then lay the lit crystal filaments over the top. The second term is what keeps the
 		// frost from reading as a smear -- it is the only part with any structure in it once
 		// the blur has taken the frame apart.
-		const frosted = mix(frame.rgb, uIce, c.y.mul(u.milk)).add(uIce.mul(c.x.mul(u.sparkle)));
+		const frosted = mix(frame.rgb, uIce, mask.mul(u.milk)).add(
+			uIce.mul(crystal.mul(mask).mul(u.sparkle))
+		);
 
 		// Coverage IS the blend -- the mesh's `opacityNode`, written out. The ceiling keeps a
-		// little of the untouched (and unclamped) frame in even at the densest corner.
-		return mix(ctx.color, vec4(frosted, ctx.color.a), c.y.mul(0.92));
+		// little of the untouched (and unclamped) frame in even at the densest corner, and it
+		// came down with the rest of the tuning: at 0.92 a full corner was effectively opaque.
+		return mix(ctx.color, vec4(frosted, ctx.color.a), mask.mul(0.85));
 	}
 };
