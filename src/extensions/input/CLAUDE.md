@@ -1,36 +1,124 @@
-# Action-Based Input System (`input/`)
+# Slot-based input (`input/`)
 
-## Files
+**The engine declares no gameplay actions.** It owns devices, binding, rebinding,
+persistence and the settings UI; the GAME declares what its inputs are called. The unit of
+that declaration is a **slot**. Full design rationale and the migration plan:
+`DOCS/input.md`.
 
 ```
-types.ts            — PlayerId, InputAction (22), InputAxisAction (4), binding types, runtime state
-input.svelte.ts     — $state, inputActions, inputQueries, advanceInputFrame()
-useInput.ts         — convenience hook (path import, not barrel)
-index.ts            — barrel re-exports state + types only
+types.ts          — Binding / SlotDef / InputMap / SlotState / registry types. NO game actions.
+input.svelte.ts   — registry, device state, slot evaluation, persistence, capture actions
+bindingLabels.ts  — KeyboardEvent.code → human label, binding → chip text, Studio-collision flag
+useInputMap.ts    — Svelte lifecycle helper: active while the component is mounted
+engineMap.ts      — the ONE built-in map (openSettings, toggleUi) — both `system: true`
+index.ts          — barrel; imports engineMap for its side effect
 ```
 
-## State shape
+## Declaring and using a map
 
-- **players**: `Record<PlayerId, PlayerInputMap>` (player1–player4). Each has `actions`, `axes`, `gamepad` config.
-- **capture**: Rebinding UI state — `active`, `playerId`, `action`, `bindingType`, `startedAt`.
-- **runtime**: `connectedGamepads`, `keyboardPressed`, `mousePressed`, `lastInputSource`. Written by `core/input/Keymapper.svelte`.
+```ts
+// plain .ts — the definition is data
+export const carControls = defineInputMap({
+	id: 'testgame.car',
+	label: 'Car',
+	slots: {
+		throttle: { label: 'Throttle', group: 'Driving', defaults: [key('ArrowUp'), pad('rightTrigger')] },
+		steer: {
+			type: 'axis', label: 'Steering', group: 'Driving',
+			defaults: [key('ArrowLeft', -1), key('ArrowRight', 1), stick('leftStick', 'x')]
+		}
+	}
+});
+```
 
-## Default player1 bindings
+`defineInputMap` returns a **module singleton handle immediately** — no lifecycle, so plain
+modules (a sim controller, an audio mixer) import it directly instead of having it drilled
+through props. Declaring registers the map so Settings can list it; it does not activate it.
 
-WASD+arrows → move, Space → jump, Shift → sprint, E → interact, Q/RMB → secondary, LMB → primary, R → reload, F → use, C → crouch, X → drop, Z → prone, T → emote, 1–4 → slots, Escape → settings.
+```svelte
+useInputMap(carControls); // active while this component is mounted
+```
 
-`toggleUi` / `openSettings` are engine-reserved — hidden from rebind UI.
+Inactive maps read as zero, don't `preventDefault`, and show dimmed in Settings. Two active
+maps may bind the same key — both fire; that's composition, not a conflict.
 
-## Queries
+## Reading
 
-- `isPressed(playerId, action)` — current frame.
-- `wasPressed(playerId, action)` — edge detect, requires `advanceInputFrame()` each frame.
-- `getAxis(playerId, axisAction)` — digital fallback for moveX/moveY, returns 0 for look.
-- `getMoveVector(playerId)` — `{ x, z }` from moveX + moveY.
+| Call                              | Notes                                                     |
+| --------------------------------- | --------------------------------------------------------- |
+| `pressed(id)` / `value(id)` / `axis(id)` | **Live, never stale** — safe in physics, render, HUD |
+| `slot(id)`                        | The stable `SlotState`; hoist it out of hot loops          |
+| `vector(x, y)`                    | Scratch object — read it, don't retain it                  |
+| `on(id, 'press'\|'release', fn)`  | Fires once per real edge, from the event; returns unsubscribe |
+| `justPressed(id)` / `justReleased(id)` | One-frame latch — see the rule below                  |
 
-## Key behavior
+**There is no "sample input at the top of the frame" step.** Keyboard and mouse are
+recomputed inside the DOM handler, the gamepad inside its poll task, so nothing is ever a
+frame stale and slot states are plain objects (a lookup and a field read, no allocation).
 
-- `advanceInputFrame()` must be called once per frame (in `useTask`) to enable `wasPressed` edge detection.
-- Binding IDs use an incrementing counter, not UUIDs.
-- localStorage key: `spaceplate-input-settings` with `version: 2`. Only bindings and gamepad config persist.
-- Gamepad support is partially implemented — Phase 2 notes indicate analog axes currently fall back to digital key bindings.
+**`justPressed` must not be polled from a physics task.** A `usePhysicsTask` runs
+`ceil(accumulator / rate)` times per frame — 0 or 1 at 60 Hz, 3–4 at 200 Hz — so it would
+fire zero or several times per real press. Same substep hazard `CarWheels` and
+`CarExhaustFlames` document. Use `on()` for anything discrete; it fires from the originating
+event and cannot be missed or doubled.
+
+## Slot types
+
+Two, and only two. **`button`** (digital held, analog `value` when the binding provides it)
+and **`axis`** (bipolar −1…+1). There is no `toggle` type: latched switches are game state.
+A game subscribes to a button slot's press edge and does its own latching — the engine has
+no business knowing that `lights` is a switch and `handbrake` is a pedal.
+
+Bindings are **one flat list per slot whatever the type**, which is what `dir` buys: on an
+axis slot it's the sign a binding contributes (← and → are two bindings on one slot); on a
+button slot it only picks which way a stick must be pushed. Storage, the settings UI and the
+evaluator all see one shape. Helpers: `key(code, dir?)`, `mouse(button, dir?)`,
+`pad(button, dir?)`, `stick(stick, axis, dir?)`.
+
+Evaluation: an axis slot **sums** its digital bindings (both arrows cancel) and lets the
+stick **compete on magnitude** rather than add, so key + stick can't reach 2. A button slot
+takes the loudest source.
+
+## The frame stamp — why there is no clear pass
+
+An edge stamps `pressedFrame = frameId + 1`, the frame that will observe it, and
+`justPressed` is `pressedFrame === frameId`. Nothing to clear, so nothing is left latched
+when the render loop is idle or the Canvas never mounted.
+
+**Always the next frame, for both devices**, because the two are found at different points:
+a DOM event lands between frames, a gamepad edge inside one (its poll sits in the main
+stage, after simulation). Stamping the gamepad's edges with the current frame would hide
+them from the physics stage entirely. The rule worth having is uniform: **an edge is
+observed by every stage of exactly one frame.** `advanceInputFrame` runs in its own stage
+pinned before simulation — `core/input/InputRuntime.svelte`.
+
+## Persistence — overrides, not the resolved set
+
+localStorage `spaceplate-input-bindings`, `version: 1`. **Only slots the player actually
+changed are stored**; a slot with no entry resolves to its code default, so changing a
+default in code reaches existing players. The pre-slot system serialised the whole resolved
+map, which froze every default forever behind whatever was in a user's browser on first
+load. Reset = delete the entry. Entries for maps/slots that no longer exist are kept, not
+pruned — switching branches shouldn't destroy your binds.
+
+The old `spaceplate-input-settings` key is deleted on boot.
+
+## Reactivity split
+
+The project's plain/`$state`-mirror rule (`carSim` vs `carHud`, sky descriptor vs
+`skyMeta`): slot states, held codes and gamepad axes are **plain** — read every physics
+step, and `$state` there is an invalidation per key per step for values no UI renders.
+`inputState` (bindings, registered maps, capture, connected pads) is `$state`, because that
+is exactly what Settings renders.
+
+`setInputChangeHandler` is how on-demand rendering gets told: `InputRuntime.svelte` points
+it at Threlte's `invalidate`, so a stick pushed in a still scene asks for the frame that
+shows the result. Registered rather than imported, so this extension stays free of Threlte
+context.
+
+## Settings ▸ Controls is fully generic
+
+`MainMenu/SettingsHud.svelte` iterates `registeredMaps()` → groups → slots and renders
+labels from the manifest. A new slot appears with no HUD edit. `conflictsFor` flags two
+slots in the same map sharing a binding (amber ⚠, never auto-unbound — some collisions are
+deliberate); `collidesWithStudio` flags Studio's bare-letter binds (`w a s z t r c v m`).

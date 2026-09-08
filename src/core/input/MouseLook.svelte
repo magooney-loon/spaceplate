@@ -2,20 +2,30 @@
 	import { untrack } from 'svelte';
 	import { mouseLookState, mouseLookActions } from './mouseLook.svelte';
 	import { overlayState } from '$extensions/settings';
-	import { inputQueries } from '$extensions/input';
 
 	/**
 	 * Mouse-look rig — mount inside a scene to enable pointer-locked mouse look.
-	 * Aim sensitivity demo: `secondaryAction` (RMB / Q) engages aimSensitivity.
+	 *
+	 * `aiming` is the scene's to supply — the engine no longer has an opinion about
+	 * which slot means "aim", because it no longer declares any gameplay slots:
+	 *
+	 * ```svelte
+	 * <MouseLook aiming={() => fpsControls.pressed('aim')} />
+	 * ```
 	 */
+	interface Props {
+		/** Polled on mouse move; true switches to `settingsState.general.aimSensitivity`. */
+		aiming?: () => boolean;
+	}
+	let { aiming = () => false }: Props = $props();
 
-	function isUiTarget(target: EventTarget | null): boolean {
+	function isLookUiTarget(target: EventTarget | null): boolean {
 		if (!(target instanceof HTMLElement)) return false;
 		return !!target.closest('button, input, select, textarea, a, label, kbd');
 	}
 
 	function onMouseMove(e: MouseEvent) {
-		mouseLookState.aiming = inputQueries.isPressed('player1', 'secondaryAction');
+		mouseLookState.aiming = aiming();
 		mouseLookActions.handleMouseMove(e);
 	}
 
@@ -29,7 +39,7 @@
 
 	// Fallback: engage lock on first non-UI click / keydown if auto-lock was blocked
 	function onInteraction(e: Event) {
-		if (e.type === 'click' && isUiTarget(e.target)) return;
+		if (e.type === 'click' && isLookUiTarget(e.target)) return;
 		if (e instanceof KeyboardEvent && e.code === 'Escape') return;
 		mouseLookActions.requestLock();
 	}

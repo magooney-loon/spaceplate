@@ -103,8 +103,10 @@ panel pattern, templates, extension inventory) and the per-extension reference. 
 - Cross-extension access is a direct import — `settingsState.audio.sfxVolume = 0.8`; persist to
   localStorage inside actions, never `$effect`.
 - Scene switching: `sceneActions.setScene(...)` / `transitionTo(...)` (`$extensions/scene`).
-  Game input: `inputQueries.isPressed('player1', 'jump')` (`$extensions/input`; the window
-  listeners live in `core/input/Keymapper.svelte`). Static asset paths always go through
+  Game input: a scene DECLARES its own slots — `defineInputMap({ id, label, slots })` and
+  `useInputMap(map)`, then `map.pressed('throttle')` / `map.axis('steer')` /
+  `map.on('lights', 'press', fn)` (`$extensions/input`; devices live in `core/input/`). The
+  engine declares no gameplay actions of its own. Static asset paths always go through
   `BASE_URL` (`$extensions/settings`).
 
 ### Frame tasks

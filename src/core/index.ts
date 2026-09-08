@@ -13,7 +13,9 @@ export { soundTriggers, soundActions } from './audio/globalAudio.svelte';
 
 // input/
 export { default as Keymapper } from './input/Keymapper.svelte';
+export { default as InputRuntime } from './input/InputRuntime.svelte';
 export { default as MouseLook } from './input/MouseLook.svelte';
+export { isTypingTarget, isUiTarget } from './input/domGuards';
 export { BASE_SENS, mouseLookState, mouseLookActions } from './input/mouseLook.svelte';
 export type { MouseLookState } from './input/mouseLook.svelte';
 

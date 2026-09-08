@@ -7,6 +7,7 @@
 		Renderer,
 		Loader,
 		Keymapper,
+		InputRuntime,
 		Camera,
 		Skybox,
 		GlobalAudio,
@@ -82,6 +83,11 @@
 			framerate={physicsState.framerate}
 		>
 			<PhysicsWorldLogger />
+			<!-- Draws nothing: advances the input frame stamp in its own stage, pinned
+			     ahead of simulation so physics and render tasks observe the same input
+			     edge. Inside <PhysicsWorld> because that is where the stage it pins
+			     itself against exists — see core/input/InputRuntime.svelte. -->
+			<InputRuntime />
 			<!-- Global physics debug overlay — one mount instead of per-scene copies. Draws
 			     every collider in the world; only the current scene's bodies exist (scenes
 			     unmount with their Rapier bodies). Gated on Studio mode like the panel that

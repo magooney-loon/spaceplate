@@ -8,7 +8,19 @@
 		type QualityLevel
 	} from '$extensions/settings';
 	import { soundActions, capabilityState, telemetryState, WEBGPU_REPORT_URL } from '$core';
-	import { inputState, inputActions, type InputAction, type AnyBinding } from '$extensions/input';
+	import {
+		inputState,
+		inputActions,
+		registeredMaps,
+		bindingsFor,
+		bindingKey,
+		conflictsFor,
+		bindingLabel,
+		dirLabel,
+		collidesWithStudio,
+		type Binding,
+		type AxisDir
+	} from '$extensions/input';
 
 	type Props = { onBack: () => void };
 	let { onBack }: Props = $props();
@@ -39,169 +51,78 @@
 	const mark = (ok: boolean): string => (ok ? '✓' : '✕');
 
 	// --- Controls tab data ---
+	//
+	// FULLY REGISTRY-DRIVEN: this file used to re-declare the engine's action enum,
+	// its labels and its grouping, which meant a new action had to be added in three
+	// places. Now every row below comes from whatever maps games have declared
+	// ($extensions/input), and the label tables live with the engine
+	// (bindingLabels.ts) because what a KeyboardEvent.code is called is not a HUD
+	// decision.
 
-	type ActionGroup = { label: string; actions: InputAction[] };
+	const mapIds = $derived(registeredMaps());
 
-	const ACTION_GROUPS: ActionGroup[] = [
-		{
-			label: 'Movement',
-			actions: [
-				'moveForward',
-				'moveBackward',
-				'moveLeft',
-				'moveRight',
-				'sprint',
-				'jump',
-				'crouch',
-				'prone'
-			]
-		},
-		{
-			label: 'Actions',
-			actions: ['primaryAction', 'secondaryAction', 'interact', 'reload', 'use', 'drop', 'emote']
-		},
-		{
-			label: 'Slots',
-			actions: ['slot1', 'slot2', 'slot3', 'slot4']
+	/** Group a map's non-system slots by their declared `group`, preserving declaration order. */
+	function groupsOf(mapId: string): Array<{ label: string; slotIds: string[] }> {
+		const slots = inputState.maps[mapId]?.slots ?? {};
+		const out: Array<{ label: string; slotIds: string[] }> = [];
+		for (const [slotId, def] of Object.entries(slots)) {
+			if (def.system) continue;
+			const label = def.group ?? 'General';
+			const existing = out.find((g) => g.label === label);
+			if (existing) existing.slotIds.push(slotId);
+			else out.push({ label, slotIds: [slotId] });
 		}
-	];
+		return out;
+	}
 
-	// Engine-reserved actions (toggleUi, openSettings) are intentionally not
-	// listed here — they are routed by the engine and cannot be rebound from the UI.
-	const ACTION_LABELS: Partial<Record<InputAction, string>> = {
-		moveForward: 'Move Forward',
-		moveBackward: 'Move Backward',
-		moveLeft: 'Move Left',
-		moveRight: 'Move Right',
-		jump: 'Jump',
-		sprint: 'Sprint',
-		interact: 'Interact',
-		primaryAction: 'Primary Action',
-		secondaryAction: 'Secondary Action',
-		reload: 'Reload',
-		use: 'Use',
-		crouch: 'Crouch',
-		drop: 'Drop',
-		prone: 'Prone',
-		emote: 'Emote',
-		slot1: 'Slot 1',
-		slot2: 'Slot 2',
-		slot3: 'Slot 3',
-		slot4: 'Slot 4'
-	};
+	const hasBindableSlots = $derived(mapIds.some((id) => groupsOf(id).length > 0));
 
-	const GAMEPAD_BUTTON_LABELS: Record<string, string> = {
-		clusterBottom: 'A',
-		clusterRight: 'B',
-		clusterLeft: 'X',
-		clusterTop: 'Y',
-		leftBumper: 'LB',
-		rightBumper: 'RB',
-		leftTrigger: 'LT',
-		rightTrigger: 'RT',
-		select: 'Select',
-		start: 'Start',
-		center: 'Home',
-		leftStickButton: 'L3',
-		rightStickButton: 'R3',
-		directionalTop: 'D↑',
-		directionalBottom: 'D↓',
-		directionalLeft: 'D←',
-		directionalRight: 'D→'
-	};
+	const isAxis = (mapId: string, slotId: string): boolean =>
+		inputState.maps[mapId]?.slots[slotId]?.type === 'axis';
 
-	const KEY_CODE_LABELS: Record<string, string> = {
-		Space: 'Space',
-		Escape: 'Esc',
-		Enter: 'Enter',
-		Backspace: 'Bksp',
-		Tab: 'Tab',
-		ArrowUp: '↑',
-		ArrowDown: '↓',
-		ArrowLeft: '←',
-		ArrowRight: '→',
-		ShiftLeft: 'L.Shift',
-		ShiftRight: 'R.Shift',
-		ControlLeft: 'L.Ctrl',
-		ControlRight: 'R.Ctrl',
-		AltLeft: 'L.Alt',
-		AltRight: 'R.Alt',
-		Digit0: '0',
-		Digit1: '1',
-		Digit2: '2',
-		Digit3: '3',
-		Digit4: '4',
-		Digit5: '5',
-		Digit6: '6',
-		Digit7: '7',
-		Digit8: '8',
-		Digit9: '9',
-		Comma: ',',
-		Period: '.',
-		Slash: '/',
-		Semicolon: ';',
-		Quote: "'",
-		BracketLeft: '[',
-		BracketRight: ']',
-		Backslash: '\\',
-		Minus: '-',
-		Equal: '=',
-		Backquote: '`'
-	};
-
-	function formatBinding(b: AnyBinding): string {
-		if (b.device === 'keyboard') {
-			const label = KEY_CODE_LABELS[b.code];
-			if (label) return label;
-			if (b.code.startsWith('Key')) return b.code.slice(3);
-			if (b.code.startsWith('Numpad')) return 'Num' + b.code.slice(6);
-			return b.code;
-		}
-		if (b.device === 'mouse') {
-			return b.button === 'left' ? 'LMB' : b.button === 'right' ? 'RMB' : 'MMB';
-		}
-		if (b.device === 'gamepad') {
-			return '🎮 ' + (GAMEPAD_BUTTON_LABELS[b.button] ?? b.button);
-		}
-		if (b.device === 'gamepad-axis') {
-			const dir = b.direction === 'positive' ? '+' : b.direction === 'negative' ? '-' : '';
-			return '🕹 ' + b.axis + dir;
-		}
-		return '?';
+	/** The chip text, with the ± prefix an axis slot's digital bindings need. */
+	function chipLabel(b: Binding, axis: boolean): string {
+		const dir = dirLabel(b, axis);
+		return dir ? `${dir} ${bindingLabel(b)}` : bindingLabel(b);
 	}
 
 	const isCapturing = $derived(inputState.capture.active);
-	const captureAction = $derived(inputState.capture.action as InputAction | null);
-
-	const settingsKeyLabel = $derived.by(() => {
-		const bindings = inputState.players.player1.actions.openSettings ?? [];
-		const keyboard = bindings.find((b) => b.device === 'keyboard');
-		return keyboard ? formatBinding(keyboard) : null;
+	const captureSlotLabel = $derived.by(() => {
+		const { mapId, slotId } = inputState.capture;
+		if (!mapId || !slotId) return null;
+		return inputState.maps[mapId]?.slots[slotId]?.label ?? slotId;
 	});
 
-	function startBind(action: InputAction) {
+	/** Shown as a hint on the General tab — the engine map owns this one. */
+	const settingsKeyLabel = $derived.by(() => {
+		const k = bindingsFor('engine', 'openSettings').find((b) => b.device === 'key');
+		return k ? bindingLabel(k) : null;
+	});
+
+	function startBind(mapId: string, slotId: string, dir: AxisDir = 1) {
 		soundActions.playClick();
-		inputActions.startCapture('player1', action, 'action');
+		inputActions.startCapture(mapId, slotId, dir);
 	}
 
-	function removeBinding(action: InputAction, id: string) {
-		inputActions.removeBinding('player1', action, id);
+	function removeBinding(mapId: string, slotId: string, b: Binding) {
+		inputActions.removeBinding(mapId, slotId, b);
 	}
 
-	function resetAction(action: InputAction) {
+	function resetSlot(mapId: string, slotId: string) {
 		soundActions.playClick();
-		inputActions.resetAction('player1', action);
+		inputActions.resetSlot(mapId, slotId);
 	}
 
 	function resetAllControls() {
 		soundActions.playClick();
-		inputActions.resetPlayerBindings('player1');
+		inputActions.resetAll();
 	}
 
 	function cancelCapture() {
 		soundActions.playClick();
 		inputActions.cancelCapture();
 	}
+
 
 	function switchTab(tab: Tab) {
 		soundActions.playClick();
@@ -376,71 +297,160 @@
 					{/each}
 				</div>
 
-				<!-- Controls tab -->
+				<!-- Controls tab — every row comes from the input registry, nothing is
+				     hardcoded here. Inactive maps (a scene that isn't running) are shown
+				     dimmed but still rebindable, which the old per-player UI could not do. -->
 			{:else if activeTab === 'controls'}
 				<!-- Capture banner -->
-				{#if isCapturing && captureAction}
+				{#if isCapturing && captureSlotLabel}
 					<div class="capture-banner">
 						<span class="pulse">
-							Binding <strong>{ACTION_LABELS[captureAction]}</strong> — press a key or click…
+							Binding <strong>{captureSlotLabel}</strong>
+							{#if inputState.capture.dir === -1}(negative){/if} — press a key or click…
 						</span>
 						<button onclick={cancelCapture} class="cancel-button"> Cancel </button>
 					</div>
 				{/if}
 
 				<div class="bindings">
-					{#each ACTION_GROUPS as group (group.label)}
-						<div>
-							<p class="group-label">
-								{group.label}
-							</p>
-							<div class="action-list">
-								{#each group.actions as action (action)}
-									{@const bindings = inputState.players.player1.actions[action] ?? []}
-									{@const capturing = isCapturing && captureAction === action}
-									<div class="action-row" class:capturing>
-										<!-- Action name -->
-										<span class="action-name">{ACTION_LABELS[action]}</span>
+					{#if !hasBindableSlots}
+						<p class="section-note">
+							No rebindable controls yet. Scenes declare their own — Settings lists whatever
+							input maps exist, so this fills in as games register theirs.
+						</p>
+					{/if}
+					{#each mapIds as mapId (mapId)}
+						{@const map = inputState.maps[mapId]}
+						{@const groups = groupsOf(mapId)}
+						{#if groups.length > 0}
+							<div class="map-block" class:inactive={!map.active}>
+								<p class="map-label">
+									{map.label}
+									{#if !map.active}<span class="map-tag">not running</span>{/if}
+								</p>
 
-										<!-- Binding chips -->
-										<div class="chips">
-											{#each bindings as b (b.id)}
-												<span class="chip">
-													<kbd>{formatBinding(b)}</kbd>
-													<button
-														onclick={() => removeBinding(action, b.id)}
-														class="chip-remove"
-														aria-label="Remove binding">×</button
-													>
+								{#each groups as group (group.label)}
+									<p class="group-label">{group.label}</p>
+									<div class="action-list">
+										{#each group.slotIds as slotId (slotId)}
+											{@const def = map.slots[slotId]}
+											{@const axis = isAxis(mapId, slotId)}
+											{@const bindings = bindingsFor(mapId, slotId)}
+											{@const conflicts = conflictsFor(mapId, slotId)}
+											{@const capturing =
+												isCapturing &&
+												inputState.capture.mapId === mapId &&
+												inputState.capture.slotId === slotId}
+											<div class="action-row" class:capturing>
+												<span class="action-name">
+													{def.label}
+													{#if conflicts.length > 0}
+														<span
+															class="warn"
+															title="Also bound to: {conflicts
+																.map((c) => map.slots[c].label)
+																.join(', ')}">⚠</span
+														>
+													{/if}
 												</span>
-											{/each}
 
-											{#if capturing}
-												<span class="waiting">waiting…</span>
-											{:else}
+												<div class="chips">
+													{#each bindings as b (bindingKey(b))}
+														<span class="chip">
+															<kbd class:studio={collidesWithStudio(b)}>
+																{chipLabel(b, axis)}
+															</kbd>
+															<button
+																onclick={() => removeBinding(mapId, slotId, b)}
+																class="chip-remove"
+																aria-label="Remove binding">×</button
+															>
+														</span>
+													{/each}
+
+													{#if capturing}
+														<span class="waiting">waiting…</span>
+													{:else if axis}
+														<!-- An axis slot binds a SIDE: which way this key pushes it. -->
+														<button
+															onclick={() => startBind(mapId, slotId, -1)}
+															class="chip-add"
+															title="Bind negative direction"
+															aria-label="Add negative binding">+−</button
+														>
+														<button
+															onclick={() => startBind(mapId, slotId, 1)}
+															class="chip-add"
+															title="Bind positive direction"
+															aria-label="Add positive binding">++</button
+														>
+													{:else}
+														<button
+															onclick={() => startBind(mapId, slotId)}
+															class="chip-add"
+															aria-label="Add binding">+</button
+														>
+													{/if}
+												</div>
+
 												<button
-													onclick={() => startBind(action)}
-													class="chip-add"
-													aria-label="Add binding">+</button
+													onclick={() => resetSlot(mapId, slotId)}
+													title="Reset to default"
+													class="action-reset">↺</button
 												>
-											{/if}
-										</div>
-
-										<!-- Reset action -->
-										<button
-											onclick={() => resetAction(action)}
-											title="Reset to default"
-											class="action-reset">↺</button
-										>
+											</div>
+										{/each}
 									</div>
 								{/each}
 							</div>
+						{/if}
+					{/each}
+				</div>
+
+				<!-- Gamepad — one pad, one local player. Deadzones are applied in
+				     core/input/GamepadInput.svelte with rescaling, so a slow stick
+				     stays usable rather than snapping to zero and jumping. -->
+				<div class="section gamepad">
+					<p class="section-label">Gamepad</p>
+
+					<label class="channel-label">
+						<input
+							type="checkbox"
+							checked={inputState.gamepad.enabled}
+							onchange={(e) => inputActions.setGamepadEnabled(e.currentTarget.checked)}
+							class="channel-checkbox"
+						/>
+						<span>Enable gamepad input</span>
+					</label>
+
+					<p class="section-note">
+						{#if inputState.runtime.connectedGamepads.length === 0}
+							No gamepad detected — press a button on one to wake it up.
+						{:else}
+							{inputState.runtime.connectedGamepads.map((p) => p.id).join(', ')}
+						{/if}
+					</p>
+
+					{#each [{ side: 'left', label: 'Left Stick Deadzone', value: inputState.gamepad.deadzoneLeftStick }, { side: 'right', label: 'Right Stick Deadzone', value: inputState.gamepad.deadzoneRightStick }] as const as dz (dz.side)}
+						<div class="sens-row">
+							<span class="sens-label">{dz.label}</span>
+							<input
+								type="range"
+								min="0"
+								max="0.5"
+								step="0.01"
+								value={dz.value}
+								oninput={(e) => inputActions.setDeadzone(dz.side, +e.currentTarget.value)}
+								class="sens-slider"
+							/>
+							<span class="sens-value">{dz.value.toFixed(2)}</span>
 						</div>
 					{/each}
 				</div>
 
 				<!-- Reset all -->
 				<button onclick={resetAllControls} class="reset-all"> Reset All Controls </button>
+
 
 				<!-- System tab -->
 			{:else if activeTab === 'system'}
@@ -843,6 +853,45 @@
 		padding-right: 0.25rem;
 	}
 
+	.gamepad {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding-top: 0.75rem;
+		border-top: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.map-block {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	/* A map whose scene isn't running: still rebindable, visibly not live. */
+	.map-block.inactive {
+		opacity: 0.55;
+	}
+
+	.map-label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.9375rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+	}
+
+	.map-tag {
+		padding: 0.0625rem 0.375rem;
+		border-radius: 0.25rem;
+		background: rgba(255, 255, 255, 0.08);
+		font-size: 0.625rem;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		opacity: 0.6;
+	}
+
 	.group-label {
 		margin-bottom: 0.5rem;
 		font-size: 0.75rem;
@@ -850,6 +899,12 @@
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 		opacity: 0.4;
+	}
+
+	.warn {
+		margin-left: 0.25rem;
+		color: #f0b429;
+		cursor: help;
 	}
 
 	.action-list {
@@ -907,6 +962,12 @@
 			monospace;
 		font-size: 0.75rem;
 		line-height: 1;
+	}
+
+	/* Studio (dev mode) binds bare w a s z t r c v m — flagged so a collision is
+	   noticed at bind time rather than as "why doesn't this key work". */
+	.chip kbd.studio {
+		color: #f0b429;
 	}
 
 	.chip-remove {

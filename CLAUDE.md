@@ -21,7 +21,11 @@ DOCS/              — webgpu-notes.md (WebGPU/Studio gotchas — read before de
                      handles, the open gaps, and the rules for new scene content) and
                      testperf.md (the TestGame scene's own performance audit — what it
                      spends its frame on, what was fixed and what is still open)
-                     are the permanent references. post-processing.md,
+                     are the permanent references. input.md is an ACTIVE plan —
+                     the slot-based input rework (games declare their own actions;
+                     the engine owns devices, binding, persistence and the settings
+                     UI) — and folds into the input CLAUDE.md files once built.
+                     post-processing.md,
                      weather-system.md and scene-environment.md are superseded
                      plans — their content lives in the CLAUDE.md files now and they
                      will be deleted. Plus vendored three.js / threlte sources
