@@ -24,7 +24,8 @@ import { G, UNITS_PER_METER } from '../units';
 import { latMu } from './handling';
 import { createDrivetrain } from './drivetrain';
 import { carSim, publishCarHud } from './carTelemetry.svelte';
-import { carHandling, carIgnition, carInput } from './carInput.svelte';
+import { carHandling, carIgnition } from './carSwitches.svelte';
+import { carControls } from './carControls';
 import { clamp, damp } from './carMath';
 import { createSuspension } from './suspension';
 
@@ -144,15 +145,20 @@ export function createCarController(spec: CarSpec, world: World) {
 		const tune = spec.tunes[carHandling.mode];
 		const latGrip = latMu(tune);
 
-		const steerKey = (carInput.left ? 1 : 0) - (carInput.right ? 1 : 0);
-		const handbrake = carInput.handbrake;
+		// The `steer` slot reads SCREEN-natural (− left, + right); this model's sign is
+		// the opposite. Negated at exactly this line and nowhere else. With the arrows
+		// it is ±1 or 0, bit-identical to the two booleans it replaced; with a stick it
+		// is proportional, which is the only behavioural difference the migration adds
+		// and only when a pad is plugged in.
+		const steerKey = -carControls.axis('steer');
+		const handbrake = carControls.pressed('handbrake');
 
 		// Ignition gates throttle, brake and shifting — engine off, no drive. Handbrake
 		// still works (safety), steering still works (rolling car must still steer).
 		// During startup (on but !ready), the startup sequence block below returns early.
 		const ignOn = carIgnition.on;
-		const throttle = ignOn && carInput.up;
-		const brake = ignOn && carInput.down;
+		const throttle = ignOn && carControls.pressed('throttle');
+		const brake = ignOn && carControls.pressed('brake');
 
 		// Reset the startup timer when ignition cuts — a mid-startup N press aborts
 		// the rev sequence instantly.
@@ -164,8 +170,8 @@ export function createCarController(spec: CarSpec, world: World) {
 		// Shift held but no throttle, nothing sprays (and the car may sleep).
 		const spraying =
 			ignOn &&
-			carInput.nitrous &&
-			carInput.up &&
+			carControls.pressed('nitrous') &&
+			carControls.pressed('throttle') &&
 			drivetrain.state.gear >= 1 &&
 			nitrousBottle > NITROUS_DRY;
 		nitrousFlow +=
@@ -252,8 +258,8 @@ export function createCarController(spec: CarSpec, world: World) {
 			!handbrake &&
 			!throttle &&
 			!brake &&
-			!carInput.shiftUp &&
-			!carInput.shiftDown;
+			!carControls.pressed('shiftUp') &&
+			!carControls.pressed('shiftDown');
 		if (idle && _vel.lengthSq() < 0.25) {
 			resetForces(body, false);
 			if (ignOn) {
@@ -294,8 +300,8 @@ export function createCarController(spec: CarSpec, world: World) {
 				forward: throttle,
 				backward: brake,
 				handbrake,
-				shiftUp: ignOn && carInput.shiftUp,
-				shiftDown: ignOn && carInput.shiftDown,
+				shiftUp: ignOn && carControls.pressed('shiftUp'),
+				shiftDown: ignOn && carControls.pressed('shiftDown'),
 				nitrous: nitrousFlow
 			},
 			tune

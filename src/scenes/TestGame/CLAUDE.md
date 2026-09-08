@@ -36,9 +36,14 @@ sim/                    — the driving model, car-agnostic
                          four raycast springs hold the car up in physics, the
                          spring-damped corners lean it in render. Every knob is
                          spec data; three pose consumers (model, CarWheels, rig)
-  carInput.svelte.ts    — this scene's own keymap (arrows / Space / Q / E / Shift) +
-                         the latched switches (lights, ignition, handling tune,
-                         B view mode) + the HUD → scene restart signal
+  carControls.ts        — THE CAR'S INPUT MAP: one slot per input (label, group,
+                         default key + pad bindings) declared to the engine's slot
+                         system. Data, not a keymap — the engine owns the keys
+                         (src/extensions/input/CLAUDE.md)
+  carSwitches.svelte.ts — what LATCHING a switch MEANS: lights, ignition + its
+                         startup sequence, handling tune, B view mode, + the
+                         HUD → scene restart signal. Was carInput.svelte.ts, which
+                         also carried the hand-rolled keymap
   carTelemetry.svelte.ts — carSim (per-physics-step plain object) / carHud (30 Hz $state
                          mirror for the cluster) / carDebugHud (the second 30 Hz
                          mirror, published only while the rig is up)
@@ -134,7 +139,8 @@ should not be guessed at without the cars to tune against.
 ## Controls
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
-Shift nitrous, L headlights, K main beam, G handling setup, M/N ignition on/off,
+Shift nitrous, L headlights, K main beam, G handling setup, M ignition (one key,
+toggles on and off),
 B view (model → debug rig → both). B is also the debug switch: the rig's
 skeleton and its bottom-left readout (`debug/DebugHud.svelte` — both halves of
 the tool live in `debug/`) come up together in `rig` and `both`, and
@@ -147,22 +153,27 @@ flashes PERFECT LAUNCH, the tyres chirp); miss the window and the soft street
 launch is what you get.
 M starts a realistic sequence: the turnon sound cranks, RPM revs to ~2k then
 settles to idle, and only when the sound ends does the idle bed fade in and the
-car become driveable. N cuts everything instantly — bed, pops, nitrous all stop,
+car become driveable. M again cuts everything instantly — bed, pops, nitrous all stop,
 the car coasts to a silent stop. Reverse is a GEAR,
 not a pedal: Q past 1st through N into R, then pull away on ↑ — the pedals never
 swap meaning, ↓ is only ever the brake. The keys are chosen so Studio's
 dev-mode shortcuts (w a s z t r c v m) never fight the car (Shift is a modifier,
-invisible to those bare-letter binds), and L/K/G/N also dodge the engine's own
+invisible to those bare-letter binds), and L/K/G also dodge the engine's own
 Ctrl+H — EXCEPT M, which is in Studio's set: accepted because Studio is dev-only,
-rebind if it ever bites. Input is this scene's own `svelte:window` keymap
-(`sim/carInput.svelte.ts`),
-not the shared keymapper — that needs a per-scene rework first.
+and Settings now flags the chip amber so anyone it bites can rebind it.
+
+**Those are DEFAULTS, not the keymap.** Input is the engine's slot system: the
+scene declares `sim/carControls.ts` (one slot per input — label, group, default
+bindings) and the engine owns the keys, rebinding in Settings ▸ Controls,
+persistence, the gamepad and the blur release. The scene used to hand-roll a
+`svelte:window` keymap because the shared one only spoke FPS actions; it doesn't
+any more. See `src/extensions/input/CLAUDE.md`.
 
 Either Shift is a wet nitrous kit on a throttle switch: it only sprays while held
-WITH ↑ open in a forward gear (gear ≥ 1). Both Shift keys are ONE pedal — key
-edges go through `setCarInputKey` (held-code tracking), so releasing one while
-the other is down keeps the pedal down, and `resetCarInput` clears the held set
-so a Shift released while blurred can't stick it. The kit's NUMBERS are the
+WITH ↑ open in a forward gear (gear ≥ 1). Both Shift keys are ONE pedal — which is
+now simply two bindings on one `nitrous` slot; the held-code tracking that used to
+make that work, and the blur release that stops a Shift let go while unfocused from
+sticking the pedal, are the engine's. The kit's NUMBERS are the
 car's (spec hardware: `nitrousTorqueGain`, +45% crank torque, applied by the
 drivetrain INSIDE its traction limit — so a shot in 1st/2nd becomes wheelspin,
 3rd+ is real thrust, and Drift + spray in 3rd lights the tyres — plus the bottle,
@@ -175,11 +186,22 @@ the afterimage smear (`NitrousAfterimage.svelte` easing `uAfterimageBoost` — t
 effect is default-enabled at damp 0, so the smear only exists while nitrous
 does).
 
-Held keys and switches are separate in that module: `carInput` is polled per
-physics step, while the latched switches — `carLights` (`on` / `high`) and
-`carHandling` (`mode`) — flip on the keydown edge, ignore auto-repeat, and survive
-`resetCarInput` and Restart. Blur and scene exit release the pedals, not the
-lights or the setup.
+**Pedals and switches are read differently, and that split is the whole reason
+`sim/carSwitches.svelte.ts` still exists.** The PEDALS are continuous, so
+`controller.ts` reads them straight off the map in the physics task —
+`carControls.pressed('throttle')`, `carControls.axis('steer')` — which is always
+current and safe there. The SWITCHES latch, so `TestGame.svelte` subscribes with
+`carControls.on(slot, 'press', …)`: an edge from the key event itself, fired
+exactly once per real press. Never `justPressed` in a physics task — that runs
+`ceil(accumulator / rate)` times per frame and would fire zero or several times per
+press (the CarWheels substep hazard again).
+
+The engine has no opinion about what latching MEANS — that a headlight is a switch,
+that flicking to main beam turns the lamps on, that the ignition runs a startup
+sequence. `carSwitches.svelte.ts` owns all of it (`carLights`, `carIgnition`,
+`carHandling`, `carView`, plus the HUD→scene restart token), and those survive
+Restart and scene exit on purpose. Leaving the scene deactivates the map, which
+zeroes the pedals; the lights you left on stay on.
 
 ## The driving model
 
@@ -677,7 +699,7 @@ inherit the GR86's ride.
 - **`debug/DebugRig.svelte` is the car's SKELETON** — what the kinematic model
   actually drives, drawn at the RigidBody's unscaled level (world-unit body
   space, so it inherits Rapier's interpolated pose). B cycles the view:
-  `model` → `rig` → `both` (`carView` in carInput.svelte.ts, a latched switch).
+  `model` → `rig` → `both` (`carView` in carSwitches.svelte.ts, a latched switch).
   It takes the VIEW MODE, not a boolean, because it draws **two layers**: the
   SKELETON in both `rig` and `both`, and the ANALYSIS overlays only in `rig`,
   where there is no car for them to bury. The analysis math is SKIPPED in `both`,
@@ -911,14 +933,15 @@ inherit the GR86's ride.
   frame the flow falls while on; pedal lift and bottle-dry are both releases),
   and the `nitrosdrain` LOOP while spraying, volume following `carSim.nitrous`
   (the same flow the flames/camera/HUD read). One-shot semantics (clickAudio
-  pattern): a re-engage mid-play cuts and restarts. IGNITION: M/N voice the
-  the transitions (`turnon.opus` / `turnoff.opus`) and gate everything combustive — bed,
-  pops, nitrous all stop when the switch is off. M starts a realistic startup:
-  the turnon sound cranks, RPM revs to ~2k then settles, and only when the sound
-  ends does `carIgnition.ready` flip true and the idle bed fade in — throttle,
-  brake and shifting are gated on `ready`. N cuts instantly: bed silences under
-  the turnoff shot, `ready` clears, the car coasts to a stop. Edge-triggered: the
-  keydown, the bed cuts instantly on turnoff so the shot lands over silence.
+  pattern): a re-engage mid-play cuts and restarts. IGNITION: the `ignition` slot
+  voices the transitions (`turnon.opus` / `turnoff.opus`) and gates everything
+  combustive — bed, pops, nitrous all stop when the switch is off. Switching on
+  starts a realistic startup: the turnon sound cranks, RPM revs to ~2k then
+  settles, and only when the sound ends does `carIgnition.ready` flip true and the
+  idle bed fade in — throttle, brake and shifting are gated on `ready`. Switching
+  off cuts instantly: bed silences under the turnoff shot, `ready` clears, the car
+  coasts to a stop. Edge-triggered on the press, and the bed cuts instantly on
+  turnoff so the shot lands over silence.
   TYRES: `tires_squal_loop.opus`, one voice under the car (axle height at the CG) —
   level = the LOOSEST of wheelspin (ramping from the TC lamp's own 0.15), |slip
   angle| (8°–25°, speed-gated; the cluster's slide flag reads 10°),
@@ -945,8 +968,7 @@ inherit the GR86's ride.
   RMS (-8.4 dBFS) — a new take without that treatment will click on wrap,
   wander, and pump; recover originals via git. Deliberately NOT core/audio:
   GlobalAudio/soundTriggers are for UI one-shots and weather beds, not a
-  scene-local engine following the car's pose — same call as carInput vs the
-  keymapper. The tick follows the weatherAudio contract: the component mounts
+  scene-local engine following the car's pose. The tick follows the weatherAudio contract: the component mounts
   `<PositionalAudio>` inside the car (the listener rides the camera), the module
   mixes from `carSim` in a task, never `$effect`. NO WebGPU compute audio: the
   three.js example is offline batch (process whole buffer → read back → play

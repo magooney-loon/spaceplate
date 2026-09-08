@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { currentCar } from '../cars';
 	import { drivenAxles } from '../cars/spec';
-	import { carHandling, carView } from '../sim/carInput.svelte';
+	import { carHandling, carView } from '../sim/carSwitches.svelte';
 	import { carDebugHud, carHud } from '../sim/carTelemetry.svelte';
 
 	// The debug rig's other half: the NUMBERS behind `DebugRig.svelte`'s geometry.

@@ -10,7 +10,7 @@
 
 import { currentCar } from '../cars';
 import { G } from '../units';
-import { carView } from './carInput.svelte';
+import { carView } from './carSwitches.svelte';
 import type { Suspension } from './suspension';
 
 /** Written every physics step. Read by CarWheels and the mirror below — never by the HUD. */

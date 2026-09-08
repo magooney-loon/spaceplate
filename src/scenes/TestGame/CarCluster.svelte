@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { currentCar } from './cars';
 	import { carHud } from './sim/carTelemetry.svelte';
-	import { carHandling, carIgnition } from './sim/carInput.svelte';
+	import { carHandling, carIgnition } from './sim/carSwitches.svelte';
 
 	// Bottom-right instrument cluster: tacho ring, gear, speed — styled after an
 	// aftermarket gauge pod (ice-blue numerals, red needle/redline, backlit LCD

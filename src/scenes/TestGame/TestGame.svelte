@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { useGltf, useDraco, useKtx2, useMeshopt } from '@threlte/extras';
 	import { Collider, RigidBody, useRapier, usePhysicsTask } from '@threlte/rapier';
@@ -19,15 +20,9 @@
 	import SkidMarks from './fx/SkidMarks.svelte';
 	import TireSmoke from './fx/TireSmoke.svelte';
 	import NitrousAfterimage from './fx/NitrousAfterimage.svelte';
-	import {
-		CAR_INPUT_KEYS,
-		CAR_TOGGLE_KEYS,
-		applyCarToggle,
-		carRestart,
-		carView,
-		resetCarInput,
-		setCarInputKey
-	} from './sim/carInput.svelte';
+	import { applyCarToggle, carRestart, carView } from './sim/carSwitches.svelte';
+	import { CAR_TOGGLE_SLOTS, carControls } from './sim/carControls';
+	import { useInputMap } from '$extensions/input';
 	import { currentCar } from './cars';
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
@@ -41,12 +36,13 @@
 	// facts are DATA in cars/ (see cars/types.ts — adding a car is a spec file +
 	// a registry entry, not component edits); the map is world/Track.svelte (the
 	// GLB, its colliders, its shadow policy — adding a map is a sibling there).
-	// Controls: arrows drive, Space
-	// handbrake, Q/E shift down/up, either Shift nitrous, L lights, K main beam —
-	// deliberately keys Studio doesn't bind (w a s z t r c v m — Shift is a
-	// modifier, invisible to its bare-letter binds). Input is this scene's own
-	// svelte:window keymap (sim/carInput.svelte.ts), not the shared keymapper —
-	// that needs a per-scene rework first.
+	// Controls are DECLARED, not hand-rolled: sim/carControls.ts is this scene's
+	// input map and the engine owns the rest (keys, rebinding in Settings ▸
+	// Controls, persistence, gamepad, blur release). Defaults are unchanged —
+	// arrows drive, Space handbrake, Q/E shift down/up, either Shift nitrous, L
+	// lights, K main beam — because they are still chosen to dodge Studio's
+	// bare-letter binds (w a s z t r c v m; Shift is a modifier, invisible to
+	// them). What LATCHES is still this scene's (sim/carSwitches.svelte.ts).
 
 	const car = currentCar();
 	// T.Group's position/rotation props want mutable tuples; the spec's are
@@ -126,37 +122,23 @@
 		});
 	});
 
-	// ── Input (this scene's own keymap) ──────────────────────────────────────────
+	// ── Input ────────────────────────────────────────────────────────────────────
+	//
+	// The map is live while this scene is mounted; leaving it deactivates the slots
+	// (which zeroes the pedals — the job `resetCarInput` used to do), and the engine
+	// already releases every device on blur and tab-hide. The typing guard, the
+	// preventDefault pass and the both-Shifts-are-one-pedal bookkeeping are all the
+	// engine's now — see core/input/Keymapper.svelte.
+	useInputMap(carControls);
 
-	function isTypingTarget(target: EventTarget | null): boolean {
-		if (!(target instanceof HTMLElement)) return false;
-		return !!target.closest('input, textarea, select, [contenteditable="true"]');
+	// The five LATCHED switches. `on(…, 'press')` fires exactly once per real press
+	// because it is an edge from the key event itself, not a keydown — so there is no
+	// auto-repeat to filter (holding L used to strobe the car), and nothing polls
+	// `justPressed` from the physics task, which would fire once per SUBSTEP.
+	// What a press MEANS stays in sim/carSwitches.svelte.ts.
+	for (const slot of CAR_TOGGLE_SLOTS) {
+		onDestroy(carControls.on(slot, 'press', () => applyCarToggle(slot)));
 	}
-
-	// Studio's tweakpane panes are real <input>s — never swallow keys there.
-	function setKey(e: KeyboardEvent, value: boolean): void {
-		if (isTypingTarget(e.target)) return;
-		const action = CAR_INPUT_KEYS[e.code];
-		if (!action) return;
-		e.preventDefault();
-		// State change goes through the edge helper — nitrous is both Shift keys, and
-		// releasing one must not drop the pedal while the other is held.
-		setCarInputKey(e.code, value);
-	}
-
-	// Switches (headlights) latch on the keydown EDGE, so auto-repeat has to be dropped
-	// or holding L strobes the car. Ctrl is left alone — Ctrl+H is the engine's UI toggle.
-	function onKeydown(e: KeyboardEvent): void {
-		const toggle = CAR_TOGGLE_KEYS[e.code];
-		if (toggle && !e.repeat && !e.ctrlKey && !e.metaKey && !isTypingTarget(e.target)) {
-			e.preventDefault();
-			applyCarToggle(toggle);
-			return;
-		}
-		setKey(e, true);
-	}
-
-	const onKeyup = (e: KeyboardEvent) => setKey(e, false);
 
 	// ── The driving task — everything model-shaped lives in sim/controller.ts ───
 	// The header comment there carries the full driving-model rules (yaw-rate
@@ -268,18 +250,15 @@
 
 	// Unmount parks the instruments — the HUD unmounts with them, but the mirror is
 	// module state and would otherwise still read 180 km/h on the way back in. The
-	// pedals too: the keyup for a held key never fires after the listeners are gone.
+	// pedals need nothing here any more: `useInputMap`'s release zeroes every slot.
 	$effect(() => {
 		return () => {
 			controller.park();
 			resetCarTelemetry();
 			suspension.reset();
-			resetCarInput();
 		};
 	});
 </script>
-
-<svelte:window onkeydown={onKeydown} onkeyup={onKeyup} onblur={resetCarInput} />
 
 <!-- The world — the track GLB, its scene pose, its static colliders and its
      half of the shadow policy. Maps live in world/; see world/Track.svelte

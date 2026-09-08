@@ -19,7 +19,7 @@
 		vec3,
 		vec4
 	} from 'three/tsl';
-	import { carLights } from '../sim/carInput.svelte';
+	import { carLights } from '../sim/carSwitches.svelte';
 	import { currentCar } from '../cars';
 
 	// Front headlight rig, generic over the car's spec (the lamp anchors come
@@ -41,7 +41,8 @@
 	// ray-marches a VolumeNodeMaterial in its own quarter-res pipeline pass. That is
 	// engine work — this rig is scene content, so the volume stays faked in-scene.
 	//
-	// L toggles the lamps, H toggles main beam (`carLights` in carInput.svelte.ts). The
+	// The `lights` / `highBeam` slots toggle these (sim/carControls.ts declares them,
+	// carSwitches.svelte.ts latches `carLights`; L and K by default). The
 	// two modes are one table (DIPPED / MAIN) whose every field is a three property, a
 	// Threlte prop or a `uniform()` — switching writes values, it never recompiles.
 	//

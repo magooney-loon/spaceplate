@@ -3,7 +3,7 @@
 // this file when the scene went multi-car. What a tune shop touches: tyre
 // compounds, the steering rack, and how willing the rear axle is to let go.
 // The controller reads the current car's tune per physics step, so switching
-// is instant and carries no state (`carHandling` in carInput.svelte.ts owns
+// is instant and carries no state (`carHandling` in carSwitches.svelte.ts owns
 // the choice).
 //
 // GRIP is the car, tuned FRIENDLY rather than strictly real: 0-60 mph in 5.7 s,

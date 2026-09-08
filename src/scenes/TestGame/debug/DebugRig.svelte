@@ -8,7 +8,7 @@
 	import type { CarHull } from '../cars/hull';
 	import { G, UNITS_PER_METER } from '../units';
 	import { carSim } from '../sim/carTelemetry.svelte';
-	import { carHandling, type CarViewMode } from '../sim/carInput.svelte';
+	import { carHandling, type CarViewMode } from '../sim/carSwitches.svelte';
 	import { latMu } from '../sim/handling';
 	import { clamp } from '../sim/carMath';
 	import type { Suspension } from '../sim/suspension';

@@ -2,7 +2,7 @@
 // (core/audio + extensions/sound): that path routes every sound through GlobalAudio
 // and soundTriggers, which is built for UI one-shots and weather beds, not for a
 // scene-local engine that must follow the car's POSE (positional) and the
-// drivetrain's STATE (per-frame pitch). Same call as carInput.svelte.ts vs the
+// drivetrain's STATE (per-frame pitch). Same call as carSwitches.svelte.ts vs the
 // shared keymapper: scene-owned until the audio layer grows per-scene needs.
 //
 // THE CONTRACT (weatherAudio.ts is the precedent): CarEngineAudio.svelte mounts the
@@ -27,7 +27,7 @@ import { settingsState } from '$extensions/settings';
 import { currentCar } from '../cars';
 import { clamp, damp } from '../sim/carMath';
 import { carSim } from '../sim/carTelemetry.svelte';
-import { carIgnition } from '../sim/carInput.svelte';
+import { carIgnition } from '../sim/carSwitches.svelte';
 
 /**
  * The six loop files, lowest first: the parked tickover, then the rising rpm bed.
@@ -172,7 +172,8 @@ const playOneShot = (
 
 // ── Ignition ─────────────────────────────────────────────────────────────────
 //
-// M on / N off (carInput's latched switch). The bed, pops and nitrous all gate
+// The `ignition` slot toggles it (carSwitches.svelte.ts latches it). The bed, pops
+// and nitrous all gate
 // on `carIgnition.ready` — no combustion, no noise — and the one-shots voice
 // the transitions. M starts a realistic startup: the turnon sound cranks, the
 // physics task ramps RPM to ~2k then settles, and the idle bed fades in under

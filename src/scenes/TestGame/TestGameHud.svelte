@@ -3,7 +3,7 @@
 	import { soundActions } from '$core';
 	import CarCluster from './CarCluster.svelte';
 	import DebugHud from './debug/DebugHud.svelte';
-	import { requestCarRestart } from './sim/carInput.svelte';
+	import { requestCarRestart } from './sim/carSwitches.svelte';
 	import { carHud } from './sim/carTelemetry.svelte';
 
 	// The launch flash's tier names — latched at the catch (carSim.launchTier),
