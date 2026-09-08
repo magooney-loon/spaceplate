@@ -16,6 +16,7 @@ export const BASE_URL = import.meta.env.BASE_URL;
 
 const GRAPHICS_KEY = 'graphics-quality';
 const RENDER_SCALE_KEY = 'render-scale';
+const MAX_FPS_KEY = 'max-fps';
 const UI_VISIBLE_KEY = 'ui-visible';
 const MOUSE_SENSITIVITY_KEY = 'mouse-sensitivity';
 const AIM_SENSITIVITY_KEY = 'aim-sensitivity';
@@ -70,6 +71,15 @@ const clampRenderScale = (v: number): number =>
 
 const loadRenderScale = (): number => parseFloat(fromStorage(RENDER_SCALE_KEY, '1'));
 
+/** The offered caps; 0 = VSync (screen refresh rate, no gate). Order is the UI order. */
+export const FPS_CAPS = [0, 30, 60, 120] as const;
+
+/** Only an offered cap can be stored — a hand-edited value falls back to VSync. */
+const loadMaxFps = (): number => {
+	const v = parseInt(fromStorage(MAX_FPS_KEY, '0'), 10);
+	return (FPS_CAPS as readonly number[]).includes(v) ? v : 0;
+};
+
 export const settingsState = $state<ExtensionState>({
 	audio: {
 		musicVolume: loadVolume(MUSIC_VOLUME_KEY, 0.7),
@@ -81,7 +91,8 @@ export const settingsState = $state<ExtensionState>({
 	},
 	graphics: {
 		quality: loadQuality(),
-		renderScale: clampRenderScale(loadRenderScale())
+		renderScale: clampRenderScale(loadRenderScale()),
+		maxFps: loadMaxFps()
 	},
 	general: {
 		uiVisible: fromStorage(UI_VISIBLE_KEY, 'true') !== 'false',
@@ -161,6 +172,12 @@ export const graphicsActions: GraphicsActions = {
 		settingsState.graphics.renderScale = scale;
 		toStorage(RENDER_SCALE_KEY, String(scale));
 		logSettings.info('Render scale:', scale);
+	},
+	setMaxFps(v: number) {
+		const cap = (FPS_CAPS as readonly number[]).includes(v) ? v : 0;
+		settingsState.graphics.maxFps = cap;
+		toStorage(MAX_FPS_KEY, String(cap));
+		logSettings.info('Frame-rate cap:', cap === 0 ? 'VSync (screen rate)' : `${cap} fps`);
 	}
 };
 

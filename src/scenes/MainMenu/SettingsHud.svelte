@@ -4,6 +4,7 @@
 		graphicsActions,
 		audioActions,
 		generalActions,
+		FPS_CAPS,
 		type QualityLevel
 	} from '$extensions/settings';
 	import { soundActions, capabilityState, telemetryState, WEBGPU_REPORT_URL } from '$core';
@@ -271,6 +272,30 @@
 				</div>
 
 				<div class="section">
+					<p class="section-label">Frame Rate Cap</p>
+					<div class="quality-row">
+						{#each FPS_CAPS as cap (cap)}
+							<button
+								onclick={() => {
+									soundActions.playClick();
+									graphicsActions.setMaxFps(cap);
+								}}
+								class="quality-button"
+								class:selected={settingsState.graphics.maxFps === cap}
+							>
+								{cap === 0 ? 'VSync' : cap}
+							</button>
+						{/each}
+					</div>
+					<p class="section-note">
+						VSync (the default) paces the engine at the monitor's refresh rate — the browser always
+						composites on vsync, so that is the ceiling anyway. The caps throttle the whole engine
+						loop — simulation and rendering — below it; the real rate snaps to whole refresh
+						intervals (a 60 cap on a 144 Hz display lands at ~48).
+					</p>
+				</div>
+
+				<div class="section">
 					<p class="section-label">Mouse Sensitivity</p>
 					<div class="sens-row">
 						<span class="sens-label">Look</span>
@@ -508,7 +533,12 @@
 							</div>
 							<div class="sys-row">
 								<span class="sys-key">Frame loop</span>
-								<span class="sys-value">{telemetryState.loopHz} Hz</span>
+								<span class="sys-value">
+									{telemetryState.loopHz} Hz
+									{#if settingsState.graphics.maxFps > 0}
+										<span class="sys-dim">(capped at {settingsState.graphics.maxFps})</span>
+									{/if}
+								</span>
 							</div>
 							<div class="sys-row">
 								<span class="sys-key">Draw calls / triangles</span>

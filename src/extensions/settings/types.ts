@@ -22,6 +22,15 @@ export type GraphicsSettings = {
 	 * fill-rate-bound frame — 0.5 is a quarter of the fragments.
 	 */
 	renderScale: number;
+	/**
+	 * Frame-rate cap in fps. 0 = VSync (the default): no artificial cap — the loop runs
+	 * at the monitor's refresh rate, which is the ceiling anyway (the browser composites
+	 * on vsync and rAF never ticks faster). One of FPS_CAPS (settings.svelte.ts).
+	 * Enforced by the frame gate in core/utils/EngineClock.svelte, which throttles the whole
+	 * engine loop — tasks and renders alike — so both the GPU and the per-tick CPU cost
+	 * follow it.
+	 */
+	maxFps: number;
 };
 
 export type GeneralSettings = {
@@ -50,6 +59,7 @@ export type AudioActions = {
 export type GraphicsActions = {
 	setQuality: (quality: QualityLevel) => void;
 	setRenderScale: (v: number) => void;
+	setMaxFps: (v: number) => void;
 };
 
 export type GeneralActions = {

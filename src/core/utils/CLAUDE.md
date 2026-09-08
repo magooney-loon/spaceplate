@@ -8,7 +8,11 @@ engineClock.ts        — THE engine clock: wraps scheduler.run so one fixed ste
                         TSL `time` at once. Pass-through unless a fixed-step source is
                         installed — only capture ever does. Read its header before touching
                         anything that integrates a delta
-EngineClock.svelte    — Installs the clock. Renders nothing, registers no task
+EngineClock.svelte    — Installs the clock AND the frame-rate cap (Settings ▸ General ▸ maxFps;
+                        0 = VSync, the default — no gate installed). Renders nothing, registers no
+                        task: the clock wraps scheduler.run, the cap wraps the animation-loop
+                        callback three calls every vsync, so a throttled tick never reaches the
+                        scheduler at all. The cap bypasses while engineClock.fixed (a capture take)
 capabilities.svelte.ts — Boot probe (WebGPU adapter / WebGL2 / WASM) awaited in main.ts before
                         mount, so the verdict is synchronous everywhere: capabilityState.tier
                         'webgpu' | 'webgl' | 'none' (+ adapter info, features, dGPU guess,
@@ -52,12 +56,42 @@ the app. It also pins TSL `time`, which the scheduler cannot reach.
 
 ## Renderer.svelte — pipeline ownership
 
-- Owns exactly one `THREE.RenderPipeline` for its lifetime and swaps its `outputNode` as
-  the **structural key** changes; param drags never rebuild (uniform writes via
+- Owns exactly one `THREE.RenderPipeline` for its lifetime and swaps its `outputNode` as the
+  **structural key** changes; param drags never rebuild (uniform writes via
   `$core/postprocessing`). See `src/core/postprocessing/CLAUDE.md`.
 - Registered `{ after: autoRenderTask, autoInvalidate: false }` per the Studio
-  task-ordering rules (`DOCS/webgpu-notes.md` §2), and must stay the **first** child
+  task-ordering rules (`DOCS/webgpu-notes.md §2`), and must stay the **first** child
   inside `<Canvas>` so it draws before the Gizmo.
+
+## The frame-rate cap (EngineClock.svelte)
+
+The loop chain is `three Animation.update` (rAF, every vsync) → Threlte's loop closure
+(`scheduler.run(time)` + `frameInvalidated = false`) → stages. The cap wraps THAT closure:
+`renderer.getAnimationLoop()` hands back exactly what Threlte installed, and a gate in
+front of it drops ticks that come sooner than `1000 / maxFps`. It lives in EngineClock.svelte
+beside the clock install — same mount, same "upstream of everything" level, different wrap
+point.
+
+- **The gate level is the whole design.** Vetoing further down (`scheduler.run`, or
+  `shouldRender()`) would still let the closure clear `frameInvalidated` on a skipped
+  tick — an invalidation that landed in that window would be swallowed without a render,
+  so one-shot invalidators (a settings drag, a toggle) could drop frames. At the loop
+  level, pending invalidations simply wait for the next accepted tick.
+- Everything downstream follows the cap — stages, tasks, Rapier sync, the render — so
+  the per-tick CPU saves as well as the GPU. three still wakes us every vsync (one
+  early-returned call) and still advances `nodeFrame.time` on the wall clock, which is
+  exactly the semantics a cap should have: scene time real, accepted deltas bigger,
+  every integrator delta-driven, physics catching up in fixed substeps.
+- **Effective rates snap to whole refresh intervals** (rAF only ticks on vsyncs): 60 on
+  a 144 Hz panel lands at every 3rd vsync (~48); on 60 Hz, 60 is a no-op and 30 exact.
+  rAF timestamps are ALSO quantized (commonly to 1 ms — on a 60 Hz panel deltas arrive
+  as alternating 16/17 instead of 16.67), which a naive `delta < interval` gate turns
+  into dropped frames: measured 60 → ~40 (2 of 3 ticks) and 30 → ~20 (1 of 3). The
+  gate therefore takes a 1 ms tolerance and advances a DRIFT-FREE virtual deadline
+  (`max(schedule, now) + interval`) — an early-accepted frame pulls the next deadline
+  sooner, quantization never compounds, and a stall resyncs instead of bursting.
+- Capture takes bypass the gate while `engineClock.fixed` — an offline take paces
+  itself.
 
 ## PhysicsWorld.svelte — the synchronization stage runs before the main stage
 

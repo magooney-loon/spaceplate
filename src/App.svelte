@@ -64,8 +64,9 @@
      Canvas option on purpose — toggling it from an $effect self-invalidates (§3.1). -->
 {#if capabilityState.tier !== 'none'}
 	<Canvas {createRenderer} {dpr} autoRender={false}>
-		<!-- The engine clock (core/utils/engineClock.ts) — wraps scheduler.run, registers
-		     no task, so the render-task order below is undisturbed. -->
+		<!-- The engine clock + frame-rate cap (core/utils/engineClock.ts) — wraps
+		     scheduler.run and, when a cap is set, the animation-loop callback too;
+		     registers no task, so the render-task order below is undisturbed. -->
 		<EngineClock />
 		<Renderer />
 		<!-- Samples renderer.info after the pipeline draws — feeds the Settings ▸ System tab. -->
