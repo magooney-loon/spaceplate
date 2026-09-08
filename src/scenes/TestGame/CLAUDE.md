@@ -87,6 +87,10 @@ audio/                  — the engine NOTE
                          (weatherAudio contract — never $effect)
 ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + the
                          nitrous FOV kick, the launch dolly kick and the shift jolt
+RearViewMirror.svelte   — NFS-style rear-view strip: a backward camera on the car
+                         fills a small RT (top-of-screen overlay quad on the active
+                         camera, LENS_LAYER's first resident since the lens effects
+                         moved into the post pipeline)
 CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed,
                          live N2O bottle gauge); dial facts from the spec
 trackColliders.ts       — hand-rolled static colliders for the track GLB
@@ -988,3 +992,48 @@ inherit the GR86's ride.
     writes position + `lookAt` unconditionally, so it must stand down when
     `camera.current` is Studio's editor camera (`userData.editorCamera`) — the
     collision `extensions/flypath/FlyPath.svelte` documents.
+
+- **`RearViewMirror.svelte` is the rear-view strip** — a 4:1 mirror image of the
+  road behind the car, top-centre of the screen (classic NFS). It is NOT a
+  `reflector()`: a planar reflector's image is the active camera mirrored across
+  its plane, and a chase camera behind the car can only ever see its own side of
+  anything mounted on the car — "what is behind me" needs a camera facing
+  backwards. So: a fresh `PerspectiveCamera` (layer-0 mask ONLY — see the layer
+  rules in `core/skybox/layers/skyLayer.ts`; it therefore skips `LENS_LAYER`,
+  so the strip cannot feed back into itself, and `PRECIPITATION_LAYER`, the
+  cost gate) rides the chase anchor at the tail, level with a touch of pitch
+  down; a `{ before: autoRenderTask }` task (the physics-pose rule — the camera
+  reads the body's synced transform) fills a 1024×256 HalfFloat RT with
+  HeightField's save/clear/render/restore shape, and an overlay quad
+  parented to the ACTIVE camera shows it at a constant screen fraction
+  (recomputed from the live `fov` every frame, so the nitrous/launch lens
+  kicks resize the world around a steady strip; the quad sits at distance 2,
+  past the camera's near of 1).
+  - **The RT holds RAW linear HDR** (render-target passes skip the output
+    colour transform) and the quad is drawn by the base pass like any lit
+    surface — so the mirror is tone-mapped exactly once, in pipeline AND
+    low-quality bypass mode. The image is FLIPPED HORIZONTALLY: a car
+    overtaking on the right appears on the right of the strip, as in a real
+    mirror — an unflipped backward camera would put it on the left.
+  - **The overlay quad is `LENS_LAYER`'s first resident since the rain/frost
+    lenses became post effects.** The active camera enables the bit while
+    this component is up and gives it back on exit (`skyLayer.ts` keeps the
+    layer for exactly this); every internal camera is constructed fresh with
+    a layer-0 mask, so nothing re-samples the strip. `transparent` +
+    `renderOrder` 999 draws it after smoke and every other scene transparent;
+    depthTest/Write and fog are off. Known MRT trade (postprocessing/CLAUDE.md
+    §“Non-output attachments do not blend”): the opaque strip stamps its
+    ~zero velocity over the velocity attachment underneath it — nothing
+    visible is lost (the strip is opaque), motion blur leaves the mirror
+    sharp (reads as a digital mirror) and AO / bloom-Material-mode see the
+    quad's flat inputs under it. A pipeline composite would avoid that but is
+    engine surgery for one scene.
+  - **Shadows are NOT suspended for the pass.** `SkyLight.svelte` arms
+    `shadow.needsUpdate` once per frame and the first pass to render pays it;
+    this pass is that first one, so the frame still renders the shadow map
+    exactly once and the mirror shows correct shadows (the headlights never
+    cast — `LIGHT_CAST_SHADOW`).
+  - **The task never invalidates** — TestGame's follow rig already pins the
+    render loop while the scene is mounted (testperf.md §2.3); the mirror
+    rides whatever frames render. It stands down (no RT fill, quad
+    unparented) on Studio's editor camera and while the anchor is missing.

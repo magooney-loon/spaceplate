@@ -16,6 +16,7 @@
 	import CarWheels from './fx/CarWheels.svelte';
 	import DebugRig from './debug/DebugRig.svelte';
 	import ChaseCamera from './ChaseCamera.svelte';
+	import RearViewMirror from './RearViewMirror.svelte';
 	import SkidMarks from './fx/SkidMarks.svelte';
 	import TireSmoke from './fx/TireSmoke.svelte';
 	import NitrousAfterimage from './fx/NitrousAfterimage.svelte';
@@ -476,6 +477,11 @@
 	<!-- Borrows the app camera while this scene is current and hands it back on the
 	     way out — see ChaseCamera.svelte. Outside the car's group: it is a rig, not cargo. -->
 	<ChaseCamera target={chaseAnchor} />
+
+	<!-- Rear-view strip — a backward camera on the car filling a small RT,
+	     composited as a top-of-screen overlay on the active camera.
+	     See RearViewMirror.svelte. -->
+	<RearViewMirror target={chaseAnchor} />
 
 	<!-- Skid marks — world-anchored ring buffer of rubber quads laid at the tyre
 	     patches while the car slides (same anchor: its parent is the body, the space
