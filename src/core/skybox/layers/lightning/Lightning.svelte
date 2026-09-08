@@ -13,6 +13,10 @@
 	// how far down the strike reaches, per seed. No per-strike geometry: one
 	// camera-anchored quad, just uniforms.
 	//
+	// THAT `f(y)` IS WHY THE QUAD HAS ROWS. Everything expensive here is a function of
+	// height alone, so it is solved once per vertex and interpolated rather than re-derived
+	// per pixel -- see "THE BOLT IS A ONE-DIMENSIONAL FUNCTION" at the shader below.
+	//
 	// THE THREE BANDS ARE DISJOINT, which is what lets each carry its own COLOUR:
 	// subtracting each band from the next out (`glow = glowRaw - core`) makes them an
 	// annulus set: a hot near-white core that clips to white through the additive
@@ -77,6 +81,22 @@
 	// THE LIGHT STAYS MOUNTED at intensity 0. Toggling a light's visibility changes
 	// three's lights-state hash and recompiles every lit material -- a stutter on every
 	// strike. A zero-intensity light costs a uniform slot and nothing else.
+	// (`RenderList.pushLight` has no intensity filter, so a dark light really does stay in
+	// the hash -- the mitigation holds.)
+	//
+	// AND THE MESHES ARE WARMED FOR THE SAME REASON, one level down. `visible === false` is
+	// the FIRST line of the renderer's `_projectObject`: an invisible mesh never enters the
+	// render list, so it has no `RenderObject`, so its node graph has never been built, its
+	// WGSL never generated and its pipeline never created. All of that then happened inside
+	// the frame that showed the first strike -- the stutter people actually saw. `WARM_FRAMES`
+	// below draws both meshes at mount with their envelopes at zero: same material, same
+	// geometry, same pass, so the same cache key, compiled while the Loader veil is still up
+	// and the frame is already paying for boot.
+	//
+	// `renderer.compileAsync()` is NOT the tool here: it compiles into the DEFAULT context
+	// namespace, and the base pass renders under a private one (the MRT shader-cache trap in
+	// `core/postprocessing/CLAUDE.md`), so its output would be a shader nothing ever looks
+	// up. Only a real frame through the real pipeline produces the variant we need.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { DirectionalLight, Mesh } from 'three/webgpu';
@@ -91,6 +111,7 @@
 		sin,
 		uniform,
 		uv,
+		varying,
 		vec3
 	} from 'three/tsl';
 	import { clamp01, descriptor, lerp, mulberry32 } from '../../model';
@@ -198,6 +219,12 @@
 	let nowMs = 0;
 	let strike: Strike | null = null;
 	let nextStrikeAtMs = Infinity;
+	/**
+	 * Frames both meshes are drawn for at mount to compile their pipelines (see the header).
+	 * Two rather than one purely as slack: one is all the compile needs, and a second costs
+	 * a draw whose every fragment is provably zero.
+	 */
+	let warmFrames = 2;
 	/**
 	 * Set when a bolt strike rolls a re-strike: the next strike RESUMES this channel
 	 * instead of rolling a new one. It carries the distance, not just the bearing --
@@ -321,6 +348,106 @@
 	const pathAt = (y: any) =>
 		uWander.mul(perlin1(y.mul(2).add(uSeed)).sub(0.5)).add(uLean.mul(y.sub(0.5)));
 
+	// ── THE BOLT IS A ONE-DIMENSIONAL FUNCTION, AND THAT IS THE WHOLE COST STORY ──────
+	//
+	// Every expensive term above is a function of HEIGHT ALONE: the channel's centre, the
+	// slope that keeps it from pinching, the along-length flicker, and each fork's centre,
+	// life and width. Only the final distance-to-path maths reads x. Evaluated in the
+	// fragment stage that was 68 `sin` per pixel -- `pathAt` twice at six octaves, three
+	// branches and the flicker at four, the ground wobble at six -- across a quad that
+	// covers roughly half the frame at `SCALE_NEAR`, double-sided, additively blended, with
+	// no depth write to reject anything early.
+	//
+	// So they move to the vertex stage and interpolate, exactly as Snow's `flakeAlpha` does
+	// (`../precipitation/Snow.svelte`, and the rule in `../CLAUDE.md`): TSL builds a node in
+	// whatever stage CONSUMES it and only `AttributeNode` lifts itself, so naming any of
+	// this in `colorNode` re-emitted the whole chain per fragment. `varying()` is what
+	// pins it to the vertex stage.
+	//
+	// THE QUAD IS SUBDIVIDED VERTICALLY to carry them (`BOLT_ROWS`), which is what makes the
+	// interpolation faithful rather than merely cheap. `noise1` is LINEAR value noise, so
+	// `perlin1` is already piecewise linear with breakpoints every `1/2^(k+1)` in y for
+	// octave k -- 1/128 at the sixth. 512 rows put four samples inside the finest segment,
+	// and that octave's amplitude is `0.5^6 * uWander` ≈ 0.009 path units against a core
+	// 0.018 wide, so what interpolation rounds off is a fraction of the stroke it sits in.
+	// 1026 vertices and 1024 triangles, once, against ~10^6 fragments.
+	//
+	// THE GROUND WOBBLE STAYS PER-FRAGMENT, deliberately: it is the one noise term that is a
+	// function of x, and resolving it through vertices would need columns fine enough for
+	// its own sixth octave (~6 px at 1080p) -- tens of thousands of triangles to save twelve
+	// of the sixty-eight `sin`. It is the remaining fragment-stage noise on purpose.
+	const BOLT_ROWS = 512;
+
+	/**
+	 * One fork's height-only terms: (centre, life, width). `b` is (forkY, spread, seed,
+	 * reach) and `mainCenter` the channel it leaves.
+	 *
+	 * It leaves the main channel AT the main channel: `mainCenter` is the base, so at the
+	 * fork height the two are the same line and the branch is attached rather than floating
+	 * beside it (an independent path would seam exactly where the eye is looking). Below
+	 * that it acquires its own wander over the first tenth of its length and diverges
+	 * linearly at `spread`.
+	 *
+	 * `life` is alive only below the fork, and only for `reach` after it. Both terms are
+	 * low-to-high smoothsteps: WGSL leaves `smoothstep` undefined for edge0 >= edge1, and
+	 * `reach - 0.1 < reach` holds even at reach 0, where this is 0 everywhere and the branch
+	 * is switched off entirely. `width` is thinner than the main channel and thins further
+	 * as the fork runs out of charge; it stays strictly positive at every reach (the clamp's
+	 * floor is 0.35), which is what the fragment half's `smoothstep(0, width, …)` needs.
+	 */
+	const branchTermsAt = (y: any, b: any, mainCenter: any) => {
+		const forkY = b.x;
+		const spread = b.y;
+		const reach = b.w;
+		// Positive below the fork, negative above it.
+		const drop = forkY.sub(y);
+
+		const own = float(0.3).mul(perlin1Fast(y.mul(2.6).add(b.z)).sub(0.5));
+		const separation = drop.div(0.12).clamp(0, 1);
+		// `any` for the same reason the rest of the node plumbing is: the addon `.d.ts`s
+		// widen an `Fn()` result, and a widened node is not assignable to `vec3`'s scalar
+		// overload (`core/postprocessing/CLAUDE.md`, "Rebuild discipline").
+		const center: any = mainCenter.add(own.mul(separation)).add(spread.mul(drop));
+
+		const life: any = smoothstep(float(0), float(0.03), drop).mul(
+			smoothstep(reach.sub(0.1), reach, drop).oneMinus()
+		);
+
+		const width: any = float(0.011).mul(drop.div(reach.max(1e-3)).oneMinus().clamp(0.35, 1));
+
+		return vec3(center, life, width);
+	};
+
+	// The vertex-stage solve. `uv().y` is 0 at the bottom of the quad and 1 at the top, the
+	// same convention the fragment half reads.
+	const yVertex = uv().y;
+	/** The channel at this height, plus a hair higher for the slope term. */
+	const centerVertex: any = pathAt(yVertex);
+	const centerUpVertex: any = pathAt(yVertex.add(0.001));
+
+	/**
+	 * (centre, core width, flicker).
+	 *
+	 * The width is tapered toward the ground -- a leader thins as it descends -- with the
+	 * slope compensation added AFTER the taper, so a steep section is still protected from
+	 * pinching. `hot` is the along-length flicker: a real channel does not burn evenly, and
+	 * segments running hotter than their neighbours are the single most recognisable thing
+	 * about a photographed bolt after the branching. Centred on 1, so it redistributes
+	 * brightness along the channel rather than adding any.
+	 */
+	const coreWidthVertex: any = float(0.018)
+		.mul(yVertex.mul(0.32).add(0.7))
+		.add(centerUpVertex.sub(centerVertex).abs().mul(5));
+	const hotVertex: any = perlin1Fast(yVertex.mul(9).add(uSeed.mul(2.3)))
+		.mul(0.75)
+		.add(0.64);
+
+	const vPath = varying(vec3(centerVertex, coreWidthVertex, hotVertex), 'vPath');
+
+	const vBranch0 = varying(branchTermsAt(yVertex, uBranch0, centerVertex), 'vBranch0');
+	const vBranch1 = varying(branchTermsAt(yVertex, uBranch1, centerVertex), 'vBranch1');
+	const vBranch2 = varying(branchTermsAt(yVertex, uBranch2, centerVertex), 'vBranch2');
+
 	const buildBoltMaterial = (): THREE.MeshBasicNodeMaterial => {
 		const material = skyLayerMaterial({
 			blending: THREE.CustomBlending,
@@ -361,40 +488,15 @@
 		const HALO_WEIGHT = 0.16;
 
 		/**
-		 * One fork, as (core, glow) coverage. `b` is (forkY, spread, seed, reach).
-		 *
-		 * It leaves the main channel AT the main channel: `mainCenter` is the base, so at
-		 * the fork height the two are the same line and the branch is attached rather than
-		 * floating beside it (an independent path would seam exactly where the eye is
-		 * looking). Below that it acquires its own wander over the first tenth of its
-		 * length and diverges linearly at `spread`.
+		 * One fork's FRAGMENT half, as (core, glow) coverage: everything that reads x.
+		 * `terms` is the interpolated (centre, life, width) from `branchTermsAt`.
 		 */
-		const branchAt = (y: any, x: any, b: any, mainCenter: any) => {
-			const forkY = b.x;
-			const spread = b.y;
-			const reach = b.w;
-			// Positive below the fork, negative above it.
-			const drop = forkY.sub(y);
-
-			const own = float(0.3).mul(perlin1Fast(y.mul(2.6).add(b.z)).sub(0.5));
-			const separation = drop.div(0.12).clamp(0, 1);
-			const center = mainCenter.add(own.mul(separation)).add(spread.mul(drop));
-
-			// Alive only below the fork, and only for `reach` after it. Both terms are
-			// low-to-high smoothsteps: WGSL leaves `smoothstep` undefined for edge0 >= edge1,
-			// and `reach - 0.1 < reach` holds even at reach 0, where this is 0 everywhere
-			// and the branch is switched off entirely.
-			const life = smoothstep(float(0), float(0.03), drop).mul(
-				smoothstep(reach.sub(0.1), reach, drop).oneMinus()
-			);
-
-			// Thinner than the main channel, and thinning further as it runs out of charge.
-			const width = float(0.011).mul(drop.div(reach.max(1e-3)).oneMinus().clamp(0.35, 1));
-			const dist = x.sub(center).abs();
-			const core = smoothstep(float(0), width, dist).oneMinus();
+		const branchAt = (x: any, terms: any) => {
+			const dist = x.sub(terms.x).abs();
+			const core = smoothstep(float(0), terms.z, dist).oneMinus();
 			const glowRaw = smoothstep(float(0), float(0.045), dist).oneMinus();
 
-			return { core: core.mul(life), glow: glowRaw.sub(core).max(0).mul(life) };
+			return { core: core.mul(terms.y), glow: glowRaw.sub(core).max(0).mul(terms.y) };
 		};
 
 		const boltFn = Fn(() => {
@@ -402,16 +504,13 @@
 			const x = uvN.x.mul(3).sub(1.5).toVar(); // ±1.5 across the quad
 			const y = uvN.y.toVar(); // 0 at the bottom of the quad, 1 at the top
 
-			// Path centre at this height, plus a hair higher for the slope term. The
-			// slope compensation is what keeps steep sections of the channel from
-			// pinching: the stroke's width grows with |df/dy| exactly as in the reference.
-			const center = pathAt(y).toVar();
-			const centerUp = pathAt(y.add(0.001));
+			// The height-only solve, interpolated down the quad. See the vertex-stage
+			// section above for why none of this is computed here any more.
+			const center = vPath.x;
+			const coreW = vPath.y;
+			const hot = vPath.z;
 
 			const dist = x.sub(center).abs().toVar();
-			// Tapered toward the ground: a leader thins as it descends. The slope term is
-			// added after the taper so a steep section is still protected from pinching.
-			const coreW = float(0.018).mul(y.mul(0.32).add(0.7)).add(centerUp.sub(center).abs().mul(5));
 
 			// DISJOINT BANDS. Each is the next one out minus the one inside it, so the
 			// centre pixel is pure core and every band can carry its own colour.
@@ -421,17 +520,9 @@
 			const haloRaw = smoothstep(float(0), float(HALO_RADIUS), dist).oneMinus();
 			const halo = haloRaw.sub(glowRaw).max(0);
 
-			// ALONG-LENGTH FLICKER. A real channel does not burn evenly: segments run hotter
-			// than their neighbours, which is the single most recognisable thing about a
-			// photographed bolt after the branching. Centred on 1 so it redistributes
-			// brightness along the channel rather than adding any.
-			const hot = perlin1Fast(y.mul(9).add(uSeed.mul(2.3)))
-				.mul(0.75)
-				.add(0.64);
-
-			const b0 = branchAt(y, x, uBranch0, center);
-			const b1 = branchAt(y, x, uBranch1, center);
-			const b2 = branchAt(y, x, uBranch2, center);
+			const b0 = branchAt(x, vBranch0);
+			const b1 = branchAt(x, vBranch1);
+			const b2 = branchAt(x, vBranch2);
 			const branchCore = b0.core.add(b1.core).add(b2.core);
 			const branchGlow = b0.glow.add(b1.glow).add(b2.glow);
 
@@ -508,11 +599,14 @@
 	// wide, so the path's wander, its lean, the forks and the halo all fit inside with
 	// room. NOTHING MAY BE LIT AT THE BORDER -- enforced in the shader, by HALO_RADIUS and
 	// the edge envelope.
+	// SUBDIVIDED VERTICALLY, and only vertically: the rows are what carry the height-only
+	// solve out of the fragment stage (see BOLT_ROWS). One column, because nothing in the
+	// vertex half is a function of x.
 	// Captured once on purpose, like every sky layer's geometry: authored constants in,
 	// and a change re-mounts rather than rebuilding buffers under a live material.
 	// svelte-ignore state_referenced_locally
 	const boltHeight = boltTop - boltBottom;
-	const boltGeometry = new THREE.PlaneGeometry(boltHeight * 2.1, boltHeight);
+	const boltGeometry = new THREE.PlaneGeometry(boltHeight * 2.1, boltHeight, 1, BOLT_ROWS);
 	const boltMaterial = buildBoltMaterial();
 	const overlayGeometry = new THREE.SphereGeometry(950, 32, 16);
 	const overlayMaterial = buildOverlayMaterial();
@@ -768,6 +862,20 @@
 			uWash.value = flash * lerp(WASH_MIN, WASH_MAX, cover);
 
 			if (flashLight) flashLight.intensity = flash * flashIntensity * lightScale;
+
+			// The warm draw (see the header). Both envelopes are zero here -- no strike can
+			// be live in the first frames of a mount -- and both materials fold their
+			// envelope into what they contribute (`uBolt` through `colorNode`, `uWash`
+			// through `opacityNode`), so the pass adds literal zero to the frame. `invalidate`
+			// because nothing else is guaranteed to draw a frame at boot.
+			if (warmFrames > 0) {
+				warmFrames--;
+				if (overlay) overlay.visible = true;
+				if (bolt) bolt.visible = true;
+				invalidate();
+				return;
+			}
+
 			if (overlay) overlay.visible = flash > 0.004;
 			if (bolt) bolt.visible = strike !== null && strike.kind === 'bolt' && boltGlow > 0.01;
 

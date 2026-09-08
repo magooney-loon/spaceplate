@@ -266,6 +266,31 @@ Since then, two more things that are load-bearing rather than taste:
 
 ### `lightning/`
 
+- **The bolt is a function of HEIGHT, and that is its whole cost story.** The channel
+  centre, the slope that keeps it from pinching, the along-length flicker and each fork's
+  centre/life/width are all `f(y)`; only the distance-to-path maths reads x. In the
+  fragment stage that was 68 `sin` per pixel across a quad covering roughly half the
+  frame, double-sided, additive, no depth write. They ride `varying()`s off a vertically
+  subdivided quad now — the same rule and the same fix as Snow's `flakeAlpha` above,
+  applied to rows of one quad instead of to a particle. The subdivision is what makes the
+  interpolation faithful: `noise1` is LINEAR value noise, so the path is already piecewise
+  linear with breakpoints every `1/2^(k+1)`, and 512 rows put four samples inside the
+  finest octave's segment. **The ground wobble stays per-fragment** — it is the one noise
+  term that is a function of x, and resolving it through vertices would need columns fine
+  enough for its own sixth octave (~6 px at 1080p).
+- **Compute is the wrong tool here, for a different reason than precipitation's.** The
+  bolt is one quad and ten uniforms: no persistent state to integrate, no neighbours, so a
+  dispatch adds work and removes none. Precipitation's argument is "closed-form in `time`
+  is cheaper than a dispatch, and the cost is fill rate anyway"; this one is "there is
+  nothing to dispatch." `Birds` remains the only layer where the argument holds.
+- **Both meshes are warmed at mount** (`warmFrames`), drawn for two frames with their
+  envelopes at zero. `visible === false` is the first line of the renderer's
+  `_projectObject`, so an invisible mesh has no `RenderObject`, no built node graph and no
+  pipeline — all of which then happened inside the frame that showed the first strike.
+  `renderer.compileAsync()` cannot substitute: it compiles into the DEFAULT context
+  namespace and the base pass renders under a private one (`core/postprocessing/CLAUDE.md`),
+  so only a real frame through the real pipeline produces the variant that gets looked up.
+  Same family as the light staying mounted at intensity 0, one level down.
 - `flashState.ts` is the shared strike state — a mini-descriptor: plain mutable object,
   exactly **one writer** (Lightning's task, which owns the strike scheduler), any number
   of task readers (CloudDeck's in-deck glow, `weatherAudio`'s thunder, Studio's Strike

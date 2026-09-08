@@ -114,6 +114,41 @@ const MRT_FINALIZE: Record<MrtRequirement, (basePass: any, mrtNode: any) => void
 	}
 };
 
+/**
+ * The private shader-cache namespaces the MRT base pass renders under, ONE PER
+ * ATTACHMENT SET and reused for the lifetime of the module. See step 2b below for what
+ * they are for; this is about how long they live.
+ *
+ * **A FRESH `context()` PER BUILD RECOMPILES THE ENTIRE SCENE.** `RenderObject`'s cache
+ * key hashes `renderer.contextNode.id`/`.version` (RenderObject.js `getDynamicCacheKey`)
+ * into `initialCacheKey`, `RenderObjects.js` throws away any render object whose key has
+ * moved, and `NodeManager` keys the compiled program off the same value — so a new
+ * context identity is a full-scene shader rebuild, every material, in the frame the new
+ * graph first draws. That is a real hitch, and structural rebuilds are not rare: the two
+ * lens effects latch on weather and camera speed (`lensActivity`), so driving into rain
+ * recompiled every material in the scene, and then again on the way out.
+ *
+ * Keying on the ATTACHMENT SET keeps the property the isolation was bought for — a
+ * different set of attachments must not reuse a shader compiled for another one — while a
+ * rebuild that leaves the attachments alone (every chain effect: they declare
+ * `requires: []`) keeps the whole scene's shader cache warm. Toggling an MRT consumer off
+ * and back on returns to the SAME namespace and hits that cache too.
+ *
+ * Deliberately never disposed and never `track`ed: these must outlive the builds that use
+ * them, and the map is bounded by the number of distinct attachment sets (≤ 8 today).
+ */
+const passContexts = new Map<string, any>();
+
+const isolationContext = (mrtNode: any): any => {
+	const key = Object.keys(mrtNode.outputNodes).sort().join(',');
+	let node = passContexts.get(key);
+	if (node === undefined) {
+		node = context();
+		passContexts.set(key, node);
+	}
+	return node;
+};
+
 export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 	const { pipeline, scene, camera, renderer, enabled, values, quality } = opts;
 	const resolution = resolveEnabledSet(enabled, quality, values);
@@ -205,10 +240,10 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 		// `renderer.contextNode.id` IS in the key, and PassNode swaps in its own
 		// contextNode for the duration of its render — so an empty `context()` here
 		// gives the pass a private cache namespace: same generated code, different
-		// key. Fresh per build, so a changed attachment set recompiles too. Ask the
-		// PASS, not `resolution.mrt`: a base-pass effect may provision its own MRT
-		// internally and slip through unisolated.
-		if (basePass.getMRT() !== null) basePass.contextNode = context();
+		// key. Ask the PASS, not `resolution.mrt`: a base-pass effect may provision
+		// its own MRT internally and slip through unisolated.
+		const passMrt = basePass.getMRT();
+		if (passMrt !== null) basePass.contextNode = isolationContext(passMrt);
 
 		// 3. Resolve the build context — no effect ever reaches for the pass itself.
 		const ctx: BuildContext = {

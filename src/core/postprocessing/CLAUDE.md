@@ -124,12 +124,23 @@ pipeline has [0={RGBA16Float}].
 ```
 
 Fix (one line in the builder, load-bearing while motionBlur exists):
-`if (basePass.getMRT() !== null) basePass.contextNode = context();` — an empty
-`context()` gives identical context _data_ with distinct node _identity_: same generated
-code, private cache namespace. A fresh context per rebuild also handles attachment-set
-changes. Read "the error names _a_ culprit, not the only one" (the encoder aborts at the
+`basePass.contextNode = isolationContext(basePass.getMRT())` — an empty `context()` gives
+identical context _data_ with distinct node _identity_: same generated code, private cache
+namespace. Read "the error names _a_ culprit, not the only one" (the encoder aborts at the
 first bad pipeline) — and never "fix" this by disabling the env bake; that treats one
 racer, not the race.
+
+**Those contexts are memoized on the attachment set and live as long as the module —
+a fresh one per build recompiles the entire scene.** `contextNode.id`/`.version` are
+hashed into `RenderObject`'s cache key and thence `initialCacheKey`; `RenderObjects.js`
+discards any render object whose key moved and `NodeManager` keys the compiled program
+off the same value. So a new context identity is every material in the scene rebuilding
+its shader, in the frame the new graph first draws. Structural rebuilds are not rare —
+the lens effects latch on weather and camera speed and every chain effect declares
+`requires: []` — so driving into rain recompiled the whole scene, and again on the way
+out. Keying on the attachment set keeps the isolation (a different attachment set never
+reuses another's shader) while leaving the cache warm across every rebuild that does not
+change it; toggling an MRT consumer off and back on returns to the same namespace.
 
 ### `fragmentNode` bypasses MRT entirely
 
