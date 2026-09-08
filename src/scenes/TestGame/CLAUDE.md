@@ -741,6 +741,7 @@ inherit the GR86's ride.
   spinning wheels in 'model' and 'both' after a rig visit. The Rapier collider debug
   (extensions/physics panel, Studio-gated) draws world colliders; this draws
   the car's kinematics — they complement.
+
 - **`fx/puffPool.ts` is the smoke primitive** — ONE mesh, ONE material, ONE draw
   call, shared by TireSmoke and the exhaust puffs. Read its header before
   touching either: it replaced two pools of N meshes with N material instances
@@ -960,7 +961,24 @@ inherit the GR86's ride.
   (base recovered every frame, launch-in clamped to 60% of base). The FOV is
   borrowed and returned with the pose, re-adopted on every borrow so a re-entry
   can't animate from a stale value, and the task only invalidates on frames
-  where the lens actually moves. Two rules come with borrowing:
+  where the lens actually moves.
+
+  **The rig reads the car's pose from the MAIN stage, and that used to be one
+  frame stale.** `useFollow` and `<CameraControls>` both register plain main-stage
+  tasks with no ordering option, and Rapier's synchronization stage — the thing
+  that writes the body's interpolated transform — sorted AFTER the main stage by
+  default. So the camera framed the car one frame behind where the car was drawn,
+  and `useFollow`'s `lookAhead` velocity (`Δposition / delta`) took its numerator
+  from the previous frame and its denominator from the current one. Fixed at the
+  stage, not here — `core/utils/PhysicsWorld.svelte` (`DOCS/testperf.md` §1.7).
+
+  Two things not to conclude from that. It was **not** the cause of the car's 4K
+  stutter — that is fill rate, closed in §2.6, and this fix changed nothing
+  observable about it. And **nothing in this file should be "corrected" back to
+  compensate for the old ordering**: the `lookAhead`/`followSmoothTime` values are
+  the feel, not a workaround.
+
+  Two rules come with borrowing:
   - **Save the pose on entry, restore it on exit.** `Camera.svelte` sets its
     vantage once, in `oncreate`, and never re-asserts it — leave the camera at
     the car and every other scene inherits that framing.

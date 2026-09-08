@@ -34,6 +34,7 @@ export type { SkyDescriptor, PhaseName, DayKeyframe, ClockKind } from './skybox/
 export { default as Loader } from './utils/Loader.svelte';
 export { default as EngineClock } from './utils/EngineClock.svelte';
 export { default as Renderer } from './utils/Renderer.svelte';
+export { default as PhysicsWorld } from './utils/PhysicsWorld.svelte';
 export { engineClock, setFixedStepSource } from './utils/engineClock';
 export type { FixedStepSource } from './utils/engineClock';
 export { default as Telemetry } from './utils/Telemetry.svelte';

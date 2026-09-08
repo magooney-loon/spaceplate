@@ -128,6 +128,15 @@ panel pattern, templates, extension inventory) and the per-extension reference. 
   steps when none is current.
 - Among tasks sharing a constraint the DAG falls back to registration (mount) order —
   parents register before children.
+- **Reading a physics pose is an ordering question, not just a delta question.** Rapier's
+  synchronization stage is what writes each body's INTERPOLATED transform onto its
+  Object3D, and `@threlte/rapier` only constrains it `after: simulation, before:
+renderStage` — nothing relates it to the main stage, so by default it sorts AFTER it and
+  every main-stage task reads a full-frame-stale body transform. The app mounts
+  `PhysicsWorld` (`core/utils/PhysicsWorld.svelte`) instead of `<World>` to pin the stage
+  ahead of the main stage; our own tasks should still read poses from the render stage
+  (`{ before: autoRenderTask }`). A correctness fix, not a performance one — it was found
+  while chasing a stutter that turned out to be fill rate (`DOCS/testperf.md` §1.7, §2.6).
 
 ### Sky & weather (`core/skybox/`)
 

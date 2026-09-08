@@ -11,9 +11,10 @@
 		Skybox,
 		GlobalAudio,
 		Telemetry,
+		PhysicsWorld,
 		capabilityState
 	} from '$core';
-	import { World, Debug } from '@threlte/rapier';
+	import { Debug } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
 	import { WebGPURenderer } from 'three/webgpu';
@@ -72,7 +73,10 @@
 		<Camera />
 		<GlobalAudio />
 		<Skybox />
-		<World
+		<!-- `<World>` with Rapier's synchronization stage pinned ahead of the main
+		     stage, so main-stage tasks read THIS frame's interpolated body poses
+		     instead of last frame's — see core/utils/PhysicsWorld.svelte. -->
+		<PhysicsWorld
 			gravity={[physicsState.gravityX, physicsState.gravityY, physicsState.gravityZ]}
 			framerate={physicsState.framerate}
 		>
@@ -128,7 +132,7 @@
 					</p>
 				</HTML>
 			{/snippet}
-		</World>
+		</PhysicsWorld>
 	</Canvas>
 {/if}
 

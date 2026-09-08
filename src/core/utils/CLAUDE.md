@@ -19,6 +19,8 @@ Loader.svelte         — Asset loading screen (useProgress) + sound-enable prom
                         badge, and the scene-transition veil (sceneState.isTransitioning)
 Renderer.svelte       — RenderPipeline owner: structural rebuild + hot uniform effects + render
                         task
+PhysicsWorld.svelte   — <World> with Rapier's synchronization stage pinned before the MAIN
+                        stage. App.svelte mounts this, never <World> directly
 Telemetry.svelte      — Draws nothing: samples renderer.info at 2 Hz into telemetryState.
                         Mount right after <Renderer />
 telemetry.svelte.ts   — telemetryState: the live half of Settings ▸ System (the static half is
@@ -56,6 +58,29 @@ the app. It also pins TSL `time`, which the scheduler cannot reach.
 - Registered `{ after: autoRenderTask, autoInvalidate: false }` per the Studio
   task-ordering rules (`DOCS/webgpu-notes.md` §2), and must stay the **first** child
   inside `<Canvas>` so it draws before the Gizmo.
+
+## PhysicsWorld.svelte — the synchronization stage runs before the main stage
+
+`@threlte/rapier` constrains its synchronization stage `after: simulation, before:
+renderStage` and **nothing else**, so it sorts after the MAIN stage and every main-stage
+task reads a body transform that is a full frame stale — including `useFollow` and
+`<CameraControls>`, which is the whole of TestGame's chase rig (`DOCS/testperf.md` §1.7).
+
+**It is fixed on its own merits, not because it fixed a symptom.** It was found while
+chasing the car's judder at 4K; that turned out to be fill rate (§2.6) and this changed
+nothing observable about it. What it does buy is that main-stage consumers read the pose
+about to be drawn rather than the previous one, for one public prop and no runtime cost.
+
+This component is `<World>` plus one public prop —
+`synchronizationStageOptions={{ before: mainStage }}` — giving `resize → simulation →
+synchronization → mainStage → renderStage`. **`App.svelte` mounts this, not `<World>`.**
+
+- It is fixed at the stage because Threlte's own hooks (`useFollow`,
+  `<CameraControls>`) hard-code the main stage and expose no ordering option. Our own
+  tasks should still read poses from the render stage (`{ before: autoRenderTask }`) —
+  the stage fix is the safety net, not a licence to stop caring.
+- Rapier's real guarantees are untouched: the option is _merged_ with the built-in
+  `before: renderStage`, and `after: simulation` still holds.
 
 ## Telemetry — two tasks, two questions
 

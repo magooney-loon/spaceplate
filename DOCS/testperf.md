@@ -204,6 +204,77 @@ textures, and five `dispose()` calls racing on scene exit.
 `best-practices.md` §3.3 describes. **Nothing disposes them** — §3.3's own
 caveat: a shared texture must never be freed by one consumer's cleanup.
 
+### 1.7 The chase camera framed the car one frame late
+
+**Symptom bucket:** none, as it turned out. This was found while chasing "at
+higher resolution the car starts to stutter" — but that symptom was **fill rate**,
+and it is closed in §2.6, not here. Read this section as what it is: a real
+ordering bug in the camera rig, fixed on its own merits, with no observable
+before/after. The numbers below are a _simulation_, not a measurement.
+
+§1.4 fixed the wheels stuttering against their car. This is the same rule one
+level up: a consumer of physics state reading it at the wrong point in the frame.
+
+Threlte sorts stages topologically and `@threlte/rapier` only ever constrains
+synchronization to `after: simulation, before: renderStage`. **Nothing relates it
+to the main stage.** Driving the real `DAG` with the app's own insertion sequence
+(scheduler → renderer → `<World>`) gives:
+
+```
+resize → simulation → mainStage → synchronization → renderStage
+```
+
+Synchronization is what writes each body's interpolated pose onto its Object3D
+(`lastPosition.lerp(currentPosition, offset)`). Landing **after** the main stage
+means every main-stage task reads a body transform that is a full frame stale.
+
+This project's own tasks are already immune — they run `{ before: autoRenderTask }`
+(`SpawnedBodies.svelte` says so in a comment). But Threlte's components default to
+the main stage, and the chase camera is built from two of them: `useFollow` and
+`<CameraControls>`, both `useTask(…)` with no ordering option at all. So the
+camera framed the car one frame behind where the car was about to be drawn.
+
+**A constant frame time hides it completely** — the lag is a fixed sub-centimetre
+offset. Uneven frame times do not, and there is an amplifier: `useFollow` derives
+the target's velocity for its `lookAhead` term as `Δposition / delta`, and with a
+stale pose the **numerator spans the previous frame while the denominator is the
+current one**. Two consecutive frames of different length produce a badly wrong
+velocity, which `lookAhead` (0.18 s in `ChaseCamera.svelte`) multiplies straight
+into the camera's look-at point. **Simulated** (a script over synthetic uneven
+frame times at 125 units/s, never measured in the app), worst frame-to-frame
+movement of the car relative to the camera:
+
+| ordering                          | worst jump |
+| --------------------------------- | ---------- |
+| stale pose + `lookAhead` (before) | **105 cm** |
+| stale pose, `lookAhead` disabled  | 8 cm       |
+| fresh pose + `lookAhead` (after)  | **7 cm**   |
+
+Treat that as an argument for the ordering, not as evidence about the reported
+symptom — the real one survived this fix at full `renderScale` and died when the
+resolution came down (§2.6).
+
+**Fix:** `core/utils/PhysicsWorld.svelte` — `<World>` with
+`synchronizationStageOptions={{ before: mainStage }}`, giving
+`resize → simulation → synchronization → mainStage → renderStage`. One public
+`<World>` prop, no patch. Rapier's two real guarantees are untouched: the option
+is _merged_ with the built-in `before: renderStage`, and `after: simulation`
+still holds, so the stage runs after the steps and before anything draws.
+
+It is fixed at the STAGE rather than at the consumers on purpose: moving tasks
+into the render stage is still the rule for our own code, but it cannot reach
+into `useFollow` or `<CameraControls>`, which hard-code their stage. Moving the
+stage fixes every main-stage consumer at once, third-party included. Nothing can
+regress on it, either — a main-stage write to a body transform would previously
+have been clobbered by synchronization, so no working code could depend on the
+old order.
+
+> **The rule, generalised from §1.3/§1.4:** those two say a visual quantity must
+> be integrated with the frame's delta. This one adds the other half — it must
+> also be READ at a point in the frame where the physics state it depends on is
+> the state about to be drawn. A fresh delta applied to a stale pose is still a
+> stutter.
+
 ---
 
 ## 2. Known and deliberately open
@@ -250,6 +321,9 @@ run a follow rig). This is the same shape as the `<InstancedMesh>` trap in
 `best-practices.md` §2.7: an extras component that sets `autoInvalidate: false`
 and then invalidates in the body. Worth an upstream issue; not worth patching
 locally.
+
+(The same hook's _stage_ was a real bug rather than a cost — see §1.7. That one
+is fixed, and not by touching `useFollow`.)
 
 ### 2.4 Physics dropped from 200 Hz to 60 — DRIVE-TEST OWED
 
@@ -305,6 +379,45 @@ decal. §1.5 stopped it running when there is nothing to show; it did not make i
 cheaper when there is. The material being LIT is load-bearing (see the scene's
 `CLAUDE.md` — unlit marks read as chalk after dark), so the lever here is the
 ring size (`SEGS_PER_WHEEL`), which is a look decision.
+
+### 2.6 The 4K stutter is fill rate — CLOSED, do not re-open it
+
+**The one the player actually reported**, and the answer is boring: at 4K the
+frame does not fit in the budget, the GPU misses vsync unevenly, and the car —
+the fastest-moving thing framed against a chasing camera — is where that reads.
+**Dropping `settingsState.graphics.renderScale` removes it, with minimal visual
+loss.** That is the fix; there is no bug under it.
+
+Recorded because it cost three wrong answers first. The tell was in the report
+from the start — _"on lower graphics/resolution it's ok with motion blur too"_ —
+which is §3.4 verbatim: **a cost that vanishes at low resolution is fill rate.**
+Motion blur is implicated because it is the marginal straw (it adds a second
+RGBA16F attachment to the scene pass plus `numSamples` fullscreen taps), not
+because it is broken.
+
+Rejected along the way, each plausible and each _not it_:
+
+- **stale physics poses in the chase camera** — a real bug, fixed in §1.7, no
+  observable effect on this;
+- **transparent FX overwriting the `velocity` MRT attachment** — non-`output`
+  attachments genuinely do not blend, so every `depthWrite: false` quad stamps
+  its own velocity over what is under it. Packing `output.a` into the attachment
+  and giving it `NormalBlending` fixes that, and it did not fix this;
+- **`VelocityNode` reporting fiction for the puff pools** — also genuinely true,
+  and also not it.
+
+The last two were built, verified to run clean, and then **reverted** as
+speculative fixes for artifacts nobody had reported. Both live in `git stash` on
+the `webgpu` branch if a real velocity-buffer symptom ever shows up. Two facts
+from them are worth keeping regardless, because they are the reason motion blur
+can never track the pools:
+
+- **`positionPrevious` is not a previous position.** It is
+  `positionGeometry.toVarying('positionPrevious')` — the _same_ attribute. Any
+  mesh that rewrites its vertices per frame (the world-space puff pools, §1.2)
+  therefore reports only the camera's own motion.
+- **`getPreviousMatrix` is keyed per object**, so an `InstancedMesh` whose
+  instances move reports the pool's transform, never the instance's.
 
 ---
 
@@ -389,3 +502,7 @@ The scene's own additions to `best-practices.md` §4, each earned above:
 - **Shared assets are loaded once and disposed never.** (§1.6)
 - **Lights are mounted once and driven by `intensity`.** `visible` and
   `castShadow` are shader-cache-key inputs, not runtime knobs. (§3b)
+- **Anything that READS a physics pose runs after Rapier's synchronization
+  stage** — `{ before: autoRenderTask }` for our own tasks, and the stage itself
+  is pinned ahead of the main stage (`core/utils/PhysicsWorld.svelte`) so
+  third-party main-stage tasks are covered too. (§1.7)
