@@ -8,7 +8,6 @@
 	} from '@dimforge/rapier3d-compat';
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';
-	import { BASE_URL } from '$extensions/settings';
 	import { logGltf } from '$extensions/logger';
 	import CarHeadlights from './fx/CarHeadlights.svelte';
 	import CarExhaustFlames from './fx/CarExhaustFlames.svelte';
@@ -32,15 +31,17 @@
 	import { currentCar } from './cars';
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
-	import { buildTrackColliders } from './trackColliders';
 	import { buildCarHull, chassisMassProperties } from './cars/hull';
+	import Track from './world/Track.svelte';
 	import { resetCarTelemetry } from './sim/carTelemetry.svelte';
 
 	// Test Game 3D scene — the driving prototype's composition layer. The driving
 	// model itself lives in sim/ (controller.ts owns the physics task's brain,
 	// drivetrain.ts the engine/gearbox, handling.ts the tune contract); the car's
 	// facts are DATA in cars/ (see cars/types.ts — adding a car is a spec file +
-	// a registry entry, not component edits). Controls: arrows drive, Space
+	// a registry entry, not component edits); the map is world/Track.svelte (the
+	// GLB, its colliders, its shadow policy — adding a map is a sibling there).
+	// Controls: arrows drive, Space
 	// handbrake, Q/E shift down/up, either Shift nitrous, L lights, K main beam —
 	// deliberately keys Studio doesn't bind (w a s z t r c v m — Shift is a
 	// modifier, invisible to its bare-letter binds). Input is this scene's own
@@ -63,14 +64,7 @@
 
 	const decoders = { dracoLoader, meshoptDecoder, ktx2Loader };
 
-	const track = useGltf(`${BASE_URL}models/testgame/track.glb`, decoders);
 	const carModel = useGltf(car.model.url, decoders);
-
-	// Static collision for the track — built once when the GLB lands. Hand-rolled
-	// instead of <AutoColliders> because the trimesh flags (FIX_INTERNAL_EDGES,
-	// which stops ghost bumps at internal triangle seams on the flat roads)
-	// can only be passed through explicit args. See trackColliders.ts.
-	const trackColliders = $derived($track?.scene ? buildTrackColliders($track.scene) : []);
 
 	// The chassis hull — the car's collider computed from its own GLB (see
 	// cars/hull.ts): every mesh except the wheels, decimated to a few thousand
@@ -85,41 +79,18 @@
 	const carMassProps = $derived(carHull ? chassisMassProperties(car, carHull) : undefined);
 
 	$effect(() => {
-		if ($track?.scene) logGltf.info('TestGame track loaded');
 		if ($carModel?.scene) logGltf.info(`TestGame car loaded (${car.label})`);
 	});
 
-	// ── Shadow casting is a POLICY, not a blanket flag ──────────────────────────
+	// ── Shadow casting is a POLICY, not a blanket flag — the car's half ────────
 	//
-	// This used to be `castShadow = receiveShadow = true` on every mesh in both
-	// GLBs, and that was wrong in both directions at once. `SkyLight` auto-fits
-	// its ONE shadow cascade to the bounding sphere of the visible CASTERS
-	// (core/skybox/CLAUDE.md), clamped at `maxShadowRadius` = 400 world units.
-	// The track's `Metal` mesh spans ~2 970 × 2 540 world units, so:
-	//
-	//   • the fit saturated at 400 and centred on the caster bounds — roughly
-	//     (-1086, ., -118) world, about 1 090 units from where the car spawns
-	//     and drives. The car sat entirely OUTSIDE the shadow frustum, so it
-	//     cast no shadow, and the asphalt received none either. There were no
-	//     sun shadows anywhere the player could go;
-	//   • and the engine paid for that every single frame: `needsUpdate` is
-	//     armed each frame (the car moves), so all 313 725 track triangles and
-	//     324 640 car triangles — 5 + 29 draw calls — were re-rendered into the
-	//     2048² map to produce nothing.
-	//
-	// So: THE CAR CASTS, THE WORLD RECEIVES. With the track out of the caster
-	// set the fit collapses to the `shadowRadius` floor (20) centred on the car,
-	// which is a 2 cm texel instead of a 39 cm one — the car finally has a sharp
-	// shadow — and the shadow pass draws the car alone.
-	//
-	// Flip this on to get building/tree shadows back, and read the paragraph
-	// above first: at this track's size the single cascade cannot serve both, and
-	// `CSMShadowNode` (DOCS/best-practices.md §2.6) is the honest answer.
-	const TRACK_CASTS_SHADOWS = false;
-	/** Which track materials would cast, if they did. Ground/Asphalt are the flat
-	 *  surfaces the shadows land ON, and Decals are painted onto them — 51 062
-	 *  triangles that can only ever shadow themselves. */
-	const TRACK_CASTERS = new Set(['Metal', 'Leafs_Mat']);
+	// The scene's rule: THE CAR CASTS, THE WORLD RECEIVES. The track's half of
+	// the policy — and the story of WHY the track cannot cast (SkyLight's ONE
+	// cascade auto-fits to the casters' bounds, and this track's `Metal` mesh at
+	// ~2 970 × 2 540 world units saturated the fit at 400, leaving the car
+	// outside its own shadow frustum while all 313 725 track triangles were
+	// re-rendered into the map every frame to produce nothing) — lives in
+	// world/Track.svelte (TRACK_CASTS_SHADOWS). Here, the car casts except for:
 	/** Car materials that are interior or engine: never part of the car's
 	 *  silhouette, so they cast nothing the bodywork doesn't already cast.
 	 *  117 176 of the model's 324 640 triangles, and 14 of its 29 meshes, out of
@@ -145,19 +116,14 @@
 		(mesh.material as THREE.Material | undefined)?.name ?? '';
 
 	$effect(() => {
-		const roots: [THREE.Object3D | undefined, (mesh: Mesh) => boolean][] = [
-			[$track?.scene, (mesh) => TRACK_CASTS_SHADOWS && TRACK_CASTERS.has(materialName(mesh))],
-			[$carModel?.scene, (mesh) => !CAR_NON_CASTERS.has(materialName(mesh))]
-		];
-		for (const [root, casts] of roots) {
-			if (!root) continue;
-			root.traverse((obj) => {
-				const mesh = obj as Mesh;
-				if (!mesh.isMesh) return;
-				mesh.castShadow = casts(mesh);
-				mesh.receiveShadow = true;
-			});
-		}
+		const root = $carModel?.scene;
+		if (!root) return;
+		root.traverse((obj) => {
+			const mesh = obj as Mesh;
+			if (!mesh.isMesh) return;
+			mesh.castShadow = !CAR_NON_CASTERS.has(materialName(mesh));
+			mesh.receiveShadow = true;
+		});
 	});
 
 	// ── Input (this scene's own keymap) ──────────────────────────────────────────
@@ -315,26 +281,10 @@
 
 <svelte:window onkeydown={onKeydown} onkeyup={onKeyup} onblur={resetCarInput} />
 
-{#if $track}
-	<T.Group name="Track" scale={1.5} position={[0, 0, 0]} rotation={[0, -1.0472, 0]}>
-		<!-- The track GLB: Asphalt and Metal barriers get trimesh colliders
-		     (transforms baked); the Ground dirt plane becomes an analytical
-		     cuboid FLOOR — two 460 m triangles were a contact-manifold jitter
-		     factory; Decals (road paint) and foliage are excluded — see
-		     trackColliders.ts. Bare <Collider>s attach to an implicit fixed body,
-		     exactly like AutoColliders did. -->
-		<T is={$track.scene} />
-		{#each trackColliders as c (c.id)}
-			{#if c.kind === 'trimesh'}
-				<Collider shape="trimesh" args={c.args} />
-			{:else}
-				<T.Group position={c.center}>
-					<Collider shape="cuboid" args={c.half} />
-				</T.Group>
-			{/if}
-		{/each}
-	</T.Group>
-{/if}
+<!-- The world — the track GLB, its scene pose, its static colliders and its
+     half of the shadow policy. Maps live in world/; see world/Track.svelte
+     (decoders passed down so the scene shares ONE loader set with the car). -->
+<Track {decoders} />
 
 <!-- Player car. The outer group is the spec's spawn pose (RigidBody reads its
      world transform at creation); the visual scale lives on the children so the
@@ -453,7 +403,7 @@
 			     rest length, so equilibrium still sits the hub exactly one tyre radius
 			     above the road. What the rays hit is filtered the same way the balls
 			     were — the body itself is excluded, and the track's colliders are still
-			     only Asphalt/Metal trimesh + the Ground floor (trackColliders.ts). -->
+			     only Asphalt/Metal trimesh + the Ground floor (world/trackColliders.ts). -->
 
 			<!-- The debug skeleton — wheels/driveline/suspension at the spec's
 			     patches, steered and rolled from the same carSim values as CarWheels,

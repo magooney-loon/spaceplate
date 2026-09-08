@@ -8,8 +8,9 @@ engine architecture — do not generalise from this code into `core/` or
 scene via `Scene.svelte` / `SceneHud.svelte`.
 
 ```
-TestGame.svelte         — the scene: track + car composition + the physics-task
-                         shell; the driving model itself is sim/controller.ts
+TestGame.svelte         — the scene: world + car composition + the physics-task
+                         shell; the driving model itself is sim/controller.ts,
+                         the map is world/Track.svelte
 TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart) + the
                          upper-middle launch flash (STREET / JUICY / PERFECT)
 cars/                   — THE GARAGE: everything car-specific is data here
@@ -85,6 +86,14 @@ audio/                  — the engine NOTE
                          takes jittered per hit; layers/anchors/pitch from the spec
                          (files are SHARED across cars) — ticked from carSim
                          (weatherAudio contract — never $effect)
+world/                  — THE MAP: everything map-shaped (one track so far — a
+                         second map is a sibling + the one <Track /> mount line
+                         in TestGame.svelte)
+  Track.svelte          — the test track: GLB load (decoders via PROPS — the
+                         scene shares ONE DRACO/KTX2/Meshopt instance with the
+                         car's load), scene pose (×1.5, −60° yaw), the static
+                         colliders and the track's half of the shadow policy
+  trackColliders.ts     — hand-rolled static colliders for the track GLB
 ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + the
                          nitrous FOV kick, the launch dolly kick and the shift jolt
 RearViewMirror.svelte   — NFS-style rear-view strip: a backward camera on the car
@@ -93,7 +102,6 @@ RearViewMirror.svelte   — NFS-style rear-view strip: a backward camera on the 
                          moved into the post pipeline)
 CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed,
                          live N2O bottle gauge); dial facts from the spec
-trackColliders.ts       — hand-rolled static colliders for the track GLB
 units.ts                — UNITS_PER_METER + G: the SI ↔ world boundary (track scale)
 ```
 
@@ -455,7 +463,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   [x,y,z] branch and would multiply the point array by a scalar (the
   roundCuboid fourth-arg quirk's bigger sibling, verified in the installed
   @threlte/rapier source).
-- **Track collision is hand-rolled** (`trackColliders.ts`), not `<AutoColliders>`:
+- **Track collision is hand-rolled** (`world/trackColliders.ts`), not `<AutoColliders>`:
   the trimesh flags cannot be passed through AutoColliders, and without
   `TriMeshFlags.FIX_INTERNAL_EDGES` a flat tessellated road produces ghost
   contacts at internal triangle edges — bumps and snags on perfectly flat
@@ -464,7 +472,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   effectively ONE-SIDED — a track GLB with flipped winding would let bodies fall
   through. Known seam: `Ground` sits 1.1 cm below `Asphalt` in the track GLB — a
   small lip at asphalt edges the balls roll over.
-- **Only Asphalt/Metal trimesh + a Ground FLOOR collide** (`trackColliders.ts`,
+- **Only Asphalt/Metal trimesh + a Ground FLOOR collide** (`world/trackColliders.ts`,
   filtered by material name — exporter node names are not stable). The GLB's
   other two meshes are deliberately OUT: `Decals` is 31 k triangles of road
   paint a hair off the deck — as its own collider every decal boundary edge is
@@ -495,7 +503,8 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
 touching anything on the frame path. The one rule that lives here because it is
 a scene-content decision, not an engine one:
 
-**`castShadow` is a policy in `TestGame.svelte`, never a blanket flag.** It used
+**`castShadow` is a policy, never a blanket flag — the car's half lives in
+`TestGame.svelte`, the track's half in `world/Track.svelte`.** It used
 to be `castShadow = receiveShadow = true` on every mesh in both GLBs, and that
 was wrong in both directions at once. `SkyLight` fits its ONE cascade to the
 bounding sphere of the visible CASTERS, capped at `maxShadowRadius` = 400 world
@@ -506,7 +515,8 @@ cast or received a sun shadow at all** — while the renderer re-rendered all
 313 725 track triangles into the 2048² map every frame to achieve it (the car
 moves, so `needsUpdate` is armed every frame).
 
-Now: the track does not cast (`TRACK_CASTS_SHADOWS`), the car does, and the car's
+Now: the track does not cast (`TRACK_CASTS_SHADOWS`, `world/Track.svelte`), the
+car does, and the car's
 interior/engine materials (`CAR_NON_CASTERS` — 117 176 of its 324 640 triangles,
 never in its silhouette) do not either. The fit collapses to the `shadowRadius`
 floor of 20 centred on the car — a 2 cm texel instead of 39 cm — so the car
