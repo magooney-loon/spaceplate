@@ -99,6 +99,29 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   unresolved glow) must agree — if they drift, the star band and the light band
   separate and the illusion collapses. The band is asymmetric (bulge toward
   `MILKY_WAY_CORE`) on purpose; an even ring is the clearest "generated sky" tell.
+- **The star field does not rotate, so half of it used to be dead weight.** Nothing
+  applies a diurnal rotation — not the sky group, not the layer — and the centres are
+  baked at build time, so a star below the horizon fade's zero point (`HORIZON_MIN`,
+  −0.06) is invisible for the whole session, not just currently. Sampling the full sphere
+  put **52% of the field (3119 of 6000) there**, and `frustumCulled={false}` is mandatory
+  for a far-plane-pinned layer, so every one of them was vertex-shaded on every night
+  frame to come out at opacity zero. The field is sampled on the visible **spherical cap**
+  now — uniform in `cos(theta)` over the restricted range is still uniform by area, so
+  the "band and nest are the only anisotropy" contract is untouched, and a rejection loop
+  would have been the biased way to do it. `count` therefore means **visible** stars
+  (2900), and the CPU build halves too (39 ms → 19 ms — the nest march never runs on a
+  direction that cannot be seen). Add a rotation one day and the cap has to go with it.
+- Everything else in the star material is **constant across a star's quad** — altitude,
+  airmass, both twinkle lobes, the flicker depth, extinction, the prismatic flutter, the
+  colour — and rode the fragment stage until it was lifted into two `varying()`s (Snow's
+  `flakeAlpha` trap, below). It is a **smaller win here than in Snow and the reason is
+  worth knowing**: a 3–6 px star costs ~25 shaded fragments against 4 vertices, where a
+  snowflake near the lens costs thousands, so lifting the work was close to a wash while
+  half the field still paid vertex cost for nothing. The cap is what makes it worth doing;
+  the two changes belong together. The core/halo falloff is the one genuinely
+  per-fragment term and is written as **multiplies, not `pow()`** — `disc` is exactly 0
+  over most of the quad and `pow` is `exp2(n·log2(x))`, so the old form leaned on the
+  driver returning 0 rather than NaN from `0 · −inf`.
 - Star placement is also rejection-sampled against a build-time CPU port of the
   Shadertoy "Star Nest" march (see Stars.svelte): the fractal's clumping — star
   clouds carved into the band's river, knots/filaments/voids off it — at zero

@@ -25,11 +25,12 @@
 		fract,
 		mix,
 		positionLocal,
-		pow,
 		sin,
 		smoothstep,
 		time,
 		uniform,
+		varying,
+		vec2,
 		vec3
 	} from 'three/tsl';
 	import { descriptor, mulberry32 } from '../../model';
@@ -47,10 +48,15 @@
 
 	interface Props {
 		/**
-		 * Total stars. Pair-tuned with the nest acceptance below: 6000 keeps the
-		 * band's river dense while the surplus populates the off-band knots, and it
-		 * rose again with the size cut -- smaller quads cover less sky, and a deep
-		 * field needs the count to pay for it.
+		 * Total stars, ALL OF THEM VISIBLE -- see `HORIZON_MIN`. Pair-tuned with the nest
+		 * acceptance below: this keeps the band's river dense while the surplus populates
+		 * the off-band knots, and it rose once with the size cut -- smaller quads cover
+		 * less sky, and a deep field needs the count to pay for it.
+		 *
+		 * IT USED TO BE 6000 OVER THE WHOLE SPHERE, of which 3119 (52%) were below the
+		 * horizon and drawn every night frame to produce nothing. 2900 on the visible cap
+		 * is the same sky at half the cost; retune it against what you SEE, which is now
+		 * what the number means.
 		 */
 		count?: number;
 		/** Distance the field is placed at. Cosmetic -- depth is pinned to the far plane. */
@@ -78,7 +84,7 @@
 	}
 
 	let {
-		count = 6000,
+		count = 2900,
 		radius = 1000,
 		minSizeDeg = 0.18,
 		maxSizeDeg = 0.34,
@@ -106,6 +112,25 @@
 	const HOT: [number, number, number] = [0.68, 0.79, 1];
 
 	const DEG = Math.PI / 180;
+
+	/**
+	 * Altitude sine at which the horizon fade reaches ZERO -- and therefore the floor of
+	 * the spherical cap the field is sampled on. **THE FIELD DOES NOT ROTATE**: the sky
+	 * group has no rotation, this layer applies none, and the centres are baked at build
+	 * time, so a star below this line is not "currently" invisible, it is invisible for
+	 * the whole session. Sampling the full sphere put 52% of the field (3119 of 6000)
+	 * there, and `frustumCulled={false}` -- mandatory for a far-plane-pinned layer -- meant
+	 * every one of them was still vertex-shaded on every night frame to come out at
+	 * opacity zero.
+	 *
+	 * Uniform in cos(theta) over the RESTRICTED range is still uniform by area over the
+	 * cap, so the "band and nest are the only anisotropy" contract below holds exactly as
+	 * it did over the sphere; a rejection loop would have been the biased way to do this.
+	 * The shader's `horizon` smoothstep reads the same constant, so the two cannot drift.
+	 *
+	 * Give this layer a diurnal rotation one day and the cap has to go with it.
+	 */
+	const HORIZON_MIN = -0.06;
 
 	// ── The star-nest field: a build-time placement oracle ───────────────────────
 	//
@@ -215,16 +240,17 @@
 			// candidate, so the voids keep a thin uniform floor -- a literally starless
 			// patch reads as a culling bug, not as wilderness.
 			//
-			// The underlying sample is still uniform-on-sphere (uniform cos(theta)), so
-			// band and nest are the only anisotropy -- rejection sampling on top of a
-			// biased sample would compound the bias.
+			// The underlying sample is still uniform-by-area (uniform cos(theta)) over the
+			// VISIBLE CAP, so band and nest are the only anisotropy -- rejection sampling on
+			// top of a biased sample would compound the bias. See HORIZON_MIN for why the
+			// cap rather than the sphere, and why that is not a bias.
 			let dx = 0;
 			let dy = 0;
 			let dz = 0;
 			let band = 0;
 			let nest = 0;
 			for (let tries = 0; tries < 64; tries++) {
-				const cosTheta = rng() * 2 - 1;
+				const cosTheta = HORIZON_MIN + rng() * (1 - HORIZON_MIN);
 				const phi = rng() * Math.PI * 2;
 				const sinTheta = Math.sqrt(1 - cosTheta * cosTheta);
 				dx = sinTheta * Math.cos(phi);
@@ -341,18 +367,32 @@
 		// field of cushions reads as a dome NEARBY -- planetarium, not sky. disc^3 at a
 		// lower weight keeps the glint tight; what the nests lose in individual halo
 		// they keep in overlap, which is the part that makes a knot glow.
+		//
+		// WRITTEN AS MULTIPLIES, NOT `pow()`. This is the one genuinely per-fragment term
+		// in the material, so its cost is the only cost that scales with the field's
+		// screen area -- and `pow(x, n)` is `exp2(n * log2(x))`, two transcendentals,
+		// against four multiplies for disc^3 and disc^7 together. `disc` is EXACTLY zero
+		// at and beyond the quad's inscribed circle, which is most of its fragments, and
+		// `log2(0)` is -inf: the identity held only because the driver's `0 * -inf` came
+		// out as 0 rather than NaN. The multiplies are exact and have no such opinion.
 		const dist2 = dot(corner, corner);
 		const disc = smoothstep(float(0), float(1), dist2).oneMinus();
-		const shape = pow(disc, float(7)).add(pow(disc, float(3)).mul(aMag.mul(0.22).add(0.04)));
+		const disc3 = disc.mul(disc).mul(disc);
+		const disc7 = disc3.mul(disc3).mul(disc);
 
 		// Fade out below the horizon. Scenes without a ground plane would otherwise show
 		// a full sphere of stars underfoot; scenes with one occlude them by depth anyway.
 		// Defined before the twinkle because scintillation keys off it too.
 		//
+		// It is still a FADE and not just a floor -- stars between HORIZON_MIN and 0.1 ramp
+		// in, and those exist. What no longer exists is anything below HORIZON_MIN: the
+		// field is sampled on the cap this smoothstep opens (see the constant), so the
+		// zero half of this term is now unreachable rather than merely unlit.
+		//
 		// Read from the instanced CENTRE, never from `positionWorld` -- that is now the
 		// +/-1 quad corner. See `altitudeOf` for the bug the old form caused in Meteors.
 		const altitude = altitudeOf(aCenter, radius);
-		const horizon = smoothstep(float(-0.06), float(0.1), altitude);
+		const horizon = smoothstep(float(HORIZON_MIN), float(0.1), altitude);
 
 		// AIRMASS, the term this file was missing. 1 at the horizon, 0 above ~17 deg.
 		// Everything atmospheric hangs off it: scintillation, reddening, and dimming are
@@ -403,7 +443,7 @@
 		// Now the median mid-sky star swings ~20%, a bright star near the horizon
 		// flashes past 50%, and only the zenith keeps its slow breath. Alive, layered.
 		const depth = float(twinkle)
-			.mul(float(0.3).add(pow(rndC, float(1.6)).mul(0.7)))
+			.mul(float(0.3).add(rndC.pow(1.6).mul(0.7)))
 			.mul(float(0.55).add(airmass.mul(0.65)))
 			.mul(float(0.45).add(aMag.mul(0.55)))
 			.min(0.9);
@@ -432,10 +472,40 @@
 		const prismatic = fast.sub(0.5).mul(airmass).mul(0.5);
 		const chroma = vec3(1).add(prismatic.mul(vec3(0.35, 0.02, -0.42)));
 
-		material.colorNode = mix(vec3(lum), aColor, beat.mul(0.45).add(0.85))
-			.mul(extinction)
-			.mul(chroma);
-		material.opacityNode = shape.mul(flicker).mul(horizon).mul(airmassDim).mul(visibility);
+		// ── EVERYTHING ABOVE IS CONSTANT ACROSS A STAR'S QUAD ────────────────────────
+		//
+		// Altitude, airmass, both twinkle lobes, the flicker depth, the extinction, the
+		// prismatic flutter and the colour itself are all functions of the star's own
+		// attributes and of `time` -- not one of them varies between the four corners of
+		// its quad. TSL builds a node in whatever stage CONSUMES it and only
+		// `AttributeNode` lifts itself to a varying, so naming any of them in `colorNode`
+		// or `opacityNode` re-emitted the entire chain PER FRAGMENT: two `sin`, a `pow`,
+		// four `smoothstep`s and a `dot`, on every pixel of every star. Snow's `flakeAlpha`
+		// is the same fix for the same trap (`../precipitation/Snow.svelte`).
+		//
+		// It is a smaller win here than there, and the reason is worth writing down:
+		// stars are 3-6 px quads, so a star costs ~25 shaded fragments against 4 vertices,
+		// where a snowflake near the lens costs thousands. Lifting the work would have
+		// been close to a WASH while half the field sat below the horizon paying vertex
+		// cost for nothing -- `HORIZON_MIN` is what makes this worth doing, and the two
+		// changes belong together.
+		//
+		// The values are identical at all four corners, so interpolating them is exact,
+		// not an approximation. Interstage traffic drops as well: four attributes (8
+		// floats: centre, colour, seed, magnitude) become two varyings (5), because the
+		// fragment stage stops reading the attributes at all.
+		const vStarColor = varying(
+			mix(vec3(lum), aColor, beat.mul(0.45).add(0.85)).mul(extinction).mul(chroma),
+			'vStarColor'
+		);
+		/** (alpha everything-but-shape, halo weight) -- the two scalars the shape needs. */
+		const vStarShape = varying(
+			vec2(flicker.mul(horizon).mul(airmassDim).mul(visibility), aMag.mul(0.22).add(0.04)),
+			'vStarShape'
+		);
+
+		material.colorNode = vStarColor;
+		material.opacityNode = disc7.add(disc3.mul(vStarShape.y)).mul(vStarShape.x);
 
 		return { geometry: instancedQuad(count), material };
 	};
