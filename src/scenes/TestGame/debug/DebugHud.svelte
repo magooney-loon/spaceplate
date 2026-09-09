@@ -123,6 +123,21 @@
 			{/each}
 		</div>
 
+		<!-- HULL: what the chassis (not a tyre) is touching — sim/hullContacts.ts,
+		     read off Rapier's own contact manifolds each physics step, never
+		     events. NOT the ground contact (the corners above are); this is kerbs,
+		     barrier bases, a fence scrape — the rig flashes/tints the hull for the
+		     same signal. -->
+		<h4>hull contact</h4>
+		<dl>
+			<dt>touching</dt>
+			<dd class:hot={carDebugHud.hullContact}>{carDebugHud.hullContact ? 'yes' : 'no'}</dd>
+			<dt>hit Δv</dt>
+			<dd class:hot={carDebugHud.hullHitDv > 0.6}>{carDebugHud.hullHitDv.toFixed(2)} m/s</dd>
+			<dt>slide</dt>
+			<dd class:hot={carDebugHud.hullSlideMs > 1.4}>{carDebugHud.hullSlideMs.toFixed(2)} m/s</dd>
+		</dl>
+
 		<!-- The rig's wheel-ring colours, in its own priority order. -->
 		<h4>wheel rings</h4>
 		<div class="legend">

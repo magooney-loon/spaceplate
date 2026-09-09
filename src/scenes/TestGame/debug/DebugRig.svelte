@@ -12,6 +12,7 @@
 	import { latMu } from '../sim/handling';
 	import { clamp } from '../sim/carMath';
 	import type { Suspension } from '../sim/suspension';
+	import { HULL_HIT_FLASH_TIME } from '../sim/hullContacts';
 
 	// The debug rig — the car's SKELETON, drawn instead of (or over) the model.
 	//
@@ -41,6 +42,13 @@
 	//     collider is built from, passed in by the scene (which computes it once
 	//     per load), so what you see is what Rapier holds, minus the 5 cm
 	//     rounding margin (too small to read at wireframe scale);
+	//   · the hull FLASHES white-hot on a HIT and tints ORANGE while it's
+	//     pressed and SLIDING against something — `carSim.hullContact*`
+	//     (sim/hullContacts.ts), read off Rapier's own contact manifolds each
+	//     physics step, never events (that file's header has the argument). A
+	//     small marker (sphere + normal spike) is drawn AT the contact point,
+	//     so a scrape reads as "here", not just "hull went orange" — the debug
+	//     half of the eventual impact fx, which will spawn off this same signal;
 	//   · four wheels at the spec's wheel patches, front pair steered at
 	//     `carSim.steerAngle` (the same radians CarWheels renders), each rolling
 	//     at ITS OWN surface speed — see the driveline note below;
@@ -235,6 +243,11 @@
 	// for one reading.
 	const contactMats = patches.map(() => new THREE.MeshBasicNodeMaterial({ color: 0x1fe0c0 }));
 	mats.push(...strutMats, ...ringMats, ...contactMats);
+	// The hull-contact marker — sphere + normal spike, both this one colour:
+	// they report the same reading (see the per-frame tint below), so two
+	// materials would be two graph builds for one number.
+	const hullContactMat = new THREE.MeshBasicNodeMaterial({ color: 0xff5a1f });
+	mats.push(hullContactMat);
 
 	/** Flat world-unit hull points → the Vector3[] ConvexGeometry wants. */
 	function hullVectors(points: Float32Array): THREE.Vector3[] {
@@ -259,6 +272,21 @@
 	// Start hidden — the $effect below owns visibility from the first flush.
 	const chassis = hullGeo ? new THREE.Mesh(hullGeo, boxMat) : undefined;
 	if (chassis) rig.add(chassis);
+
+	// The hull-contact marker: a small sphere at the contact point plus a
+	// short spike along the surface normal, so a barrier scrape reads as
+	// "here" rather than just a colour change on the hull. Skeleton layer
+	// (added to `rig`, not `fullGroup`) — visible in 'both' too, since a hit
+	// is worth seeing over the real car, not only in the analysis view.
+	// Hidden by default; the per-frame task below owns its visibility.
+	const hullContactGeo = new THREE.SphereGeometry(0.05 * UPM, 10, 8);
+	geos.push(hullContactGeo);
+	const hullContactMarker = new THREE.Mesh(hullContactGeo, hullContactMat);
+	hullContactMarker.visible = false;
+	rig.add(hullContactMarker);
+	const hullContactSpike = stretchBar(0.018 * UPM, hullContactMat);
+	hullContactSpike.visible = false;
+	rig.add(hullContactSpike);
 
 	// Per corner: a wheel group (steer + roll; 'YXZ' so the roll happens in the
 	// steered frame — the same order the CarWheels shader applies) PINNED at the
@@ -471,6 +499,11 @@
 	const _mid = new THREE.Vector3();
 	const _t = new THREE.Vector3(); // body-space point of a body-mounted part
 
+	/** World units — how far the hull-contact spike reaches off the surface.
+	 *  Fixed, like the slip-angle wedge's radius: it's a POINTER at "here", not
+	 *  a magnitude readout — the tint and the HUD numbers carry "how hard". */
+	const HULL_SPIKE_LEN = 0.4 * UPM;
+
 	/** Per-wheel roll angle. Per WHEEL, not per axle: a locked rear has to HOLD
 	 *  its angle while the fronts keep turning, and a shared accumulator would
 	 *  snap it back the moment the handbrake released. */
@@ -494,7 +527,13 @@
 	// Contact patches: teal unloaded → orange on the bump stop, red in the air.
 	const cTeal = new THREE.Color(0x1fe0c0);
 	const cOrange = new THREE.Color(0xff5a1f);
+	// Hull contact: idle cyan (the hull's own resting colour) → orange while
+	// pressed and sliding → white-hot on a HIT's brief flash.
+	const cHullIdle = new THREE.Color(0x3fd0ff);
+	const cHullScrape = new THREE.Color(0xff8c1a);
+	const cHullHit = new THREE.Color(0xffffff);
 	const cTmp = new THREE.Color();
+	const cHullTmp = new THREE.Color();
 
 	/** Stretch a unit-height bar between two body-space points. */
 	function stretch(
@@ -649,6 +688,41 @@
 					shaftRoll[d] -= (drivenSurface / R) * delta;
 				}
 				line.spin.rotation.y = shaftRoll[d];
+			}
+
+			// ── Hull contact: tint + marker (skeleton layer — both views) ────
+			// `carSim.hullContact*` is sim/hullContacts.ts's publish, read off
+			// Rapier's own contact manifolds each physics step — never events (see
+			// that file's header for why). A HIT flashes the hull white-hot and
+			// decays over HULL_HIT_FLASH_TIME; a pressed-and-sliding contact tints
+			// it orange by how fast it's sliding, for as long as that lasts. The
+			// marker (sphere + normal spike) is drawn AT the contact point so a
+			// scrape reads as "here", not just a colour change on the hull.
+			if (carSim.hullContact) {
+				const flash = clamp(carSim.hullHitFlash / HULL_HIT_FLASH_TIME, 0, 1);
+				const scrape = clamp(carSim.hullSlideMs / 8, 0, 1);
+				cHullTmp.copy(cHullIdle).lerp(cHullScrape, scrape).lerp(cHullHit, flash);
+				boxMat.color.copy(cHullTmp);
+				hullContactMat.color.copy(cHullTmp);
+				hullContactMarker.visible = true;
+				hullContactSpike.visible = true;
+				const cx = carSim.hullLocalX;
+				const cy = carSim.hullLocalY;
+				const cz = carSim.hullLocalZ;
+				hullContactMarker.position.set(cx, cy, cz);
+				stretch(
+					hullContactSpike,
+					cx,
+					cy,
+					cz,
+					cx + carSim.hullNormalLocalX * HULL_SPIKE_LEN,
+					cy + carSim.hullNormalLocalY * HULL_SPIKE_LEN,
+					cz + carSim.hullNormalLocalZ * HULL_SPIKE_LEN
+				);
+			} else {
+				boxMat.color.copy(cHullIdle);
+				hullContactMarker.visible = false;
+				hullContactSpike.visible = false;
 			}
 
 			// ── The ANALYSIS layer: 'rig' view only ──────────────────────────

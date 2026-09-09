@@ -36,6 +36,13 @@ sim/                    — the driving model, car-agnostic
                          four raycast springs hold the car up in physics, the
                          spring-damped corners lean it in render. Every knob is
                          spec data; three pose consumers (model, CarWheels, rig)
+  hullContacts.ts       — what the chassis hull is actually TOUCHING (not the
+                         ground contact — the springs above are): reads Rapier's
+                         own contact manifolds each physics step (never events —
+                         a sensor throws away position, oncollisionenter only
+                         fires once, oncontact has no position), publishes into
+                         carSim.hullContact* for the debug rig's hit-flash/
+                         scrape-tint and the eventual impact fx (sparks/dust)
   carControls.ts        — THE CAR'S INPUT MAP: one slot per input (label, group,
                          default key + pad bindings) declared to the engine's slot
                          system. Data, not a keymap — the engine owns the keys

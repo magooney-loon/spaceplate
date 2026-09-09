@@ -113,7 +113,43 @@ export const carSim = {
 	 *  rear lets go. */
 	muLat: 0,
 	/** 0 = clutch on the floor (mid-shift), 1 = fully home. */
-	clutch: 1
+	clutch: 1,
+
+	// ── Hull contact — the chassis vs. the world, NOT the ground contact ─────
+	// Written every physics step by `sim/hullContacts.ts`, straight off
+	// Rapier's narrow-phase contact manifolds (see that file's header for why
+	// events can't do this job). The raycast springs above are the car's
+	// ground contact; this is what the hull's belly, doors or corners are
+	// actually touching — kerbs, barrier bases, a fence scrape.
+	/** True the instant a manifold exists this step. */
+	hullContact: false,
+	/** World-unit contact point, averaged over the strongest manifold's solver
+	 *  contacts — meaningless while `hullContact` is false. */
+	hullContactX: 0,
+	hullContactY: 0,
+	hullContactZ: 0,
+	/** World-space outward normal, oriented away from the car's own COM. */
+	hullNormalX: 0,
+	hullNormalY: 1,
+	hullNormalZ: 0,
+	/** The same contact point/normal in BODY-LOCAL space — what `DebugRig`
+	 *  actually draws with, since it is mounted inside the RigidBody's own
+	 *  Object3D (world-unit body space). */
+	hullLocalX: 0,
+	hullLocalY: 0,
+	hullLocalZ: 0,
+	hullNormalLocalX: 0,
+	hullNormalLocalY: 1,
+	hullNormalLocalZ: 0,
+	/** m/s of normal velocity killed THIS STEP, summed across every manifold —
+	 *  the hit severity a rising edge is tested against. */
+	hullHitDv: 0,
+	/** s remaining on a HIT flash — counts down like `perfectLaunch`, set on a
+	 *  rising Δv spike. Read by the rig to flash the hull white-hot. */
+	hullHitFlash: 0,
+	/** m/s the contact patch is sliding along the surface this step — the
+	 *  SCRATCH signal (a barrier scrape, not an arrival). */
+	hullSlideMs: 0
 };
 
 /** The HUD's reactive view. Quantised, ~30 Hz. */
@@ -182,7 +218,11 @@ export const carDebugHud = $state({
 	springForce: 0,
 	/** Per corner: PHYSICAL compression 0..1, and whether the ray found ground. */
 	load: [0, 0, 0, 0],
-	grounded: [false, false, false, false]
+	grounded: [false, false, false, false],
+	/** The chassis hull vs. the world — see `carSim`'s own hull* fields. */
+	hullContact: false,
+	hullHitDv: 0,
+	hullSlideMs: 0
 });
 
 const HUD_INTERVAL = 1 / 30;
@@ -273,6 +313,11 @@ function publishDebug(suspension: Suspension): void {
 	if (d.muLat !== muLat) d.muLat = muLat;
 	const springForce = Math.round(suspension.force);
 	if (d.springForce !== springForce) d.springForce = springForce;
+	if (d.hullContact !== carSim.hullContact) d.hullContact = carSim.hullContact;
+	const hullHitDv = q(carSim.hullHitDv, 2);
+	if (d.hullHitDv !== hullHitDv) d.hullHitDv = hullHitDv;
+	const hullSlideMs = q(carSim.hullSlideMs, 2);
+	if (d.hullSlideMs !== hullSlideMs) d.hullSlideMs = hullSlideMs;
 	for (let i = 0; i < 4; i++) {
 		const load = q(suspension.loadRatio(i), 2);
 		if (d.load[i] !== load) d.load[i] = load;
@@ -313,6 +358,22 @@ export function resetCarTelemetry(): void {
 	carSim.loose = 0;
 	carSim.muLat = 0;
 	carSim.clutch = 1;
+	carSim.hullContact = false;
+	carSim.hullContactX = 0;
+	carSim.hullContactY = 0;
+	carSim.hullContactZ = 0;
+	carSim.hullNormalX = 0;
+	carSim.hullNormalY = 1;
+	carSim.hullNormalZ = 0;
+	carSim.hullLocalX = 0;
+	carSim.hullLocalY = 0;
+	carSim.hullLocalZ = 0;
+	carSim.hullNormalLocalX = 0;
+	carSim.hullNormalLocalY = 1;
+	carSim.hullNormalLocalZ = 0;
+	carSim.hullHitDv = 0;
+	carSim.hullHitFlash = 0;
+	carSim.hullSlideMs = 0;
 	elapsed = HUD_INTERVAL;
 	publishCarHud(0);
 	// The debug mirror has no `suspension` to publish from here (the controller
@@ -334,6 +395,9 @@ export function resetCarTelemetry(): void {
 	d.clutch = 0;
 	d.muLat = 0;
 	d.springForce = 0;
+	d.hullContact = false;
+	d.hullHitDv = 0;
+	d.hullSlideMs = 0;
 	for (let i = 0; i < 4; i++) {
 		d.load[i] = 0;
 		d.grounded[i] = false;

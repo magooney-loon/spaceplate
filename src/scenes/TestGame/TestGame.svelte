@@ -5,6 +5,7 @@
 	import { Collider, RigidBody, useRapier, usePhysicsTask } from '@threlte/rapier';
 	import {
 		CoefficientCombineRule,
+		type Collider as RapierCollider,
 		type RigidBody as RapierRigidBody
 	} from '@dimforge/rapier3d-compat';
 	import * as THREE from 'three/webgpu';
@@ -30,6 +31,7 @@
 	import { buildCarHull, chassisMassProperties } from './cars/hull';
 	import Track from './world/Track.svelte';
 	import { resetCarTelemetry } from './sim/carTelemetry.svelte';
+	import { pollHullContacts, resetHullContacts } from './sim/hullContacts';
 
 	// Test Game 3D scene — the driving prototype's composition layer. The driving
 	// model itself lives in sim/ (controller.ts owns the physics task's brain,
@@ -145,6 +147,9 @@
 	// the body/collider contract (enabledRotations, the hull collider).
 
 	let carBody = $state.raw<RapierRigidBody>();
+	/** The chassis hull collider — `sim/hullContacts.ts` reads its contact
+	 *  manifolds every physics step to publish `carSim.hullContact*`. */
+	let carCollider = $state.raw<RapierCollider>();
 	/** What ChaseCamera follows — an empty parented to the chassis body, see below. */
 	let chaseAnchor = $state.raw<THREE.Object3D>();
 	/** The visual car group (model + fx) — see the rig-view effect below. */
@@ -164,6 +169,10 @@
 		const body = carBody;
 		if (!body) return;
 		controller.step(delta, body);
+		// Reads the hull's contact manifolds, not events — see sim/hullContacts.ts's
+		// header for why. Runs in the physics task, not per rendered frame: an
+		// impulse spike lives inside one step and a render-stage poll would miss it.
+		pollHullContacts(world, carCollider, body, delta);
 	});
 
 	// ── The body leans (sim/suspension.ts) ───────────────────────────────────
@@ -245,6 +254,9 @@
 		// The springs hold state across a teleport otherwise — a car restarted
 		// mid-brake respawns nose-down and bobs back up.
 		suspension.reset();
+		// Same reason: the hit edge-detector must not carry a pre-teleport Δv
+		// spike into the fresh spawn.
+		resetHullContacts();
 	});
 
 	// Unmount parks the instruments — the HUD unmounts with them, but the mirror is
@@ -255,6 +267,7 @@
 			controller.park();
 			resetCarTelemetry();
 			suspension.reset();
+			resetHullContacts();
 		};
 	});
 </script>
@@ -352,6 +365,7 @@
 			     only on real hits. -->
 			{#if carHull && carMassProps}
 				<Collider
+					bind:collider={carCollider}
 					shape="roundConvexHull"
 					args={[carHull.points, carHull.margin]}
 					mass={car.hardware.mass}
