@@ -41,7 +41,7 @@ renders wrong), `RAPIER.md` (physics), and the per-area `CLAUDE.md` files.
 | 58                | R3F-only library                                                                                                                                                                                                                                                                                                                                                                       | —                                                                                         |
 | 59                | Environment lighting baked from the procedural sky via CubeCamera/CubeRenderTarget; modes procedural \| HDR \| cube                                                                                                                                                                                                                                                                    | `core/skybox/Sky.svelte`, `core/skybox/environment/`                                      |
 | 60                | Shadow camera frustum fitted to the scene (ortho half-extent, near/far, `updateProjectionMatrix`)                                                                                                                                                                                                                                                                                      | `core/skybox/SkyLight.svelte`                                                             |
-| 61                | One shadow render per frame: `shadow.autoUpdate = false`, `needsUpdate` armed once; extra cameras/override passes suspend shadows explicitly                                                                                                                                                                                                                                           | `core/skybox/SkyLight.svelte`, `layers/precipitation/HeightField.svelte`                  |
+| 61                | One shadow render per frame: `shadow.autoUpdate = false`, `needsUpdate` armed once from the MAIN draw (the cascades are fitted to whichever camera renders them); extra cameras/override passes suspend shadows explicitly                                                                                                                                                              | `core/skybox/keyShadow.ts`, `core/utils/Renderer.svelte`, `layers/precipitation/HeightField.svelte` |
 | 63–72             | Whole section is R3F-specific. The Threlte equivalents are engine rules: frame tasks mutate three objects directly (no per-frame reactive state), pre-allocate (no `new` in tasks), `delta` is SCENE time via `engineClock`, `renderMode` on-demand with one `invalidate()` owner per reason, the scene router toggles `visible` instead of remounting, perf overlay is StatsExtension | `src/CLAUDE.md` "Frame tasks", `Scene.svelte`, `extensions/stats`                         |
 | 73, 75, 81        | pmndrs/postprocessing-specific; this engine uses three's native TSL pipeline, which already folds effects into one graph with a single output transform                                                                                                                                                                                                                                | `core/utils/Renderer.svelte`, `core/postprocessing/`                                      |
 | 74                | `antialias: false`, `powerPreference: 'high-performance'` — the latter is **fixed on purpose**, `'low-power'` can hand you a dying adapter (`webgpu-notes.md` §8)                                                                                                                                                                                                                      | `App.svelte` `createRenderer`                                                             |
@@ -157,8 +157,14 @@ Both are WebGL-path components, and per `webgpu-notes.md` §1 they fail **silent
   `ShaderChunk.lights_fragment_begin` and sets `material.onBeforeCompile` — GLSL string
   patching, meaningless to a `NodeMaterial`.
 
-The node-path CSM does exist and is the only viable route if the scene ever outgrows one
-2048² map:
+**The engine uses cascades now, and not via either of those.** three r186 ships
+`SunLight` + `SunLightNode` in addons: a directional light whose `SunLightShadow` fits
+two cascades to the view camera's frustum and renders them into one atlas, node-path and
+WebGPU-first. `SkyLight.svelte` is that light — see `core/skybox/CLAUDE.md` for the three
+things it costs (arming the map from the right camera, a doubled shadow pass, one
+`normalBias` across both cascades).
+
+The older `CSMShadowNode` is still there and still untested here:
 
 ```js
 import { CSMShadowNode } from 'three/examples/jsm/csm/CSMShadowNode.js';
@@ -167,11 +173,9 @@ light.shadow.shadowNode = new CSMShadowNode(light, { cascades: 4, maxFar: 1000 }
 // AnalyticLightNode picks up light.shadow.shadowNode as a custom shadow node.
 ```
 
-Untested here. `SkyLight.svelte`'s single cascade is the current design; since it
-auto-fits to the visible casters (quantised radius, texel-snapped centre — see
-`core/skybox/CLAUDE.md`) it covers arbitrary scene sizes, but only by trading texel
-density for coverage. `maxShadowRadius` (400) is the line where that trade stops being
-worth it and CSM becomes the real answer.
+It is the route to take only if two cascades stop being enough, since it attaches to a
+plain `DirectionalLight` and takes a cascade count. Reach for it after `shadowDistance`
+and the map size have both been spent, not before.
 
 ### 2.7 `<InstancedMesh>` from `@threlte/extras` breaks on-demand rendering [31]
 

@@ -19,6 +19,7 @@
 	import { buildPipeline, type PipelineBuild } from '$core/postprocessing/build';
 	import { EFFECTS, structuralKeyOf } from '$core/postprocessing/registry';
 	import type { EffectValues } from '$core/postprocessing/types';
+	import { armKeyShadow } from '$core/skybox/keyShadow';
 	import { engineClock } from './engineClock';
 
 	const { scene, renderer, camera, autoRenderTask, invalidate } = useThrelte();
@@ -172,6 +173,14 @@
 
 	useTask(
 		() => {
+			// THE KEY LIGHT'S SHADOW MAP IS RENDERED HERE, from this camera — armed
+			// immediately before the main draw because the cascades are fitted to whichever
+			// camera renders them, and this is the one whose fit everything else should
+			// share. Every other pass in the frame (mirrors, cube captures, the reflector)
+			// reuses the atlas rather than re-rendering it. Full reasoning, including why
+			// this cannot live in SkyLight's own task: $core/skybox/keyShadow.ts.
+			armKeyShadow();
+
 			// `autoRender` is off (App.svelte), so this task is the ONLY thing that draws.
 			// In bypass there is no pipeline to drive, and skipping the frame entirely
 			// would render a blank canvas rather than an unprocessed one.

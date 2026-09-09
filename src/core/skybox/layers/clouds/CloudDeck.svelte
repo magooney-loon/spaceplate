@@ -1,13 +1,20 @@
 <script lang="ts">
 	// The second cloud deck: heavy-weather mass that SkyMesh cannot render.
 	//
-	// WHY IT EXISTS. SkyMesh's fbm layer saturates past ~0.52 coverage (its mask is a
-	// `smoothstep(1 - coverage, ..., fbm)` over noise with a hard floor, and Sky.svelte
-	// remaps `cloudCover` into the band that still draws). `rain`, `snow` and `storm`
-	// (0.8-1.0) had nowhere left to go: heavier weather could only get denser and lower,
-	// never *bigger*. This layer is that missing mass: it draws only above ~0.5 cover --
-	// exactly where SkyMesh runs out -- plus a faint sheared cirrus band across the
-	// middle of the channel so `cloudy`/`overcast` gain streaks.
+	// WHY IT EXISTS. Originally because SkyMesh's cloud mask saturated past ~0.52
+	// coverage, so `rain`, `snow` and `storm` (0.8-1.0) had nowhere left to go: heavier
+	// weather could only get denser and lower, never *bigger*. **That limit is gone as of
+	// three r186**, which rewrote the field (see Sky.svelte's remap note) -- the dome can
+	// carry the whole channel through to overcast on its own now.
+	//
+	// What did NOT change is the reason the mass has to be a slab: SkyMesh projects its
+	// clouds onto a plane at infinity, so its overcast answers to camera ROTATION only and
+	// slides with translation like a decal. This layer is the parallax, and the host for
+	// the in-deck lightning glow. Sky.svelte's ceiling is held under 1 so the dome stays
+	// broken enough for that mass to read in front of it; if storms come out too thick,
+	// raise `massFrom` here rather than lowering the dome further. The faint sheared
+	// cirrus band across the middle of the channel (so `cloudy`/`overcast` gain streaks)
+	// is unaffected either way.
 	//
 	// IT IS A SLAB, NOT A PLANE. The deck marches `steps` slices between two apparent
 	// altitudes, compositing front to back with the alpha early-out from three's

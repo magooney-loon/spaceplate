@@ -33,15 +33,21 @@
 		 */
 		environmentIntensity?: number;
 		/**
-		 * Ceiling on SkyMesh's `cloudCoverage` uniform. NOT A STYLE KNOB -- past ~0.6 the
-		 * cloud mask saturates to 1 across the dome and the clouds become invisible; the
-		 * weather channel is remapped into a band that always renders as cloud (see the
-		 * task below).
+		 * Ceiling on SkyMesh's `cloudCoverage` uniform. Since r186 this is a LOOK knob and
+		 * no longer a shader limit (it was one until r185 -- see the task below). It is
+		 * held under 1 so a storm dome stays broken enough for `CloudDeck` to read as mass
+		 * in front of it rather than as a second flat ceiling.
 		 */
 		maxCloudCoverage?: number;
 		/** Exponent on the coverage remap. Below 1 it spends more of the channel's range low. */
 		cloudCoverageCurve?: number;
-		/** SkyMesh `cloudDensity` at zero and at full weight -- how opaque the clouds read. */
+		/**
+		 * SkyMesh `cloudDensity` at zero and at full weight. Since r186 this is the
+		 * coefficient of a Beer's-law opacity, `1 - exp(-12 * density * depth)`, not the
+		 * linear blend weight it used to be: it controls how fast a cloud goes solid as it
+		 * thickens, so cores fill in long before edges do and the rims stay soft at both
+		 * ends of the range.
+		 */
 		cloudDensityRange?: [number, number];
 		/** SkyMesh `cloudElevation` at zero and at full weight -- how low the deck sits. */
 		cloudElevationRange?: [number, number];
@@ -54,8 +60,8 @@
 		envIntervalMs = 250,
 		envSunDeltaDeg = 1,
 		environmentIntensity = 0.25,
-		maxCloudCoverage = 0.52,
-		cloudCoverageCurve = 0.42,
+		maxCloudCoverage = 0.85,
+		cloudCoverageCurve = 0.8,
 		cloudDensityRange = [0.45, 0.97],
 		cloudElevationRange = [0.6, 1]
 	}: Props = $props();
@@ -153,17 +159,30 @@
 			sunPosition.set(sun.direction.x, sun.direction.y, sun.direction.z);
 			sky.sunPosition.value.copy(sunPosition);
 
-			// CLOUDS. The coverage uniform is REMAPPED rather than passed straight through,
-			// and that remap is load-bearing. SkyMesh builds its cloud mask as
+			// CLOUDS. The coverage uniform is remapped rather than passed straight through,
+			// but READ THIS BEFORE RE-TUNING IT: what the remap is for changed completely in
+			// r186, and the numbers moved with it.
+			//
+			// Until r185 the remap was a workaround for a saturating shader. The mask was
 			//     smoothstep(1 - coverage, 1 - coverage + 0.3, cloudNoise)
-			// where the 5-octave fbm sits at mean 0.833 with a hard minimum of 0.584 -- so by
-			// ~0.52 the mask is nearly 1 everywhere, and above ~0.6 it is IDENTICALLY 1: the
-			// dome blends uniformly to a nearly-black `cloudColor` and `rain`/`snow`/`storm`
-			// rendered as a flat, cloudless, slightly darker sky. The semantic channel
-			// (0 = clear, 1 = solid storm) is therefore remapped into the band that actually
-			// draws clouds; heavier weather is expressed through density and a lower deck. At
-			// full weight this lands on density 0.97 / elevation 1.0, three's own Sky demo
-			// overcast values.
+			// over a value-noise fbm sitting at mean 0.833 with a hard minimum of 0.584, so
+			// by ~0.52 it was nearly 1 everywhere and above ~0.6 IDENTICALLY 1 -- the dome
+			// blended uniformly to a nearly-black `cloudColor` and `rain`/`snow`/`storm`
+			// rendered as a flat, cloudless, slightly darker sky. The whole channel had to be
+			// squeezed into the narrow band that still drew clouds.
+			//
+			// r186 rewrote the field (gradient-noise fbm, large-scale coverage variation,
+			// Beer-powder shading, a Henyey-Greenstein silver lining). `cloudNoise` is now
+			// centred on 0.5 with a spread of roughly +/-0.3, so the covered fraction of the
+			// dome tracks the uniform close to LINEARLY over its whole range and full overcast
+			// is reachable at coverage ~1. The old cap did not stop saturating anything; it
+			// just held every weather below broken cloud, storms included.
+			//
+			// So the remap survives as a LOOK choice, not a workaround: a gentle curve that
+			// spends slightly more of the channel below halfway (a light `cloudy` should still
+			// read as gaps between clouds), and a ceiling under 1 that leaves the storm dome
+			// broken rather than sealed -- `CloudDeck` draws the top-end mass in front of it,
+			// and it can only read as mass against a sky that still has holes in it.
 			const cover = clamp01(descriptor.weather.cloudCover);
 			// cloudType leans the look toward heavy stratus/storm towers, giving that channel
 			// its first actual job.

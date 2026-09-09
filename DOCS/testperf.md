@@ -83,6 +83,16 @@ building and tree shadows, which were **already not being drawn**. Getting them
 back is not a flag flip: one cascade cannot serve a 3 km track and a 4 m car, and
 `CSMShadowNode` (`best-practices.md` §2.6) is the honest answer.
 
+> **Since three r186 the engine HAS cascades** — `SkyLight.svelte` is now a
+> `SunLight` whose two cascades are fitted to the view camera, so the failure
+> above (a caster-fitted box saturating on the track and losing the car) cannot
+> happen any more, and `TRACK_CASTS_SHADOWS` is no longer forced off by
+> correctness. **It is still off, and turning it on is still a measurement, not
+> a flag flip**: the 313 725 track triangles would be re-rendered into the map
+> twice a frame, once per cascade. Measure it against the numbers in this table
+> before flipping it, and expect to need per-mesh caster culling on the track
+> the same way the car got `CAR_NON_CASTERS`.
+
 ### 1.2 Smoke pools were N meshes with N materials — the first-puff hitch
 
 **Symptom bucket:** the reported "first time tyre smoke / exhaust flame is drawn,
@@ -495,8 +505,8 @@ The scene's own additions to `best-practices.md` §4, each earned above:
   calls are the visible cost and the per-material node build is the invisible
   one. (§1.2)
 - **`castShadow` is a decision per mesh, never a traverse-and-set-true.** Ask
-  what the mesh contributes to a silhouette, and remember that one oversized
-  caster moves the cascade for everything else. (§1.1)
+  what the mesh contributes to a silhouette, and remember that every caster is
+  re-rendered into the shadow map, now once per cascade. (§1.1)
 - **A transparent mesh with nothing to show must leave the frame.** Alpha 0 is
   not free. (§1.5)
 - **Shared assets are loaded once and disposed never.** (§1.6)

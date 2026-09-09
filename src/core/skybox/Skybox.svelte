@@ -24,10 +24,12 @@
 
 	const { autoRenderTask, invalidate } = useThrelte();
 
-	// Shadow map resolution per graphics preset. Engine-wide on purpose: this is the
-	// one key light and it mounts in every scene and mode, so the preset reaches it from
-	// here. Halving is a 4x cut in shadow fill; safe to change at runtime (ShadowNode
-	// re-applies mapSize on every render -- see SkyLight's shadowMapSize note).
+	// Shadow map resolution PER CASCADE, per graphics preset -- the key light is a
+	// SunLight and its two cascades share an atlas twice this wide. Engine-wide on
+	// purpose: this is the one key light and it mounts in every scene and mode, so the
+	// preset reaches it from here. Halving is a 4x cut in shadow fill; safe to change at
+	// runtime (the shadow node re-applies the atlas size on every render -- see
+	// SkyLight's shadowMapSize note).
 	const SHADOW_MAP_SIZE: Record<QualityLevel, number> = { high: 2048, low: 1024 };
 	const shadowMapSize = $derived(SHADOW_MAP_SIZE[settingsState.graphics.quality]);
 

@@ -528,9 +528,9 @@ a scene-content decision, not an engine one:
 **`castShadow` is a policy, never a blanket flag — the car's half lives in
 `TestGame.svelte`, the track's half in `world/Track.svelte`.** It used
 to be `castShadow = receiveShadow = true` on every mesh in both GLBs, and that
-was wrong in both directions at once. `SkyLight` fits its ONE cascade to the
-bounding sphere of the visible CASTERS, capped at `maxShadowRadius` = 400 world
-units. The track's `Metal` mesh spans ~2 970 × 2 540 world units, so the fit
+was wrong in both directions at once. `SkyLight` USED TO fit its ONE cascade to
+the bounding sphere of the visible CASTERS, capped at 400 world units. The
+track's `Metal` mesh spans ~2 970 × 2 540 world units, so the fit
 saturated at 400 and centred ~1 090 units from where the car actually drives:
 **the car was outside its own shadow frustum, so nothing in the drivable area
 cast or received a sun shadow at all** — while the renderer re-rendered all
@@ -540,12 +540,15 @@ moves, so `needsUpdate` is armed every frame).
 Now: the track does not cast (`TRACK_CASTS_SHADOWS`, `world/Track.svelte`), the
 car does, and the car's
 interior/engine materials (`CAR_NON_CASTERS` — 117 176 of its 324 640 triangles,
-never in its silhouette) do not either. The fit collapses to the `shadowRadius`
-floor of 20 centred on the car — a 2 cm texel instead of 39 cm — so the car
-finally has a sharp shadow, and the shadow pass draws the car alone. Turning
-track shadows back on means confronting that a single cascade cannot serve a
-3 km track and a 4 m car; `CSMShadowNode` (`DOCS/best-practices.md` §2.6) is the
-honest answer, not a bigger map.
+never in its silhouette) do not either, so the shadow pass draws the car alone.
+
+**Since three r186 the single cascade is gone** — `SkyLight` is a `SunLight`
+fitting two cascades to the view camera (`core/skybox/CLAUDE.md`), so an
+oversized caster can no longer drag the box off the car. That removes the
+correctness objection to track shadows and none of the cost one: every track
+triangle would be re-rendered per cascade, twice a frame, in a scene that is
+already fill-bound. Turn it on as a measurement with a per-mesh caster list,
+not as a flag flip.
 
 ## The suspension — the car leans, the physics doesn't
 

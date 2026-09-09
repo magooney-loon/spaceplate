@@ -19,10 +19,13 @@
 	// Render-target passes skip the output colour transform, so the RT holds RAW
 	// LINEAR HDR — the quad then re-enters tone mapping through the base pass
 	// like any lit surface, in pipeline AND bypass mode alike. Shadows are NOT
-	// suspended: SkyLight arms `shadow.needsUpdate` once per frame and the first
-	// pass to render pays it, every later pass reuses — this pass is that first
-	// one, so the frame still renders the shadow map exactly once and the mirror
-	// shows correct shadows. (The headlights never cast; LIGHT_CAST_SHADOW.)
+	// suspended and NOT re-rendered here: the key light's shadow map is armed
+	// once a frame from the main draw, so this pass samples the atlas the main
+	// camera fitted, one frame old. That is deliberate — the cascades are fitted
+	// to whichever camera renders them, and letting this backward-facing camera
+	// fit them would leave the car out of its own shadow map ($core/skybox/
+	// keyShadow.ts). A frame-old shadow inside a rear-view strip is invisible.
+	// (The headlights never cast; LIGHT_CAST_SHADOW.)
 	//
 	// THE OVERLAY QUAD rides the ACTIVE camera on LENS_LAYER — the first
 	// resident of that layer since the rain/frost lenses became post effects

@@ -81,11 +81,9 @@
 	// ── Shadow casting is a POLICY, not a blanket flag — the car's half ────────
 	//
 	// The scene's rule: THE CAR CASTS, THE WORLD RECEIVES. The track's half of
-	// the policy — and the story of WHY the track cannot cast (SkyLight's ONE
-	// cascade auto-fits to the casters' bounds, and this track's `Metal` mesh at
-	// ~2 970 × 2 540 world units saturated the fit at 400, leaving the car
-	// outside its own shadow frustum while all 313 725 track triangles were
-	// re-rendered into the map every frame to produce nothing) — lives in
+	// the policy — and the story of why the track does not cast (it used to be a
+	// correctness bug, since three r186 it is purely the cost of re-rendering
+	// 313 725 triangles into the shadow map once per cascade) — lives in
 	// world/Track.svelte (TRACK_CASTS_SHADOWS). Here, the car casts except for:
 	/** Car materials that are interior or engine: never part of the car's
 	 *  silhouette, so they cast nothing the bodywork doesn't already cast.

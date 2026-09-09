@@ -62,6 +62,10 @@ the app. It also pins TSL `time`, which the scheduler cannot reach.
 - Registered `{ after: autoRenderTask, autoInvalidate: false }` per the Studio
   task-ordering rules (`DOCS/webgpu-notes.md §2`), and must stay the **first** child
   inside `<Canvas>` so it draws before the Gizmo.
+- **Its render task also arms the key light's shadow** (`armKeyShadow()`, first line),
+  because it owns the main draw and the shadow cascades are fitted to whichever camera
+  renders them. That is the only reason a renderer file imports from `core/skybox/`;
+  `core/skybox/keyShadow.ts` has the full argument.
 
 ## The frame-rate cap (EngineClock.svelte)
 

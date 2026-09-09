@@ -19,6 +19,8 @@
 	import { physicsState } from '$extensions/physics';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
 	import { WebGPURenderer } from 'three/webgpu';
+	import { SunLight } from 'three/addons/lights/SunLight.js';
+	import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
 	import { HTML } from '@threlte/extras';
 	import { settingsState } from '$extensions/settings';
 	import './app.css';
@@ -31,11 +33,22 @@
 	const createRenderer = (canvas: HTMLCanvasElement): WebGPURenderer => {
 		// @threlte/studio's WebGL assumptions are handled in patches/@threlte__studio,
 		// so nothing has to be done to the renderer here.
-		return new WebGPURenderer({
+		const renderer = new WebGPURenderer({
 			canvas,
 			antialias: false,
 			powerPreference: 'high-performance'
 		});
+		// The key light is a SunLight (cascaded shadows — core/skybox/SkyLight.svelte).
+		// It is an ADDON light, so it has no entry in the renderer's node library and
+		// renders unlit until one is added; this is the whole of its setup cost, and it
+		// has to happen before the light is ever drawn. Cast because @types/three
+		// declares NodeLibrary as an empty `@private` class — the method is real and
+		// public, the typings simply do not describe it.
+		(renderer.library as unknown as { addLight(node: unknown, light: unknown): void }).addLight(
+			SunLightNode,
+			SunLight
+		);
+		return renderer;
 	};
 
 	// THE BACKBUFFER SIZE, AND THEREFORE THE FILL BILL. Everything fill-rate-bound in this

@@ -135,8 +135,11 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 
 ### `clouds/`
 
-- CloudDeck is the heavy-weather mass SkyMesh's fbm layer cannot render past ~0.52
-  coverage. `NormalBlending` + `BackSide` + **tone-mapped**: a storm deck must be able
+- CloudDeck is the heavy-weather mass with **parallax**, which SkyMesh's plane-projected
+  clouds cannot have at any coverage. (It was originally there because that layer
+  saturated past ~0.52 coverage; three r186 rewrote the cloud field and removed the
+  saturation — see `Sky.svelte`'s remap note — so the dome now carries the channel and
+  this layer carries the depth.) `NormalBlending` + `BackSide` + **tone-mapped**: a storm deck must be able
   to DARKEN the sky behind it (additive can only add light) and must live in the dome's
   exposure space or it survives exposure changes as a stuck-on decal.
 - **The mass deck is a marched SLAB, not a projected plane** (`steps` slices between two

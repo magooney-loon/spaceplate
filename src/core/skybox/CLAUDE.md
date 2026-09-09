@@ -6,9 +6,10 @@ Everything sky / time / weather / environment. Sub-area docs: `model/`,
 ```
 Skybox.svelte     — mount + THE driver task + env/cube mode switch
 Sky.svelte        — the dome (three's SkyMesh), descriptor consumer, env bake budget
-SkyLight.svelte   — the descriptor-driven key light (sun→moon crossover); its shadow map
-                    size comes from Skybox.svelte, per graphics preset (2048 / 1024), and
-                    it AUTO-FITS its shadow frustum to the visible casters (see below)
+SkyLight.svelte   — the descriptor-driven key light (sun→moon crossover), a SunLight with
+                    CASCADED shadows fitted to the view camera; map size per cascade comes
+                    from Skybox.svelte, per graphics preset (2048 / 1024) (see below)
+keyShadow.ts      — who arms the one shadow render per frame, and from which camera
 SkyFog.svelte     — scene.fog from the day curve + fog channel
 model/            — the pure model + the sky façade (descriptor, skyActions, skyMeta)
 layers/           — every renderer that draws on/around the dome
@@ -36,33 +37,40 @@ Every sky layer sets `material.fog = false` — at radius 1000 any fog would res
 whole sky to flat fog colour (see `layers/CLAUDE.md`). That opt-out still applies on the
 `fogNode` path; `NodeMaterial` gates on `material.fog` before touching the node.
 
-## The shadow frustum is fitted, not fixed (`SkyLight.svelte`)
+## The shadow frustum is fitted to the CAMERA (`SkyLight.svelte`)
 
-The box used to be a hard ±20 world units at the **world origin**, sized for DemoScene's
-20×20 floor. Anything outside it is absent from the shadow map entirely — it neither
-casts nor receives — so the key light passed straight through any model bigger than 40
-units across. At sunset it was worse in three ways at once, because `KEY_MIN_ELEVATION`
-floors the aim at 3°: the shadow camera looks nearly **horizontally**, which spends the
-±20 top/bottom on world _height_ rather than ground, and put casters more than ~45 units
-along the sun axis past the old `distance * 2.5` far plane.
+The key light is three r186's **`SunLight`**, whose `SunLightShadow` fits **two
+cascades** to the view camera's frustum: a practical split, a bounding-sphere projection
+per cascade so a turning camera does not swim, texel snapping, and a fade band where the
+two meet. One atlas, two tiles, `shadow.mapSize` per cascade. **`shadowDistance`
+(`shadow.camera.far`) is the only budget knob** — the cost is the same two maps whatever
+it is, so it trades reach against sharpness and nothing else.
 
-It now fits a bounding sphere over the **visible shadow casters** each `fitIntervalMs`
-(500 ms, budgeted like Sky's env bake — measuring is the expensive half, applying is
-free). Three properties keep that from becoming its own bug:
+It replaces a hand-fitted single cascade, and the reason is worth keeping: that fit
+measured the **visible casters**, so it worked for a scene that fits in one box and
+failed completely for one that does not. TestGame's track is ~3 km across; the fit
+saturated at its cap, centred a kilometre from the car, and left the car outside its own
+shadow frustum while every track triangle was rendered into the map to produce nothing
+(`DOCS/testperf.md` §1.1). Fitting to the camera instead means what the player can see is
+what gets shadowed, at any world size.
 
-- **`shadowRadius` is a floor, not a value.** A small scene is bit-identical to before.
-- **The radius is quantised to that floor** (20, 40, 60 …). Texel density is a function
-  of the box, so a box tracking the bounds continuously would re-blur every shadow in
-  the frame as a physics body rolled.
-- **The centre is snapped to the texel grid.** Making the centre mobile is what
-  _introduces_ shadow-edge crawl; the snap is what takes it back out.
-- `maxShadowRadius` (400) caps it, so one stray body flung to infinity cannot inflate
-  the box until every shadow is mush. `normalBias` scales with texel size — at ±20 a
-  texel is 2 cm and zero bias was fine, at ±400 it is 39 cm and very much is not.
+Three things did not come for free:
 
-Still **one cascade**. Past the cap the honest answer is `CSMShadowNode`
-(`DOCS/best-practices.md` §2.6), not a bigger single map. `light.target` is now parented
-to the scene, because a mobile centre needs its `matrixWorld` to actually update.
+- **The map is rendered from ONE camera per frame, and which one matters.** The cascades
+  are fitted by whichever camera renders them, so the once-a-frame arming lives in
+  `keyShadow.ts` and fires from `core/utils/Renderer.svelte` immediately before the main
+  draw. Every other pass in the frame (mirrors, cube captures, the reflector) reuses that
+  atlas, one frame stale. Read `keyShadow.ts` before moving it.
+- **The shadow pass draws twice**, once per cascade. Flat, and independent of
+  `shadowDistance`.
+- **One `normalBias` serves both cascades** — it is a world-space offset with nowhere to
+  put a second. `SkyLight` measures it off the fitted **near** cascade each frame
+  (`normalBiasTexels`), because over-biasing up close detaches contact shadows from their
+  casters where a little acne at fifty units goes unnoticed.
+
+`SunLight` has no `target`: its direction is its position, pointing at the origin. It is
+an addon light, so `App.svelte` registers `SunLightNode` with the renderer's node library
+at construction — without that it renders unlit.
 
 **Shadows do not occlude the ambient term** — `scene.environment` and the hemisphere
 fill light closed interiors from the inside regardless. That is the `ao` effect's job

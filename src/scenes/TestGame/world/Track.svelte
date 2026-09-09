@@ -44,10 +44,10 @@
 	// ── Shadow casting is a POLICY, not a blanket flag — the track's half ──────
 	//
 	// This used to be `castShadow = receiveShadow = true` on every mesh in both
-	// GLBs, and that was wrong in both directions at once. `SkyLight` auto-fits
-	// its ONE shadow cascade to the bounding sphere of the visible CASTERS
-	// (core/skybox/CLAUDE.md), clamped at `maxShadowRadius` = 400 world units.
-	// The track's `Metal` mesh spans ~2 970 × 2 540 world units, so:
+	// GLBs, and that was wrong in both directions at once. `SkyLight` USED TO fit
+	// its ONE shadow cascade to the bounding sphere of the visible CASTERS,
+	// clamped at `maxShadowRadius` = 400 world units. The track's `Metal` mesh
+	// spans ~2 970 × 2 540 world units, so:
 	//
 	//   • the fit saturated at 400 and centred on the caster bounds — roughly
 	//     (-1086, ., -118) world, about 1 090 units from where the car spawns
@@ -60,14 +60,19 @@
 	//     2048² map to produce nothing.
 	//
 	// So: THE CAR CASTS, THE WORLD RECEIVES (the car's half of the policy — its
-	// CAR_NON_CASTERS list — is in TestGame.svelte). With the track out of the
-	// caster set the fit collapses to the `shadowRadius` floor (20) centred on
-	// the car, which is a 2 cm texel instead of a 39 cm one — the car finally
-	// has a sharp shadow — and the shadow pass draws the car alone.
+	// CAR_NON_CASTERS list — is in TestGame.svelte), and the shadow pass draws
+	// the car alone.
 	//
-	// Flip this on to get building/tree shadows back, and read the paragraph
-	// above first: at this track's size the single cascade cannot serve both, and
-	// `CSMShadowNode` (DOCS/best-practices.md §2.6) is the honest answer.
+	// THE CORRECTNESS HALF OF THAT ARGUMENT EXPIRED with three r186: `SkyLight`
+	// is a `SunLight` now and its two cascades are fitted to the VIEW CAMERA
+	// (core/skybox/CLAUDE.md), so an oversized caster can no longer drag the box
+	// off the car — a 3 km track and a 4 m car are what cascades are for.
+	//
+	// THE COST HALF DID NOT. Flipping this on re-renders 313 725 track triangles
+	// into the shadow map ONCE PER CASCADE, twice a frame, and this scene is
+	// already fill-bound (DOCS/testperf.md). Do it as a measurement, with a
+	// per-mesh caster list for the track the way the car has CAR_NON_CASTERS —
+	// most of a track contributes nothing to a silhouette — not as a flag flip.
 	const TRACK_CASTS_SHADOWS = false;
 	/** Which track materials would cast, if they did. Ground/Asphalt are the flat
 	 *  surfaces the shadows land ON, and Decals are painted onto them — 51 062
