@@ -3,8 +3,8 @@
 // feed so `debug/DebugRig.svelte` can highlight the hull on a real hit and
 // `debug/DebugHud.svelte` can print the numbers. NOT the ground contact (the
 // four raycast springs in suspension.ts are); this is the bump stop and
-// barrier scrapes — kerbs, fence bases, a belly-out over a lip. The eventual
-// impact fx (sparks/dust) will read this exact same signal once it lands.
+// barrier scrapes — kerbs, fence bases, a belly-out over a lip. The impact fx
+// (`fx/CarImpacts.svelte`, sparks/dust) reads this exact same signal.
 //
 // ── WHY MANIFOLDS, NOT EVENTS ────────────────────────────────────────────
 // A `sensor` collider reports overlap and NOTHING else (no position, no
@@ -51,8 +51,9 @@ import { clamp } from './carMath';
  *  merely leaning on something under gravity/steering never reaches this. */
 const HIT_MIN_DV = 0.6;
 /** m/s of closing speed at which a hit reads as maximally severe — normalises
- *  the flash intensity `DebugRig` tints the hull with. */
-const HIT_FULL_DV = 3;
+ *  the flash intensity `DebugRig` tints the hull with AND the burst size
+ *  `fx/CarImpacts.svelte` reads off `carSim.hullHitDv`. */
+export const HULL_HIT_FULL_DV = 3;
 /** s — a debounce floor between flashes, in case `touching` flickers for one
  *  step at the threshold (float noise in `contactDist`) rather than a real
  *  separate arrival. */
@@ -90,16 +91,21 @@ let bestLocalZ = 0;
 let bestLocalNx = 0;
 let bestLocalNy = 1;
 let bestLocalNz = 0;
-/** World-space equivalents — what a world-anchored consumer (the eventual
- *  impact fx) would spawn its particles at. */
+/** World-space equivalents — where the world-anchored impact fx
+ *  (`fx/CarImpacts.svelte`) spawns its particles. */
 let bestWorldX = 0;
 let bestWorldY = 0;
 let bestWorldZ = 0;
 let bestNx = 0;
 let bestNy = 1;
 let bestNz = 0;
-/** m/s (world units) the contact patch is sliding along the surface. */
+/** m/s (world units) the contact patch is sliding along the surface, and the
+ *  unit direction it's sliding in (world space) — the SCRATCH signal, and
+ *  where `fx/CarImpacts.svelte` aims its spark stream. */
 let bestSlide = 0;
+let bestSlideDirX = 0;
+let bestSlideDirY = 0;
+let bestSlideDirZ = 0;
 /** m/s (world units) of closing speed into the surface, this step's best
  *  manifold — the HIT signal. */
 let bestClosing = 0;
@@ -203,6 +209,15 @@ function onManifold(manifold: TempContactManifold, flipped: boolean): void {
 	bestNy = ny;
 	bestNz = nz;
 	bestSlide = Math.hypot(tx, ty, tz);
+	if (bestSlide > 1e-4) {
+		bestSlideDirX = tx / bestSlide;
+		bestSlideDirY = ty / bestSlide;
+		bestSlideDirZ = tz / bestSlide;
+	} else {
+		bestSlideDirX = 0;
+		bestSlideDirY = 0;
+		bestSlideDirZ = 0;
+	}
 	bestClosing = Math.max(0, -vn);
 }
 
@@ -271,15 +286,22 @@ export function pollHullContacts(
 	carSim.hullNormalLocalY = bestLocalNy;
 	carSim.hullNormalLocalZ = bestLocalNz;
 	carSim.hullSlideMs = bestSlide / UNITS_PER_METER;
+	carSim.hullSlideDirX = bestSlideDirX;
+	carSim.hullSlideDirY = bestSlideDirY;
+	carSim.hullSlideDirZ = bestSlideDirZ;
 
 	const closingMs = bestClosing / UNITS_PER_METER;
 	carSim.hullHitDv = closingMs;
 
 	// The rising edge: contact just STARTED this step (wasn't touching last
 	// step) and arrived fast enough to count as an arrival rather than a
-	// crawl up a kerb.
+	// crawl up a kerb. `hullHitSeq` is the one-shot signal a CONSUMER (like
+	// `fx/CarImpacts.svelte`) polls for — `hullHitFlash` alone can't tell
+	// "still decaying from the last hit" from "a fresh one just landed".
 	if (!wasTouching && closingMs > HIT_MIN_DV && hitCooldown <= 0) {
-		carSim.hullHitFlash = HULL_HIT_FLASH_TIME * (0.5 + 0.5 * clamp(closingMs / HIT_FULL_DV, 0, 1));
+		carSim.hullHitFlash =
+			HULL_HIT_FLASH_TIME * (0.5 + 0.5 * clamp(closingMs / HULL_HIT_FULL_DV, 0, 1));
+		carSim.hullHitSeq++;
 		hitCooldown = HIT_COOLDOWN;
 	}
 	wasTouching = true;

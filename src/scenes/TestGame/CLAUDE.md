@@ -40,9 +40,11 @@ sim/                    — the driving model, car-agnostic
                          ground contact — the springs above are): reads Rapier's
                          own contact manifolds each physics step (never events —
                          a sensor throws away position, oncollisionenter only
-                         fires once, oncontact has no position), publishes into
-                         carSim.hullContact* for the debug rig's hit-flash/
-                         scrape-tint and the eventual impact fx (sparks/dust)
+                         fires once, oncontact has no position; NEVER solver
+                         contacts either — unpopulated for this hull shape vs a
+                         trimesh, a real bug this file's header documents),
+                         publishes carSim.hullContact* for the debug rig's
+                         hit-flash/scrape-tint AND fx/CarImpacts.svelte's sparks
   carControls.ts        — THE CAR'S INPUT MAP: one slot per input (label, group,
                          default key + pad bindings) declared to the engine's slot
                          system. Data, not a keymap — the engine owns the keys
@@ -58,6 +60,9 @@ sim/                    — the driving model, car-agnostic
 fx/                     — the car's visual effects
   puffPool.ts           — the smoke primitive: one mesh / one material / one draw
                          call, per-vertex puff attributes (TireSmoke + exhaust)
+  sparkPool.ts          — the spark primitive, puffPool's hot sibling: one ADDITIVE
+                         mesh of velocity-STREAKED quads that cool white→red and
+                         SPUTTER (per-vertex spark attributes, CarImpacts)
   noiseTextures.ts      — the two vendored noise PNGs, loaded ONCE for the scene
   CarWheels.svelte      — per-vertex steering/rolling wheel deformation (TSL); finds
                          wheels by the spec's material prefix in the GLB
@@ -69,6 +74,11 @@ fx/                     — the car's visual effects
                          jet (TSL, from the three.js webgpu_tsl_vfx_flames example);
                          tips come from the spec
   CarHeadlights.svelte  — car-local lights (nose is -Z); lamp anchors from the spec
+  CarImpacts.svelte     — hit/scrape sparks off the chassis hull's contact point:
+                         a rising edge = burst + dust cough, pressed-and-sliding =
+                         continuous spark stream. Pure CONSUMER of the signal
+                         `sim/hullContacts.ts` publishes onto carSim — no Rapier
+                         imports here (sparkPool + a small puffPool)
   NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
                          boost from the nitrous flow (the lensState contract)
 debug/                  — the debug TOOL, both halves: the 3D rig and its readout.
@@ -915,6 +925,93 @@ inherit the GR86's ride.
   scene-entry veil. It lives INSIDE the visual task, after that task's own
   visibility write — anything set at mount would be overwritten before a frame
   ever rendered. The smoke pool needs no warming any more (see puffPool).
+
+- **`sim/hullContacts.ts` is the one place that reads what the chassis hull is
+  actually TOUCHING** — not the ground contact (the raycast springs in
+  `suspension.ts` are), but kerbs, barrier bases, a fence scrape. Polled once
+  per physics step from TestGame.svelte's own `usePhysicsTask` (right after
+  `controller.step`, needs the hull's `bind:collider` as well as the body) and
+  published onto `carSim.hullContact*` for anyone to read — `debug/DebugRig.svelte`
+  (flashes/tints the hull) and `fx/CarImpacts.svelte` (sparks/dust) both
+  consume the SAME numbers rather than each re-deriving them, which is the
+  whole point: this used to be duplicated inside `CarImpacts.svelte` itself,
+  and it carried a real bug there that a second copy would have carried too.
+  **It reads manifolds, never events** — a `sensor` collider (the car's one
+  collider is the load-bearing hull, so this would delete its collisions
+  outright) throws away position/normal/force; `oncollisionenter` only fires
+  the FIRST step of a touch, and a scrape is every step AFTER the first;
+  `oncontact` hands back a force with no position. So instead, every step:
+  `world.contactPairsWith(hull)` → `world.contactPair(hull, other)` → the
+  manifold.
+  **It does NOT read solver contacts, and that is the fix for a real bug**:
+  the first version did (`numSolverContacts()` / `solverContactPoint(i)` /
+  `contactImpulse(i)`), which is exactly why sparks (and the rig's hull tint)
+  only ever fired on the ROAD and never on a fence/wall hit — verified against
+  the installed `@dimforge/rapier3d-compat` directly: a rounded convex hull
+  (`roundConvexHull`, what `cars/hull.ts` builds) driven into a static
+  `trimesh` (what the barriers are, `world/trackColliders.ts`) genuinely gets
+  stopped by the solver — the collision is real — but `numSolverContacts()`
+  and `contactImpulse()` report **zero** for that shape pair, for the entire
+  duration of the touch, in the installed Rapier/Parry version. Against the
+  floor (an analytic `cuboid`, a well-supported pair) those same calls work
+  fine, which is exactly the "only works on the ground" symptom this was.
+  `numContacts()` / `contactDist(i)` / `localContactPoint1/2(i)` / `normal()`
+  ARE populated for every pair this scene has, so this module reads those
+  instead: **touching** is `contactDist(i) <= 0` on the DEEPEST contact of the
+  DEEPEST manifold this step (a trimesh hands back several manifolds for what
+  is visibly one scrape — the deepest stands in for "the strongest" now that
+  there is no impulse to rank by), the **contact point/normal** come from
+  `localContactPoint1/2`/`localNormal1/2` (whichever side is "ours", per
+  `flipped` — local to the COLLIDER, which per `cars/hull.ts` has no offset
+  from the RigidBody, so it doubles as the body-local point `DebugRig` draws
+  with, no further transform needed) forward-transformed to world by the
+  collider's own `translation()`/`rotation()`, and **"how hard"** comes from
+  the car's OWN tracked velocity at that point (`v + ω×r`, the same maths the
+  old version used for the slide/scratch signal, which never depended on
+  solver contacts in the first place) rather than from the solver's absent
+  impulse: its component AGAINST the normal is the HIT severity
+  (`carSim.hullHitDv`, a real closing speed in m/s), its component ALONG the
+  surface is the SCRATCH signal (`carSim.hullSlideMs` + the unit
+  `hullSlideDirX/Y/Z`). A HIT is the RISING EDGE of "touching" (wasn't last
+  step, is now, closing fast) rather than a Δv-spike test on impulse, with a
+  short cooldown against `contactDist` flickering at the threshold for one
+  step. `carSim.hullHitSeq` increments on every real hit — the one-shot signal
+  a consumer polls for, since the decaying `hullHitFlash` alone can't tell
+  "still fading from the last hit" from "a fresh one just landed".
+
+- **`CarImpacts.svelte` (fx/) is the chassis hitting the world, drawn** — a
+  pure CONSUMER of `sim/hullContacts.ts`'s signal, with no Rapier imports of
+  its own. Two effects off one `carSim.hullContact*` feed: a HIT (the rising
+  edge of `hullHitSeq` → a wide spark burst + a cough of dust, sized by
+  `hullHitDv / HULL_HIT_FULL_DV`) and a SCRATCH (`hullContact` &&
+  `hullSlideMs` above a floor → a continuous spark stream off the scrape
+  point, rate scaled by slide speed — there is no per-step "how hard pressed"
+  number any more to also scale it by, since that lived in the impulse this
+  file's header explains is unavailable for this shape pair; slide speed
+  alone still reads as a scrape scaling with how fast it's grinding). Still
+  polls from a `usePhysicsTask`, not a render task — `hullHitSeq` can rise and
+  `hullContact` can come and go entirely inside one physics step, and this
+  runs AFTER `hullContacts.ts` publishes for that same step because
+  TestGame.svelte (which owns that publish) mounts first — tasks sharing a
+  constraint fall back to mount order. Ballistics + streak-building stay a
+  `{ before: autoRenderTask }` task (fx/puffPool.ts's camera-basis rule).
+  Pooled, hoisted callbacks, `autoInvalidate: false` — §4 throughout.
+  **`sparkPool.ts` is its primitive**, puffPool's hot sibling: one ADDITIVE
+  `MeshBasicNodeMaterial` mesh — a spark is white-hot metal and ADDS light
+  rather than dimming, the opposite job to smoke, and it must not be dimmed by
+  the night exposure exactly when it should read brightest. A spark is a
+  STREAK, not a billboard: the quad is built on the spark's own velocity axis
+  (a CYLINDRICAL billboard — the axis is physical and never turned by the
+  camera, only rolled about it to face the viewer) and stretched by a shutter
+  time's worth of motion (`streak × speed`), which is the smear that separates
+  sparks from orange dots. COOLING is age- AND position-driven (the head is the
+  particle, the tail is where it was: white → yellow → orange → dull red),
+  plus a hard SPUTTER — a `step()` on a per-spark hash, because a tumbling
+  spark genuinely blinks out; a field that only fades reads as embers. No
+  noise textures: a spark is smaller than one texel of the perlin PNG, so the
+  variety comes from the per-spark seed. The dust is a small LIT puffPool
+  (road grit, normal-blended — what stops a hard hit reading as fireworks in
+  a vacuum). World-anchored at TestGame root (sparks are shed, not carried).
 
 - **`audio/CarEngineAudio.svelte` + `audio/carAudio.ts` are the engine NOTE, positional**. Six
   loops (`public/sounds/engine/`: `idle` + `rpm1..5`) crossfaded by rpm — the two

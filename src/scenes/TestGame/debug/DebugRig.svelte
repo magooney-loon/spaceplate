@@ -48,7 +48,8 @@
 	//     physics step, never events (that file's header has the argument). A
 	//     small marker (sphere + normal spike) is drawn AT the contact point,
 	//     so a scrape reads as "here", not just "hull went orange" — the debug
-	//     half of the eventual impact fx, which will spawn off this same signal;
+	//     half of fx/CarImpacts.svelte, which spawns its sparks off this exact
+	//     same signal;
 	//   · four wheels at the spec's wheel patches, front pair steered at
 	//     `carSim.steerAngle` (the same radians CarWheels renders), each rolling
 	//     at ITS OWN surface speed — see the driveline note below;

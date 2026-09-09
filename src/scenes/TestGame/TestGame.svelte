@@ -22,6 +22,7 @@
 	import SkidMarks from './fx/SkidMarks.svelte';
 	import TireSmoke from './fx/TireSmoke.svelte';
 	import NitrousAfterimage from './fx/NitrousAfterimage.svelte';
+	import CarImpacts from './fx/CarImpacts.svelte';
 	import { applyCarToggle, carRestart, carView } from './sim/carSwitches.svelte';
 	import { CAR_TOGGLE_SLOTS, carControls } from './sim/carControls';
 	import { useInputMap } from '$extensions/input';
@@ -437,6 +438,13 @@
 	     slides (burnout / drift / hard brake / max cornering). World-anchored
 	     like the marks; same anchor trick. See fx/TireSmoke.svelte. -->
 	<TireSmoke target={chaseAnchor} />
+
+	<!-- Impact & scrape sparks — reads the hull-contact signal `sim/hullContacts.ts`
+	     already publishes onto `carSim` each physics step: a HIT is a rising edge
+	     (burst + dust cough), a SCRATCH is pressed-and-sliding (continuous spark
+	     stream). World-anchored like the marks: sparks are shed and stay where the
+	     car scraped. See fx/CarImpacts.svelte. -->
+	<CarImpacts />
 
 	<!-- Renders nothing — drives the afterimage effect's runtime boost from the
 	     nitrous flow. See fx/NitrousAfterimage.svelte. -->

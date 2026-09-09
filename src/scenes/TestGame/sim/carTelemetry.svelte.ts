@@ -123,8 +123,8 @@ export const carSim = {
 	// actually touching — kerbs, barrier bases, a fence scrape.
 	/** True the instant a manifold exists this step. */
 	hullContact: false,
-	/** World-unit contact point, averaged over the strongest manifold's solver
-	 *  contacts — meaningless while `hullContact` is false. */
+	/** World-unit contact point of the DEEPEST manifold this step — meaningless
+	 *  while `hullContact` is false. */
 	hullContactX: 0,
 	hullContactY: 0,
 	hullContactZ: 0,
@@ -141,15 +141,24 @@ export const carSim = {
 	hullNormalLocalX: 0,
 	hullNormalLocalY: 1,
 	hullNormalLocalZ: 0,
-	/** m/s of normal velocity killed THIS STEP, summed across every manifold —
+	/** m/s of closing speed into the surface this step (the deepest manifold) —
 	 *  the hit severity a rising edge is tested against. */
 	hullHitDv: 0,
 	/** s remaining on a HIT flash — counts down like `perfectLaunch`, set on a
 	 *  rising Δv spike. Read by the rig to flash the hull white-hot. */
 	hullHitFlash: 0,
-	/** m/s the contact patch is sliding along the surface this step — the
-	 *  SCRATCH signal (a barrier scrape, not an arrival). */
-	hullSlideMs: 0
+	/** Increments once per real HIT (the rising edge) — the one-shot signal a
+	 *  consumer (`fx/CarImpacts.svelte`) polls for, since `hullHitFlash` alone
+	 *  can't tell "still decaying from the last hit" from "a fresh one just
+	 *  landed". */
+	hullHitSeq: 0,
+	/** m/s the contact patch is sliding along the surface this step, and the
+	 *  WORLD-SPACE unit direction it's sliding in — the SCRATCH signal (a
+	 *  barrier scrape, not an arrival). Direction is meaningless at 0 speed. */
+	hullSlideMs: 0,
+	hullSlideDirX: 0,
+	hullSlideDirY: 0,
+	hullSlideDirZ: 0
 };
 
 /** The HUD's reactive view. Quantised, ~30 Hz. */
@@ -374,6 +383,9 @@ export function resetCarTelemetry(): void {
 	carSim.hullHitDv = 0;
 	carSim.hullHitFlash = 0;
 	carSim.hullSlideMs = 0;
+	carSim.hullSlideDirX = 0;
+	carSim.hullSlideDirY = 0;
+	carSim.hullSlideDirZ = 0;
 	elapsed = HUD_INTERVAL;
 	publishCarHud(0);
 	// The debug mirror has no `suspension` to publish from here (the controller
