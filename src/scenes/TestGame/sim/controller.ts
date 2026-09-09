@@ -24,7 +24,7 @@ import { G, UNITS_PER_METER } from '../units';
 import { latMu } from './handling';
 import { createDrivetrain } from './drivetrain';
 import { carSim, publishCarHud } from './carTelemetry.svelte';
-import { carHandling, carIgnition } from './carSwitches.svelte';
+import { carGearbox, carHandling, carIgnition } from './carSwitches.svelte';
 import { carControls } from './carControls';
 import { clamp, damp } from './carMath';
 import { createSuspension } from './suspension';
@@ -302,6 +302,9 @@ export function createCarController(spec: CarSpec, world: World) {
 				handbrake,
 				shiftUp: ignOn && carControls.pressed('shiftUp'),
 				shiftDown: ignOn && carControls.pressed('shiftDown'),
+				// The gearbox SWITCH, read fresh like the tune — the box may change
+				// its mind about who shifts halfway through a corner.
+				auto: ignOn && carGearbox.mode === 'auto',
 				nitrous: nitrousFlow
 			},
 			tune

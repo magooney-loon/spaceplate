@@ -81,6 +81,18 @@ export const carControls = defineInputMap({
 			group: 'Gearbox',
 			defaults: [key('KeyQ'), pad('leftBumper')]
 		},
+		/**
+		 * Manual ↔ automatic. H for the H-PATTERN gate you are giving up, and it is
+		 * one of the few letters free of both Studio's bare-letter binds and the
+		 * car's own: the engine's only H is the Ctrl+H chord, which Keymapper
+		 * requires the modifier for. On a pad it is the right stick's click — every
+		 * face and d-pad button is already a switch.
+		 */
+		gearbox: {
+			label: 'Manual / Automatic',
+			group: 'Gearbox',
+			defaults: [key('KeyH'), pad('rightStickButton')]
+		},
 
 		lights: { label: 'Headlights', group: 'Car', defaults: [key('KeyL'), pad('directionalLeft')] },
 		highBeam: { label: 'Main Beam', group: 'Car', defaults: [key('KeyK'), pad('directionalTop')] },
@@ -106,6 +118,7 @@ export const CAR_TOGGLE_SLOTS = [
 	'lights',
 	'highBeam',
 	'handling',
+	'gearbox',
 	'ignition',
 	'view',
 	'units'

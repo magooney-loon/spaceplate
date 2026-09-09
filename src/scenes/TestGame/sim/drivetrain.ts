@@ -30,6 +30,11 @@
 //   until their handling feel is tuned against real cars.
 // - TRACTION CONTROL, as a per-setup switch. The real car has it and Grip runs it;
 //   Drift turns it off, and that is what lets the rears run away to the limiter.
+// - An AUTOMATIC mode, which is the same box shifting itself (`autoShift`): the
+//   car's schedule out of the spec, the player's Q/E still live as a tiptronic
+//   override, and R/N still selected by hand. Every rule above survives it,
+//   because the automatic asks for shifts through exactly the same
+//   `requestShift` the keys do.
 //
 // Everything above is the CAR and is fixed. The three numbers that are the SETUP —
 // how much the driven axle can put down, how much lateral grip wheelspin costs, and
@@ -73,6 +78,11 @@ export interface DriveInput {
 	handbrake: boolean;
 	shiftUp: boolean;
 	shiftDown: boolean;
+	/** The gearbox is in AUTOMATIC — the box picks the forward gear itself, and
+	 * Q/E stay live as a tiptronic override (and as the R/N/D selector). LEVEL,
+	 * like the shift flags: the player can switch mode mid-corner, so it is read
+	 * fresh every step and never cached. */
+	auto: boolean;
 	/** 0..1 — nitrous flow reaching the engine this step. The SCENE owns the
 	 * bottle and the throttle-switch gating (Shift alone does nothing); this is just
 	 * how much spray is in, multiplying wide-open-throttle torque. Sits INSIDE
@@ -136,6 +146,23 @@ export interface DrivetrainState {
 /** m/s under which the tyre is gripping rather than sliding. Noise floor. */
 const HOOKED = 0.05;
 
+/** The automatic refuses a downshift that would land closer than this to its own
+ *  upshift point — the anti-hunt rule, and the one that is not a tuning number:
+ *  without it the box kicks down, pulls to the upshift rpm, changes back up into
+ *  the rpm that asked for the kickdown, and does it again. */
+const AUTO_HUNT_MARGIN = 0.9;
+
+/** m/s under which the automatic counts the car as STOPPED and selects 1st. */
+const AUTO_REST_SPEED = 1.5;
+
+/** × `autoShiftHold` — how long an automatic UPSHIFT locks the gear it just
+ *  chose against a kickdown. The pedal is a key, so demand swings far more than
+ *  a real ankle does, and around 30 km/h the two schedules overlap: without the
+ *  lock, blipping the throttle in traffic gets 1→2→1→2 inside a second and a
+ *  half. Lugging still gets through it (see the guard), so the box can always
+ *  save itself; what it may not do is undo its own decision on a twitch. */
+const AUTO_UPSHIFT_LOCK = 4;
+
 export type Drivetrain = ReturnType<typeof createDrivetrain>;
 
 export function createDrivetrain(spec: CarSpec) {
@@ -179,6 +206,16 @@ export function createDrivetrain(spec: CarSpec) {
 	let launchBoost = 0;
 	/** One-shot latch so `state.launched` fires on the landing frame only. */
 	let launchAnnounced = false;
+	/** s left before the AUTOMATIC may shift again. Armed by every engagement,
+	 * the player's own taps included. */
+	let autoHold = 0;
+	/** 0…1 — the automatic's smoothed pedal DEMAND, which is what its schedule
+	 * interpolates across. The raw pedal is a key. */
+	let autoDemand = 0;
+	/** s left on the lock an automatic UPSHIFT puts on the gear it just picked
+	 * (`AUTO_UPSHIFT_LOCK`). Separate from `autoHold`, which is every shift's
+	 * settle: this one is only against changing the box's own mind back. */
+	let autoUpLock = 0;
 
 	function engage(gear: number): void {
 		if (gear === state.gear) return;
@@ -207,6 +244,9 @@ export function createDrivetrain(spec: CarSpec) {
 		state.gear = gear;
 		shiftTimer = hw.shiftTime;
 		state.shifted = true;
+		// Every engagement settles the automatic, whoever asked for it: a Q/E tap in
+		// D is a real override, not something the box undoes on the next step.
+		autoHold = hw.autoShiftHold;
 	}
 
 	function requestShift(dir: number, speedMs: number): void {
@@ -223,6 +263,71 @@ export function createDrivetrain(spec: CarSpec) {
 		// Money-shift guard: refuse a downshift that would slam past the limiter.
 		if (next > 0 && rpmInGear(spec, next, speedMs) > hw.limiterRpm) return;
 		engage(next);
+	}
+
+	/**
+	 * THE AUTOMATIC. It drives the same `requestShift` the player's Q/E do — the
+	 * box is one box, and an automatic that reached past the manual's guards
+	 * would be a second gearbox to keep in step with this one.
+	 *
+	 * FORWARD GEARS ONLY. R and N stay the driver's call, because an automatic
+	 * still has a selector and here that selector is Q/E: you walk down to N or R
+	 * exactly as before, and the box takes over again the moment you are back in
+	 * a forward gear. It is also what keeps the REV-MATCH LAUNCH alive in auto —
+	 * sit in N, rev into the window, tap E, and the automatic picks up the
+	 * upshifts from there.
+	 *
+	 * The schedule is `autoUpshiftRpm` / `autoDownshiftRpm` interpolated across
+	 * the smoothed pedal (`autoDemand`), plus two rules that are physics rather
+	 * than taste:
+	 *
+	 * - **Upshift only if the next gear is still turning above `lugRpm` at the
+	 *   ROAD SPEED we actually have.** This is what stops a standing burnout from
+	 *   walking the box up to 6th: the revs are on the limiter, but the road is
+	 *   doing 4 m/s, where 2nd is ~1100 rpm. It costs nothing anywhere else,
+	 *   because a gear the car has genuinely out-run is never near the lug line.
+	 * - **Downshift only if the lower gear lands clear of the upshift point**
+	 *   (`AUTO_HUNT_MARGIN`) — the anti-hunt rule above.
+	 * - **Stopped means 1st** (`AUTO_REST_SPEED`), directly and not a gear at a
+	 *   time — see the comment on it.
+	 */
+	function autoShift(dt: number, speedMs: number, throttle: number): void {
+		autoDemand += (throttle - autoDemand) * damp(hw.autoDemandRate, dt);
+		autoHold = Math.max(0, autoHold - dt);
+		autoUpLock = Math.max(0, autoUpLock - dt);
+		// Not in a forward gear, mid-shift, or still settling — the box waits.
+		if (state.gear < 1 || shiftTimer > 0 || autoHold > 0) return;
+
+		// STOPPED: the box is in 1, whatever the revs say, and it goes there
+		// directly rather than a gear at a time. The rpm schedule alone does not
+		// get you home — hard braking from 100 km/h is over in ~2.3 s, less than
+		// the coast-down needs to walk six gears — and pulling away in 4th on a
+		// slipping clutch is the one thing an automatic is supposed to never do.
+		if (Math.abs(speedMs) < AUTO_REST_SPEED) {
+			if (state.gear > 1) engage(1);
+			return;
+		}
+
+		const [upLifted, upWot] = hw.autoUpshiftRpm;
+		const [downLifted, downWot] = hw.autoDownshiftRpm;
+		const upRpm = upLifted + (upWot - upLifted) * autoDemand;
+		const downRpm = downLifted + (downWot - downLifted) * autoDemand;
+
+		if (state.rpm >= upRpm && state.gear < topGear(spec)) {
+			if (rpmInGear(spec, state.gear + 1, speedMs) >= hw.lugRpm) {
+				requestShift(1, speedMs);
+				autoUpLock = hw.autoShiftHold * AUTO_UPSHIFT_LOCK;
+			}
+			return;
+		}
+		if (state.rpm <= downRpm && state.gear > 1) {
+			// Freshly upshifted: the only downshift allowed is the one that saves the
+			// engine from lugging, i.e. the LIFTED end of the schedule.
+			if (autoUpLock > 0 && state.rpm > downLifted) return;
+			if (rpmInGear(spec, state.gear - 1, speedMs) <= upRpm * AUTO_HUNT_MARGIN) {
+				requestShift(-1, speedMs);
+			}
+		}
 	}
 
 	/**
@@ -251,6 +356,15 @@ export function createDrivetrain(spec: CarSpec) {
 		const braking = input.backward ? 1 : 0;
 		state.throttle = throttle;
 		state.brake = braking;
+
+		// The automatic runs AFTER the player's own taps, on the pedals of this
+		// step: a tap and the box asking for the same shift is one shift, and the
+		// hold `engage` arms means the box then leaves that gear alone.
+		// In manual the demand tracks the pedal exactly, so switching INTO auto
+		// mid-corner starts from the pedal you are actually holding rather than
+		// spending a second catching up to it.
+		if (input.auto) autoShift(dt, speedMs, throttle);
+		else autoDemand = throttle;
 
 		// ── Clutch & engine speed ────────────────────────────────────────────
 		shiftTimer = Math.max(0, shiftTimer - dt);
@@ -476,6 +590,9 @@ export function createDrivetrain(spec: CarSpec) {
 		launchQ = 0;
 		launchBoost = 0;
 		launchAnnounced = false;
+		autoHold = 0;
+		autoDemand = 0;
+		autoUpLock = 0;
 	}
 
 	return { state, step, idle, reset };

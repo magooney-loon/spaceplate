@@ -62,6 +62,26 @@ export const cycleHandlingMode = (): void => {
 	carHandling.mode = HANDLING_MODES[next];
 };
 
+/**
+ * MANUAL or AUTOMATIC — which half of the gearbox the player is driving. A switch
+ * like the rest: it survives Restart and scene exit, and `drivetrain.step()` reads
+ * it fresh every physics step (through the controller's `auto` input), so flipping
+ * it mid-corner is legal.
+ *
+ * What AUTOMATIC means is the drivetrain's (`sim/drivetrain.ts`, `autoShift`): the
+ * box picks the FORWARD gear off the car's shift schedule, and Q/E stay live both
+ * as a tiptronic override and as the R/N selector they always were. Nothing about
+ * the car changes — same gears, same clutch, same launch.
+ */
+export const GEARBOX_MODES = ['manual', 'auto'] as const;
+export type GearboxMode = (typeof GEARBOX_MODES)[number];
+
+export const carGearbox = $state({ mode: 'manual' as GearboxMode });
+
+export const cycleGearboxMode = (): void => {
+	carGearbox.mode = carGearbox.mode === 'manual' ? 'auto' : 'manual';
+};
+
 // --- View -----------------------------------------------------------------------
 //
 // What the camera looks AT: the full car model, the debug rig (wheels / axles /
@@ -101,6 +121,10 @@ export const applyCarToggle = (action: CarToggleSlot): void => {
 	}
 	if (action === 'handling') {
 		cycleHandlingMode();
+		return;
+	}
+	if (action === 'gearbox') {
+		cycleGearboxMode();
 		return;
 	}
 	if (action === 'ignition') {

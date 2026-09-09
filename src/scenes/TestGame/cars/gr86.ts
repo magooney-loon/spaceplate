@@ -124,6 +124,23 @@ export const gr86 = {
 		/** s — clutch-out time per shift. Torque is cut for the whole window. */
 		shiftTime: 0.28,
 
+		// ── The automatic's shift schedule ───────────────────────────────────
+		// The same six gears, picked by the box (sim/drivetrain.ts). Wide open it
+		// shifts at 6900, just under the 7400 cut and past the 7000 redline mark:
+		// this engine is flat and dies at the limiter, so there is nothing to be
+		// won by shifting earlier. Lifted it changes up at 2800, which lands 1st →
+		// 2nd at ~1700 rpm — above the 1400 lug line with room to spare.
+		autoUpshiftRpm: [2800, 6900],
+		// Kickdown at 3600. An upshift at 6900 lands at worst (1st → 2nd) at
+		// ~4160 rpm, so the box cannot change up and immediately want the lower
+		// gear back. Lifted, 1300 is the coast-down schedule: it walks the box
+		// back down to 1st as the car stops without ever lugging.
+		autoDownshiftRpm: [1300, 3600],
+		/** s — the FA24's box is a quick one, but it does not machine-gun. */
+		autoShiftHold: 0.45,
+		/** 1/s — ~0.8 s to lean on the pedal hard enough to hold a gear to 6900. */
+		autoDemandRate: 1.2,
+
 		// ── Brakes ───────────────────────────────────────────────────────────
 		// Tyre μ and the whole steering rack are NOT here — they are the setup,
 		// not the car, and they differ between the Grip and Drift tunes (tunes

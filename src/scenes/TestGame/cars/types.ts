@@ -131,6 +131,25 @@ export type CarSpec = {
 		/** s — clutch-out time per shift. Torque is cut for the whole window. */
 		shiftTime: number;
 
+		/** rpm the AUTOMATIC upshifts at, `[lifted, wide open]` — the shift
+		 *  schedule, interpolated across pedal demand. A car fact like the gears
+		 *  themselves: it is where this engine has stopped pulling. */
+		autoUpshiftRpm: readonly [lifted: number, wot: number];
+		/** rpm the automatic drops a gear at, `[lifted, wide open]`. The wide-open
+		 *  number is KICKDOWN and must sit well under what an upshift leaves behind
+		 *  in the next gear up, or the box hunts between the two. */
+		autoDownshiftRpm: readonly [lifted: number, wot: number];
+		/** s — settle between automatic shifts, on top of the shift cut itself.
+		 *  Also armed by the player's own taps, so a manual override in D is not
+		 *  overruled the next step. */
+		autoShiftHold: number;
+		/** 1/s — how fast the automatic's DEMAND follows the throttle. The pedal is
+		 *  a key, so it is 0 or 1 and nothing else; smoothing it is what gives the
+		 *  lifted half of the schedule anything to mean. A blip pulls away in the
+		 *  low half and upshifts early; a held pedal reaches the wide-open numbers
+		 *  in a second or so and holds every gear to the top. */
+		autoDemandRate: number;
+
 		/** N — all four discs at full pedal. */
 		brakeForce: number;
 		/** N — the handbrake's own (rear-only) retardation. */

@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { currentCar } from './cars';
 	import { carHud } from './sim/carTelemetry.svelte';
-	import { carHandling, carIgnition, carLights, carUnits } from './sim/carSwitches.svelte';
+	import {
+		carGearbox,
+		carHandling,
+		carIgnition,
+		carLights,
+		carUnits
+	} from './sim/carSwitches.svelte';
 	import { GLYPHS, SEGMENT_IDS, glyphs, segmentCell, type SegmentCell } from './clusterSegments';
 
 	// Bottom-right instrument cluster: an aftermarket gauge pod — a big tacho with a
@@ -241,6 +247,10 @@
 	// rather than the mode string — the tune is the truth.
 	const slipping = $derived(CAR.tunes[carHandling.mode].tractionControl && carHud.slip > 0.15);
 	const setup = $derived(CAR.tunes[carHandling.mode].label);
+	// Which half of the gearbox is driving. A LABEL, like the setup chip beside it:
+	// it is never a warning, and the digit in the gear window is the same digit
+	// either way — this is the only thing on the pod that says who chose it.
+	const gearboxLabel = $derived(carGearbox.mode === 'auto' ? 'AUTO' : 'MANUAL');
 	// A few degrees of slip angle is just a car cornering. Past ~10° it is a slide, and
 	// the number is worth watching: it is what the Drift tune's two yaw terms balance.
 	const sliding = $derived(carHud.driftDeg >= 10);
@@ -451,6 +461,7 @@
 		<div class="bar brake"><span style:height="{carHud.brake * 100}%"></span></div>
 		<div class="lamps">
 			<span class="lamp setup">{setup}</span>
+			<span class="lamp box" class:auto={carGearbox.mode === 'auto'}>{gearboxLabel}</span>
 			<span class="lamp drift" class:on={sliding || booting}>{carHud.driftDeg}°</span>
 			<span class="lamp beam" class:on={carLights.on || booting} class:high={carLights.high}>
 				BEAM
@@ -905,6 +916,17 @@
 	.lamp.setup {
 		color: rgba(255, 255, 255, 0.7);
 		border-color: rgba(74, 144, 217, 0.6);
+	}
+
+	/* The other always-lit label: dim for the manual box the car ships with,
+	   amber once the box is shifting for you. */
+	.lamp.box {
+		color: rgba(255, 255, 255, 0.45);
+	}
+
+	.lamp.box.auto {
+		color: #ffd24e;
+		border-color: rgba(255, 210, 78, 0.6);
 	}
 
 	.lamp.drift {

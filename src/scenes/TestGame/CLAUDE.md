@@ -28,7 +28,10 @@ sim/                    — the driving model, car-agnostic
                          startup sequence + spawn/restart + yaw & lateral grip +
                          carSim writes (extracted from TestGame.svelte)
   drivetrain.ts         — pure engine → clutch → gearbox → driven-axle traction step
-                         (createDrivetrain(spec); layout-aware load)
+                         (createDrivetrain(spec); layout-aware load). Owns BOTH
+                         halves of the gearbox: the player's Q/E and the
+                         AUTOMATIC (`autoShift`), which asks through the same
+                         `requestShift` the keys do
   handling.ts           — the HandlingTune CONTRACT + cornering-model rules + modes
                          (the GR86's tunes live in its spec)
   suspension.ts         — the RIDE + body attitude, PER CAR (createSuspension(spec);
@@ -50,7 +53,8 @@ sim/                    — the driving model, car-agnostic
                          system. Data, not a keymap — the engine owns the keys
                          (src/extensions/input/CLAUDE.md)
   carSwitches.svelte.ts — what LATCHING a switch MEANS: lights, ignition + its
-                         startup sequence, handling tune, B view mode, + the
+                         startup sequence, handling tune, gearbox mode (manual /
+                         automatic), B view mode, + the
                          HUD → scene restart signal. Was carInput.svelte.ts, which
                          also carried the hand-rolled keymap
   carTelemetry.svelte.ts — carSim (per-physics-step plain object) / carHud (30 Hz $state
@@ -172,7 +176,10 @@ should not be guessed at without the cars to tune against.
 ## Controls
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
-Shift nitrous, L headlights, K main beam, G handling setup, M ignition (one key,
+Shift nitrous, L headlights, K main beam, G handling setup, H gearbox mode
+(manual ↔ automatic — the H-pattern you are giving up; free of both Studio's
+bare-letter binds and the engine's Ctrl+H, which needs the modifier),
+M ignition (one key,
 toggles on and off), U speed units (km/h ↔ mph — a DISPLAY latch, `carUnits`; the
 telemetry publishes both numbers regardless),
 B view (model → debug rig → both). B is also the debug switch: the rig's
@@ -426,12 +433,44 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   re-validated as rate-independent by construction rather than by re-measuring:
   the numbers in this file (0-60, yaw °/s, circle diameters) are claims about the
   MODEL, and the model is the same at any fixed rate.
-- **The gearbox is fully manual** — Q/E walk R ↔ N ↔ 1…6 with no auto-engage and
+- **The gearbox is manual by default** — Q/E walk R ↔ N ↔ 1…6 with no auto-engage and
   no auto-drop to 1st. You can slot any gear while standing, and a 5 m/s grace
   window (up from 3, for friendlier shifting) lets you shift R/N ↔ 1st while still
   creeping (dead stop not required); the only other refusals are physical: reverse
   above 5 m/s forward (and vice
   versa), and money-shift downshifts that would pass the limiter.
+- **H switches the box to AUTOMATIC** (`carGearbox`, a latched switch like the
+  rest; the cluster's second label chip reads MANUAL / AUTO). Nothing about the
+  CAR changes — same six gears, same clutch, same launch. What changes is who
+  taps: `drivetrain.ts`'s `autoShift` asks through the same `requestShift` the
+  keys do, so every refusal above still applies and there is only ever one
+  gearbox to keep in step.
+  - **FORWARD GEARS ONLY.** R and N stay the driver's call, because an automatic
+    still has a selector and here that selector is Q/E — which also keeps Q/E
+    live as a tiptronic override, and keeps the REV-MATCH LAUNCH ritual working
+    in auto (sit in N, rev into the window, tap E, the box takes it from there).
+  - The schedule is the CAR's (spec `autoUpshiftRpm` / `autoDownshiftRpm`,
+    `[lifted, wide open]`), interpolated across a SMOOTHED pedal
+    (`autoDemandRate`) rather than the raw one: the throttle is a key, so it is
+    0 or 1 and nothing else, and smoothing it is the only thing that gives the
+    lifted half of the schedule anything to mean. A blip pulls away and upshifts
+    early; a held pedal reaches the wide-open numbers in about a second and holds
+    every gear to 6900.
+  - Three rules keep it honest, and all three are load-bearing rather than taste:
+    **upshift only if the next gear is still above `lugRpm` at the ROAD SPEED**
+    (which is what stops a standing burnout from walking the box to 6th — the
+    revs are on the limiter, the road is doing 4 m/s), **downshift only if the
+    lower gear lands clear of the upshift point** (or the box kicks down, pulls
+    to the upshift rpm and changes straight back), and **stopped means 1st**,
+    taken directly rather than a gear at a time (hard braking from 100 km/h is
+    over in ~2.3 s, less than the coast-down schedule needs to walk six gears,
+    and pulling away in 4th on a slipping clutch is the one thing an automatic
+    must never do).
+  - An automatic UPSHIFT also LOCKS its gear against kickdown for
+    ~4 × `autoShiftHold`, lugging excepted. Around 30 km/h the up and down
+    schedules overlap, and with a key for a pedal the demand swings far more than
+    an ankle does: without the lock, blipping the throttle in traffic gets
+    1→2→1→2 inside a second and a half.
 - **The engine feel is in the numbers on purpose**: a torque CURVE through GEARS
   (acceleration falls off and snaps back on every upshift), a clutch fully OPEN
   for the length of a shift (0.28 s torque cut), a slipping clutch below
