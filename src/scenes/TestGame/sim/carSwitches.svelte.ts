@@ -74,6 +74,14 @@ export type CarViewMode = (typeof VIEW_MODES)[number];
 
 export const carView = $state({ mode: 'model' as CarViewMode });
 
+/**
+ * What the cluster's LCD speed window reads in. A DISPLAY switch — the telemetry
+ * publishes both `kmh` and `mph` either way (carTelemetry), so this picks which of
+ * the two the big readout shows and never touches a number the car computes. Latched
+ * like the rest: the units you drove in are the units you come back to.
+ */
+export const carUnits = $state({ imperial: false });
+
 export const cycleCarView = (): void => {
 	const next = (VIEW_MODES.indexOf(carView.mode) + 1) % VIEW_MODES.length;
 	carView.mode = VIEW_MODES[next];
@@ -107,6 +115,10 @@ export const applyCarToggle = (action: CarToggleSlot): void => {
 	}
 	if (action === 'view') {
 		cycleCarView();
+		return;
+	}
+	if (action === 'units') {
+		carUnits.imperial = !carUnits.imperial;
 		return;
 	}
 	// Flicking to main beam turns the lamps on — a dead key with the lights off is

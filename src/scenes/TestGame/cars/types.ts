@@ -270,8 +270,10 @@ export type CarSpec = {
 	cluster: {
 		/** rpm the shift lights start filling from. */
 		shiftLightFrom: number;
-		/** False while no car in the demo is turbocharged — keeps the boost mini-
-		 *  dial decorative ("N/A") until one is. */
+		/** False on a naturally aspirated car. The boost/vacuum mini-dial reads
+		 *  manifold pressure either way (it is a real gauge — see CarCluster's
+		 *  `manifoldBar`); this decides whether the POSITIVE half of its scale is
+		 *  live or drawn dead, and whether the dial is labelled BOOST or VAC. */
 		hasTurbo: boolean;
 	};
 

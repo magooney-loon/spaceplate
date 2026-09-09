@@ -133,8 +133,13 @@ RearViewMirror.svelte   — NFS-style rear-view strip: a backward camera on the 
                          fills a small RT (top-of-screen overlay quad on the active
                          camera, LENS_LAYER's first resident since the lens effects
                          moved into the post pipeline)
-CarCluster.svelte       — bottom-right instrument cluster (tacho ring, gear, speed,
-                         live N2O bottle gauge); dial facts from the spec
+CarCluster.svelte       — bottom-right instrument cluster: ONE svg gauge pod —
+                         tacho + shift lights + seven-segment gear window + backlit
+                         LCD speed readout, flanked by a boost/vacuum gauge and the
+                         live N2O bottle gauge; dial facts from the spec
+clusterSegments.ts      — the cluster's seven-segment geometry (segment polygons +
+                         the glyph table), so the digital windows draw their unlit
+                         segments too instead of being text in a big font
 units.ts                — UNITS_PER_METER + G: the SI ↔ world boundary (track scale)
 ```
 
@@ -168,7 +173,8 @@ should not be guessed at without the cars to tune against.
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
 Shift nitrous, L headlights, K main beam, G handling setup, M ignition (one key,
-toggles on and off),
+toggles on and off), U speed units (km/h ↔ mph — a DISPLAY latch, `carUnits`; the
+telemetry publishes both numbers regardless),
 B view (model → debug rig → both). B is also the debug switch: the rig's
 skeleton and its bottom-left readout (`debug/DebugHud.svelte` — both halves of
 the tool live in `debug/`) come up together in `rig` and `both`, and
@@ -227,7 +233,7 @@ press (the CarWheels substep hazard again).
 The engine has no opinion about what latching MEANS — that a headlight is a switch,
 that flicking to main beam turns the lamps on, that the ignition runs a startup
 sequence. `carSwitches.svelte.ts` owns all of it (`carLights`, `carIgnition`,
-`carHandling`, `carView`, plus the HUD→scene restart token), and those survive
+`carHandling`, `carView`, `carUnits`, plus the HUD→scene restart token), and those survive
 Restart and scene exit on purpose. Leaving the scene deactivates the map, which
 zeroes the pedals; the lights you left on stay on.
 
@@ -651,6 +657,23 @@ inherit the GR86's ride.
     steered at 0.62 rad) and its wheel spin was once `speedMs × (1 + slip·0.8)`
     (a fudge for the real overspeed `drivetrain.state.spin` integrates). If the
     rig needs a number, publish the number.
+  - **The cluster is ONE svg, and every glow in it is DRAWN, not filtered.** A
+    blur filter re-rasterizes everything it covers each time that thing moves, so
+    the needle, the rev sweep and the shift LEDs get their halo from a second,
+    wider, translucent copy of the same shape, and `filter: drop-shadow()` is used
+    only on the PRINTED SCALE (never changes → the browser caches the raster) and
+    the gear digit (changes on a shift, not on a frame). The gear and speed
+    windows are real seven-segment cells (`clusterSegments.ts`), which is what buys
+    the unlit ghost segments behind the digits and lets the ignition BLANK the
+    panel instead of hiding it. Two things are honestly derived rather than
+    published: the boost gauge reads MANIFOLD PRESSURE modelled off the real
+    throttle and rpm (a naturally aspirated car sits in the vacuum half, and
+    `cluster.hasTurbo` decides whether the positive half is live or drawn dead —
+    it is display-only and must never feed back into the drivetrain, which models
+    torque, not airflow), and the startup SELF-TEST (needle sweep + bulb check
+    while `carIgnition.on && !ready`) is a keyframe, which is legal because it is
+    an event with a fixed duration and not a smoothed value — the thing the
+    no-transitions rule exists to prevent.
   - **`carDebugHud` is a SECOND 30 Hz mirror**, for `debug/DebugHud.svelte`, and
     it is published **only while the rig is up** (`carView.mode !== 'model'`,
     gated inside `publishCarHud` — the same condition the panel self-gates on, so

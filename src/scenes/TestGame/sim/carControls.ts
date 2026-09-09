@@ -95,11 +95,20 @@ export const carControls = defineInputMap({
 			label: 'View / Debug Rig',
 			group: 'Car',
 			defaults: [key('KeyB'), pad('directionalBottom')]
-		}
+		},
+		/** km/h ↔ mph on the cluster's LCD. U is free of Studio's bare-letter set. */
+		units: { label: 'Speed Units', group: 'Car', defaults: [key('KeyU'), pad('clusterLeft')] }
 	}
 });
 
 /** The slots that LATCH something — subscribed as press edges by TestGame.svelte. */
-export const CAR_TOGGLE_SLOTS = ['lights', 'highBeam', 'handling', 'ignition', 'view'] as const;
+export const CAR_TOGGLE_SLOTS = [
+	'lights',
+	'highBeam',
+	'handling',
+	'ignition',
+	'view',
+	'units'
+] as const;
 
 export type CarToggleSlot = (typeof CAR_TOGGLE_SLOTS)[number];
