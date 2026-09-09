@@ -354,7 +354,7 @@
 					centerOfMass={carMassProps.centerOfMass}
 					principalAngularInertia={carMassProps.principalAngularInertia}
 					angularInertiaLocalFrame={carMassProps.angularInertiaLocalFrame}
-					friction={0.18}
+					friction={0.36}
 					frictionCombineRule={CoefficientCombineRule.Min}
 				/>
 			{/if}
