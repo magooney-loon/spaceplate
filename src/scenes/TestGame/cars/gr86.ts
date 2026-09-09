@@ -336,12 +336,12 @@ export const gr86 = {
 		drift: {
 			label: 'Drift',
 
-			// The rears hold ~5 550 N: 1st lights up hard, 2nd steps out, 3rd and up hook
-			// back in. High enough to keep the car properly quick — 0-60 in 6.2 s, near
-			// Grip's 5.7 — because `throttleLoose` below, not wheelspin, is what gets the
-			// car sideways. Trying to make wheelspin the trigger meant dropping this to
-			// 0.6 and paying two and a half seconds for it.
-			tireMuLong: 0.8,
+			// Up from 0.8 — the rears were bleeding more forward thrust to wheelspin than
+			// the tune needs, since `throttleLoose` below (not wheelspin) is what's meant
+			// to get the car sideways. 1st still lights up, 2nd still steps out, 3rd+
+			// still hooks — the trigger is unchanged, the car just keeps more of its power
+			// through it. (Not re-measured against the 6.2 s/0-60 figure above.)
+			tireMuLong: 0.9,
 			tireMuLat: 1.1,
 			// The SAME as Grip. A coasting car should have a coasting car's grip: with
 			// `looseBase` near zero, boost ≈ 1 and the yaw cap matches what the bleed can
@@ -365,10 +365,10 @@ export const gr86 = {
 			// A little livelier than before — the car has a hint of playfulness even
 			// coasting, without giving up the planted-until-provoked contrast.
 			looseBase: 0.05,
-			// Up from 0.55: the throttle takes the tail out quicker and with less pedal
-			// precision — you don't have to bury it to feel the rear step out, which is
-			// the whole point of an easy drift control.
-			throttleLoose: 0.6,
+			// Up from 0.6: the throttle takes the tail out quicker still and with even
+			// less pedal precision — this was the "kinda hard to drift" complaint, and
+			// throttle is the main control, so it's the one that needed to answer sooner.
+			throttleLoose: 0.75,
 			// Up from 0.8, closer to the handbrake's 1: trail-braking into a corner
 			// triggers a slide more readily — an easier, more generous "tap ↓ to set the
 			// car" entry.
@@ -392,16 +392,21 @@ export const gr86 = {
 			yawResponse: 3.2,
 
 			// Bigger flick: the handbrake already sets looseness to 1, so it collects the
-			// whole of `powerYawBoost`. 1.6 × 2.6 = 4.16 is the flick multiplier — a more
+			// whole of `powerYawBoost`. 1.6 × 2.3 = 3.68 is the flick multiplier — a more
 			// dramatic handbrake turn.
 			handbrakeYawBoost: 1.6,
-			// Unchanged. This one was already tuned DOWN from a punchy 4.5 to 2.6 because
-			// more snap made the car harder, not easier, to hold — the easier-to-control
-			// direction here is a stronger `driftAlign` catch, not a bigger flick.
-			powerYawBoost: 2.6,
-			// Up from 1.6: a firmer auto-catch, so a slide is less likely to run away into
-			// a spin and opposite lock does more of the work for you.
-			driftAlign: 0.15,
+			// Down a touch further, from 2.6: the cap that turns a throttle-triggered
+			// slide into rotation was still snapping in hard enough to read as "the back
+			// just came around on its own" rather than something building under you —
+			// the "easy to slide away sideways" complaint. Paired with the stronger
+			// `driftAlign` below, not fought by it.
+			powerYawBoost: 2.3,
+			// Up from 0.15: the earlier value let a slide outrun what opposite lock could
+			// pull back once looseness was fully earned, which is the other half of
+			// "slides away sideways" — the catch wasn't strong enough to hold it. Still
+			// only ~40% of this is ever applied off the throttle (× (1 − looseBase)), so a
+			// committed slide isn't killed, just no longer a one-way trip.
+			driftAlign: 0.22,
 			// Up from 0.9: the drift can hold a bigger angle before the catch fully takes
 			// over, for a more dramatic slide before it settles. The handbrake held at full
 			// lock still spins the car out to fully sideways, which is what that input
