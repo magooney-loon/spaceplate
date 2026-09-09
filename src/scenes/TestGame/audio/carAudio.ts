@@ -28,6 +28,8 @@ import { currentCar } from '../cars';
 import { clamp, damp } from '../sim/carMath';
 import { carSim } from '../sim/carTelemetry.svelte';
 import { carIgnition } from '../sim/carSwitches.svelte';
+import { HULL_HIT_FULL_DV } from '../sim/hullContacts';
+import { UNITS_PER_METER } from '../units';
 
 /**
  * The six loop files, lowest first: the parked tickover, then the rising rpm bed.
@@ -268,6 +270,95 @@ export const attachTireSqueal = (audio: ThreePositionalAudio): void => {
 	tireSqueal = audio;
 };
 
+// ── Chassis scrape ──────────────────────────────────────────────────────────
+//
+// The hull-contact half of what fx/CarImpacts.svelte draws, voiced: pressed
+// and sliding = the metal_scraping LOOP (level rides the same grind the spark
+// stream's rate does), and the ARRIVAL — `hullHitSeq`'s rising edge, the same
+// one-shot CarImpacts bursts on — = a short loud SHRIEK cloned at the contact
+// point and cut off on a DEADLINE, because the recording is a 3 s scrape and a
+// hit is over in a fraction of one. NOT gated on ignition — metal on metal is
+// not combustive (the tyres' own rule); a wall scrape with the engine off
+// still screams. The take is mono 48 kHz Opus peak-held at -3 dBFS (the pops'
+// own convention) — downmixed with an explicit `pan` BEFORE the gain, because
+// a plain `-ac 1` after `-af volume` sums the already-boosted channels and
+// clips — and trimmed where its trailing silence began, so the loop doesn't
+// pump.
+
+/** Scrape loop level at full grind — a shade over the squeal: bare metal on
+ *  concrete is the harshest thing this car does. Dial by ear. */
+const SCRAPE_GAIN = 0.9;
+/** 1/s — attack with the contact, release as it lifts. Both quicker than the
+ *  squeal's: a scrape is dry friction, in and out with no rubber to catch up. */
+const SCRAPE_ATTACK = 18;
+const SCRAPE_RELEASE = 8;
+/** m/s slide floor/ceiling — CarImpacts' own SCRAPE_MIN_SPEED /
+ *  SCRAPE_FULL_SPEED, duplicated because they live in the component; keep the
+ *  two in step or the sparks and the sound disagree about what grinds. */
+const SCRAPE_MIN = 1.4;
+const SCRAPE_FULL = 22;
+/** Hit-shriek gain — the take runs ~5 dB hotter RMS than the pops' files, so
+ *  this is POP_GAIN scaled down to land proportionally under the bangs. */
+const SCRAPE_HIT_GAIN = 4.5;
+/** s — hit-shriek length, floor + severity-sized range: a glancing tap is a
+ *  chirp, a big arrival grinds half a second. */
+const SCRAPE_HIT_MIN = 0.22;
+const SCRAPE_HIT_RANGE = 0.5;
+
+/** The mounted scrape loop. Set by the component. */
+let scrapeLoop: ThreePositionalAudio | undefined;
+/** The hit-shriek TEMPLATE — never played itself; every hit is a clone at the
+ *  contact point (the pops' own contract). */
+let scrapeHit: ThreePositionalAudio | undefined;
+/** Smoothed scrape level — asymmetric slew. */
+let scrapeLevel = 0;
+/** The last hit this module has voiced — `hullHitSeq`'s own edge state,
+ *  synced (not reset) on park/detach so re-entry can't voice a phantom. */
+let scrapeSeq = carSim.hullHitSeq;
+/** Live hit clones — deadline-stopped and pruned in the tick, like the pops. */
+const liveScraps: ThreePositionalAudio[] = [];
+
+export const attachScrapeLoop = (audio: ThreePositionalAudio): void => {
+	scrapeLoop = audio;
+};
+
+export const attachScrapeHit = (audio: ThreePositionalAudio): void => {
+	scrapeHit = audio;
+};
+
+/** Voice one arrival: a clone of the scrape take AT the contact point (the
+ *  hull-local reading is world-unit body space; the template's group lives in
+ *  the visual model-metre group, so ÷UPM — the pops' TIP_L/R rule), pitched
+ *  and lowpass-jittered so no two hits speak alike (the thunder-clap
+ *  contract), stopped on a severity-sized deadline. */
+function triggerScrapeHit(severity: number, master: number): void {
+	if (master <= 0) return;
+	const src = scrapeHit;
+	if (!src?.buffer || !src.parent) return;
+	const hit = src.clone() as ThreePositionalAudio;
+	hit.position.set(
+		carSim.hullLocalX / UNITS_PER_METER,
+		carSim.hullLocalY / UNITS_PER_METER,
+		carSim.hullLocalZ / UNITS_PER_METER
+	);
+	hit.userData.hideInTree = true;
+	hit.userData.selectable = false;
+	src.parent.add(hit);
+	hit.setVolume(SCRAPE_HIT_GAIN * (0.55 + 0.45 * severity) * (0.85 + 0.3 * Math.random()) * master);
+	// A hit is a SHARPER scrape than the loop's grind: base rate over 1, jitter
+	// and severity on top — the same clamps the bed lives under.
+	hit.setPlaybackRate(0.88 + 0.35 * severity + 0.3 * Math.random());
+	// Brightness jitter, floored so it never muffles the shriek (the pops' rule).
+	const filter = hit.context.createBiquadFilter();
+	filter.type = 'lowpass';
+	filter.frequency.value = 2400 * 2 ** (Math.random() * 2.5);
+	hit.setFilters([filter]);
+	// The deadline — the buffer is a 3 s scrape, the hit is a fraction of one.
+	hit.userData.deadline = hit.context.currentTime + SCRAPE_HIT_MIN + SCRAPE_HIT_RANGE * severity;
+	hit.play();
+	liveScraps.push(hit);
+}
+
 /**
  * Voice one pop. `energy` 0..1 sizes it (downshift bursts big, limiter stutters
  * small), `right` picks the pipe it speaks from (the visual pop's dominant tip).
@@ -327,6 +418,11 @@ export const detachCarAudio = (): void => {
 	turnOffSound = undefined;
 	tireSqueal = undefined;
 	squealLevel = 0;
+	scrapeLoop = undefined;
+	scrapeHit = undefined;
+	scrapeLevel = 0;
+	scrapeSeq = carSim.hullHitSeq;
+	liveScraps.length = 0;
 	// Sync, not reset — ignition is a latched switch and must survive remounts;
 	// syncing (not zeroing) is what stops a phantom turn-on shot at re-entry.
 	ignPrev = carIgnition.on;
@@ -368,6 +464,17 @@ export const parkCarAudio = (): void => {
 	// doesn't fade in a squeal the car isn't making.
 	squealLevel = 0;
 	if (tireSqueal?.isPlaying) tireSqueal.pause();
+	// The scrape too — same three moves: loop pauses (progress kept), shrieks
+	// stop dead (a hit must not drone behind a hidden tab), and the edge state
+	// SYNCS so re-entry doesn't voice a hit that landed while parked.
+	scrapeLevel = 0;
+	scrapeSeq = carSim.hullHitSeq;
+	if (scrapeLoop?.isPlaying) scrapeLoop.pause();
+	for (const scrap of liveScraps) {
+		if (scrap.isPlaying) scrap.stop();
+		scrap.parent?.remove(scrap);
+	}
+	liveScraps.length = 0;
 };
 
 export const tickCarAudio = (delta: number): void => {
@@ -501,6 +608,37 @@ export const tickCarAudio = (delta: number): void => {
 		}
 	}
 
+	// ── Chassis scrape: the loop rides the grind, hits shriek on the edge. ──────
+	// The SAME signal CarImpacts draws — grind from hullSlideMs over the scrape
+	// floor, hits from hullHitSeq's rising edge. Polling the edge at frame rate
+	// is safe: HIT_COOLDOWN (90 ms) is longer than any frame, so two increments
+	// can never land inside one tick.
+	const grind = carSim.hullContact
+		? clamp((carSim.hullSlideMs - SCRAPE_MIN) / (SCRAPE_FULL - SCRAPE_MIN), 0, 1)
+		: 0;
+	scrapeLevel +=
+		(grind - scrapeLevel) * damp(grind > scrapeLevel ? SCRAPE_ATTACK : SCRAPE_RELEASE, delta);
+	// The release asymptote never lands on 0 — snap it, or the loop hisses at ~0
+	// after the first scrape (the squeal's own rule).
+	if (grind === 0 && scrapeLevel < 0.01) scrapeLevel = 0;
+
+	if (scrapeLoop?.buffer) {
+		// Volume and rate first, then play/pause. Rate rides the grind — the
+		// faster the slide, the more frantic the metal.
+		scrapeLoop.setVolume(scrapeLevel * SCRAPE_GAIN * master);
+		scrapeLoop.setPlaybackRate(0.8 + 0.5 * scrapeLevel);
+		if (scrapeLevel > AUDIBLE_WEIGHT && master > 0) {
+			if (!scrapeLoop.isPlaying) scrapeLoop.play();
+		} else if (scrapeLoop.isPlaying) {
+			scrapeLoop.pause();
+		}
+	}
+
+	if (carSim.hullHitSeq !== scrapeSeq) {
+		scrapeSeq = carSim.hullHitSeq;
+		triggerScrapeHit(clamp(carSim.hullHitDv / HULL_HIT_FULL_DV, 0, 1), master);
+	}
+
 	// Reap spent pop clones — they are raw graph children (not components), so
 	// this is the only cleanup path. A pop lives <1 s; the list stays tiny.
 	for (let i = livePops.length - 1; i >= 0; i--) {
@@ -508,6 +646,18 @@ export const tickCarAudio = (delta: number): void => {
 		if (!pop.isPlaying) {
 			pop.parent?.remove(pop);
 			livePops.splice(i, 1);
+		}
+	}
+	// Reap scrape shrieks — DEADLINE-stopped as well as spent: the buffer
+	// outlives the hit by seconds, so waiting for `isPlaying` to clear would
+	// let a tap drone on. Same raw-children rule as the pops.
+	for (let i = liveScraps.length - 1; i >= 0; i--) {
+		const scrap = liveScraps[i];
+		const due = scrap.context.currentTime >= (scrap.userData.deadline as number);
+		if (!scrap.isPlaying || due) {
+			if (scrap.isPlaying) scrap.stop();
+			scrap.parent?.remove(scrap);
+			liveScraps.splice(i, 1);
 		}
 	}
 };

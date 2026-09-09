@@ -115,7 +115,8 @@ audio/                  — the engine NOTE
   CarEngineAudio.svelte — the car's positional engine bed, mounted inside the
                          visual-scale group; all mixing lives in carAudio.ts
   carAudio.ts           — rpm voice bands, rpm-driven loudness (never input), pop
-                         takes jittered per hit; layers/anchors/pitch from the spec
+                         takes jittered per hit, chassis scrape (loop on grind,
+                         shriek on hull hits); layers/anchors/pitch from the spec
                          (files are SHARED across cars) — ticked from carSim
                          (weatherAudio contract — never $effect)
 world/                  — THE MAP: everything map-shaped (one track so far — a
@@ -1090,7 +1091,26 @@ inherit the GR86's ride.
   with a snap to 0 so the release asymptote can't hiss. Not
   gated on ignition — tyres aren't combustive. TC LAMP: the cluster's `spinning` indicator gates on the tune's `tractionControl`
   flag — in Drift mode `tractionControl` is false, so wheelspin there is the setup,
-  not a system intervening, and the lamp stays off. The pop wavs are PEAK-NORMALIZED to -3 dBFS
+  not a system intervening, and the lamp stays off. SCRAPE: the hull-contact
+  half of what fx/CarImpacts.svelte draws, voiced off ONE take
+  (`metal_scraping.opus`) as two voices — a LOOP under the sills whose level and
+  rate ride the same grind the spark stream's rate does (`hullSlideMs` over
+  CarImpacts' own 1.4–22 m/s thresholds, duplicated in carAudio — keep them in
+  step), and a hit SHRIEK on `hullHitSeq`'s rising edge: a clone at the CONTACT
+  point (`hullLocal` ÷UPM into the visual group's model metres — the pops'
+  TIP_L/R rule), volume/rate/lowpass jittered (thunder-clap contract),
+  DEADLINE-stopped at 0.22–0.72 s because the take is a 2.4 s scrape and a hit
+  is a fraction of one, and reaped in the tick like the pops. Not gated on
+  ignition — metal on metal isn't combustive either. Edge state SYNCS (never
+  resets) on park/detach, or re-entry would voice a hit that landed while
+  parked. Frame-rate edge polling is safe because `HIT_COOLDOWN` (90 ms)
+  outlasts any frame. The take itself is treated like the bed's wavs: mono
+  downmix via explicit `pan` BEFORE the normalization gain (a plain `-ac 1`
+  after `-af volume` sums the boosted channels and clips — measured), peak-held
+  at ≈-3 dBFS, and built as a SELF-CROSSFADE loop (tail blended with the
+  content just before the loop head, so the file's last sample is the source
+  sample that precedes its first; join-jump 2941 vs p95-of-deltas 5857 —
+  verified, the bed wavs' own standard). The pop wavs are PEAK-NORMALIZED to -3 dBFS
   offline (+6.03/+8.05 dB pure gain — a transient must slam past the bed's
   continuous RMS or it's inaudible; their peaks originally sat AT the bed's
   effective level, fully masked) on top of `POP_GAIN` at runtime. The six wavs are

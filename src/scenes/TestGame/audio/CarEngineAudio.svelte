@@ -10,6 +10,8 @@
 		attachNitroEnd,
 		attachNitroStart,
 		attachPopAudio,
+		attachScrapeHit,
+		attachScrapeLoop,
 		attachTireSqueal,
 		attachTurnOffSound,
 		attachTurnOnSound,
@@ -19,9 +21,10 @@
 	} from './carAudio';
 
 	// The engine's speakers. Mounts the positional voices inside the car — the
-	// rpm bed, the tyre-squeal loop and the pop/nitrous one-shots — and nothing
-	// else; every mixing decision (rpm crossfade, pitch, tyre squeal) lives in
-	// carAudio.ts, ticked by the task below. Positional because the
+	// rpm bed, the tyre-squeal loop, the chassis-scrape loop + hit-shriek template
+	// and the pop/nitrous one-shots — and nothing else; every mixing decision (rpm
+	// crossfade, pitch, tyre squeal, scrape) lives in carAudio.ts, ticked by the
+	// task below. Positional because the
 	// AudioListener rides the camera (core/Camera.svelte): the engine falls behind
 	// with the car and panners HRTF around it. Same <PositionalAudio> component
 	// DemoScene's orbiting mirror sphere uses.
@@ -168,5 +171,33 @@
 		rolloffFactor={ROLLOFF}
 		maxDistance={MAX_DISTANCE}
 		oncreate={(a: ThreePositionalAudio) => attachTireSqueal(a)}
+	/>
+</T.Group>
+
+<!-- The chassis-scrape voices — one take, two jobs (see carAudio.ts's scrape
+     section). The LOOP under the sills, a shade lower than the squeal (bare
+     metal drags lower than rubber); the hit-shriek TEMPLATE at the car's ORIGIN
+     like the pops' group — clones are positioned at the hull contact in this
+     same model-metre space, so the group must carry no offset of its own. -->
+<T.Group position={[0, 0.2, 0]} userData={{ hideInTree: true, selectable: false }}>
+	<PositionalAudio
+		src={ENGINE_URL + 'metal_scraping.opus'}
+		loop
+		autoplay={false}
+		volume={0}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachScrapeLoop(a)}
+	/>
+</T.Group>
+<T.Group userData={{ hideInTree: true, selectable: false }}>
+	<PositionalAudio
+		src={ENGINE_URL + 'metal_scraping.opus'}
+		autoplay={false}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachScrapeHit(a)}
 	/>
 </T.Group>
