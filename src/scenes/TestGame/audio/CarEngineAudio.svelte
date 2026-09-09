@@ -7,6 +7,8 @@
 		LAYER_FILES,
 		attachEngineLayer,
 		attachGearShift,
+		attachHandbrakePull,
+		attachHandbrakeRelease,
 		attachNitroDrain,
 		attachNitroEnd,
 		attachNitroStart,
@@ -23,9 +25,9 @@
 
 	// The engine's speakers. Mounts the positional voices inside the car — the
 	// rpm bed, the tyre-squeal loop, the chassis-scrape loop + hit-shriek template
-	// and the pop/nitrous/ignition/gear-shift one-shots — and nothing else; every
-	// mixing decision (rpm crossfade, pitch, tyre squeal, scrape) lives in
-	// carAudio.ts, ticked by the task below. Positional because the
+	// and the pop/nitrous/ignition/gear-shift/handbrake one-shots — and nothing
+	// else; every mixing decision (rpm crossfade, pitch, tyre squeal, scrape) lives
+	// in carAudio.ts, ticked by the task below. Positional because the
 	// AudioListener rides the camera (core/Camera.svelte): the engine falls behind
 	// with the car and panners HRTF around it. Same <PositionalAudio> component
 	// DemoScene's orbiting mirror sphere uses.
@@ -144,6 +146,29 @@
 		rolloffFactor={ROLLOFF}
 		maxDistance={MAX_DISTANCE}
 		oncreate={(a: ThreePositionalAudio) => attachGearShift(a)}
+	/>
+</T.Group>
+
+<!-- The handbrake pair: PULL on Space's rising edge, RELEASE on the fall —
+     carAudio.ts edge-detects carSim.handbrake. Cabin, between the seats: the
+     lever is the speaker, not the tyres it locks (the squeal already owns
+     those). -->
+<T.Group position={[0, 0.5, 0.5]} userData={{ hideInTree: true, selectable: false }}>
+	<PositionalAudio
+		src={ENGINE_URL + 'handbrake_pull.opus'}
+		autoplay={false}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachHandbrakePull(a)}
+	/>
+	<PositionalAudio
+		src={ENGINE_URL + 'handbrake_release.opus'}
+		autoplay={false}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachHandbrakeRelease(a)}
 	/>
 </T.Group>
 

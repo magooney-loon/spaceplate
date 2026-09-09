@@ -1147,6 +1147,13 @@ inherit the GR86's ride.
   since they all run through engage(). Edge-detected in the tick, one-shot
   semantics, synced edge state on park/detach like the scrape hit, and not
   separately gated on ignition — the controller already gates shifting on it.
+  HANDBRAKE: `handbrake_pull.opus` / `handbrake_release.opus`, the ignition
+  pair's own shape off `carSim.handbrake` — pull on the rising edge, release
+  on the falling, a plain boolean edge (no seq: the handbrake is a HELD level
+  that changes at most once per frame, not a one-step event). Cabin-mounted
+  between the seats (the lever is the speaker; the squeal's handbrake term
+  already voices the tyres it locks). Not gated on ignition — a cable isn't
+  combustive, and the handbrake works with the engine off.
   TYRES: `tires_squal_loop.opus`, one voice under the car (axle height at the CG) —
   level = the LOOSEST of wheelspin (ramping from the TC lamp's own 0.15), |slip
   angle| (8°–25°, speed-gated; the cluster's slide flag reads 10°),

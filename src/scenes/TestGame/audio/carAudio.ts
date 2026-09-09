@@ -234,6 +234,35 @@ export const attachGearShift = (audio: ThreePositionalAudio): void => {
 	shiftSound = audio;
 };
 
+// ── Handbrake ─────────────────────────────────────────────────────────────
+//
+// The ratchet pair: PULL on the key's rising edge, RELEASE on the falling —
+// the ignition one-shots' own shape, but off `carSim.handbrake`, which the
+// controller publishes every step (the tick reads the car, like everything
+// else here). No seq counter like shifts: the handbrake is a HELD level, not
+// a one-step event — a key changes state at most once per frame, so a boolean
+// edge at tick rate can't miss one. Not gated on ignition — a cable is not
+// combustive (the module's own rule), and the handbrake works with the engine
+// off. The tyres it locks already have their own voice: the squeal's handbrake
+// term.
+
+/** Handbrake one-shot level — cabin mechanicals, under the bed like the
+ * shift bark; dial by ear. */
+const HANDBRAKE_GAIN = 0.7;
+
+/** The mounted pair. Set by the component. */
+let handbrakePull: ThreePositionalAudio | undefined;
+let handbrakeRelease: ThreePositionalAudio | undefined;
+/** Previous tick's handbrake — edge detect for the pair. */
+let handbrakePrev = carSim.handbrake;
+
+export const attachHandbrakePull = (audio: ThreePositionalAudio): void => {
+	handbrakePull = audio;
+};
+export const attachHandbrakeRelease = (audio: ThreePositionalAudio): void => {
+	handbrakeRelease = audio;
+};
+
 // ── Tyres ────────────────────────────────────────────────────────────────────
 //
 // The squeal loop: ONE voice under the car, not per-corner — RWD wheelspin is a
@@ -443,6 +472,9 @@ export const detachCarAudio = (): void => {
 	turnOffSound = undefined;
 	shiftSound = undefined;
 	shiftSeq = carSim.shiftSeq;
+	handbrakePull = undefined;
+	handbrakeRelease = undefined;
+	handbrakePrev = carSim.handbrake;
 	tireSqueal = undefined;
 	squealLevel = 0;
 	scrapeLoop = undefined;
@@ -491,6 +523,11 @@ export const parkCarAudio = (): void => {
 	// seq contract) so re-entry doesn't voice a shift that landed while parked.
 	shiftSeq = carSim.shiftSeq;
 	if (shiftSound?.isPlaying) shiftSound.stop();
+	// The handbrake pair too — and its edge state syncs (ignPrev's own rule:
+	// sync, don't reset, or re-entry voices a phantom release).
+	handbrakePrev = carSim.handbrake;
+	if (handbrakePull?.isPlaying) handbrakePull.stop();
+	if (handbrakeRelease?.isPlaying) handbrakeRelease.stop();
 	// Tyres too — the loop pauses (progress kept), the level resets so re-entry
 	// doesn't fade in a squeal the car isn't making.
 	squealLevel = 0;
@@ -549,6 +586,12 @@ export const tickCarAudio = (delta: number): void => {
 	if (carSim.shiftSeq !== shiftSeq) {
 		shiftSeq = carSim.shiftSeq;
 		playOneShot(shiftSound, SHIFT_GAIN, master);
+	}
+
+	// ── Handbrake edges: pull on the rise, release on the fall. ─────────────
+	if (carSim.handbrake !== handbrakePrev) {
+		handbrakePrev = carSim.handbrake;
+		playOneShot(carSim.handbrake ? handbrakePull : handbrakeRelease, HANDBRAKE_GAIN, master);
 	}
 
 	// Level from the TACHO: idle → limiter maps BED_IDLE → BED_REDLINE, one-pole
