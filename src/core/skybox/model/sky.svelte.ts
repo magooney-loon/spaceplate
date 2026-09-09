@@ -15,7 +15,7 @@ import {
 	type PathOptions
 } from './sunPath';
 import { emit } from './events';
-import { clamp01, lerp, lerpRGB } from './math';
+import { clamp01, lerp, lerpRGB, smooth01 } from './math';
 import {
 	AMBIENT_RETURN,
 	bodyVisibility,
@@ -271,13 +271,31 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	// across one shared weight (a shared `horizon` weight once dimmed the sun AND handed
 	// over to the moon, cutting a horizon sun to an eighth of peak). `sunSet` is the sun's
 	// own extinction across its last six degrees, and nothing else.
-	const sunSet = clamp01((elevation + 6) / 6);
+	//
+	// EVERY RAMP THAT CROSSES THE HORIZON BAND IS A SMOOTHSTEP, NOT A LINEAR CLAMP, and
+	// that is a fix rather than a flourish. A `clamp01` ramp arrives at its ends with a
+	// non-zero slope, so each end is a CORNER: the light's rate of change jumps there
+	// while the sun keeps moving at a constant rate, and at 60x time scale the whole band
+	// is seconds wide, so those corners are what the eye actually reads as the sky "not
+	// blending". `sunSet` was the worst of them by far, because it also drives `sunShare`
+	// below: pinned to exactly 0 at -6 degrees by the clamp, the share went from 0 to 0.75
+	// within ONE degree of elevation, swinging the key light three-quarters of the way
+	// from moon-blue to sun-warm in about four seconds. Smoothstepping it cut the largest
+	// break in the share by ~50x. Endpoints are identical (0 at -6, 1 at 0) and so is the
+	// midpoint, so nothing about the authored levels moved.
+	const sunSet = smooth01(-6, 0, elevation);
 	// Altitude ramp: the sun's STRENGTH keeps growing above the horizon band -- a flat
 	// lerp would put noon-level light on a 9-degree sun. Quarter-strength floor at the
-	// horizon, full output only above 45 degrees.
+	// horizon, full output only above 45 degrees. Deliberately still LINEAR: its corners
+	// sit at 0 and 45 degrees where the light is bright and slow-moving, and easing it
+	// would dim mid-morning by ~15% -- a look change, not a smoothness one.
 	const sunStrength = 0.25 + 0.75 * clamp01(elevation / 45);
 	const sunKey = SUN_INTENSITY * sunSet * sunStrength;
-	const moonKey = MOON_INTENSITY * clamp01(descriptor.moon.elevation / 20);
+	// The moon's own rise/set ramp, shared by its key and its fill so the two cannot
+	// disagree about when the moon is up. Smoothstepped for the reason above; identical
+	// at both ends and at the midpoint.
+	const moonRise = smooth01(0, 20, descriptor.moon.elevation);
+	const moonKey = MOON_INTENSITY * moonRise;
 	// max(), like the ambient fills below: sun and moon are alternatives, so neither is
 	// dimmed by the other fading out.
 	const clearSkyKey = Math.max(sunKey, moonKey);
@@ -315,16 +333,23 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	// Moonlight and twilight are alternatives, combined with max() like the key. Both
 	// are scaled by the deck factor: a real deck blocks them too, and scattered cloud
 	// must leave them alone or the boot default dims every night scene.
-	const moonFill = MOON_AMBIENT * clamp01(descriptor.moon.elevation / 20) * (1 - 0.9 * deck);
-	// A triangle peaked at -6 degrees: rises from -18, full at civil twilight, GONE by
-	// the horizon. -6 is the blind spot this fill exists for -- the dome is black through
+	const moonFill = MOON_AMBIENT * moonRise * (1 - 0.9 * deck);
+	// A HUMP peaked at -6 degrees: rises from -18, full at civil twilight, GONE by the
+	// horizon. -6 is the blind spot this fill exists for -- the dome is black through
 	// civil twilight; above the horizon the env map carries the ambient and a second flat
 	// term would double-count it.
+	//
+	// It used to be a TRIANGLE (two linear clamps), and the apex was the single sharpest
+	// break in the whole light model: the fill climbed at +0.019/degree and reversed to
+	// -0.037/degree at exactly -6, so the ambient stopped brightening and began dimming
+	// between one frame and the next. Both factors are smoothsteps now and both arrive at
+	// -6 with zero slope, which rounds the apex off without moving it or its height.
+	//
+	// The falling half IS `1 - sunSet`, written as such rather than repeated: the fill
+	// hands over to the sun's own extinction curve exactly, so no gap or overlap can open
+	// between them however either is retuned.
 	const twilightFill =
-		TWILIGHT_AMBIENT *
-		clamp01((elevation + 18) / 12) *
-		(1 - clamp01((elevation + 6) / 6)) *
-		(1 - 0.5 * deck);
+		TWILIGHT_AMBIENT * smooth01(-18, -6, elevation) * (1 - sunSet) * (1 - 0.5 * deck);
 	// The overcast return is ADDED, not max()'d: it is the light the deck just took off
 	// the key coming back diffusely (see AMBIENT_RETURN). It scales with what was
 	// actually removed, so a clear sky adds exactly zero.
