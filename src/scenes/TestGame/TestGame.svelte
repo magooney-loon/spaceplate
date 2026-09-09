@@ -11,6 +11,7 @@
 	import type { Mesh } from 'three/webgpu';
 	import { logGltf } from '$extensions/logger';
 	import CarHeadlights from './fx/CarHeadlights.svelte';
+	import CarTaillights from './fx/CarTaillights.svelte';
 	import CarExhaustFlames from './fx/CarExhaustFlames.svelte';
 	import CarEngineAudio from './audio/CarEngineAudio.svelte';
 	import CarWheels from './fx/CarWheels.svelte';
@@ -293,6 +294,9 @@
 				<CarWheels scene={$carModel.scene} visualScale={car.model.scale} {suspension} />
 				<!-- Car-local units on purpose (nose is -Z — see fx/CarHeadlights.svelte). -->
 				<CarHeadlights />
+				<!-- Tail glow + brake flare on the GLB's own lamp material — see
+				     fx/CarTaillights.svelte. Car-local model metres like its siblings. -->
+				<CarTaillights scene={$carModel.scene} />
 				<!-- Exhaust pops on downshifts/limiter — tips from the car's spec, see
 				     fx/CarExhaustFlames.svelte. Car-local model metres like its siblings. -->
 				<CarExhaustFlames />

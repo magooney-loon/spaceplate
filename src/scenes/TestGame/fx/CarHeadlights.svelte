@@ -13,7 +13,7 @@
 		vec3,
 		vec4
 	} from 'three/tsl';
-	import { carLights } from '../sim/carSwitches.svelte';
+	import { carLights, carIgnition } from '../sim/carSwitches.svelte';
 	import { currentCar } from '../cars';
 
 	// Front headlight rig, generic over the car's spec (the lamp anchors come
@@ -344,12 +344,14 @@
 
 	// The mode-dependent uniforms, written the moment `mode` moves. The master switch
 	// is NOT handled here — the power task below owns the on/off ramp — but
-	// `carLights.on` still has to be READ here: on-demand rendering only runs tasks on
-	// rendered frames, and this effect's invalidate() on the toggle edge is what wakes
-	// the loop to run the task.
+	// `carLights.on` and `carIgnition.on` still have to be READ here (the task gates
+	// on both): on-demand rendering only runs tasks on rendered frames, and this
+	// effect's invalidate() on either toggle edge is what wakes the loop to run the
+	// task.
 	$effect(() => {
 		const m = mode;
 		void carLights.on;
+		void carIgnition.on;
 
 		uCutoff.value = m.cutoff;
 		uCutoffKick.value = m.cutoffKick;
@@ -372,7 +374,9 @@
 
 	useTask(
 		(delta) => {
-			const target = carLights.on ? 1 : 0;
+			// Ignition gates the lot: with the car off there is no pool and no lens
+			// glow (CarTaillights kills the bucket emissives with the same switch).
+			const target = carLights.on && carIgnition.on ? 1 : 0;
 			if (Math.abs(target - power) >= POWER_SETTLED) {
 				const tau = target > power ? POWER_ATTACK_TAU : POWER_RELEASE_TAU;
 				power += (target - power) * (1 - Math.exp(-delta / tau));
