@@ -8,6 +8,7 @@ import { afterimageEffect } from './effects/afterimage';
 import { aoEffect } from './effects/ao';
 import { bloomEffect } from './effects/bloom';
 import { dofEffect } from './effects/dof';
+import { fogScatterEffect } from './effects/fogScatter';
 import { fxaaEffect } from './effects/fxaa';
 import { lutEffect } from './effects/lut';
 import { motionBlurEffect } from './effects/motionblur';
@@ -24,6 +25,7 @@ export const EFFECTS: EffectDef<any>[] = [
 	retroEffect,
 	aoEffect,
 	dofEffect,
+	fogScatterEffect,
 	motionBlurEffect,
 	rainLensEffect,
 	snowLensEffect,

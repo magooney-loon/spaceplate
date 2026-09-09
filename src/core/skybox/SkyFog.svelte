@@ -22,6 +22,7 @@
 		uniform
 	} from 'three/tsl';
 	import { clamp01, descriptor, lerp } from './model';
+	import { fogScatterActivity, uFogFar, uFogNear, uFogScatter } from './fogScatter.svelte';
 
 	interface Props {
 		/**
@@ -73,6 +74,16 @@
 		groundFogHeightRange = [4, 20],
 		clearGroundFogShare = 0.35
 	}: Props = $props();
+
+	/**
+	 * Weather `fog` at which the scattering effect enters and leaves the pipeline graph.
+	 * Two thresholds, not one: every crossing is a graph rebuild, and a weather blend
+	 * settling exactly on a single threshold would rebuild every frame. The ON value is
+	 * where a blurred copy of the frame first differs from it visibly; the OFF value is
+	 * low enough that the fade out finishes before the effect leaves.
+	 */
+	const SCATTER_ON = 0.06;
+	const SCATTER_OFF = 0.02;
 
 	const { scene, camera, autoRenderTask } = useThrelte();
 
@@ -138,6 +149,19 @@
 			groundDensityNode.value = groundFogDensity * groundWeight;
 			groundTopNode.value = lerp(groundFogHeightRange[0], groundFogHeightRange[1], groundWeight);
 
+			// The scattering effect's half of the band (fogScatter.svelte.ts). Mirrors, not
+			// state: everything here was computed above, and the effect needs it as uniforms.
+			uFogNear.value = fog.near;
+			uFogFar.value = fog.far;
+			uFogScatter.value = fogWeight;
+
+			// The activity latch, with hysteresis so a fog blend cannot rebuild the pipeline
+			// graph on every frame it spends near the threshold.
+			const scattering = fogScatterActivity.active
+				? fogWeight > SCATTER_OFF
+				: fogWeight > SCATTER_ON;
+			if (scattering !== fogScatterActivity.active) fogScatterActivity.active = scattering;
+
 			// Assigned once. See the header note -- swapping either rebuilds nodes.
 			if (scene.fog !== fog) scene.fog = fog;
 			// `fogNode` is not in @types/three's Scene; same `any`-for-gaps rule as above.
@@ -152,6 +176,12 @@
 
 	$effect(() => {
 		return () => {
+			// The scatter effect outlives this component (it is a pipeline chain effect), and
+			// after unmount nothing schedules the task that would decay these — the same rule
+			// the lens drivers follow. Hard-set to rest, and drop the effect from the graph.
+			uFogScatter.value = 0;
+			fogScatterActivity.active = false;
+
 			scene.fog = previousFog;
 			// Handed back too, or an HDR/cubemap environment would keep rendering the
 			// procedural sky's fog after this component is gone.

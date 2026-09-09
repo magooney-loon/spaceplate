@@ -11,6 +11,7 @@ SkyLight.svelte   — the descriptor-driven key light (sun→moon crossover), a 
                     from Skybox.svelte, per graphics preset (2048 / 1024) (see below)
 keyShadow.ts      — who arms the one shadow render per frame, and from which camera
 SkyFog.svelte     — scene.fog from the day curve + fog channel
+fogScatter.svelte.ts — the uniforms SkyFog feeds the `fogScatter` post effect
 model/            — the pure model + the sky façade (descriptor, skyActions, skyMeta)
 layers/           — every renderer that draws on/around the dome
 environment/      — env-mode state (procedural | HDR | cube) + texture lists
@@ -36,6 +37,16 @@ Two factors, unioned as transmittances (`1 - (1 - range)(1 - height)`):
 Every sky layer sets `material.fog = false` — at radius 1000 any fog would resolve the
 whole sky to flat fog colour (see `layers/CLAUDE.md`). That opt-out still applies on the
 `fogNode` path; `NodeMaterial` gates on `material.fog` before touching the node.
+
+**Both of those terms are ABSORPTION.** The scattering half — a fog bank taking the edge
+off what is inside it, rather than only paling it — is a post-processing effect
+(`core/postprocessing/effects/fogScatter.ts`), because it blurs the composed frame and
+nothing a material can do reaches its neighbours. `SkyFog`'s task drives it through
+`fogScatter.svelte.ts`: the band as uniforms, the weather `fog` channel as the weight,
+and an activity latch with hysteresis so the effect leaves the pipeline graph entirely in
+dry weather. It is gated on the weather channel and never on the day curve's own haze —
+the sky lies past the band's far edge, so it always takes the maximum blur, which is
+right in a fog bank and wrong on a clear evening.
 
 ## The shadow frustum is fitted to the CAMERA (`SkyLight.svelte`)
 

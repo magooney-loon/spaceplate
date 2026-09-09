@@ -134,11 +134,7 @@
 			const { direction, color, intensity, ambient } = descriptor.light;
 			// A SunLight shines from its position toward the origin, so the position IS the
 			// direction; `distance` only decides where the gizmo sits (see the prop).
-			light.position.set(
-				direction.x * distance,
-				direction.y * distance,
-				direction.z * distance
-			);
+			light.position.set(direction.x * distance, direction.y * distance, direction.z * distance);
 			light.color.setRGB(color[0], color[1], color[2]);
 			light.intensity = intensity;
 

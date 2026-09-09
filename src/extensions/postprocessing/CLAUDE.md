@@ -16,9 +16,10 @@ pipeline itself never imports from here except the state (via Renderer.svelte).
 
 ## Effects (registry-driven)
 
-Eleven effects. Base passes (mutually exclusive): `ssaa`, `retro` — else the default
-`pass()`. Chain: `ao`, `dof`, `motionBlur`, `bloom`, `afterimage`, `vignette`. Grade
-(**not** exclusive): `lut`. Anti-aliasing (mutually exclusive): `smaa`, `fxaa`.
+Base passes (mutually exclusive): `ssaa`, `retro` — else the default `pass()`. Chain:
+`ao`, `dof`, `fogScatter`, `motionBlur`, `rainLens`, `snowLens`, `bloom`, `afterimage`,
+`vignette`. Grade (**not** exclusive): `lut`. Anti-aliasing (mutually exclusive):
+`smaa`, `fxaa`.
 
 `pixelation`, `ssgi`, `ssr` and `traa` were **removed** — files deleted, not
 disabled. Don't re-add one by half-measures: `$core/postprocessing/CLAUDE.md`
@@ -63,6 +64,11 @@ model is lit from the inside by the whole sky. Off by default — read its secti
 - `lut` and `fxaa` declare `displayColor`: the **builder** turns off
   `outputColorTransform` and folds in one `renderOutput()` for whoever asks. An effect
   must never do this itself — with two of them you would tone-map twice.
+- `fogScatter` is DEFAULT-ENABLED and costs nothing until it is foggy: `SkyFog`'s task
+  drives it from the weather `fog` channel and flips a structural latch
+  (`$core/skybox/fogScatter.svelte.ts`) that keeps it out of the graph below a low
+  threshold, hysteresis and all. "Enabled" here means "let the weather decide"; the
+  params only shape what it does once the weather has.
 - `afterimage` is the one effect that is DEFAULT-ENABLED with a zero look: `damp`
   defaults 0 (a passthrough — the node trails only bright pixels), and runtime
   drivers add a boost on top inside the shader (`uAfterimageBoost`; TestGame's

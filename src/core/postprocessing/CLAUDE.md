@@ -11,9 +11,9 @@ registry.ts    — EFFECTS list + resolveEnabledSet policy + structuralKeyOf
 build.ts       — the builder: base pass, MRT union, chain fold, grade, resolve, fallback
 uniforms.ts    — createUniformBag / writeUniformBag — the hot-update path
 luts.svelte.ts — LUT catalogue + async load cache (three's nine example LUTs, public/luts/)
-effects/*.ts   — 13 EffectDefs: ssaa, retro (base) · ao, dof, motionBlur, rainLens,
-                 snowLens, bloom (+lensflare sub-toggle), afterimage, vignette (chain) ·
-                 lut (grade) · smaa, fxaa (AA)
+effects/*.ts   — 14 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, motionBlur,
+                 rainLens, snowLens, bloom (+lensflare sub-toggle), afterimage,
+                 vignette (chain) · lut (grade) · smaa, fxaa (AA)
 ```
 
 ## Roles — effects are not peers
@@ -74,6 +74,15 @@ schedules the task again to decay them.
   `LensDriver.svelte`; DRY effects leave the graph entirely via the
   `lensActivity` structural latch, because a dry lens still evaluates the droplet
   field three times per pixel, fullscreen.
+- **`fogScatter`** — the fog band and the weather's `fog` channel, written by
+  `SkyFog.svelte`'s task into `$core/skybox/fogScatter.svelte.ts`. Same shape as the
+  lenses, including the latch (an inactive scatter still allocates a full-frame target
+  and regenerates a mip chain every frame), and the same reason for the hysteresis. Its
+  weight is the WEATHER channel alone, never the day curve's haze: the sky sits past the
+  band's far edge and takes the maximum blur of anything on screen, which is right inside
+  a fog bank and very wrong on a clear evening. **A storm activates this AND `rainLens`**
+  — two full-frame targets and two mip chains, the one place the weather-latched effects
+  stack. Budget for it there, not in clear weather where neither is in the graph.
 - **`afterimage`** — nitrous trails (TestGame's `NitrousAfterimage.svelte`
   writes `uAfterimageBoost` from the car's spray flow). The OPPOSITE latch
   decision: enabled by DEFAULT with `damp` 0 (a pure passthrough — the node is a
@@ -194,6 +203,15 @@ returns already-cubic sources verbatim, so our cube `scene.environment` (what
 - **`dof.ts`** — the basic DoF: `mix(color, boxBlur(color), smoothstep(min, max,
 abs(viewZ + focus)))`. The bokeh `DepthOfFieldNode` was dropped for performance (one
   box blur vs its multi-pass kernel). viewZ from `basePass.getViewZNode()`, no MRT.
+- **`fogScatter.ts`** — the frame mixed against a blurred copy of itself on the fog band
+  (three's `webgpu_custom_fog_scattering`), which is the scattering half of fog that a
+  `fogNode` cannot do: absorption pales a distant silhouette, scattering is what takes
+  its edge away. The blur is a **mip level**, not a gaussian — the effect wants a broad
+  low-frequency smear and that is what a mip chain already is, via the `rtt()` +
+  `levelNode` route the lens effects established. The reference demo uses `gaussianBlur`,
+  several taps per pixel for something one bilinear fetch approximates here. The mip
+  level RAMPS with the band rather than sitting at its maximum everywhere, or the pixels
+  at the camera's feet would be as soft as the horizon.
 - **`motionBlur`** — three's Fn is the one sampler addon that does NOT
   `convertToTexture` its input; our wrapper does (an RTT when fed a computed node,
   e.g. anything after the basic DoF), otherwise it throws `inputNode.sample is not a

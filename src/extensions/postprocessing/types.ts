@@ -5,6 +5,7 @@
 import type { AfterimageParams } from '$core/postprocessing/effects/afterimage';
 import type { BloomParams } from '$core/postprocessing/effects/bloom';
 import type { DofParams } from '$core/postprocessing/effects/dof';
+import type { FogScatterParams } from '$core/postprocessing/effects/fogScatter';
 import type { FxaaParams } from '$core/postprocessing/effects/fxaa';
 import type { LutParams } from '$core/postprocessing/effects/lut';
 import type { MotionBlurParams } from '$core/postprocessing/effects/motionblur';
@@ -19,6 +20,7 @@ type ParamMap = {
 	bloom: BloomParams;
 	afterimage: AfterimageParams;
 	dof: DofParams;
+	fogScatter: FogScatterParams;
 	motionBlur: MotionBlurParams;
 	vignette: VignetteParams;
 	lut: LutParams;
