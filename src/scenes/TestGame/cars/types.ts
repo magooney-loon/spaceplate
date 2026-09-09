@@ -235,6 +235,10 @@ export type CarSpec = {
 		/** Exhaust tip openings, model metres — flames spawn here, pop audio
 		 *  parents here. Two entries, [left, right]. */
 		exhaustTips: readonly (readonly [number, number, number])[];
+		/** Nitrous purge-vent anchors, model metres — the standstill purge cloud
+		 *  (fx/NitrousPurge.svelte) spawns here; the jets aim up-and-out on the
+		 *  car's own basis. Two entries, [left, right]. */
+		purgeVents: readonly (readonly [number, number, number])[];
 		/** Headlamp anchors, model metres, + the pitch the beams aim at. */
 		lamp: {
 			x: number;

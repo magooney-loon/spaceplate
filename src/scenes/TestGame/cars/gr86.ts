@@ -264,6 +264,15 @@ export const gr86 = {
 			[-0.446, 0.293, 2.05],
 			[0.446, 0.293, 2.05]
 		],
+		/** Hand-placed at the cowl corners (inboard of the wipers, a hair above
+		 *  the hood surface) rather than measured like the tips: the show kit
+		 *  purges through the hood at the windshield base, where the plume
+		 *  clears the roofline from the chase cam. Re-measure off the GLB if it
+		 *  ever reads off the surface. */
+		purgeVents: [
+			[-0.44, 0.88, -0.72],
+			[0.44, 0.88, -0.72]
+		],
 		lamp: {
 			x: 0.65,
 			y: 0.66,

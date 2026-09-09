@@ -132,6 +132,10 @@ export const attachPopAudio = (take: number, audio: ThreePositionalAudio): void 
 // first frame the flow clearly FALLS from on (a drop >3%/frame only happens
 // when the pedal lifts or the bottle runs dry — both are releases). The files
 // peak near 0 dBFS as delivered, so these gains are pure mixes.
+// The PURGE (carSim.nitrousPurge) shares the drain loop, blended UNDER the
+// spray — a quieter hiss of the same character from the same engine-bay mount
+// the line and solenoids live under — so the standstill vent needs no fourth
+// voice, and the engage/release one-shots ride the combined edges for free.
 
 /** Drain-loop level at full flow — a hiss under the engine, not over it. */
 const NITRO_GAIN = 0.5;
@@ -139,6 +143,9 @@ const NITRO_GAIN = 0.5;
 const NITRO_SHOT_GAIN = 0.9;
 /** Flow above this = system on (the ~0.13 s attack crosses it in a frame or two). */
 const NITRO_ON_FLOW = 0.02;
+/** Purge blend into the drain voice — the vent is a smaller hole than the
+ *  nozzle: the same hiss at less than half the spray's presence. */
+const NITRO_PURGE_MIX = 0.45;
 
 /** The mounted nitrous voices. Set by the component. */
 let nitroDrain: ThreePositionalAudio | undefined;
@@ -628,8 +635,10 @@ export const tickCarAudio = (delta: number): void => {
 		}
 	}
 
-	// ── Nitrous: edges on the flow, then the drain loop rides what's left. ──────
-	const flow = clamp(carSim.nitrous, 0, 1);
+	// ── Nitrous: edges on the flow, then the drain loop rides what's left.
+	// The purge blends in UNDER the spray — same drain voice, same solenoid
+	// one-shots on the combined edges (a purge engage is an engage). ──────
+	const flow = clamp(Math.max(carSim.nitrous, carSim.nitrousPurge * NITRO_PURGE_MIX), 0, 1);
 	if (!nitroOn && flow > NITRO_ON_FLOW) {
 		nitroOn = true;
 		nitroReleased = false;

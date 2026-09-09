@@ -68,15 +68,30 @@ const DRIFT_GATE_SPEED = 1;
 const DRIFT_GATE_RAMP = 2;
 
 // ── Nitrous (Shift) ──────────────────────────────────────────────────────────
-// A wet kit on a throttle switch: Shift alone does nothing — it sprays only while
-// the throttle is open in a forward gear, and only while the bottle has anything
-// left. The KIT is the car's (spec hardware: torque gain, bottle size, regen, the
+// A wet kit on a throttle switch: Shift with the throttle open in a forward
+// gear SPRAYS; Shift with that gate shut (no throttle, or N/R) PURGES the line
+// at the hood instead — the show-off hiss at a standstill and on the line. The
+// KIT is the car's (spec hardware: torque gain, bottle size, regen, the
 // flow ramp — `hw.nitrous*`); the controller owns the live state — bottle level,
 // smoothed flow — and the gating. The drivetrain applies the torque gain inside
 // its own traction limit. So a shot in 1st is wheelspin, a shot in 3rd is thrust,
 // and Drift + spray in 3rd is smoke.
 /** Below this the bottle counts as dry and the switch opens. */
 const NITROUS_DRY = 0.01;
+
+// ── The purge valve ─────────────────────────────────────────────────────────
+// A solenoid SNAP, not the kit's flow ramp: the vent dumps line pressure into
+// the air, so it opens faster than the spray bites and shuts on a short tail.
+// 1/s rates like every damping constant here, so the physics framerate stays a
+// free knob (the 200 Hz note above).
+/** Purge flow ramp in, 1/s. */
+const PURGE_ATTACK = 30;
+/** Purge flow ramp out, 1/s. */
+const PURGE_RELEASE = 14;
+/** Purge drain as a fraction of full spray — the vent empties the LINE, not
+ *  the bottle: taps are ~free, holding it showboating costs the kit (~16 s of
+ *  continuous hiss on a full bottle). */
+const PURGE_COST = 0.25;
 
 export function createCarController(spec: CarSpec, world: World) {
 	const drivetrain = createDrivetrain(spec);
@@ -104,8 +119,10 @@ export function createCarController(spec: CarSpec, world: World) {
 	// Nitrous + startup state — the scene used to own these locals.
 	let nitrousBottle = 1; // 0..1
 	/** 0..1 — smoothed spray level. This is what reaches the drivetrain, the
-	 * flames (blue mix + pilot jet) and the HUD, never the raw key. */
+	 *  flames (blue mix + pilot jet) and the HUD, never the raw key. */
 	let nitrousFlow = 0;
+	/** 0..1 — smoothed PURGE flow (the standstill vent; see the bottle block). */
+	let nitrousPurge = 0;
 	/** Seconds since ignition-on edge. Drives the startup RPM ramp (idle → 2k → idle). */
 	let startupTimer = 0;
 
@@ -167,18 +184,27 @@ export function createCarController(spec: CarSpec, world: World) {
 		// The bottle. Runs BEFORE the idle early-return below so it regenerates while
 		// parked too, and so `nitrousFlow` is already honest when the idle branch
 		// publishes it. Note the throttle switch reads the gated ↑ key: parked with
-		// Shift held but no throttle, nothing sprays (and the car may sleep).
-		const spraying =
-			ignOn &&
-			carControls.pressed('nitrous') &&
-			carControls.pressed('throttle') &&
-			drivetrain.state.gear >= 1 &&
-			nitrousBottle > NITROUS_DRY;
+		// Shift held but no throttle, nothing sprays — the line PURGES instead (and
+		// the car may sleep through it; the FX owns its own invalidate).
+		const nitrousHeld = ignOn && carControls.pressed('nitrous') && nitrousBottle > NITROUS_DRY;
+		const spraying = nitrousHeld && carControls.pressed('throttle') && drivetrain.state.gear >= 1;
+		// THE PURGE — the same pedal with the spray gate shut (no throttle, or N/R)
+		// vents the line at the hood instead of feeding the intake: the cryo plume
+		// sitting on the line, revving in N, rolling off-throttle in gear. A trickle
+		// of bottle (the line's worth), so it cannot hiss forever on a dry kit.
+		const purging = nitrousHeld && !spraying;
 		nitrousFlow +=
 			((spraying ? 1 : 0) - nitrousFlow) *
 			damp(spraying ? hw.nitrousAttack : hw.nitrousRelease, delta);
+		nitrousPurge +=
+			((purging ? 1 : 0) - nitrousPurge) * damp(purging ? PURGE_ATTACK : PURGE_RELEASE, delta);
 		if (spraying) {
 			nitrousBottle = Math.max(0, nitrousBottle - (nitrousFlow * delta) / hw.nitrousCapacity);
+		} else if (purging) {
+			nitrousBottle = Math.max(
+				0,
+				nitrousBottle - (nitrousPurge * delta * PURGE_COST) / hw.nitrousCapacity
+			);
 		} else {
 			nitrousBottle = Math.min(1, nitrousBottle + hw.nitrousRegen * delta);
 		}
@@ -242,6 +268,9 @@ export function createCarController(spec: CarSpec, world: World) {
 			carSim.limiting = false;
 			carSim.nitrous = 0;
 			carSim.nitrousTank = nitrousBottle;
+			// The kit isn't live until the startup sequence hands over — same rule
+			// as the flow above.
+			carSim.nitrousPurge = 0;
 			carSim.accelFwd = 0;
 			carSim.accelLat = 0;
 			parkDebugTelemetry();
@@ -281,6 +310,10 @@ export function createCarController(spec: CarSpec, world: World) {
 			carSim.limiting = false;
 			carSim.nitrous = nitrousFlow;
 			carSim.nitrousTank = nitrousBottle;
+			// THE parked purge publish — the idle branch is exactly where the vent
+			// gets held (no pedals, body sleeping; the FX and the drain hiss run
+			// off this number from their own always-running tasks).
+			carSim.nitrousPurge = nitrousPurge;
 			// Parked: the suspension has nothing to lean on, so it rests.
 			carSim.accelFwd = 0;
 			carSim.accelLat = 0;
@@ -461,6 +494,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		carSim.limiting = drivetrain.state.limiting;
 		carSim.nitrous = nitrousFlow;
 		carSim.nitrousTank = nitrousBottle;
+		carSim.nitrousPurge = nitrousPurge;
 
 		// ── The debug feed ──────────────────────────────────────────────────
 		// Publishes only — every number here was already computed above. They
@@ -525,6 +559,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		// The bottle as well, to match the fresh carSim mirror.
 		nitrousBottle = 1;
 		nitrousFlow = 0;
+		nitrousPurge = 0;
 		startupTimer = 0;
 	}
 

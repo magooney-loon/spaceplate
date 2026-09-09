@@ -61,6 +61,11 @@ export const carSim = {
 	nitrous: 0,
 	/** 0..1 — bottle level. Drains while spraying, regenerates otherwise. */
 	nitrousTank: 1,
+	/** 0..1 — nitrous PURGE flow: the pedal held with the spray gate shut
+	 *  (no throttle, or N/R — the standstill hiss out of the hood's vents;
+	 *  the controller's `purging`). Read by fx/NitrousPurge for the cryo
+	 *  plume; carAudio rides it onto the drain loop's hiss. */
+	nitrousPurge: 0,
 	/** s remaining on the PERFECT LAUNCH cluster flash — set when a rev-match
 	 *  launch lands (1st slotted from N, revs in the 4–6k window; drivetrain.ts
 	 *  flags the frame), counted down in the task. The HUD mirrors it as a
@@ -399,6 +404,7 @@ export function resetCarTelemetry(): void {
 	// The bottle refills on scene exit to match the fresh component state the
 	// next mount starts with.
 	carSim.nitrousTank = 1;
+	carSim.nitrousPurge = 0;
 	carSim.perfectLaunch = 0;
 	carSim.launchTier = 0;
 	carSim.launch = 0;

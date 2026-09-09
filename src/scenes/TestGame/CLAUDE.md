@@ -83,6 +83,12 @@ fx/                     — the car's visual effects
   CarExhaustFlames.svelte — downshift/limiter exhaust pops + the blue nitrous pilot
                          jet (TSL, from the three.js webgpu_tsl_vfx_flames example);
                          tips come from the spec
+  NitrousPurge.svelte    — the nitrous purge: the pedal held with the spray gate
+                         shut (no throttle or N/R — the controller's `purging`)
+                         vents the line at the hood in a cold white jet from the
+                         spec's purgeVents (a puffPool STREAM, TireSmoke's
+                         continuous pattern; the drain hiss rides the nitrous
+                         voices in carAudio, blended under the spray)
   CarHeadlights.svelte  — car-local lights (nose is -Z); lamp anchors from the spec
   CarImpacts.svelte     — hit/scrape sparks off the chassis hull's contact point:
                          a rising edge = burst + dust cough, pressed-and-sliding =
@@ -226,6 +232,17 @@ drive the blue flames, the cluster's N2O gauge, the chase camera's FOV kick and
 the afterimage smear (`NitrousAfterimage.svelte` easing `uAfterimageBoost` — the
 effect is default-enabled at damp 0, so the smear only exists while nitrous
 does).
+
+Held with that gate SHUT (no throttle, or N/R — the standstill/not-driving half
+of the same pedal) the kit PURGES instead: the controller's `purging` vents the
+line at the hood, `carSim.nitrousPurge` (smoothed 0..1, a solenoid snap — faster
+in/out than the spray's ramp) driving `fx/NitrousPurge.svelte`'s cold white
+plume from the spec's `geometry.purgeVents` and, in carAudio, the drain-loop
+hiss blended under the spray (`NITRO_PURGE_MIX` — same voice, no fourth source;
+the engage/release one-shots ride the combined edges). It costs a trickle of
+bottle (`PURGE_COST`, a quarter of spray rate — ~16 s of continuous show-off on
+a full kit), and it works through the idle branch, so the body sleeps on while
+the parked car hisses (the FX owns its own invalidate).
 
 **Pedals and switches are read differently, and that split is the whole reason
 `sim/carSwitches.svelte.ts` still exists.** The PEDALS are continuous, so

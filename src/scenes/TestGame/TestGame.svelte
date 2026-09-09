@@ -14,6 +14,7 @@
 	import CarHeadlights from './fx/CarHeadlights.svelte';
 	import CarTaillights from './fx/CarTaillights.svelte';
 	import CarExhaustFlames from './fx/CarExhaustFlames.svelte';
+	import NitrousPurge from './fx/NitrousPurge.svelte';
 	import CarEngineAudio from './audio/CarEngineAudio.svelte';
 	import CarWheels from './fx/CarWheels.svelte';
 	import DebugRig from './debug/DebugRig.svelte';
@@ -317,6 +318,10 @@
 				<!-- Exhaust pops on downshifts/limiter — tips from the car's spec, see
 				     fx/CarExhaustFlames.svelte. Car-local model metres like its siblings. -->
 				<CarExhaustFlames />
+				<!-- Nitrous purge — the pedal held with the spray gate shut vents the
+				     line at the hood; vents from the car's spec, see fx/NitrousPurge.svelte.
+				     Car-local model metres like its siblings. -->
+				<NitrousPurge />
 				<!-- Engine audio — positional rpm bed + lift-off one-shot, task-ticked from
 				     carSim (audio/CarEngineAudio.svelte / carAudio.ts). -->
 				<CarEngineAudio />
