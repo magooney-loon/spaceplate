@@ -5,14 +5,8 @@
 	import {
 		Fn,
 		color,
-		float,
-		modelViewMatrix,
-		mx_fractal_noise_float,
 		normalView,
-		positionLocal,
-		positionView,
 		positionViewDirection,
-		positionWorld,
 		uniform,
 		uv,
 		vec2,
@@ -25,21 +19,14 @@
 	// Front headlight rig, generic over the car's spec (the lamp anchors come
 	// from cars/; everything else is this rig's own tuning). Mounts INSIDE the
 	//
-	// Three layers per side, cheapest-first:
+	// Two layers per side, cheapest-first:
 	//   1. a ProjectorLight for the pool on the road — a SpotLight whose attenuation is a
 	//      rectangular frustum instead of a cone, with a TSL `colorNode` painting the
 	//      pattern inside it (low-beam cutoff, kerb-side kick-up, hot spot, lens fringe).
 	//      This is what makes the pool read as a headlight and not as a torch;
-	//   2. two additive TSL-shaded cones for the light hanging in the air — a wide soft
-	//      wash plus a narrow core, both shaped across their cross-section so the beam is
-	//      a flat blade with a soft top edge, and both dusted with world-space noise;
-	//   3. an HDR emitter card at the lens — core, halo and a star flare that only opens
+	//   2. an HDR emitter card at the lens — core, halo and a star flare that only opens
 	//      up when you are in front of the car. >1 radiance, so it tone-maps hot and
 	//      feeds Bloom (global mode is on by default, so its ghosts come for free).
-	//
-	// The volumetric-lighting example (DOCS/three.js-dev/examples/webgpu_volume_lighting)
-	// ray-marches a VolumeNodeMaterial in its own quarter-res pipeline pass. That is
-	// engine work — this rig is scene content, so the volume stays faked in-scene.
 	//
 	// The `lights` / `highBeam` slots toggle these (sim/carControls.ts declares them,
 	// carSwitches.svelte.ts latches `carLights`; L and K by default). The
@@ -62,7 +49,7 @@
 	// ------------------------------------------------------------------- light
 
 	// Cool-white LED projectors (the spec's colour). For an old halogen look use
-	// (1.0, 0.93, 0.82) in the spec and in the beam/emitter colours below.
+	// (1.0, 0.93, 0.82) in the spec and in the emitter colours below.
 	const LAMP_COLOR = new THREE.Color(lampColor[0], lampColor[1], lampColor[2]);
 
 	const LIGHT_DISTANCE = 420; // world units, not scaled by the group's 2.5
@@ -74,29 +61,15 @@
 	const LIGHT_DECAY = 1.35;
 	const LIGHT_CAST_SHADOW = false; // two shadowed lights over the track trimesh is pricey
 
-	// The light aims independently of the visible cones, by moving its target: `aim` is
-	// the drop over AIM_DISTANCE, ON TOP of the group's BEAM_PITCH. A negative `aim`
-	// therefore lifts the axis back toward level. The cones must NOT follow a dipped
-	// beam down — they would plunge into the tarmac — which is why the two are separate.
+	// The light aims by moving its target: `aim` is the drop over AIM_DISTANCE, ON TOP
+	// of the group's BEAM_PITCH. A negative `aim` therefore lifts the axis back toward
+	// level.
 	const AIM_DISTANCE = 8;
 
 	const CUTOFF_SOFT = 0.055;
 	const FRINGE_COLOR = color(0.25, 0.45, 1.0);
 	const FRINGE_GAIN = 0.35;
 	const FRINGE_WIDTH = 0.05;
-
-	// --------------------------------------------------------------- beam cones
-
-	const BEAM_TIP = 0.03; // cone radius at the lamp, as a fraction of the far radius
-	const BEAM_EMERGE = 0.965; // the last stretch at the lamp fades into the emitter glow
-	const BEAM_CAMERA_FADE = 4; // world units — nothing solid when the chase cam swings in
-	const BEAM_DUST_SCALE = 2.5; // world-space noise frequency (see the note on `dust`)
-	// How much of the cone survives when you are looking INTO the beam (see `phase`).
-	const BEAM_HEADON = 0.16;
-	// Width of the top-arc fade, below `roof` (which is where that fade ENDS).
-	const BEAM_ROOF_SPAN = 0.85;
-	const BEAM_NEAR_COLOR = color(0.9, 0.95, 1.0);
-	const BEAM_FAR_COLOR = color(0.6, 0.74, 1.0);
 
 	// ------------------------------------------------------------------- modes
 	//
@@ -117,15 +90,6 @@
 		hotspotGain: number;
 		/** Fill below the cutoff: [everywhere, extra in the middle of the width]. */
 		wash: [number, number];
-		/** Multiplier on both cones. */
-		beamGain: number;
-		/** Where the cones' top-arc fade ends: -1 is the very top, 0 the sides. */
-		roof: number;
-		/** Radians the cones are lifted out of BEAM_PITCH (main beam runs level). */
-		coneLift: number;
-		/** [half width, length, half height], car-local metres. */
-		washSize: [number, number, number];
-		coreSize: [number, number, number];
 		/** Multiplier on the lens card. */
 		emitterGain: number;
 	};
@@ -138,11 +102,6 @@
 		hotspot: [0.4, 0.4, 0.3], // peak sits immediately UNDER the cutoff, as on a real lamp
 		hotspotGain: 1.7,
 		wash: [0.18, 0.55],
-		beamGain: 1,
-		roof: -0.05,
-		coneLift: 0,
-		washSize: [1.8, 9, 0.5],
-		coreSize: [0.8, 11, 0.3],
 		emitterGain: 1
 	};
 
@@ -154,11 +113,6 @@
 		hotspot: [-0.05, 0.32, 0.36], // round and centred on the axis, not a wide blade
 		hotspotGain: 2.6,
 		wash: [0.1, 0.45], // a main beam is a spot, so it leans on the hot spot instead
-		beamGain: 1.7,
-		roof: -0.6, // the cones keep their top: no cutoff to imply
-		coneLift: 0.045, // cancels BEAM_PITCH, so the shafts run level and stay off the road
-		washSize: [2.2, 14, 1.0],
-		coreSize: [1.0, 22, 0.55],
 		emitterGain: 1.5
 	};
 
@@ -192,8 +146,6 @@
 	const uHotspot = uniform(new THREE.Vector3(...DIPPED.hotspot));
 	const uHotspotGain = uniform(DIPPED.hotspotGain);
 	const uWash = uniform(new THREE.Vector2(...DIPPED.wash));
-	const uBeamGain = uniform(DIPPED.beamGain);
-	const uRoof = uniform(DIPPED.roof);
 	const uEmitterGain = uniform(DIPPED.emitterGain);
 
 	/**
@@ -245,125 +197,6 @@
 		return vec3(lit).add(FRINGE_COLOR.mul(fringe).mul(FRINGE_GAIN));
 	});
 
-	type BeamOptions = {
-		name: string;
-		/** Peak additive radiance at the lamp. */
-		strength: number;
-		/** Exponent on the length fade — higher pulls the light back toward the lamp. */
-		falloff: number;
-		/** Exponent on the view-facing term — higher is a thinner, wispier volume. */
-		body: number;
-		/** How much the world-space dust noise modulates it (0 = clean cone). */
-		dust: number;
-	};
-
-	/**
-	 * One additive cone. The mesh is a UNIT cone (far radius 1, length 1) scaled
-	 * per-instance, so the shader can work in cross-section units and both cones share
-	 * one geometry.
-	 */
-	const makeBeamMaterial = (o: BeamOptions) => {
-		const material = new THREE.MeshBasicNodeMaterial({
-			transparent: true,
-			depthWrite: false,
-			blending: THREE.AdditiveBlending,
-			side: THREE.DoubleSide
-		});
-		material.name = o.name;
-		// Fog would mix the (mostly zero) cone colour toward the fog colour and additive
-		// blending would then ADD that — under weather fog the whole cone silhouette
-		// would light up as a solid shape. Same reason on the emitter card.
-		material.fog = false;
-
-		// CylinderGeometry's uv.y is 1 at +Y (radiusTop) and 0 at -Y; the mesh is rotated
-		// so +Y faces the lamp, so uv.y = 1 is AT the lamp.
-		const uvY = uv().y;
-		const along = uvY.oneMinus(); // 0 at the lamp → 1 at the far end
-
-		// Geometry radius of this ring, and the fragment's position on the unit
-		// cross-section: .x runs side to side, .y is +down (local +Z maps to parent -Y
-		// through the mesh's +π/2 rotation about X).
-		const shellR = along.mul(1 - BEAM_TIP).add(BEAM_TIP);
-		const cross = positionLocal.xz.div(shellR);
-
-		const axial = uvY.pow(o.falloff);
-		const emerge = uvY.smoothstep(BEAM_EMERGE, 1).oneMinus();
-
-		// Fake volume thickness: a shell is brightest where its normal faces the camera
-		// (you are looking through the middle of the cone) and vanishes at the
-		// silhouette. `abs()` because the material is double-sided and the back faces
-		// come through with negated normals.
-		const thickness = normalView.dot(positionViewDirection).abs().pow(o.body);
-
-		// Cross-section profile. On dipped beam the top arc fades out completely (that
-		// soft upper edge IS the cutoff, seen side-on) and the bottom arc is held back,
-		// so the beam reads as a flat blade and the line where the cone cuts the road
-		// stays faint. `uRoof` walks the top fade back for main beam, which has no
-		// cutoff to imply and wants a rounder shaft.
-		const profile = cross.y
-			.smoothstep(uRoof.sub(BEAM_ROOF_SPAN), uRoof)
-			.mul(cross.y.smoothstep(0.45, 1).oneMinus().mul(0.65).add(0.35));
-
-		// Airborne dust, sampled in WORLD space: driving sweeps the beam through a static
-		// field, so it shimmers while moving without a `time` node — which would need its
-		// own invalidate() owner to animate under on-demand rendering.
-		const dust = mx_fractal_noise_float(positionWorld.mul(BEAM_DUST_SCALE), 2).mul(o.dust).add(1);
-
-		// Scatter phase — and this one is deliberately BACKWARDS from the physics. The
-		// cone's local -Y is the direction the light travels (+Y is the lamp), so
-		// `cosPhase` is +1 with the camera behind the car (back-scatter, the chase view
-		// the beams exist for) and -1 head-on (forward-scatter, which in reality is the
-		// strongest lobe by far). Rendered honestly, head-on fills the screen with flat
-		// milky sheets and washes the car out; the dazzle is already carried by the
-		// emitter's HDR core and bloom, so the shafts get pulled way back instead.
-		const beamAxis = modelViewMatrix
-			.mul(vec4(0, 1, 0, 0))
-			.xyz.normalize()
-			.negate();
-		const cosPhase = beamAxis.dot(positionView.normalize());
-		const phase = cosPhase.smoothstep(-0.75, 0.15).mix(BEAM_HEADON, 1);
-
-		// No wall of light when the camera ends up inside the cone.
-		const nearCamera = positionView.length().smoothstep(BEAM_CAMERA_FADE * 0.3, BEAM_CAMERA_FADE);
-
-		const strength = float(o.strength)
-			.mul(uBeamGain)
-			.mul(axial)
-			.mul(emerge)
-			.mul(thickness)
-			.mul(profile)
-			.mul(dust)
-			.mul(phase)
-			.mul(nearCamera);
-
-		// colorNode, never fragmentNode (§1.5). Alpha stays 1: AdditiveBlending is
-		// SrcAlpha·src + dst, so the fades belong in rgb only — putting them in alpha too
-		// squares them and eats the faint end of every gradient.
-		material.colorNode = vec4(along.mix(BEAM_NEAR_COLOR, BEAM_FAR_COLOR).mul(strength), 1);
-
-		return material;
-	};
-
-	// `body` is the exponent on the view-facing term, i.e. how hard the shell falls off
-	// toward its own silhouette. Low values give a cone with a readable straight EDGE —
-	// which is what makes it look like a flat sheet rather than a volume — so both sit
-	// well above 1 and the strengths carry the brightness instead.
-	const washMaterial = makeBeamMaterial({
-		name: 'HeadlightBeamWash',
-		strength: 0.34,
-		falloff: 1.9,
-		body: 2.1,
-		dust: 0.35
-	});
-
-	const coreMaterial = makeBeamMaterial({
-		name: 'HeadlightBeamCore',
-		strength: 0.58,
-		falloff: 2.4,
-		body: 2.4,
-		dust: 0.18
-	});
-
 	// The emitter: a lit slot, a halo around it, and a star flare. Shaped in UV rather
 	// than modelled, so the quad's own corners are never visible. FrontSide — the card
 	// faces forward and the bodywork occludes it from behind anyway.
@@ -411,9 +244,6 @@
 
 	// -------------------------------------------------------------- the objects
 
-	// Unit cone: far radius 1, length 1, open-ended (a far cap would read as a glowing
-	// disc). Each mesh scales it into place, so one geometry serves all four cones.
-	const beamGeometry = new THREE.CylinderGeometry(BEAM_TIP, 1, 1, 28, 1, true);
 	const emitterGeometry = new THREE.PlaneGeometry(CARD_SIZE, CARD_SIZE);
 
 	/** `colorNode` is a WebGPU-only hook @types/three doesn't declare on lights. */
@@ -476,8 +306,6 @@
 		uHotspot.value.set(...m.hotspot);
 		uHotspotGain.value = m.hotspotGain;
 		uWash.value.set(...m.wash);
-		uBeamGain.value = m.beamGain;
-		uRoof.value = m.roof;
 		uEmitterGain.value = m.emitterGain;
 
 		// Rendering is on-demand: a uniform write moves nothing on its own, so flicking
@@ -486,10 +314,7 @@
 	});
 
 	onDestroy(() => {
-		washMaterial.dispose();
-		coreMaterial.dispose();
 		emitterMaterial.dispose();
-		beamGeometry.dispose();
 		emitterGeometry.dispose();
 		lampL.light.dispose();
 		lampR.light.dispose();
@@ -499,36 +324,6 @@
 {#snippet lamp({ light, target }: { light: PatternLight; target: THREE.Object3D })}
 	<T is={light} />
 	<T is={target} position={[0, -mode.aim, -AIM_DISTANCE]} />
-
-	<!-- The cones: rotation.x = +π/2 maps +Y → +Z, so the narrow top (uv.y = 1) sits at
-	     the lamp (z = 0) and the cone widens toward −Z (forward). With −π/2 it inverts —
-	     a narrow bright tip out in front and the wide end at the lamp, which reads as the
-	     beam shining INTO the car. Scale is [width, length, height]: the mesh's local Y
-	     is the length and its local Z becomes the vertical after the rotation.
-
-	     `coneLift` is a GROUP rotation, not part of the mesh's: it has to pivot about the
-	     lamp, and a mesh whose origin sits half a beam-length down the shaft would swing
-	     its tip out of the lamp instead (0.3 m at main-beam length). -->
-	<T.Group rotation={[mode.coneLift, 0, 0]}>
-		<T.Mesh
-			geometry={beamGeometry}
-			material={washMaterial}
-			visible={carLights.on}
-			position={[0, 0, -mode.washSize[1] / 2]}
-			rotation={[Math.PI / 2, 0, 0]}
-			scale={mode.washSize}
-			userData={{ selectable: false, hideInTree: true }}
-		/>
-		<T.Mesh
-			geometry={beamGeometry}
-			material={coreMaterial}
-			visible={carLights.on}
-			position={[0, 0, -mode.coreSize[1] / 2]}
-			rotation={[Math.PI / 2, 0, 0]}
-			scale={mode.coreSize}
-			userData={{ selectable: false, hideInTree: true }}
-		/>
-	</T.Group>
 
 	<!-- Emitter, a hair in front of the lens. Plane faces +Z by default → flip to -Z. -->
 	<T.Mesh
