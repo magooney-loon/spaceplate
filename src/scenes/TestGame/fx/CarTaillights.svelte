@@ -43,8 +43,8 @@
 	/** Tail gains on the exported emissive: ×1 as exported with the lights on,
 	 * ×2 on the brake (bright enough to feed Bloom through the night exposure,
 	 * same hue — no colour substitution). */
-	const TAIL_ON = 1;
-	const TAIL_BRAKE = 2;
+	const TAIL_ON = 0.5;
+	const TAIL_BRAKE = 1.5;
 	/** Pedal travel that counts as braking (trigger rest noise). */
 	const BRAKE_EPSILON = 0.02;
 	/** Interior emissives that die with the ignition — GLB material names. */
