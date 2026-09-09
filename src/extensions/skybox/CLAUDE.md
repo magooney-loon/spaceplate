@@ -26,6 +26,15 @@ Three buttons: Procedural Sky, HDR/EXR Environment, Cube Map. Calls `environment
 - `scrubTime(t)` always switches to manual clock first.
 - `setSpeed(value)` creates a realtime clock or sets time scale.
 
+### Moon (sky mode only, collapsed)
+
+- Readout: named phase + lit percent, from `skyMeta.moonPhase` / `.moonIllumination`.
+- `ButtonGrid`, 2 columns, of the four principal phases → `skyActions.setMoonPhase(age)`.
+  A JUMP, exactly like the keyframe grid: the moon cycles with `day`, so at the default
+  eight-day cycle reaching a crescent by scrubbing time is four game days of dragging.
+  Setting a phase also moves the moon in the sky — phase and position are one number in
+  the model, not two.
+
 ### Weather (sky mode only)
 
 - Blend duration slider (0–60s, default 20).

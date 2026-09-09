@@ -11,7 +11,17 @@ export * from './sky.svelte';
 export { clamp01, ease, lerp, lerpRGB, mulberry32, smooth01, wrap01 } from './math';
 export { createClock, createRealtimeClock, createExternalClock, createManualClock } from './clock';
 export type { Clock, ClockOptions } from './clock';
-export { elevationAt, azimuthAt, sunAt, moonAt } from './sunPath';
+export {
+	elevationAt,
+	azimuthAt,
+	sunAt,
+	moonAt,
+	// The moon's lag is its phase (sunPath.ts) — exported for READING, exactly like
+	// DEFAULT_DAY_CURVE below. `skyActions.setMoonPhase` is the write path.
+	moonLagAt,
+	moonPhaseAt,
+	DEFAULT_SYNODIC_DAYS
+} from './sunPath';
 export type { PathOptions } from './sunPath';
 // DEFAULT_DAY_CURVE is exported for READING (the Studio panel builds its time-jump grid
 // from it, so the two cannot drift). Keyframe authoring is still phase 5 — nothing

@@ -2,8 +2,8 @@
 // authorable. A real solar model (latitude + day-of-year) can arrive later as an
 // alternative module, because everything downstream reads only the derived direction.
 
-import { smooth01 } from './math';
-import type { CelestialBody, Vec3 } from './types';
+import { smooth01, wrap01 } from './math';
+import type { CelestialBody, MoonPhase, MoonPhaseName, Vec3 } from './types';
 
 const DEG = Math.PI / 180;
 const TAU = Math.PI * 2;
@@ -17,11 +17,80 @@ const TAU = Math.PI * 2;
  */
 export const DEFAULT_MAX_ELEVATION = 75;
 
+/**
+ * Days one full new -> full -> new cycle takes. The real synodic month is 29.53, and
+ * this is deliberately not it: the arc above is already a gamey fixed one, and at the
+ * dev clock's 60x a realistic month is twelve hours of play to see a single phase
+ * change. Eight advances the phase by an eighth every night -- visibly a different moon
+ * from one night to the next, which is the entire point of the cycle existing.
+ *
+ * `setPathOptions({ synodicDays: 29.53 })` buys the real thing, and `0` freezes the
+ * moon at whatever `moonLag` says (the pre-cycle behaviour, a permanent full moon).
+ */
+export const DEFAULT_SYNODIC_DAYS = 8;
+
 export type PathOptions = {
 	/** Peak elevation in degrees at local noon. */
 	maxElevation?: number;
-	/** Moon offset in normalized days. 0.5 = opposition = full moon. */
+	/**
+	 * Moon offset in normalized days AT DAY ZERO. 0.5 = opposition = full moon. The
+	 * cycle below carries it forward from here; this is the seed, not a constant.
+	 */
 	moonLag?: number;
+	/** Length of the synodic cycle in days. 0 pins the moon at `moonLag` forever. */
+	synodicDays?: number;
+};
+
+/**
+ * The moon's lag behind the sun at a given moment, in normalized days.
+ *
+ * ONE number carries both the phase and the moonrise time, because in this model they
+ * are the same fact: the moon walks the sun's own arc, so a lag of 0.5 puts it opposite
+ * the sun -- fully lit AND rising at sunset -- while a lag of 0 puts it on the sun,
+ * unlit and up only by day. Nothing has to be kept in sync because there is nothing to
+ * sync.
+ *
+ * It INCREASES with time, which is the direction the real moon goes: it rises later each
+ * night, waxing from new through first quarter to full.
+ */
+export const moonLagAt = (t: number, day: number, options: PathOptions = {}): number => {
+	const cycle = options.synodicDays ?? DEFAULT_SYNODIC_DAYS;
+	const seed = options.moonLag ?? 0.5;
+	return cycle > 0 ? wrap01(seed + (day + t) / cycle) : wrap01(seed);
+};
+
+// Ordered from new. Read with a half-bucket offset below, so `new`, `firstQuarter`,
+// `full` and `lastQuarter` are CENTRED on their exact ages rather than starting there.
+const PHASE_NAMES: MoonPhaseName[] = [
+	'new',
+	'waxingCrescent',
+	'firstQuarter',
+	'waxingGibbous',
+	'full',
+	'waningGibbous',
+	'lastQuarter',
+	'waningCrescent'
+];
+
+export const createMoonPhase = (): MoonPhase => ({
+	age: 0.5,
+	illumination: 1,
+	waxing: false,
+	name: 'full'
+});
+
+/**
+ * Phase from a lag. Writes into `out` -- this runs every frame like everything else in
+ * here. The lit fraction is the standard half-cosine, which is exactly what the disc's
+ * own shading integrates to, so the light model and the picture cannot disagree.
+ */
+export const moonPhaseAt = (lag: number, out: MoonPhase = createMoonPhase()): MoonPhase => {
+	const age = wrap01(lag);
+	out.age = age;
+	out.illumination = (1 - Math.cos(TAU * age)) / 2;
+	out.waxing = age < 0.5;
+	out.name = PHASE_NAMES[Math.floor(wrap01(age + 1 / 16) * 8) % 8];
+	return out;
 };
 
 /**
@@ -84,13 +153,21 @@ export const sunAt = (
 ): CelestialBody => bodyAt(t, options.maxElevation ?? DEFAULT_MAX_ELEVATION, out);
 
 /**
- * The moon mirrors the sun's arc with a configurable lag, defaulting to opposition --
- * a full moon every night to start. Phase is just the sun-moon angle, so this lag knob
- * becomes the phase control when a phase-shaded disc is eventually rendered.
+ * The moon walks the sun's arc, a `moonLagAt` behind it.
+ *
+ * Takes `day` as well as `t` because the lag is no longer a constant: it advances one
+ * synodic cycle per `synodicDays`, which is what makes the phase cycle. The disc's
+ * terminator falls out of the resulting sun-moon angle in `Moon.svelte` with no extra
+ * plumbing -- there is no phase parameter anywhere in the shader.
  */
 export const moonAt = (
 	t: number,
+	day: number,
 	options: PathOptions = {},
 	out: CelestialBody = createBody()
 ): CelestialBody =>
-	bodyAt((t + (options.moonLag ?? 0.5)) % 1, options.maxElevation ?? DEFAULT_MAX_ELEVATION, out);
+	bodyAt(
+		wrap01(t + moonLagAt(t, day, options)),
+		options.maxElevation ?? DEFAULT_MAX_ELEVATION,
+		out
+	);

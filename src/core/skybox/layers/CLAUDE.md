@@ -131,7 +131,13 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   re-measure before retuning.
 - Moon is a **sphere**, phase from the surface normal (better than the sketched
   billboard: an equirect map wraps properly). Tidally locked. `frustumCulled={false}`
-  mandatory (see pinFarPlane).
+  mandatory (see pinFarPlane). **There is no phase parameter in the material**, which is
+  what the sphere bought: the terminator is `dot(normal, sunDirection)`, so when the
+  model's moon lag started advancing through the synodic cycle
+  (`../model/CLAUDE.md`) this file rendered every phase with no change at all. The one
+  thing it owes the cycle is `newMoonFade` — a new moon is invisible because it crosses a
+  bright sky dark side out, and geometry cannot know that; without the fade the
+  earthshine term draws a dim blob two degrees from the sun disc.
 
 ### `clouds/`
 

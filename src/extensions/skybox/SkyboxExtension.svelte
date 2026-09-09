@@ -113,6 +113,21 @@
 	}));
 	const phaseButtons = phaseJumps.map((jump) => jump.label);
 
+	// The four principal phases. `age` is the same number `setMoonPhase` takes and the
+	// same one the model publishes, so the readout and the buttons cannot drift.
+	const MOON_PHASE_JUMPS = [
+		{ label: 'New', age: 0 },
+		{ label: 'First Qtr', age: 0.25 },
+		{ label: 'Full', age: 0.5 },
+		{ label: 'Last Qtr', age: 0.75 }
+	];
+	const moonPhaseButtons = MOON_PHASE_JUMPS.map((jump) => jump.label);
+
+	// Epsilon-gated upstream, so this string rebuilds on whole-percent steps.
+	const moonReadout = $derived(
+		`${skyMeta.moonPhase} · ${Math.round(skyMeta.moonIllumination * 100)}% lit`
+	);
+
 	const setSpeed = (value: string) => {
 		speed = value;
 		if (value === 'realtime') {
@@ -215,6 +230,18 @@
 					buttons={phaseButtons}
 					columns={2}
 					on:click={(e) => scrubTime(phaseJumps[e.detail.index].t)}
+				/>
+			</Folder>
+
+			<!-- The moon cycles on its own with `day`, so this folder is a JUMP, exactly like
+			     the keyframe grid above — at the default eight-day cycle, reaching a crescent
+			     by scrubbing time is four game days of dragging. -->
+			<Folder title="Moon" expanded={false}>
+				<Monitor label="Phase" value={moonReadout} />
+				<ButtonGrid
+					buttons={moonPhaseButtons}
+					columns={2}
+					on:click={(e) => skyActions.setMoonPhase(MOON_PHASE_JUMPS[e.detail.index].age)}
 				/>
 			</Folder>
 

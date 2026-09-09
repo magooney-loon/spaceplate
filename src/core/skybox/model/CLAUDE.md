@@ -35,14 +35,44 @@ on('sunrise', () => ...);                              // sunrise|sunset|phaseCh
 
 **Clocks** (`clock.ts`): `realtime` (wall clock, optional fixed UTC offset),
 `external` (server-driven, phase 3), `manual`. Boot default: manual, frozen at the
-`sunrise` keyframe (t 0.25) under the named `cloudy` weather — both are reproducible
-from the panel, unlike the bespoke boot vector they replaced.
+`sunrise` keyframe (t 0.25) under the named `storm` weather — both are reproducible
+from the panel, unlike the bespoke boot vector they replaced. `storm` is deliberately
+the library's loudest entry, so every weather renderer (deck, rain, lens, wind, strike
+scheduler) is live in the first frame; it is also the most expensive boot the engine
+has, so a scene measuring its own budget should `clearWeather({ over: 0 })` first.
 `t` is normalized `[0,1)` = midnight→midnight, **solar time** — 0.25 sunrise, 0.5 noon.
 Timezones are the `realtime` clock's concern, never the model's.
 
-**Sun/moon** (`sunPath.ts`): fixed arc from `t`; moon mirrors it with a configurable
-lag (default opposition = full moon). Downstream reads only the derived
-direction/elevation/azimuth in `descriptor.sun` / `.moon`.
+**Sun/moon** (`sunPath.ts`): fixed arc from `t`; the moon walks the same arc a
+**`moonLagAt`** behind. Downstream reads only the derived direction/elevation/azimuth
+in `descriptor.sun` / `.moon`.
+
+### The moon's lag IS its phase
+
+One number carries both, because in this model they are the same fact: a lag of 0.5
+puts the moon opposite the sun — fully lit **and** rising at sunset — and a lag of 0
+puts it on the sun, unlit and up only by day. There is nothing to keep in sync.
+
+The lag **advances** — `moonLag` is the seed at day zero, and `synodicDays`
+(`DEFAULT_SYNODIC_DAYS` = 8) is how long a full new→full→new cycle takes. Eight, not
+the real 29.53: the arc is already a gamey fixed one, and at the dev clock's 60× a
+realistic month is twelve hours of play to see one phase change. Eight moves the phase
+an eighth per night, which is visible from one night to the next.
+`setPathOptions({ synodicDays: 29.53 })` buys the real thing; `0` pins the moon at
+`moonLag` forever (the pre-cycle permanent full moon).
+
+- `descriptor.moonPhase` is `{ age, illumination, waxing, name }`, all derived from the
+  lag. `illumination` is `(1 - cos(2π·age))/2`; `name` is one of eight, bucketed with a
+  half-bucket offset so `new`/`firstQuarter`/`full`/`lastQuarter` are **centred** on
+  their exact ages rather than starting there.
+- **Nothing here reaches the moon DISC.** `Moon.svelte` shades a sphere by the sun
+  direction, so its terminator tracked the lag before the cycle existed and needed no
+  change when it started moving. These scalars exist for the light model and gameplay.
+- `skyActions.setMoonPhase(age)` is the write path: it rebases the **seed** by however
+  far the clock has already carried it, so the cycle keeps running from there instead of
+  pinning. It also moves the moon in the sky, necessarily — see above.
+- `skyQueries.getMoonPhase()` returns the live object; `skyMeta.moonPhase` /
+  `.moonIllumination` are the panel mirrors.
 
 **Phases** (`phases.ts`): named phases are **derived thresholds on sun elevation**
 (e.g. below −18° = night, −6°…0° = twilight), not presets — moonlight illuminates the
@@ -109,7 +139,7 @@ intensities (0 = none); two are **positions**:
 
 SkyMesh's cloud mask is `smoothstep(1 - coverage, 1 - coverage + 0.3, fbm)`, so by ~0.5
 the dome reads as a flat sheet. `overcast` is therefore **0.35** and ordering is
-cloudy 0.25 (also the boot weather) < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.0 =
+cloudy 0.25 < overcast 0.35 < rain 0.8 < snow 0.9 < storm 1.0 (the boot weather) =
 blizzard 1.0.
 
 ### The key light reads `deckFactor`, never raw cover
@@ -143,16 +173,30 @@ never re-derive the split in a layer.
   (`descriptor.light.ambient`), not the env map. Don't "fix" dark nights via the curve.
 - `MOON_INTENSITY` (π/12) is an absolute playable level, not a fraction of the sun —
   it must not be "restored" to any ratio of `SUN_INTENSITY`.
+- **The moon's key and fill both scale by `moonLight`**, one weight off
+  `moonPhase.illumination` — a crescent throwing a full moon's shadows was the giveaway
+  that the phase was cosmetic. `MOON_PHASE_FLOOR` (0.15) is what a new moon keeps, and
+  it is a playability floor, not physics: real moonlight is a steep function of phase and
+  would hand the player several unlit nights per cycle.
 - Ambient fills: `DAY_AMBIENT` 0 (env map genuinely carries day), `MOON_AMBIENT` π/32,
   `TWILIGHT_AMBIENT` π/14 (dawn would otherwise measure darker than midnight — moon
-  sets as sun rises).
+  sets as sun rises), `NIGHT_AMBIENT` π/96.
+- **`NIGHT_AMBIENT` exists because the moon phases.** Before the cycle the moon sat at
+  opposition forever, so `MOON_AMBIENT` was up every night by construction. A cycling
+  moon spends part of it new — unlit _and_ in the daytime sky — and on those nights the
+  dome bakes black, the twilight hump has expired and the moon fill is at its floor,
+  which is a frame nobody can navigate. It is `max()`'d in like the others, so a full
+  moon is unchanged and only nights that had nothing gain anything. Its ramp is the
+  exact complement of the twilight hump's rising half, so no gap opens at −18°.
 - **`KEY_MIN_ELEVATION` (3°) floors the light's _aim_** so civil twilight does not light
   undersides and throw shadows upward.
 - **Sun and moon are computed independently and combined with `max()`** — one shared
   `horizon` weight once handed over to the moon _and_ dimmed the sun, cutting a
   horizon sun to an eighth of peak and rendering warm keyframes cold. Now
   `sunShare = sunKey / (sunKey + moonKey)` is the single weight driving direction,
-  colour and intensity, so they cannot disagree. The direction still flips 180° at the
-  handover (~−4.5°, ~8% of peak, colour/intensity continuous) — if a non-opposition
-  moon lag ever makes it visible, fade the light out and back in; do not slerp between
-  opposed vectors.
+  colour and intensity, so they cannot disagree. The direction still flips at the
+  handover (~−4.5°, ~8% of peak, colour/intensity continuous). **The synodic cycle now
+  varies how large that flip is** — 180° at full, near zero at new — rather than making
+  it worse: the flip shrinks toward the phases where the two bodies are close, and the
+  handover already happens at 8% of peak. If it ever does become visible, fade the light
+  out and back in; do not slerp between opposed vectors.

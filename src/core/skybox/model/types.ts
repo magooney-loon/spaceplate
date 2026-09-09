@@ -54,6 +54,37 @@ export type CelestialBody = {
 	visibility: number;
 };
 
+/** The eight principal phases, in cycle order from new. */
+export type MoonPhaseName =
+	| 'new'
+	| 'waxingCrescent'
+	| 'firstQuarter'
+	| 'waxingGibbous'
+	| 'full'
+	| 'waningGibbous'
+	| 'lastQuarter'
+	| 'waningCrescent';
+
+/**
+ * Where the moon is in its cycle. DERIVED, never authored: `age` IS the moon's lag
+ * behind the sun along the shared arc, so the phase and the moonrise time are the same
+ * number -- a full moon rises at sunset because it is half a turn behind, not because
+ * anything says so.
+ *
+ * Nothing here reaches the moon DISC: `Moon.svelte` shades a sphere by the sun
+ * direction, so its terminator already tracks the lag for free. These scalars exist for
+ * the LIGHT model (a crescent is not a full moon's worth of key) and for gameplay.
+ */
+export type MoonPhase = {
+	/** Position in the synodic cycle, [0,1): 0 new, 0.25 first quarter, 0.5 full. */
+	age: number;
+	/** Lit fraction of the visible disc, 0..1. `(1 - cos(2pi * age)) / 2`. */
+	illumination: number;
+	/** True while the lit fraction is growing -- `age` below 0.5. */
+	waxing: boolean;
+	name: MoonPhaseName;
+};
+
 /**
  * Weather channel values. Every channel is independent and lives in [0,1] -- fog
  * without rain, wind without clouds. A weather *state* is just a named target vector over
@@ -123,6 +154,7 @@ export type LightHints = {
 export type SkyDescriptor = {
 	sun: CelestialBody;
 	moon: CelestialBody;
+	moonPhase: MoonPhase;
 	sky: SkyBaseline;
 	weather: WeatherChannels;
 	light: LightHints;

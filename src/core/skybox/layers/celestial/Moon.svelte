@@ -7,15 +7,20 @@
 	//
 	// The original sketch was a billboard with "phase from the sun-moon angle". A sphere is
 	// barely more work and strictly better: the phase falls out of the surface normal for
-	// free, and the equirectangular map wraps it properly instead of being cropped. The
-	// terminator therefore tracks `moonLag` with no extra plumbing -- set the lag
-	// away from opposition and you get a crescent.
+	// free, and the equirectangular map wraps it properly instead of being cropped.
+	//
+	// THERE IS NO PHASE PARAMETER HERE, and that is the whole reason the sphere was worth
+	// it. The terminator is `dot(normal, sunDirection)`, so once the model's moon lag
+	// started advancing through the synodic cycle (sunPath.ts) this file rendered every
+	// phase correctly with no change at all. The one thing it does owe the cycle is
+	// `newMoonFade` below -- geometry cannot know that a dark disc crossing a bright sky
+	// should not be drawn.
 	import { untrack } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import { dot, float, mix, positionWorld, smoothstep, texture, uniform } from 'three/tsl';
 	import { BASE_URL } from '$extensions/settings';
-	import { clamp01, descriptor } from '../../model';
+	import { clamp01, descriptor, smooth01 } from '../../model';
 	import { domeVertexNode, skyLayerMaterial, SKY_LAYER_USERDATA } from '../skyLayer';
 
 	interface Props {
@@ -23,7 +28,11 @@
 		radius?: number;
 		/** Apparent diameter. The real moon is 0.52 deg, which reads as a speck in a game. */
 		angularSizeDeg?: number;
-		/** Brightness of the unlit limb. Earthshine, so a new moon is not a black hole. */
+		/**
+		 * Brightness of the unlit limb. Earthshine -- what makes a CRESCENT's dark side
+		 * faintly visible rather than a bitten-off disc. It is deliberately not what
+		 * carries a new moon: `newMoonFade` below removes the disc there instead.
+		 */
 		earthshine?: number;
 		/** How far the disc fades out once the sun is up. 1 = invisible by day. */
 		daylightFade?: number;
@@ -124,7 +133,15 @@
 			// disc fades in at moonrise instead of popping. The daylight term is separate:
 			// a real moon stays faintly visible by day, so this dims rather than hides.
 			const daylight = clamp01((sun.elevation + 2) / 8);
-			discOpacity.value = body.visibility * (1 - daylightFade * daylight);
+			// A new moon is INVISIBLE, and not because it is unlit -- it sits on the sun,
+			// crossing a bright sky with its dark side out. Without this the earthshine
+			// term draws it as a dim blob a couple of degrees from the sun disc, which is
+			// the one place in the sky nothing may appear. Narrow on purpose: 4% lit is
+			// well inside the crescent the shading gets right on its own, so this fires
+			// for about half a game day either side of exact new and never touches a
+			// crescent worth looking at.
+			const newMoonFade = smooth01(0, 0.04, descriptor.moonPhase.illumination);
+			discOpacity.value = body.visibility * (1 - daylightFade * daylight) * newMoonFade;
 
 			// Nothing here animates on its own -- the disc moves only when the model's
 			// time does, and Skybox's driver task invalidates for that. So this task only

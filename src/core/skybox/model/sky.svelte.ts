@@ -8,14 +8,18 @@ import { createBaseline, sampleDayCurve, DEFAULT_DAY_CURVE } from './dayCurve';
 import { isDaytime, isRising, phaseFor } from './phases';
 import {
 	createBody,
+	createMoonPhase,
 	directionAt,
 	moonAt,
+	moonLagAt,
+	moonPhaseAt,
 	sunAt,
 	DEFAULT_MAX_ELEVATION,
+	DEFAULT_SYNODIC_DAYS,
 	type PathOptions
 } from './sunPath';
 import { emit } from './events';
-import { clamp01, lerp, lerpRGB, smooth01 } from './math';
+import { clamp01, lerp, lerpRGB, smooth01, wrap01 } from './math';
 import {
 	AMBIENT_RETURN,
 	bodyVisibility,
@@ -31,6 +35,7 @@ import {
 import type {
 	ClockKind,
 	DayKeyframe,
+	MoonPhaseName,
 	PhaseName,
 	RGB,
 	SkyDescriptor,
@@ -69,6 +74,20 @@ const SUN_INTENSITY = 4.75;
 const MOON_INTENSITY = Math.PI / 12;
 
 /**
+ * What a NEW moon keeps of the full moon's key and fill, as a fraction. The rest scales
+ * with the lit fraction, so the light matches the disc the player can see -- a crescent
+ * that still threw a full moon's shadows was the giveaway that the phase was cosmetic.
+ *
+ * Not zero, and not physical: real moonlight is a steep function of phase (a quarter
+ * moon is roughly a tenth of a full one, never mind a new one), which would hand the
+ * player several unlit nights per cycle. The floor plus NIGHT_AMBIENT below is what
+ * keeps a new-moon night dark rather than blind. Deliberately LINEAR in illumination
+ * above the floor: the curve is a look knob and the floor is the playability one, and
+ * mixing the two makes neither adjustable.
+ */
+const MOON_PHASE_FLOOR = 0.15;
+
+/**
  * Ambient fill published to the key-light consumer, in the same units as `intensity`.
  * Exists because the env map cannot carry night: SkyMesh zeroes its sun term below
  * -2.31 degrees of sun elevation, so the cube bakes black and every surface facing away
@@ -84,6 +103,21 @@ const DAY_AMBIENT = 0;
 const TWILIGHT_AMBIENT = Math.PI / 14;
 
 /**
+ * Starlight and airglow: the floor under deep night, independent of the moon.
+ *
+ * It exists BECAUSE the moon phases. Before the cycle, the moon sat at opposition
+ * forever, so `MOON_AMBIENT` was up every night by construction and there was nothing
+ * to floor. A cycling moon spends part of it new -- unlit AND in the daytime sky -- and
+ * on those nights the dome bakes black, the twilight hump has expired and the moon fill
+ * is at MOON_PHASE_FLOOR, which together is a frame the player cannot navigate.
+ *
+ * A third of MOON_AMBIENT, and max()'d in with the others rather than added, so a full
+ * moon is unchanged to the last decimal and only the nights that had nothing gain
+ * anything.
+ */
+const NIGHT_AMBIENT = Math.PI / 96;
+
+/**
  * Floor on the elevation used to *aim* the key light, in degrees. Without it the sun
  * keeps aiming the light from underground through civil twilight, lighting undersides
  * and throwing shadows upward. It deliberately does NOT prop up flat ground at sunrise:
@@ -92,8 +126,17 @@ const TWILIGHT_AMBIENT = Math.PI / 14;
  */
 const KEY_MIN_ELEVATION = 3;
 
-/** Boots on a NAMED weather so the first frame is reproducible from the panel. */
-const BOOT_WEATHER = 'cloudy';
+/**
+ * Boots on a NAMED weather so the first frame is reproducible from the panel.
+ *
+ * `storm` is the library's loudest entry, and that is the point: it is the default so
+ * that the deck, the rain, the lens, the wind and the strike scheduler are all live in
+ * the first frame instead of behind a `setWeather` call nobody makes. It is also the
+ * most expensive boot the engine has -- a full cloud deck plus 12 000 rain instances --
+ * so a scene measuring its own frame budget should `clearWeather({ over: 0 })` rather
+ * than measure this.
+ */
+const BOOT_WEATHER = 'storm';
 
 // A named target is a `Partial<WeatherChannels>`, so it is spread over a full vector
 // rather than cast -- an authored weather that omits a channel still boots valid. The
@@ -113,6 +156,7 @@ const bootWeather = (): WeatherChannels => ({
 export const descriptor: SkyDescriptor = {
 	sun: createBody(),
 	moon: createBody(),
+	moonPhase: createMoonPhase(),
 	sky: createBaseline(),
 	weather: bootWeather(),
 	light: {
@@ -139,6 +183,10 @@ export const skyMeta = $state({
 	day: 0,
 	phase: 'night' as PhaseName,
 	isDaytime: false,
+	/** Named phase of the moon. Changes a handful of times per cycle, so ungated. */
+	moonPhase: descriptor.moonPhase.name as MoonPhaseName,
+	/** Lit fraction, gated to CHANNEL_EPSILON like the weather channels. */
+	moonIllumination: descriptor.moonPhase.illumination,
 	/** Last named weather set, or `'custom'` after a raw target. */
 	weather: BOOT_WEATHER,
 	blending: false,
@@ -182,6 +230,8 @@ let publishedT = -1;
 let publishedDay = -1;
 let publishedPhase: PhaseName | null = null;
 let publishedDaytime: boolean | null = null;
+let publishedMoonPhase: MoonPhaseName | null = null;
+let publishedMoonIllumination = -1;
 let publishedWeather: string | null = null;
 let publishedBlending: boolean | null = null;
 const publishedChannels: Record<ChannelName, number> = {
@@ -236,6 +286,17 @@ const publishMeta = (t: number, day: number, phase: PhaseName, daytime: boolean)
 		publishedDaytime = daytime;
 		skyMeta.isDaytime = daytime;
 	}
+	const { name, illumination } = descriptor.moonPhase;
+	if (publishedMoonPhase !== name) {
+		publishedMoonPhase = name;
+		skyMeta.moonPhase = name;
+	}
+	// Same epsilon as the weather channels, for the same reason: a readout resolving
+	// whole percent has no use for a value that moves in the eighth decimal.
+	if (Math.abs(illumination - publishedMoonIllumination) >= CHANNEL_EPSILON) {
+		publishedMoonIllumination = illumination;
+		skyMeta.moonIllumination = illumination;
+	}
 };
 
 /**
@@ -247,7 +308,10 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	// Written in place, not reassigned: consumers may hold a reference to
 	// `descriptor.sun` across frames, and reassigning would silently strand them.
 	sunAt(t, pathOptions, descriptor.sun);
-	moonAt(t, pathOptions, descriptor.moon);
+	// The lag is the phase AND the position, so both come off the same call (sunPath.ts).
+	// It advances with `day`, which is why the moon is not full every night.
+	moonAt(t, day, pathOptions, descriptor.moon);
+	moonPhaseAt(moonLagAt(t, day, pathOptions), descriptor.moonPhase);
 	sampleDayCurve(t, descriptor.sky, curve);
 
 	// Weather goes ON TOP of the sampled baseline, never instead of it: the curve decides
@@ -295,7 +359,13 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	// disagree about when the moon is up. Smoothstepped for the reason above; identical
 	// at both ends and at the midpoint.
 	const moonRise = smooth01(0, 20, descriptor.moon.elevation);
-	const moonKey = MOON_INTENSITY * moonRise;
+	// How much light the CURRENT phase is worth, shared by the moon's key and its fill so
+	// the two cannot disagree -- exactly the role `moonRise` plays for its rise and set.
+	// The two multiply: a full moon below the horizon is still no light, and a new moon
+	// overhead is still the floor.
+	const moonLight =
+		MOON_PHASE_FLOOR + (1 - MOON_PHASE_FLOOR) * clamp01(descriptor.moonPhase.illumination);
+	const moonKey = MOON_INTENSITY * moonRise * moonLight;
 	// max(), like the ambient fills below: sun and moon are alternatives, so neither is
 	// dimmed by the other fading out.
 	const clearSkyKey = Math.max(sunKey, moonKey);
@@ -333,7 +403,7 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	// Moonlight and twilight are alternatives, combined with max() like the key. Both
 	// are scaled by the deck factor: a real deck blocks them too, and scattered cloud
 	// must leave them alone or the boot default dims every night scene.
-	const moonFill = MOON_AMBIENT * moonRise * (1 - 0.9 * deck);
+	const moonFill = MOON_AMBIENT * moonRise * moonLight * (1 - 0.9 * deck);
 	// A HUMP peaked at -6 degrees: rises from -18, full at civil twilight, GONE by the
 	// horizon. -6 is the blind spot this fill exists for -- the dome is black through
 	// civil twilight; above the horizon the env map carries the ambient and a second flat
@@ -350,12 +420,18 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	// between them however either is retuned.
 	const twilightFill =
 		TWILIGHT_AMBIENT * smooth01(-18, -6, elevation) * (1 - sunSet) * (1 - 0.5 * deck);
+	// Starlight: the COMPLEMENT of the twilight hump's rising half, so the two hand over
+	// at -18 with the same slope and no gap opens between them -- the same trick
+	// `twilightFill` plays against `sunSet` at the other end. Full below -18, gone by
+	// civil twilight. A deck hides the stars, so it takes most of this with it.
+	const starFill = NIGHT_AMBIENT * (1 - smooth01(-18, -6, elevation)) * (1 - 0.75 * deck);
 	// The overcast return is ADDED, not max()'d: it is the light the deck just took off
 	// the key coming back diffusely (see AMBIENT_RETURN). It scales with what was
 	// actually removed, so a clear sky adds exactly zero.
 	const overcastReturn = clearSkyKey * (1 - attenuation) * AMBIENT_RETURN;
 	descriptor.light.ambient =
-		Math.max(Math.max(moonFill, twilightFill), DAY_AMBIENT * sunShare) + overcastReturn;
+		Math.max(Math.max(moonFill, twilightFill), Math.max(starFill, DAY_AMBIENT * sunShare)) +
+		overcastReturn;
 
 	descriptor.meta.t = t;
 	descriptor.meta.day = day;
@@ -449,6 +525,28 @@ export const skyActions = {
 		discontinuity = true;
 	},
 
+	/**
+	 * Put the moon at a given point in its cycle NOW -- 0 new, 0.5 full.
+	 *
+	 * Writes the seed rather than the phase, so the cycle keeps running from here
+	 * instead of pinning: this rebases `moonLag` by however far the clock has already
+	 * carried it, which is the inverse of `moonLagAt`. That is what a game asking to
+	 * open on a full moon wants, and it is also the only way a dev panel can look at a
+	 * crescent without scrubbing four game days.
+	 *
+	 * Also moves the moon in the SKY -- phase and position are one number here
+	 * (sunPath.ts), so a full moon set at noon rises that evening. Non-negotiable, not
+	 * a side effect.
+	 */
+	setMoonPhase(age: number) {
+		const { t, day } = clock.sample();
+		const cycle = pathOptions.synodicDays ?? DEFAULT_SYNODIC_DAYS;
+		const drift = cycle > 0 ? (day + t) / cycle : 0;
+		pathOptions = { ...pathOptions, moonLag: wrap01(age - drift) };
+		discontinuity = true;
+		compose(t, day);
+	},
+
 	/** Point the weather mixer at a target -- see the standalone `setWeather` above. */
 	setWeather,
 
@@ -478,6 +576,8 @@ export const skyActions = {
 export const skyQueries = {
 	getSunElevation: () => descriptor.sun.elevation,
 	getMoonElevation: () => descriptor.moon.elevation,
+	/** The live phase. Mutated in place each tick -- read it, never cache it. */
+	getMoonPhase: () => descriptor.moonPhase,
 	getPhase: () => descriptor.meta.phase,
 	isDaytime: () => descriptor.meta.isDaytime,
 	getTime: () => ({ t: descriptor.meta.t, day: descriptor.meta.day }),
