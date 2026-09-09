@@ -40,8 +40,7 @@
 			↑ throttle · ↓ brake · Space handbrake · Q/E shift · ⇧ nitrous · M ignition · L/K lights/beams
 		</p>
 		<p>
-			H gearbox (manual / auto) · G setup (Grip / Drift) · U km/h ↔ mph · B debug view (model / rig /
-			both) · drag tilt · right-drag raise/lower · wheel zoom
+			H gearbox (manual / auto) · G setup (Grip / Drift) · U km/h ↔ mph · B debug view ·  mouse left/right/wheel (camera)
 		</p>
 	</div>
 

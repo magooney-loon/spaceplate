@@ -1171,8 +1171,8 @@ inherit the GR86's ride.
   half of what fx/CarImpacts.svelte draws, voiced off ONE take
   (`metal_scraping.opus`) as two voices — a LOOP under the sills whose level and
   rate ride the same grind the spark stream's rate does (`hullSlideMs` over
-  CarImpacts' own 1.4–22 m/s thresholds, duplicated in carAudio — keep them in
-  step), and a hit SHRIEK on `hullHitSeq`'s rising edge: a clone at the CONTACT
+  CarImpacts' own 1.4–22 m/s thresholds, duplicated in carAudio and
+  ChaseCamera — keep them in step), and a hit SHRIEK on `hullHitSeq`'s rising edge: a clone at the CONTACT
   point (`hullLocal` ÷UPM into the visual group's model metres — the pops'
   TIP_L/R rule), volume/rate/lowpass jittered (thunder-clap contract),
   DEADLINE-stopped at 0.22–0.72 s because the take is a 2.4 s scrape and a hit
@@ -1218,14 +1218,29 @@ inherit the GR86's ride.
   a camera swap). It also widens the lens while nitrous flows (`NITROUS_FOV_KICK`,
   60 → 72 at full spray, a `useTask` damped onto `carSim.nitrous`), KICKS on
   rev-match launches (dolly in + FOV widen off `carSim.launch`, snap with the
-  drop, ease out with the boost tail) and NUDGES on shifts (edge-detected off
+  drop, ease out with the boost tail), NUDGES on shifts (edge-detected off
   `carSim.gear`: upshift = kickback — dolly out + widen on the post-cut surge;
   downshift = kick in — dolly in + narrow on the engine-braking grab, in sync
   with the exhaust bang; subtle by design — half the launch's magnitude and
   ramped through a one-pole (`SHIFT_ATTACK`) so no frame ever steps, ±`SHIFT_DOLLY`
-  /`SHIFT_FOV_KICK`, decaying at `SHIFT_KICK_RATE`) — the kicks are per-frame
+  /`SHIFT_FOV_KICK`, decaying at `SHIFT_KICK_RATE`), SLAMS on hull hits
+  (edge-detected off `carSim.hullHitSeq` — the same one-shot signal
+  CarImpacts/carAudio poll; severity off `hullHitFlash`, NOT `hullHitDv`,
+  because the seq ticks in the physics stage while this task observes at frame
+  rate and `hullHitDv` is overwritten by every still-touching substep — the
+  flash is set only on real arrivals and encodes the severity, DebugRig's own
+  `FLASH_TIME × (0.5 + 0.5×s)`; dolly in + FOV widen, `HIT_DOLLY`/`HIT_FOV_KICK`,
+  max-merged impulse decaying at `HIT_DECAY`, ramped at `HIT_ATTACK` so even a
+  slam swells over ~2 frames) and FLINCHES on grinds (a sustained pull-in plus
+  a phase-driven TREMBLE on both dolly and lens while `hullSlideMs` is over the
+  scrape thresholds — the same 1.4–22 m/s CarImpacts/carAudio use, keep all
+  three in step; wobble 4.5–8 Hz rising with the grind, dolly tremble
+  unsmoothed, lens tremble low-passed by the FOV pole) — the kicks are per-frame
   deltas on the rig distance, so the player's wheel zoom survives under them
-  (base recovered every frame, launch-in clamped to 60% of base). The FOV is
+  (base recovered every frame; the sustained pull-ins — launch, hit, grind
+  flinch — share one 60%-of-base cap so together they can never shove the
+  camera inside the car; the grind tremble rides on top, clamped by
+  MIN/MAX). The FOV is
   borrowed and returned with the pose, re-adopted on every borrow so a re-entry
   can't animate from a stale value, and the task only invalidates on frames
   where the lens actually moves.

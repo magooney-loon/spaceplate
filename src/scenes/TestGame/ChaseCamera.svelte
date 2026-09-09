@@ -5,6 +5,7 @@
 	import * as THREE from 'three/webgpu';
 	import { carSim } from './sim/carTelemetry.svelte';
 	import { clamp, damp } from './sim/carMath';
+	import { HULL_HIT_FLASH_TIME } from './sim/hullContacts';
 
 	// Third-person / bird chase camera for the car.
 	//
@@ -81,6 +82,55 @@
 	let shiftLevel = 0;
 	/** Last frame's gear — the edge detector. */
 	let prevGear = 1;
+
+	// ── Impact kick ──────────────────────────────────────────────────────
+	// A wall arrival shoves the camera IN and wide-eyes the lens, sized by the
+	// hit's severity — hits are rare and dramatic, the punctuation of a drive,
+	// so this is allowed to slam where the shift kick must whisper. Edge is
+	// `carSim.hullHitSeq` (the one-shot signal CarImpacts/carAudio poll too;
+	// frame-rate polling is safe because HIT_COOLDOWN outlasts any frame), but
+	// SEVERITY is read off `carSim.hullHitFlash`, NOT `hullHitDv`: the seq ticks
+	// inside the physics stage while this task observes at frame rate, and
+	// `hullHitDv` is overwritten by every still-touching substep after the edge
+	// (live closing, post-solve). The flash is set only on real arrivals and
+	// carries the original severity — `FLASH_TIME × (0.5 + 0.5×s)`, DebugRig's
+	// own encoding — so un-mapping it here reproduces the arrival's 0..1.
+	const HIT_DOLLY = 1.3; // world units toward the car at full severity
+	const HIT_FOV_KICK = 5; // deg of widening at full severity
+	const HIT_ATTACK = 30; // 1/s — a jolt swells in ~2 frames, never a step
+	const HIT_DECAY = 7; // 1/s — and eases out over ~a third of a second
+	/** Hit impulse 0..1 — a fresh arrival takes over if it lands harder than
+	 * the tail it interrupts (max, not sum: two hits one frame apart are one
+	 * jolt, not two stacked). */
+	let hitKick = 0;
+	/** The applied kick — `hitKick` through a fast one-pole. */
+	let hitLevel = 0;
+	/** The last hit this rig has already kicked for — `hullHitSeq`'s own edge
+	 * state, SYNCED on borrow (never reset) so re-entry can't kick a hit that
+	 * landed while the rig was stood down. */
+	let hitSeq = carSim.hullHitSeq;
+
+	// ── Grind flinch + wobble ────────────────────────────────────────────
+	// Sliding along a surface is FELT, not just heard: while the hull grinds
+	// the rig flinches toward the car and trembles — one phase-driven sine
+	// driving both a dolly tremble (unsmoothed: the physical shake) and a lens
+	// tremble (low-passed by the FOV pole, so it reads as a shimmer), faster
+	// and deeper the harder the scrape. Thresholds are CarImpacts'/carAudio's
+	// own 1.4–22 m/s — keep all three in step.
+	const GRIND_MIN_SPEED = 1.4; // m/s of hullSlideMs before the grind exists
+	const GRIND_FULL_SPEED = 22; // m/s at which it reads as a full grind
+	const GRIND_FLINCH = 0.35; // world units of sustained pull-in at full grind
+	const GRIND_TREMBLE = 0.16; // world units of dolly tremble at full grind
+	const GRIND_FOV = 0.9; // deg of lens tremble at full grind
+	const GRIND_HZ_MIN = 4.5; // Hz — gentle at the scrape's onset
+	const GRIND_HZ_MAX = 8; // Hz — frantic at a full grind
+	const GRIND_ATTACK = 10; // 1/s — the flinch leans in
+	const GRIND_RELEASE = 5; // 1/s — and eases off with the scrape
+	/** Smoothed grind level 0..1 — the flinch's depth and the wobble's size. */
+	let grindLevel = 0;
+	/** The wobble's phase — advanced only while grinding, wrapped so it can't
+	 * grow unbounded over a long scrape. */
+	let grindPhase = 0;
 
 	const { camera, dom, invalidate } = useThrelte();
 	let controls = $state.raw<CameraControlsImpl>();
@@ -164,6 +214,10 @@
 		shiftKick = 0;
 		shiftLevel = 0;
 		prevGear = carSim.gear;
+		hitKick = 0;
+		hitLevel = 0;
+		hitSeq = carSim.hullHitSeq;
+		grindLevel = 0;
 		invalidate();
 
 		return () => {
@@ -209,11 +263,52 @@
 			shiftLevel += (shiftKick - shiftLevel) * damp(SHIFT_ATTACK, delta);
 			if (shiftKick === 0 && Math.abs(shiftLevel) < 0.001) shiftLevel = 0;
 
-			if (kickLevel > 0.001 || shiftLevel !== 0 || appliedKick !== 0) {
+			// ── Impact kick: edge on the seq, severity off the flash (see the
+			// constants block for why not hullHitDv). ──
+			if (carSim.hullHitSeq !== hitSeq) {
+				hitSeq = carSim.hullHitSeq;
+				hitKick = Math.max(
+					hitKick,
+					clamp((carSim.hullHitFlash / HULL_HIT_FLASH_TIME - 0.5) * 2, 0, 1)
+				);
+			}
+			hitKick *= Math.exp(-HIT_DECAY * delta);
+			if (hitKick < 0.001) hitKick = 0;
+			hitLevel += (hitKick - hitLevel) * damp(HIT_ATTACK, delta);
+			if (hitKick === 0 && hitLevel < 0.001) hitLevel = 0;
+
+			// ── Grind: the level, then the wobble both trembles ride. ──
+			const grindRaw = carSim.hullContact
+				? clamp(
+						(carSim.hullSlideMs - GRIND_MIN_SPEED) / (GRIND_FULL_SPEED - GRIND_MIN_SPEED),
+						0,
+						1
+					)
+				: 0;
+			grindLevel +=
+				(grindRaw - grindLevel) * damp(grindRaw > grindLevel ? GRIND_ATTACK : GRIND_RELEASE, delta);
+			// The release asymptote never lands on 0 — snap it (the squeal's rule).
+			if (grindRaw === 0 && grindLevel < 0.001) grindLevel = 0;
+			if (grindLevel > 0.0001) {
+				grindPhase =
+					(grindPhase +
+						delta * (GRIND_HZ_MIN + (GRIND_HZ_MAX - GRIND_HZ_MIN) * grindLevel) * Math.PI * 2) %
+					(Math.PI * 2);
+			}
+			const wobble = Math.sin(grindPhase) * grindLevel;
+
+			if (kickLevel > 0.001 || shiftLevel !== 0 || hitLevel > 0.001 || grindLevel > 0.001 || appliedKick !== 0) {
 				// Recover the player's zoom from under last frame's kick, then apply
 				// this frame's — a wheel zoom mid-launch lands in the base, not the kick.
+				// The sustained pull-ins (launch, hit, grind flinch) share the 60% cap so
+				// together they can never shove the camera inside the car; the grind's
+				// tremble rides on top, clamped by MIN/MAX like everything else.
 				const base = controls.distance - appliedKick;
-				const wanted = -Math.min(LAUNCH_DOLLY * kickLevel, base * 0.6) + SHIFT_DOLLY * shiftLevel;
+				const pull = Math.min(
+					LAUNCH_DOLLY * kickLevel + HIT_DOLLY * hitLevel + GRIND_FLINCH * grindLevel,
+					base * 0.6
+				);
+				const wanted = -pull + SHIFT_DOLLY * shiftLevel + GRIND_TREMBLE * wobble;
 				const d = clamp(base + wanted, MIN_DISTANCE, MAX_DISTANCE);
 				appliedKick = d - base;
 				controls.distance = d;
@@ -225,7 +320,9 @@
 				savedFov +
 				NITROUS_FOV_KICK * flow +
 				LAUNCH_FOV_KICK * kickLevel +
-				SHIFT_FOV_KICK * shiftLevel;
+				SHIFT_FOV_KICK * shiftLevel +
+				HIT_FOV_KICK * hitLevel +
+				GRIND_FOV * wobble;
 			if (Math.abs(fovTarget - fov) < 0.01) {
 				// Settled — snap exactly, and only touch the camera (and invalidate) if
 				// the snap is a change.
