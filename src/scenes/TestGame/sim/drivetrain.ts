@@ -126,7 +126,9 @@ export interface DrivetrainState {
 	brake: number;
 	/** Fuel cut is active (limiter bouncing or top speed reached). */
 	limiting: boolean;
-	/** True for the frame a gear change starts — the scene can bark a sound off it. */
+	/** True for the STEP a gear change starts — the controller folds it into
+	 * `carSim.shiftSeq` (a boolean set in substep 1 is gone before the frame's
+	 * consumers run), which the audio tick barks a sound off. */
 	shifted: boolean;
 	/** True for the frame a REV-MATCH LAUNCH lands — 1st slotted from N with the
 	 * revs in the window and the clutch just dropped clean. The scene flashes

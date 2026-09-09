@@ -11,7 +11,7 @@
 	import { soundTriggers } from './globalAudio.svelte';
 	import { attachRainAudio, attachThunderAudio, tickWeatherAudio } from './weatherAudio';
 
-	const OST_URL = `${BASE_URL}sounds/ost.ogg`;
+	const OST_URL = `${BASE_URL}sounds/ost.mp3`;
 	// Stereo 48 kbps Opus, loudness-matched to the previous bed (-21.5 LUFS integrated).
 	const AMBIENCE_URL = `${BASE_URL}sounds/skybox/ambience.opus`;
 	const CLICK_URL = `${BASE_URL}sounds/click.mp3`;

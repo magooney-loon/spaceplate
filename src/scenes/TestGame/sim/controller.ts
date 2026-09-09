@@ -439,6 +439,10 @@ export function createCarController(spec: CarSpec, world: World) {
 			carSim.rpm *= 1 - damp(hw.freeDropRate * 1.5, delta);
 		}
 		carSim.gear = drivetrain.state.gear;
+		// One seq tick per engagement — the drivetrain's `shifted` flag lives for a
+		// single STEP, and this runs several steps per frame, so the shift bark's
+		// tick edge-detects a counter instead (hullHitSeq's own contract).
+		if (drivetrain.state.shifted) carSim.shiftSeq++;
 		carSim.slip = drivetrain.state.slip;
 		carSim.latLoad = latLoad;
 		carSim.launch = drivetrain.state.launch;

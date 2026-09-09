@@ -6,6 +6,7 @@
 	import {
 		LAYER_FILES,
 		attachEngineLayer,
+		attachGearShift,
 		attachNitroDrain,
 		attachNitroEnd,
 		attachNitroStart,
@@ -22,9 +23,9 @@
 
 	// The engine's speakers. Mounts the positional voices inside the car — the
 	// rpm bed, the tyre-squeal loop, the chassis-scrape loop + hit-shriek template
-	// and the pop/nitrous one-shots — and nothing else; every mixing decision (rpm
-	// crossfade, pitch, tyre squeal, scrape) lives in carAudio.ts, ticked by the
-	// task below. Positional because the
+	// and the pop/nitrous/ignition/gear-shift one-shots — and nothing else; every
+	// mixing decision (rpm crossfade, pitch, tyre squeal, scrape) lives in
+	// carAudio.ts, ticked by the task below. Positional because the
 	// AudioListener rides the camera (core/Camera.svelte): the engine falls behind
 	// with the car and panners HRTF around it. Same <PositionalAudio> component
 	// DemoScene's orbiting mirror sphere uses.
@@ -131,6 +132,18 @@
 		rolloffFactor={ROLLOFF}
 		maxDistance={MAX_DISTANCE}
 		oncreate={(a: ThreePositionalAudio) => attachTurnOffSound(a)}
+	/>
+	<!-- The gear-shift bark: one shot per engagement, edge-detected off
+	     carSim.shiftSeq in carAudio.ts (Q/E taps, the automatic's shifts and its
+	     stopped drop-to-1st all land there). Engine bay: the gearbox and its
+	     linkage sit front-mid with the engine. -->
+	<PositionalAudio
+		src={ENGINE_URL + 'gear_shift.opus'}
+		autoplay={false}
+		refDistance={REF_DISTANCE}
+		rolloffFactor={ROLLOFF}
+		maxDistance={MAX_DISTANCE}
+		oncreate={(a: ThreePositionalAudio) => attachGearShift(a)}
 	/>
 </T.Group>
 

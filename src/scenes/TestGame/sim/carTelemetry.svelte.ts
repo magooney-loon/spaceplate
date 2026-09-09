@@ -23,6 +23,14 @@ export const carSim = {
 	rpm: currentCar().hardware.idleRpm as number,
 	/** -1 reverse, 0 neutral, 1…6. */
 	gear: 1,
+	/** Rises by one on every gear ENGAGEMENT — Q/E taps, the automatic's own
+	 * shifts and its stopped drop-to-1st alike, since they all run through the
+	 * drivetrain's engage(). A SEQ, not a copy of the drivetrain's one-step
+	 * `shifted` flag: physics substeps several times per audio tick (see
+	 * `hullHitSeq`), so a boolean set in substep 1 is already gone by the frame's
+	 * tick — consumers edge-detect the seq instead. Monotonic on purpose: never
+	 * reset, so park/detach can sync their edge state to it. */
+	shiftSeq: 0,
 	/** 0…1 wheelspin. */
 	slip: 0,
 	/** Steering rack, -1…1, left-positive — the fraction of lock the rack is at. */

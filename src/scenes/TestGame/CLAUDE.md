@@ -1139,7 +1139,14 @@ inherit the GR86's ride.
   idle bed fade in — throttle, brake and shifting are gated on `ready`. Switching
   off cuts instantly: bed silences under the turnoff shot, `ready` clears, the car
   coasts to a stop. Edge-triggered on the press, and the bed cuts instantly on
-  turnoff so the shot lands over silence.
+  turnoff so the shot lands over silence. GEAR SHIFT: `gear_shift.opus`, one
+  bark per engagement — the drivetrain's one-step `shifted` flag is folded into
+  `carSim.shiftSeq` in the controller (a SEQ, not a boolean, because physics
+  substeps several times per audio tick — `hullHitSeq`'s own contract), Q/E
+  taps, the automatic's own shifts and its stopped drop-to-1st all land on it
+  since they all run through engage(). Edge-detected in the tick, one-shot
+  semantics, synced edge state on park/detach like the scrape hit, and not
+  separately gated on ignition — the controller already gates shifting on it.
   TYRES: `tires_squal_loop.opus`, one voice under the car (axle height at the CG) —
   level = the LOOSEST of wheelspin (ramping from the TC lamp's own 0.15), |slip
   angle| (8°–25°, speed-gated; the cluster's slide flag reads 10°),

@@ -209,6 +209,31 @@ export const attachTurnOffSound = (audio: ThreePositionalAudio): void => {
 	turnOffSound = audio;
 };
 
+// ── Gear shift ───────────────────────────────────────────────────────────────
+//
+// One bark per engagement. The drivetrain flags `state.shifted` for the single
+// STEP a gear change starts, and the physics substeps several times per tick,
+// so the controller folds it into `carSim.shiftSeq` (hullHitSeq's contract) and
+// this tick edge-detects the seq — same shape as the scrape hit below. Every
+// path that slots a gear runs through engage(), so Q/E taps, the automatic's
+// own shifts and its stopped drop-to-1st all land here. No ignition gate of
+// its own: the controller gates shifting on ignition already, so a seq tick
+// implies the key was on.
+
+/** Shift bark level — the mechanical clunk sits under the ignition shots;
+ * dial by ear against IGNITION_GAIN. */
+const SHIFT_GAIN = 0.7;
+
+/** The mounted one-shot. Set by the component. */
+let shiftSound: ThreePositionalAudio | undefined;
+/** The last shift this module has voiced — `shiftSeq`'s own edge state,
+ * synced (not reset) on park/detach so re-entry can't voice a phantom. */
+let shiftSeq = carSim.shiftSeq;
+
+export const attachGearShift = (audio: ThreePositionalAudio): void => {
+	shiftSound = audio;
+};
+
 // ── Tyres ────────────────────────────────────────────────────────────────────
 //
 // The squeal loop: ONE voice under the car, not per-corner — RWD wheelspin is a
@@ -416,6 +441,8 @@ export const detachCarAudio = (): void => {
 	nitroReleased = false;
 	turnOnSound = undefined;
 	turnOffSound = undefined;
+	shiftSound = undefined;
+	shiftSeq = carSim.shiftSeq;
 	tireSqueal = undefined;
 	squealLevel = 0;
 	scrapeLoop = undefined;
@@ -460,6 +487,10 @@ export const parkCarAudio = (): void => {
 	ignPrev = carIgnition.on;
 	if (turnOnSound?.isPlaying) turnOnSound.stop();
 	if (turnOffSound?.isPlaying) turnOffSound.stop();
+	// The shift bark too — one-shots stop dead, and the edge state syncs (the
+	// seq contract) so re-entry doesn't voice a shift that landed while parked.
+	shiftSeq = carSim.shiftSeq;
+	if (shiftSound?.isPlaying) shiftSound.stop();
 	// Tyres too — the loop pauses (progress kept), the level resets so re-entry
 	// doesn't fade in a squeal the car isn't making.
 	squealLevel = 0;
@@ -512,6 +543,12 @@ export const tickCarAudio = (delta: number): void => {
 				if (audio?.isPlaying) audio.pause();
 			}
 		}
+	}
+
+	// ── Gear shifts: edge on the seq, one bark per engagement. ─────────────
+	if (carSim.shiftSeq !== shiftSeq) {
+		shiftSeq = carSim.shiftSeq;
+		playOneShot(shiftSound, SHIFT_GAIN, master);
 	}
 
 	// Level from the TACHO: idle → limiter maps BED_IDLE → BED_REDLINE, one-pole
