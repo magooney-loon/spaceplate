@@ -9,6 +9,29 @@ PostProcessingExtension.svelte — Studio toolbar panel, rendered FROM the regis
 index.ts                    — barrel re-exports
 ```
 
+## The panel is two columns, and the layout is CSS over tweakpane's DOM
+
+`Effects` is the right-hand column; `Base Pass`, `Weather`, `Grade` and `Anti-Aliasing`
+stack in the left one. **`Weather` is a panel grouping, not a role** — `fogScatter`,
+`rainLens` and `snowLens` are ordinary chain effects to the builder, but their `enabled`
+flag means "let the weather decide" and their params shape something invisible until it
+rains, so among bloom and vignette they read as dead controls.
+
+The columns are a CSS grid over the pane's blade container, not markup, and that is
+forced rather than chosen: a `Folder` or `Slider` attaches itself to the pane through
+Svelte context and its DOM lands wherever tweakpane puts it, so **wrapping the components
+in elements moves nothing**. Two consequences to respect when editing the panel:
+
+- **The right-hand section must be authored LAST** — the CSS addresses it as
+  `:last-child`. `SECTIONS` says so, and the Reset All footer is rendered just before it
+  for that reason.
+- **Raw HTML inside a `Folder` never renders.** svelte-tweakpane-ui puts a folder's
+  children in a `display: none` div (they exist only so it can compute a blade index), so
+  the per-effect `note` and suppression spans the panel used to carry were invisible from
+  the day they were added. They are gone; the `(off)` suffix on a suppressed effect's
+  title is what remains, and `def.note` currently has no reader. Putting it back means a
+  real tweakpane blade, not a `<span>`.
+
 The engine side lives in **`src/core/postprocessing/`** (registry, builder, uniform
 bag, one module per effect) — see its `CLAUDE.md` for the architecture and the
 browser-verified gotchas. This extension is only the state + Studio panel; the
@@ -86,5 +109,7 @@ model is lit from the inside by the whole sky. Off by default — read its secti
   one disables siblings). `resolveEnabledSet` (registry) is still the authority —
   the builder drops illegal survivors with a logged reason.
 - No presets, no localStorage — removed with the pmndrs-era panel.
-- The panel shows the live pipeline summary (quality · base · MRT set) and greys
-  suppressed effects with an explanation.
+- The panel shows the live pipeline summary (quality · base · MRT set) above the pane,
+  and marks a suppressed effect `(off)` in its folder title. The REASON is computed
+  (`suppression()`, straight from `resolveEnabledSet`) but has nowhere to render — see
+  the note about folder children above.
