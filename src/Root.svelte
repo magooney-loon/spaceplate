@@ -30,14 +30,15 @@
 		.onDisconnect(onDisconnect)
 		.onConnectError(onConnectError);
 
-	// 'false' skips the provider entirely — no websocket, no reconnect retries. Safe
-	// to skip because nothing else consumes the connection yet; once game code starts
-	// calling useTable/useReducer, those call sites must be gated on this flag too.
-	const STDB_ENABLED = import.meta.env.VITE_STDB_ENABLE !== 'false';
+	// Opt-in, same pattern as VITE_GAME_ENGINE: absent (or anything but 'true') skips
+	// the provider entirely — no websocket, no reconnect retries. Safe to skip because
+	// nothing else consumes the connection yet; once game code starts calling
+	// useTable/useReducer, those call sites must be gated on this flag too.
+	const STDB_ENABLED = import.meta.env.VITE_STDB_ENABLE === 'true';
 	if (STDB_ENABLED) {
 		createSpacetimeDBProvider(connectionBuilder);
 	} else {
-		logEngine.info('SpacetimeDB disabled (VITE_STDB_ENABLE=false)');
+		logEngine.info('SpacetimeDB disabled (set VITE_STDB_ENABLE=true to connect)');
 	}
 </script>
 

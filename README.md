@@ -88,4 +88,4 @@ Copy `.env.example` to `.env.local` and fill in your values.
 | `SPACETIMEDB_DB_NAME` | Same as above, used by the `spacetime` CLI |
 | `SPACETIMEDB_HOST` | Same as above, used by the `spacetime` CLI |
 | `VITE_GAME_ENGINE` | `true` to enable Threlte Studio + PerfMonitor + all Studio extensions |
-| `VITE_STDB_ENABLE` | Set to `false` to skip the SpacetimeDB connection entirely (client runs standalone); enabled by default |
+| `VITE_STDB_ENABLE` | `true` to connect to SpacetimeDB; disabled by default (client runs standalone) |
