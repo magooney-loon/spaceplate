@@ -86,16 +86,23 @@ export const gr86 = {
 		 *  harder the launch (street launches sit just under the floor). */
 		launchWindowMinRpm: 4000,
 		launchWindowMaxRpm: 6000,
-		/** +100% driven-axle μ at the top of the window — the plant that makes
+		/** +140% driven-axle μ at the top of the window — the plant that makes
 		 *  the launch HARDER with depth (the request at full bite is already past
-		 *  the tyre, so grip is the cap on thrust). */
-		launchGripGain: 1.0,
-		/** +50% WOT at the top, inside the traction limit — torque has to rise
-		 *  with the plant or the μ bonus is never spent. */
-		launchTorqueGain: 0.5,
-		/** 1/s — ~1.4 s of planted tail into 1st at full quality; a lift or a
-		 *  gear change kills it instantly. */
-		launchBoostDecay: 0.7,
+		 *  the tyre, so grip is the cap on thrust). Up from +100%: a caught PERFECT
+		 *  launch is also the tool for a big standing burnout/donut (drop the clutch
+		 *  clean, hold the lock over), so it wanted more headroom above the plain
+		 *  clutch-slip start (`clutchMinBite`, unchanged) that a lazy standstill spin
+		 *  is stuck with. (Not re-measured against the 0-60 figures elsewhere in this
+		 *  file — those predate this revision.) */
+		launchGripGain: 1.4,
+		/** +75% WOT at the top, inside the traction limit — torque has to rise
+		 *  with the plant or the μ bonus is never spent. Up from +50%, same reason
+		 *  as `launchGripGain`. */
+		launchTorqueGain: 0.75,
+		/** 1/s — ~2 s of planted tail into 1st at full quality (was ~1.4 s at 0.7);
+		 *  a lift or a gear change still kills it instantly. Slower so a launched
+		 *  burnout/donut has room to develop before the boost is gone. */
+		launchBoostDecay: 0.5,
 		/** 1/s — how fast rpm chases its target when the clutch is engaged. */
 		rpmResponse: 22,
 		/** 1/s — free-revving (neutral or mid-shift): spin-up, then trailing-off. */
@@ -336,12 +343,13 @@ export const gr86 = {
 		drift: {
 			label: 'Drift',
 
-			// Up from 0.8 — the rears were bleeding more forward thrust to wheelspin than
-			// the tune needs, since `throttleLoose` below (not wheelspin) is what's meant
-			// to get the car sideways. 1st still lights up, 2nd still steps out, 3rd+
-			// still hooks — the trigger is unchanged, the car just keeps more of its power
-			// through it. (Not re-measured against the 6.2 s/0-60 figure above.)
-			tireMuLong: 0.9,
+			// Up from 0.8, then 0.9 (settled on 0.7) — still bleeding too much straight-line power to
+			// wheelspin for a tune where `throttleLoose` below (not wheelspin) is meant to
+			// be the thing that gets the car sideways. Close to Grip's 1.05 now: 1st
+			// still lights up, 2nd still steps out, 3rd+ still hooks, but almost none of
+			// the drift character was ever riding on losing power in a straight line.
+			// (Not re-measured against the 6.2 s/0-60 figure above.)
+			tireMuLong: 0.7,
 			tireMuLat: 1.1,
 			// The SAME as Grip. A coasting car should have a coasting car's grip: with
 			// `looseBase` near zero, boost ≈ 1 and the yaw cap matches what the bleed can
@@ -392,21 +400,22 @@ export const gr86 = {
 			yawResponse: 3.2,
 
 			// Bigger flick: the handbrake already sets looseness to 1, so it collects the
-			// whole of `powerYawBoost`. 1.6 × 2.3 = 3.68 is the flick multiplier — a more
+			// whole of `powerYawBoost`. 1.6 × 1.9 = 3.04 is the flick multiplier — a more
 			// dramatic handbrake turn.
 			handbrakeYawBoost: 1.6,
-			// Down a touch further, from 2.6: the cap that turns a throttle-triggered
-			// slide into rotation was still snapping in hard enough to read as "the back
-			// just came around on its own" rather than something building under you —
-			// the "easy to slide away sideways" complaint. Paired with the stronger
-			// `driftAlign` below, not fought by it.
-			powerYawBoost: 2.3,
-			// Up from 0.15: the earlier value let a slide outrun what opposite lock could
-			// pull back once looseness was fully earned, which is the other half of
-			// "slides away sideways" — the catch wasn't strong enough to hold it. Still
-			// only ~40% of this is ever applied off the throttle (× (1 − looseBase)), so a
-			// committed slide isn't killed, just no longer a one-way trip.
-			driftAlign: 0.22,
+			// Down again, 2.6 → 2.3 → 1.9: still ran away before the player had time to
+			// react — this is the rate the yaw AUTHORITY builds at while the throttle
+			// holds the rear loose, and a keyboard has nothing but reaction time to
+			// counter it with. Slower build, more window to catch it.
+			powerYawBoost: 1.9,
+			// Up again, 0.15 → 0.22 → 0.35. `align` is `driftAlign × (1 − loose)`, and
+			// `loose` while the throttle is held is `throttleLoose` (0.75 above) — so on
+			// a committed throttle slide only 25% of this is landing (~0.09), which is
+			// deliberately weak so holding throttle can still hold the slide. LIFT is
+			// where the catch actually happens: `loose` falls back to `looseBase` (0.05),
+			// so ~95% of this lands (~0.33) — that's the "opposite lock catches it" moment,
+			// and 0.22 wasn't landing hard enough there either.
+			driftAlign: 0.35,
 			// Up from 0.9: the drift can hold a bigger angle before the catch fully takes
 			// over, for a more dramatic slide before it settles. The handbrake held at full
 			// lock still spins the car out to fully sideways, which is what that input
