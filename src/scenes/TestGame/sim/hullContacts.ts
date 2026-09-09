@@ -40,6 +40,30 @@
 // module reads those instead and derives "how hard" from the car's own
 // tracked velocity at the contact point rather than from the solver's
 // (here, absent) impulse.
+//
+// ── WHY THE HIT SEVERITY IS READ FROM THE *PREVIOUS* STEP'S VELOCITY ──────
+// `usePhysicsTask` (TestGame.svelte, which calls `pollHullContacts`) runs
+// BEFORE `world.step()`, so every poll reads narrow-phase state left over
+// from the LAST completed step. For a hard arrival that also proved out
+// empirically: `contactDist` goes from "no manifold at all" straight to
+// "touching" WITHIN ONE STEP — Rapier's CCD sweeps the body to the point of
+// impact and the solver kills its closing velocity in that SAME step, so by
+// the time the manifold is visible to us at all, `body.linvel()` is already
+// the POST-impact (near-zero, sometimes slightly bounced) velocity. Reading
+// "how fast are we closing" off the current step at a rising edge therefore
+// reads close to zero almost every time — measured directly against the
+// installed engine: an 8 m/s wall arrival read back as −0.35 m/s (already
+// reversed) the instant `contactDist` first went negative, with the true 8.0
+// only ever visible on the POLL BEFORE. This is why sliding worked (its
+// velocity is read continuously, every step, and a scrape's contact-patch
+// speed genuinely doesn't get killed in one step the way a hard stop does)
+// while a HIT barely ever crossed `HIT_MIN_DV`. The fix: this module keeps a
+// standing snapshot of the body's kinematics from the last step it was
+// DEFINITELY NOT touching (`_cleanLin/_cleanAng/_cleanCom`) and uses THAT —
+// the true pre-impact velocity — for the rising edge's severity, while the
+// continuous `bestClosing`/`bestSlide` (current-step velocity) keep doing the
+// live "how fast is it closing/sliding right now" job they already did
+// correctly.
 
 import type { Collider, RigidBody, TempContactManifold, World } from '@dimforge/rapier3d-compat';
 import * as THREE from 'three/webgpu';
@@ -74,6 +98,13 @@ const _com = { x: 0, y: 0, z: 0 };
 const _colliderPos = { x: 0, y: 0, z: 0 };
 const _colliderQuat = new THREE.Quaternion();
 const _worldVec = new THREE.Vector3();
+
+/** The body's kinematics as of the last step it was DEFINITELY NOT touching —
+ *  the pre-impact reading the rising edge's severity is computed from (see
+ *  the header's "WHY THE HIT SEVERITY IS READ FROM THE PREVIOUS STEP"). */
+const _cleanLin = { x: 0, y: 0, z: 0 };
+const _cleanAng = { x: 0, y: 0, z: 0 };
+const _cleanCom = { x: 0, y: 0, z: 0 };
 
 let hull: Collider | undefined;
 let curWorld: World | undefined;
@@ -265,6 +296,18 @@ export function pollHullContacts(
 
 	const touching = bestDist !== Infinity;
 	if (!touching) {
+		// This step is CLEAN — remember its kinematics. If the very next step
+		// turns out to be a hard arrival, this is the last reading from before
+		// Rapier's own solver got to it (see the header).
+		_cleanLin.x = _lin.x;
+		_cleanLin.y = _lin.y;
+		_cleanLin.z = _lin.z;
+		_cleanAng.x = _ang.x;
+		_cleanAng.y = _ang.y;
+		_cleanAng.z = _ang.z;
+		_cleanCom.x = _com.x;
+		_cleanCom.y = _com.y;
+		_cleanCom.z = _com.z;
 		carSim.hullContact = false;
 		carSim.hullSlideMs = 0;
 		carSim.hullHitDv = 0;
@@ -290,19 +333,34 @@ export function pollHullContacts(
 	carSim.hullSlideDirY = bestSlideDirY;
 	carSim.hullSlideDirZ = bestSlideDirZ;
 
-	const closingMs = bestClosing / UNITS_PER_METER;
-	carSim.hullHitDv = closingMs;
+	carSim.hullHitDv = bestClosing / UNITS_PER_METER;
 
 	// The rising edge: contact just STARTED this step (wasn't touching last
-	// step) and arrived fast enough to count as an arrival rather than a
-	// crawl up a kerb. `hullHitSeq` is the one-shot signal a CONSUMER (like
-	// `fx/CarImpacts.svelte`) polls for — `hullHitFlash` alone can't tell
-	// "still decaying from the last hit" from "a fresh one just landed".
-	if (!wasTouching && closingMs > HIT_MIN_DV && hitCooldown <= 0) {
-		carSim.hullHitFlash =
-			HULL_HIT_FLASH_TIME * (0.5 + 0.5 * clamp(closingMs / HULL_HIT_FULL_DV, 0, 1));
-		carSim.hullHitSeq++;
-		hitCooldown = HIT_COOLDOWN;
+	// step). Severity is computed from the CLEAN (pre-impact) snapshot, not
+	// this step's own velocity — see the header's "WHY THE HIT SEVERITY IS
+	// READ FROM THE PREVIOUS STEP": by the time a hard arrival's manifold is
+	// visible at all, the current velocity has already been killed by the
+	// same step's solve. `r` uses the clean COM against THIS step's contact
+	// point — one step apart, close enough for a severity estimate.
+	if (!wasTouching && hitCooldown <= 0) {
+		const rx = bestWorldX - _cleanCom.x;
+		const ry = bestWorldY - _cleanCom.y;
+		const rz = bestWorldZ - _cleanCom.z;
+		const vx = _cleanLin.x + (_cleanAng.y * rz - _cleanAng.z * ry);
+		const vy = _cleanLin.y + (_cleanAng.z * rx - _cleanAng.x * rz);
+		const vz = _cleanLin.z + (_cleanAng.x * ry - _cleanAng.y * rx);
+		const vn = vx * bestNx + vy * bestNy + vz * bestNz;
+		const arrivalMs = Math.max(0, -vn) / UNITS_PER_METER;
+		// `hullHitSeq` is the one-shot signal a CONSUMER (like
+		// `fx/CarImpacts.svelte`) polls for — `hullHitFlash` alone can't tell
+		// "still decaying from the last hit" from "a fresh one just landed".
+		if (arrivalMs > HIT_MIN_DV) {
+			carSim.hullHitDv = arrivalMs;
+			carSim.hullHitFlash =
+				HULL_HIT_FLASH_TIME * (0.5 + 0.5 * clamp(arrivalMs / HULL_HIT_FULL_DV, 0, 1));
+			carSim.hullHitSeq++;
+			hitCooldown = HIT_COOLDOWN;
+		}
 	}
 	wasTouching = true;
 }
@@ -315,4 +373,7 @@ export function resetHullContacts(): void {
 	curWorld = undefined;
 	wasTouching = false;
 	hitCooldown = 0;
+	_cleanLin.x = _cleanLin.y = _cleanLin.z = 0;
+	_cleanAng.x = _cleanAng.y = _cleanAng.z = 0;
+	_cleanCom.x = _cleanCom.y = _cleanCom.z = 0;
 }
