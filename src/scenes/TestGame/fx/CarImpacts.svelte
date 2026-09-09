@@ -6,8 +6,9 @@
 	import { HULL_HIT_FULL_DV } from '../sim/hullContacts';
 	import { UNITS_PER_METER } from '../units';
 	import { clamp } from '../sim/carMath';
-	import { createSparkPool } from './sparkPool';
+	import { createSparkPool, type SparkBounceVolume } from './sparkPool';
 	import { createPuffPool } from './puffPool';
+	import type { CarHull } from '../cars/hull';
 
 	// Impact FX — what the chassis hull hitting the world looks like. Two effects
 	// off one signal:
@@ -71,8 +72,17 @@
 	// per-spark seed. The dust is a small LIT puffPool (road grit,
 	// normal-blended — what stops a hard hit reading as fireworks in a
 	// vacuum). World-anchored at TestGame root (sparks are shed, not carried).
+	// And sparks BOUNCE OFF THE CAR ITSELF — the pool reflects alive sparks off
+	// an oriented box fed with the hull bounds at the body's live pose (see the
+	// emission section for the normal-direction trap that makes it necessary),
+	// so debris never streaks through the chassis.
 
 	const { invalidate, camera, autoRenderTask } = useThrelte();
+
+	// The chassis hull — from TestGame, the same contract `DebugRig` gets it
+	// under: its bounds are the spark bounce volume's box. Optional (a GLB with
+	// no non-wheel meshes has none), and then the pool simply doesn't bounce.
+	let { hull }: { hull?: CarHull } = $props();
 
 	// ── Tuning ──────────────────────────────────────────────────────────────────
 	// Velocity thresholds are in METRES per second at the boundary (`carSim`'s
@@ -127,30 +137,52 @@
 		onTextureLoad: () => invalidate()
 	});
 
-	// ── Emission ────────────────────────────────────────────────────────────────
+	// ── Emission ────────────────────────────────────────────────────────────────────
+	//
+	// THE NORMAL POINTS INTO THE CAR. `carSim.hullNormal*` is oriented by
+	// `hullContacts.ts` from the contact TOWARD the chassis COM — away from the
+	// contacted surface, straight through the body — because that is the sign its
+	// closing-speed read needs. This emission used to treat it as "outward, into
+	// free space": sparks were spawned 5 cm INSIDE the skin, kicked along the
+	// body-inward normal, and floor-clamped to KEEP that component — which is why
+	// a barrier scrape drew streaks straight through the chassis. Every use of
+	// the normal here flips it first.
+	//
+	// Flipping it is not enough on its own, though: −normal points into the WALL,
+	// so kicking sparks that way buries the stream in the barrier (depth-occluded
+	// — invisible), exactly as kicking them the other way crossed the car. Real
+	// grind debris runs IN THE INTERFACE — the gap where the two surfaces meet —
+	// so that is what the emission builds: a share of the slide velocity (the
+	// stream trails the car) plus an isotropic jitter cone with NO normal bias at
+	// all. The two solids then settle the leftovers, each in its own way: jitter
+	// aimed into the wall is depth-occluded and dies (a spark that hits the
+	// barrier quenches), and jitter aimed back into the car RICOCHETS — off the
+	// pool's bounce volume, fed below from the hull bounds at `carSim.body*`'s
+	// live pose.
 
 	/**
-	 * One spark off the contact. It keeps a SHARE of the surface's own slide
-	 * velocity — which is what makes the stream trail behind the car instead of
-	 * hanging in a puddle — plus a kick along the normal and a random cone.
+	 * One spark off the contact: a SHARE of the surface's own slide velocity
+	 * (what makes the stream trail behind the car instead of hanging in a
+	 * puddle) plus the isotropic jitter cone. All the energy is tangential +
+	 * jitter — no normal kick, per the direction contract above. Spawned 2 cm
+	 * out along the FLIPPED normal: just clear of the paint, into the gap.
 	 *
 	 * @param slide world units/s along the surface
-	 * @param out world units/s away from it
 	 * @param spread world units/s of jitter on every axis
 	 */
-	function spark(slide: number, out: number, spread: number, heat: number, life: number): void {
+	function spark(slide: number, spread: number, heat: number, life: number): void {
 		const keep = 0.15 + 0.5 * Math.random();
-		const kick = out * (0.35 + 0.65 * Math.random());
 		const { hullContactX: x, hullContactY: y, hullContactZ: z } = carSim;
-		const { hullNormalX: nx, hullNormalY: ny, hullNormalZ: nz } = carSim;
-		const { hullSlideDirX: tx, hullSlideDirY: ty, hullSlideDirZ: tz } = carSim;
+		const ox = -carSim.hullNormalX;
+		const oy = -carSim.hullNormalY;
+		const oz = -carSim.hullNormalZ;
 		sparks.spawn(
-			x + nx * 0.05,
-			y + ny * 0.05,
-			z + nz * 0.05,
-			tx * slide * keep + nx * kick + (Math.random() - 0.5) * spread,
-			ty * slide * keep + ny * kick + (Math.random() - 0.5) * spread,
-			tz * slide * keep + nz * kick + (Math.random() - 0.5) * spread,
+			x + ox * 0.02,
+			y + oy * 0.02,
+			z + oz * 0.02,
+			carSim.hullSlideDirX * slide * keep + (Math.random() - 0.5) * spread,
+			carSim.hullSlideDirY * slide * keep + (Math.random() - 0.5) * spread,
+			carSim.hullSlideDirZ * slide * keep + (Math.random() - 0.5) * spread,
 			life,
 			heat,
 			0.7 + 0.6 * Math.random()
@@ -158,31 +190,34 @@
 	}
 
 	/** The arrival: a wide burst plus a cough of dust, both sized by severity
-	 *  (0..1, `carSim.hullHitDv` normalised against `HULL_HIT_FULL_DV`). */
+	 *  (0..1, `carSim.hullHitDv` normalised against `HULL_HIT_FULL_DV`). The
+	 *  burst's energy is ALL cone — the splash fans out along the surface the
+	 *  car arrived at, and the bounce volume scatters whatever share of it
+	 *  meets the body on the way out. */
 	function burst(severity: number): void {
 		const slide = carSim.hullSlideMs * UNITS_PER_METER;
 		const count = 7 + Math.round(30 * severity);
 		for (let i = 0; i < count; i++) {
 			spark(
 				slide,
-				5 + 24 * severity,
-				6 + 10 * severity,
+				9 + 16 * severity,
 				0.7 + 0.3 * Math.random(),
 				0.28 + (0.45 + 0.35 * severity) * Math.random()
 			);
 		}
 		const { hullContactX: x, hullContactY: y, hullContactZ: z } = carSim;
-		const { hullNormalX: nx, hullNormalZ: nz } = carSim;
+		const ox = -carSim.hullNormalX;
+		const oz = -carSim.hullNormalZ;
 		const { hullSlideDirX: tx, hullSlideDirZ: tz } = carSim;
 		const puffs = 2 + Math.round(4 * severity);
 		for (let i = 0; i < puffs; i++) {
 			dust.spawn(
-				x + (Math.random() - 0.5) * 0.5,
-				y + (Math.random() - 0.5) * 0.5,
-				z + (Math.random() - 0.5) * 0.5,
-				tx * slide * 0.25 + nx * (1 + 2 * Math.random()) + (Math.random() - 0.5) * 1.2,
+				x + ox * 0.1 + (Math.random() - 0.5) * 0.4,
+				y + (Math.random() - 0.5) * 0.3,
+				z + oz * 0.1 + (Math.random() - 0.5) * 0.4,
+				tx * slide * 0.25 + (Math.random() - 0.5) * 1.6,
 				0.6 + 0.9 * Math.random(),
-				tz * slide * 0.25 + nz * (1 + 2 * Math.random()) + (Math.random() - 0.5) * 1.2,
+				tz * slide * 0.25 + (Math.random() - 0.5) * 1.6,
 				0.8 + 0.6 * Math.random(),
 				0.4 + 0.6 * severity,
 				0.3 + 0.35 * severity,
@@ -221,8 +256,7 @@
 			scrapeT -= 1;
 			spark(
 				carSim.hullSlideMs * UNITS_PER_METER,
-				2 + 5 * grind,
-				3 + 4 * grind,
+				4 + 6 * grind,
 				0.45 + 0.5 * grind,
 				0.2 + 0.4 * Math.random()
 			);
@@ -233,9 +267,46 @@
 	// Render stage: the streaks are built on the camera basis that is about to be
 	// drawn, and the ballistics run on the frame's own delta rather than on a
 	// substep count that is never constant (`ceil(accumulator / rate)`).
+	// The car's bounce volume, written in place each frame — the task body must
+	// not allocate (DOCS/best-practices.md §4). Hull bounds WITHOUT `margin`:
+	// the margin is the collider's ~0.13-unit fillet, and including it would put
+	// the box face outside the paint, so a spark born at the skin would start
+	// inside the box and get popped to the face on its first frame.
+	const bounce: SparkBounceVolume = {
+		x: 0,
+		y: 0,
+		z: 0,
+		qx: 0,
+		qy: 0,
+		qz: 0,
+		qw: 1,
+		cx: 0,
+		cy: 0,
+		cz: 0,
+		hx: 0,
+		hy: 0,
+		hz: 0
+	};
+
 	useTask(
 		(delta) => {
-			let live = sparks.update(delta, camera.current);
+			if (hull) {
+				const b = hull.bounds;
+				bounce.x = carSim.bodyX;
+				bounce.y = carSim.bodyY;
+				bounce.z = carSim.bodyZ;
+				bounce.qx = carSim.bodyQuatX;
+				bounce.qy = carSim.bodyQuatY;
+				bounce.qz = carSim.bodyQuatZ;
+				bounce.qw = carSim.bodyQuatW;
+				bounce.cx = (b.min[0] + b.max[0]) * 0.5;
+				bounce.cy = (b.min[1] + b.max[1]) * 0.5;
+				bounce.cz = (b.min[2] + b.max[2]) * 0.5;
+				bounce.hx = (b.max[0] - b.min[0]) * 0.5;
+				bounce.hy = (b.max[1] - b.min[1]) * 0.5;
+				bounce.hz = (b.max[2] - b.min[2]) * 0.5;
+			}
+			let live = sparks.update(delta, camera.current, hull ? bounce : undefined);
 			if (dust.update(delta, camera.current, DUST_DRAG)) live = true;
 			if (live) invalidate();
 		},

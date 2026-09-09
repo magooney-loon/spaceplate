@@ -55,14 +55,20 @@ sim/                    — the driving model, car-agnostic
                          also carried the hand-rolled keymap
   carTelemetry.svelte.ts — carSim (per-physics-step plain object) / carHud (30 Hz $state
                          mirror for the cluster) / carDebugHud (the second 30 Hz
-                         mirror, published only while the rig is up)
+                         mirror, published only while the rig is up) /
+                         publishCarPose (the chassis body's world pose each step,
+                         for fx that test against the car's volume)
   carMath.ts            — `clamp` / `damp`, shared by the sim modules
 fx/                     — the car's visual effects
   puffPool.ts           — the smoke primitive: one mesh / one material / one draw
                          call, per-vertex puff attributes (TireSmoke + exhaust)
   sparkPool.ts          — the spark primitive, puffPool's hot sibling: one ADDITIVE
                          mesh of velocity-STREAKED quads that cool white→red and
-                         SPUTTER (per-vertex spark attributes, CarImpacts)
+                         SPUTTER (per-vertex spark attributes, CarImpacts); update()
+                         optionally bounces alive sparks off an oriented box
+                         (CarImpacts feeds it the hull bounds at the car's live
+                         pose) so debris ricochets off the body instead of
+                         passing through it
   noiseTextures.ts      — the two vendored noise PNGs, loaded ONCE for the scene
   CarWheels.svelte      — per-vertex steering/rolling wheel deformation (TSL); finds
                          wheels by the spec's material prefix in the GLB
@@ -78,7 +84,11 @@ fx/                     — the car's visual effects
                          a rising edge = burst + dust cough, pressed-and-sliding =
                          continuous spark stream. Pure CONSUMER of the signal
                          `sim/hullContacts.ts` publishes onto carSim — no Rapier
-                         imports here (sparkPool + a small puffPool)
+                         imports here (sparkPool + a small puffPool). Takes the
+                         hull from TestGame as a prop for the spark bounce
+                         volume; sparks run IN the contact interface (slide
+                         share + jitter, NO normal kick — the published normal
+                         points INTO the car) and bounce off the body
   NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
                          boost from the nitrous flow (the lensState contract)
 debug/                  — the debug TOOL, both halves: the 3D rig and its readout.
@@ -996,6 +1006,24 @@ inherit the GR86's ride.
   constraint fall back to mount order. Ballistics + streak-building stay a
   `{ before: autoRenderTask }` task (fx/puffPool.ts's camera-basis rule).
   Pooled, hoisted callbacks, `autoInvalidate: false` — §4 throughout.
+  **THE NORMAL POINTS INTO THE CAR, and the emission respects that**:
+  `hullNormal*` is oriented toward the chassis COM (the sign the closing-speed
+  read needs), so the old emission — spawn 5 cm INSIDE the skin, kick along
+  the normal, floor-clamp that component — fired every spark through the
+  chassis. But kicking along the flipped normal just buries the stream in the
+  wall instead, so the emission now does NEITHER: sparks get a share of the
+  slide velocity plus an isotropic jitter cone and run IN THE INTERFACE
+  between the two surfaces (which is where real grind debris goes), spawned
+  2 cm out along the flipped normal. The solids settle the leftovers —
+  wall-aimed sparks are depth-occluded and die, and body-aimed ones RICOCHET:
+  the pool's `update()` takes an optional oriented box (`SparkBounceVolume`)
+  and CarImpacts feeds it the hull BOUNDS (no `margin` — the collider's ~0.13
+  fillet would put the face outside the paint, popping every newborn spark to
+  it) at `carSim.body*`'s pose, published per step by `publishCarPose` from
+  TestGame's own physics task. Inside the box = pushed out through the
+  nearest face, velocity reflected only when it still drives inward
+  (restitution 0.35, tangential scrub 0.75 — a ricochet, not a bounce
+  animation). The same flip keeps the burst's DUST off the paint.
   **`sparkPool.ts` is its primitive**, puffPool's hot sibling: one ADDITIVE
   `MeshBasicNodeMaterial` mesh — a spark is white-hot metal and ADDS light
   rather than dimming, the opposite job to smoke, and it must not be dimmed by

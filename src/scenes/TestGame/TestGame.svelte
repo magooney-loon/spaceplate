@@ -31,7 +31,7 @@
 	import { createCarController } from './sim/controller';
 	import { buildCarHull, chassisMassProperties } from './cars/hull';
 	import Track from './world/Track.svelte';
-	import { resetCarTelemetry } from './sim/carTelemetry.svelte';
+	import { resetCarTelemetry, publishCarPose } from './sim/carTelemetry.svelte';
 	import { pollHullContacts, resetHullContacts } from './sim/hullContacts';
 
 	// Test Game 3D scene — the driving prototype's composition layer. The driving
@@ -174,6 +174,9 @@
 		// header for why. Runs in the physics task, not per rendered frame: an
 		// impulse spike lives inside one step and a render-stage poll would miss it.
 		pollHullContacts(world, carCollider, body, delta);
+		// The chassis pose, same step — world-anchored fx (CarImpacts' spark bounce
+		// volume) tests against the car's volume at it.
+		publishCarPose(body);
 	});
 
 	// ── The body leans (sim/suspension.ts) ───────────────────────────────────
@@ -444,7 +447,7 @@
 	     (burst + dust cough), a SCRATCH is pressed-and-sliding (continuous spark
 	     stream). World-anchored like the marks: sparks are shed and stay where the
 	     car scraped. See fx/CarImpacts.svelte. -->
-	<CarImpacts />
+	<CarImpacts hull={carHull} />
 
 	<!-- Renders nothing — drives the afterimage effect's runtime boost from the
 	     nitrous flow. See fx/NitrousAfterimage.svelte. -->

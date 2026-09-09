@@ -12,6 +12,7 @@ import { currentCar } from '../cars';
 import { G } from '../units';
 import { carView } from './carSwitches.svelte';
 import type { Suspension } from './suspension';
+import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';
 
 /** Written every physics step. Read by CarWheels and the mirror below — never by the HUD. */
 export const carSim = {
@@ -77,6 +78,21 @@ export const carSim = {
 	 *  the tyres do, and a car sliding at the limit stops leaning harder. */
 	accelLat: 0,
 
+	// ── Car pose (world) ────────────────────────────────────────────────────────
+	/** The chassis body's world pose — translation + rotation as a quaternion,
+	 *  written every physics step by `publishCarPose` (plain fields, no $state:
+	 *  the same contract as the rest of this object). For world-anchored fx that
+	 *  must test against the car's VOLUME: `fx/CarImpacts.svelte` bounces its
+	 *  sparks off the hull bounds placed at this pose, so debris fired back into
+	 *  the body ricochets off it instead of streaking through the paint. */
+	bodyX: 0,
+	bodyY: 0,
+	bodyZ: 0,
+	bodyQuatX: 0,
+	bodyQuatY: 0,
+	bodyQuatZ: 0,
+	bodyQuatW: 1,
+
 	// ── The debug feed ────────────────────────────────────────────────────────
 	// Everything below exists because `debug/DebugRig.svelte` draws it and the
 	// HUD's debug panel prints it. The driving model computed all of it already —
@@ -128,7 +144,11 @@ export const carSim = {
 	hullContactX: 0,
 	hullContactY: 0,
 	hullContactZ: 0,
-	/** World-space outward normal, oriented away from the car's own COM. */
+	/** World-space contact normal, oriented from the contact point TOWARD the
+	 *  car's own COM — i.e. away from the contacted surface and INTO the body
+	 *  (the sign `hullContacts.ts`'s closing-speed read needs; the file orients
+	 *  it there deliberately). A consumer that wants "out of the car" must flip
+	 *  it — `fx/CarImpacts.svelte` does exactly that. */
 	hullNormalX: 0,
 	hullNormalY: 1,
 	hullNormalZ: 0,
@@ -334,6 +354,25 @@ function publishDebug(suspension: Suspension): void {
 	}
 }
 
+/** The pose half of the feed — the chassis body's world translation and
+ *  rotation, straight off Rapier, written onto `carSim` every physics step from
+ *  TestGame.svelte's own task (right after `pollHullContacts`, so pose and hull
+ *  contact describe the same step). Out-param scratch for the translation —
+ *  `worldCom`'s own zero-allocation pattern; `rotation()` mirrors
+ *  hullContacts.ts and takes the small allocation instead. */
+const _poseT = { x: 0, y: 0, z: 0 };
+export function publishCarPose(body: RapierRigidBody): void {
+	const t = body.translation(_poseT);
+	const r = body.rotation();
+	carSim.bodyX = t.x;
+	carSim.bodyY = t.y;
+	carSim.bodyZ = t.z;
+	carSim.bodyQuatX = r.x;
+	carSim.bodyQuatY = r.y;
+	carSim.bodyQuatZ = r.z;
+	carSim.bodyQuatW = r.w;
+}
+
 /** Park the instruments — used when the scene stops driving (scene switch, blur). */
 export function resetCarTelemetry(): void {
 	carSim.speedMs = 0;
@@ -367,6 +406,13 @@ export function resetCarTelemetry(): void {
 	carSim.loose = 0;
 	carSim.muLat = 0;
 	carSim.clutch = 1;
+	carSim.bodyX = 0;
+	carSim.bodyY = 0;
+	carSim.bodyZ = 0;
+	carSim.bodyQuatX = 0;
+	carSim.bodyQuatY = 0;
+	carSim.bodyQuatZ = 0;
+	carSim.bodyQuatW = 1;
 	carSim.hullContact = false;
 	carSim.hullContactX = 0;
 	carSim.hullContactY = 0;

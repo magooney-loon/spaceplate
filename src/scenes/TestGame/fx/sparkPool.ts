@@ -32,7 +32,19 @@
 // here. The variety comes from the per-spark seed instead.
 
 import * as THREE from 'three/webgpu';
-import { attribute, float, fract, mix, saturate, sin, step, uniform, uv, vec3, vec4 } from 'three/tsl';
+import {
+	attribute,
+	float,
+	fract,
+	mix,
+	saturate,
+	sin,
+	step,
+	uniform,
+	uv,
+	vec3,
+	vec4
+} from 'three/tsl';
 
 export interface SparkPoolConfig {
 	/** Ring size. Oldest slot is recycled; a spawn always succeeds. */
@@ -71,6 +83,27 @@ interface Spark {
 	scale: number;
 }
 
+/** An oriented box alive sparks bounce off — `fx/CarImpacts.svelte` feeds
+ *  the car's hull bounds at the body's live pose so debris fired back into the
+ *  chassis RICOCHETS off the skin instead of streaking through the paint.
+ *  Position + rotation locate the volume in world space; the centre and half
+ *  extents describe the box in the volume's own (rotated) frame. */
+export interface SparkBounceVolume {
+	x: number;
+	y: number;
+	z: number;
+	qx: number;
+	qy: number;
+	qz: number;
+	qw: number;
+	cx: number;
+	cy: number;
+	cz: number;
+	hx: number;
+	hy: number;
+	hz: number;
+}
+
 export interface SparkPool {
 	/** Mount this. Permanently visible — see the header on why. */
 	readonly mesh: THREE.Mesh;
@@ -91,9 +124,10 @@ export interface SparkPool {
 	): void;
 	/**
 	 * Ballistics, streak-build, die. Returns true while any spark is alive — the
-	 * caller owns the `invalidate()` for that reason.
+	 * caller owns the `invalidate()` for that reason. `bounce`, when given, is
+	 * an oriented box sparks reflect off (see `SparkBounceVolume`).
 	 */
-	update(delta: number, camera: THREE.Camera | undefined): boolean;
+	update(delta: number, camera: THREE.Camera | undefined, bounce?: SparkBounceVolume): boolean;
 	dispose(): void;
 }
 
@@ -103,6 +137,39 @@ const EMBER_COOL: readonly [number, number, number] = [0.85, 0.13, 0.02];
 const EMBER_WARM: readonly [number, number, number] = [1, 0.52, 0.08];
 /** White-hot with a yellow bias — freshly torn metal. */
 const EMBER_HOT: readonly [number, number, number] = [1, 0.97, 0.85];
+
+// ── Bounce tuning ──────────────────────────────────────────────────────────
+/** Restitution off the bounce volume — hot grit doesn't rebound like a ball. */
+const BOUNCE_REST = 0.35;
+/** Tangential speed a striking spark KEEPS — a ricochet scrubs on contact. */
+const BOUNCE_SCRUB = 0.75;
+/** Push-out clearance past the face, so a bounced spark isn't re-penetrated by
+ *  the very step that threw it out. */
+const BOUNCE_SKIN = 0.02;
+
+/** Quaternion rotation result — a hoisted out-param so the per-spark bounce
+ *  path allocates nothing. Read it IMMEDIATELY after each `rotateBy`. */
+const _rot = { x: 0, y: 0, z: 0 };
+
+/** v + 2w(u×v) + 2u×(u×v) — the expanded quaternion rotation three's own
+ *  `Vector3.applyQuaternion` evaluates. Written out because it runs per spark
+ *  per frame and the pool's maths is otherwise all inline. */
+function rotateBy(
+	x: number,
+	y: number,
+	z: number,
+	qx: number,
+	qy: number,
+	qz: number,
+	qw: number
+): void {
+	const cx = 2 * (qy * z - qz * y);
+	const cy = 2 * (qz * x - qx * z);
+	const cz = 2 * (qx * y - qy * x);
+	_rot.x = x + qw * cx + (qy * cz - qz * cy);
+	_rot.y = y + qw * cy + (qz * cx - qx * cz);
+	_rot.z = z + qw * cz + (qx * cy - qy * cx);
+}
 
 export function createSparkPool(cfg: SparkPoolConfig): SparkPool {
 	const { count } = cfg;
@@ -187,7 +254,13 @@ export function createSparkPool(cfg: SparkPoolConfig): SparkPool {
 	// a HARD cut, because a tumbling spark genuinely disappears and comes back —
 	// a spark field that only fades reads as embers, not as grinding metal. Both
 	// are per-spark (the seed), so the pool never pulses as one.
-	const flicker = mix(float(0.55), float(1), sin(uTime.mul(cfg.flicker).add(seed.mul(41))).mul(0.5).add(0.5));
+	const flicker = mix(
+		float(0.55),
+		float(1),
+		sin(uTime.mul(cfg.flicker).add(seed.mul(41)))
+			.mul(0.5)
+			.add(0.5)
+	);
 	const sputter = step(0.16, fract(seed.mul(17.3).add(uTime.mul(cfg.sputter))));
 
 	// Instant on, quick out. `t` past 1 drives this to 0 on its own, so a slot
@@ -258,7 +331,7 @@ export function createSparkPool(cfg: SparkPoolConfig): SparkPool {
 			}
 			sparkAttr.needsUpdate = true;
 		},
-		update(delta, camera) {
+		update(delta, camera, bounce) {
 			clock += delta;
 			uTime.value = clock;
 			if (!camera) return false;
@@ -280,6 +353,45 @@ export function createSparkPool(cfg: SparkPoolConfig): SparkPool {
 			const camZ = e[14];
 
 			const decay = Math.exp(-cfg.drag * delta);
+			// The bounce volume's frame, resolved once per call rather than per
+			// spark: the frame's pose, plus the INVERSE rotation (a unit
+			// quaternion's conjugate) for world→local. Local→world reuses the pose.
+			let boxX = 0;
+			let boxY = 0;
+			let boxZ = 0;
+			let cqx = 0;
+			let cqy = 0;
+			let cqz = 0;
+			let cqw = 1;
+			let fqx = 0;
+			let fqy = 0;
+			let fqz = 0;
+			let fqw = 1;
+			let bcx = 0;
+			let bcy = 0;
+			let bcz = 0;
+			let bhx = 0;
+			let bhy = 0;
+			let bhz = 0;
+			if (bounce) {
+				boxX = bounce.x;
+				boxY = bounce.y;
+				boxZ = bounce.z;
+				cqx = -bounce.qx;
+				cqy = -bounce.qy;
+				cqz = -bounce.qz;
+				cqw = bounce.qw;
+				fqx = bounce.qx;
+				fqy = bounce.qy;
+				fqz = bounce.qz;
+				fqw = bounce.qw;
+				bcx = bounce.cx;
+				bcy = bounce.cy;
+				bcz = bounce.cz;
+				bhx = bounce.hx;
+				bhy = bounce.hy;
+				bhz = bounce.hz;
+			}
 			let alive = false;
 			let dirty = false;
 			for (let i = 0; i < count; i++) {
@@ -299,6 +411,65 @@ export function createSparkPool(cfg: SparkPoolConfig): SparkPool {
 				s.x += s.vx * delta;
 				s.y += s.vy * delta;
 				s.z += s.vz * delta;
+
+				// ── The car (or whatever volume) ────────────────────────────────
+				// A spark that ends up INSIDE the box is pushed out through the
+				// nearest face and, when its velocity still drives inward there,
+				// reflected (restitution on the axis, scrub on the rest) — a
+				// ricochet, not a pass-through. One that is already leaving is
+				// only repositioned, so it is never double-flipped.
+				if (bounce) {
+					rotateBy(s.x - boxX, s.y - boxY, s.z - boxZ, cqx, cqy, cqz, cqw);
+					let lx = _rot.x;
+					let ly = _rot.y;
+					let lz = _rot.z;
+					const ox = lx - bcx;
+					const oy = ly - bcy;
+					const oz = lz - bcz;
+					// Penetration per axis — all three positive means inside the box.
+					const px = bhx - Math.abs(ox);
+					const py = bhy - Math.abs(oy);
+					const pz = bhz - Math.abs(oz);
+					if (px > 0 && py > 0 && pz > 0) {
+						// Out through the NEAREST face — the shallowest axis.
+						const axis: 0 | 1 | 2 = px <= py && px <= pz ? 0 : py <= pz ? 1 : 2;
+						const sign =
+							axis === 0 ? (ox < 0 ? -1 : 1) : axis === 1 ? (oy < 0 ? -1 : 1) : oz < 0 ? -1 : 1;
+						rotateBy(s.vx, s.vy, s.vz, cqx, cqy, cqz, cqw);
+						const wx = _rot.x;
+						const wy = _rot.y;
+						const wz = _rot.z;
+						const along = axis === 0 ? wx : axis === 1 ? wy : wz;
+						const outSpeed = along * sign < 0 ? -along * BOUNCE_REST : along;
+						let bvx: number;
+						let bvy: number;
+						let bvz: number;
+						if (axis === 0) {
+							lx = bcx + sign * (bhx + BOUNCE_SKIN);
+							bvx = outSpeed;
+							bvy = wy * BOUNCE_SCRUB;
+							bvz = wz * BOUNCE_SCRUB;
+						} else if (axis === 1) {
+							ly = bcy + sign * (bhy + BOUNCE_SKIN);
+							bvx = wx * BOUNCE_SCRUB;
+							bvy = outSpeed;
+							bvz = wz * BOUNCE_SCRUB;
+						} else {
+							lz = bcz + sign * (bhz + BOUNCE_SKIN);
+							bvx = wx * BOUNCE_SCRUB;
+							bvy = wy * BOUNCE_SCRUB;
+							bvz = outSpeed;
+						}
+						rotateBy(bvx, bvy, bvz, fqx, fqy, fqz, fqw);
+						s.vx = _rot.x;
+						s.vy = _rot.y;
+						s.vz = _rot.z;
+						rotateBy(lx, ly, lz, fqx, fqy, fqz, fqw);
+						s.x = boxX + _rot.x;
+						s.y = boxY + _rot.y;
+						s.z = boxZ + _rot.z;
+					}
+				}
 
 				// ── The streak frame ────────────────────────────────────────────
 				// dir  = the spark's own velocity (the streak's axis)
