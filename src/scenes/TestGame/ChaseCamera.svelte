@@ -18,8 +18,8 @@
 
 	let { target }: { target?: THREE.Object3D } = $props();
 
-	const CHASE_DISTANCE = 12; // world units behind the car
-	const CHASE_POLAR = 1.15; // rad from +Y — ~24° above the horizon, so it reads "bird"
+	const CHASE_DISTANCE = 16; // world units behind the car
+	const CHASE_POLAR = 1.30; // rad from +Y — ~24° above the horizon, so it reads "bird"
 	// The anchor sits at the car's middle and the car is ~3.3 world units tall, so anything
 	// under ~1.5 puts the camera inside the cabin — that is the point, zoom all the way in
 	// and you are sitting in it. The floor is a hair off zero because camera-controls
