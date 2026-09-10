@@ -123,7 +123,9 @@ panel pattern, templates, extension inventory) and the per-extension reference. 
   (the draw task in `Renderer.svelte`, stats, the demo capture tasks).
 - Always pass `autoInvalidate: false` and call `invalidate()` only when the task actually
   moved something — Threlte's `renderMode` is 'on-demand', and a task with the default
-  auto-invalidate forces a full-rate render loop forever (see `Skybox.svelte`).
+  auto-invalidate forces a full-rate render loop forever (see `Skybox.svelte`). The one
+  deliberate exception is `core/utils/Warmup.svelte`, which uses exactly that to force
+  frames behind the loading cover and stops itself when the scene is warm.
 - Inside a `<World>`, use `usePhysicsTask` from `@threlte/rapier` (runs before each physics
   step, respects fixed framerate). Physics work exists only while a physics scene is
   mounted — scenes unmount with their Rapier bodies, so an empty world is all that

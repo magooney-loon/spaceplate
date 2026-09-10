@@ -6,6 +6,7 @@
 	import { audioActions } from '$extensions/settings';
 	import { sceneState } from '$extensions/scene';
 	import { capabilityState, isBlocked, WEBGPU_REPORT_URL } from './capabilities.svelte';
+	import { warmScene } from './warmup.svelte';
 
 	const { progress, active, item, loaded, total, errors } = useProgress();
 
@@ -28,6 +29,13 @@
 		if (blocked || settled || $active) return;
 		const timeout = setTimeout(() => {
 			settled = true;
+			// Warm the BOOT scene on the same signal a transition uses, so "assets in,
+			// pipelines built, then the player gets in" is one rule for every scene
+			// rather than something the boot path got for free from the prompt delay.
+			// FROM THE CALLBACK, NOT AN EFFECT BODY: warmScene writes reactive state,
+			// and calling it from a tracked position makes the effect a loop.
+			// Fire-and-forget — the prompt is user-gated and outlives the warm.
+			void warmScene();
 		}, 500);
 		return () => clearTimeout(timeout);
 	});

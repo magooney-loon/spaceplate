@@ -1008,11 +1008,15 @@ inherit the GR86's ride.
   frame (the simulation stage takes `ceil(accumulator / rate)` substeps), and
   worse, `uTime` advanced by the SUBSTEP TOTAL — 20 ms / 15 ms / 15 ms on
   consecutive frames at 200 Hz against 60 fps — so the flame's own noise
-  animation pulsed on a 20 Hz beat. **BOOT WARM** (still needed, for the TIPS
+  animation pulsed on a 20 Hz beat. **WARM WINDOW** (still needed, for the TIPS
   only): the six tip materials are invisible until the first pop, so their
-  pipelines compiled on it — a visible hitch on the first downshift. A ~0.3 s
-  warm window force-shows both tips at their zero-alpha defaults, behind the
-  scene-entry veil. It lives INSIDE the visual task, after that task's own
+  pipelines compiled on it — a visible hitch on the first downshift. The window
+  force-shows both tips at their zero-alpha defaults, and it runs while
+  `warmupState.active` — the ENGINE's warm gate (`$core/utils/CLAUDE.md`), so
+  the veil is still up and the gate's quiet detector waits for the tips'
+  pipelines instead of lifting before them — with the local ~0.3 s countdown as
+  the floor for entries that never warm (the Studio panel's instant `setScene`
+  has no veil). It lives INSIDE the visual task, after that task's own
   visibility write — anything set at mount would be overwritten before a frame
   ever rendered. The smoke pool needs no warming any more (see puffPool).
 

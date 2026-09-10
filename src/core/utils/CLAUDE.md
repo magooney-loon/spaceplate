@@ -24,6 +24,10 @@ Loader.svelte         — Asset loading screen (useProgress) + sound-enable prom
                         which shows the same bar/status when a scene entry is loading
 assetGate.ts          — waitForAssetsIdle(): "the loading queue has drained", awaited by
                         the scene transition so a scene's own assets land under the veil
+warmup.svelte.ts      — warmScene() + warmupState: "the scene has stopped compiling",
+                        awaited right after the asset gate. The handshake half
+Warmup.svelte         — the warm loop: forces real frames behind the cover until three
+                        stops building shader programs. Mount right after <Telemetry />
 Renderer.svelte       — RenderPipeline owner: structural rebuild + hot uniform effects + render
                         task
 PhysicsWorld.svelte   — <World> with Rapier's synchronization stage pinned before the MAIN
@@ -80,6 +84,52 @@ later entry used to run on a fixed budget and pop its GLBs in afterwards.
 - Wall-clock (`Date.now`), deliberately. The engine clock's ban covers things ANIMATED off
   a delta; a download takes as long as it takes and a below-realtime capture take must not
   stretch the timeout with it.
+
+## The warm gate (`warmup.svelte.ts` + `Warmup.svelte`)
+
+`warmScene()` is the asset gate's sibling: "has the scene stopped COMPILING yet?". The
+transition awaits it immediately after the assets land, and boot runs it on the same
+signal (`Loader.svelte`, when the boot queue settles), so every scene enters the same
+way — assets in, pipelines built, then the player.
+
+- **Warming is RENDERING, not `compileAsync`.** Outside `compileAsync` three creates every
+  pipeline SYNCHRONOUSLY on the frame that first draws the material (`Pipelines.getForRender`
+  passes no promise array, so `WebGPUPipelineUtils` takes the `device.createRenderPipeline`
+  branch). That blocking build IS the scene-entry hitch, and the only way to spend it
+  invisibly is to draw the frame that pays it behind the cover. This corrects the old
+  model: the fixed `WARM_GRACE_MS` budget was there to let background compiles land, and
+  there are no background compiles.
+- **`renderer.compileAsync()` is the wrong tool HERE, and not a small waste.** The
+  post-processing base pass renders under its own `contextNode`, whose id/version are
+  hashed into every RenderObject cache key (the MRT shader-cache trap,
+  `core/postprocessing/CLAUDE.md`). compileAsync runs with the renderer's default context,
+  so it compiles a second set of variants the real pass never looks up — main-thread build
+  cost and GPU memory for programs nothing draws.
+- **The completion signal is `renderer.info.memory.programs`**, the live program count. It
+  moves only when three builds a new one, so "unchanged across several consecutive
+  RENDERED frames" is compilation going quiet. Minimum frames, quiet frames, a frame cap
+  and a wall-clock cap all live in `Warmup.svelte`.
+- **`autoInvalidate` is left ON for the warm task, deliberately** — normally the hazard
+  (`src/CLAUDE.md`), here the mechanism: `shouldRender()` is `frameInvalidated ||
+autoInvalidations.size > 0`, so a started task with it on renders every frame. An
+  `invalidate()` cannot do this job from a render-stage task: the loop clears
+  `frameInvalidated` *after* `scheduler.run`, so an invalidation raised inside a task that
+  already ran is wiped before the next frame reads it. The task is `autoStart: false` and
+  stops itself the moment the scene is warm, which is what leaves on-demand rendering
+  intact the rest of the time.
+- **`warmScene()` is not callable from an `$effect` body.** It WRITES `warmupState`, so a
+  tracked caller that also reads it is the read-plus-write loop
+  (`src/extensions/CLAUDE.md`) — which is why the guard is a plain boolean and not
+  `warmupState.active`, and why boot kicks the warm from the settled `setTimeout`
+  callback rather than the effect around it. Symptom, seen once: the boot screen logging
+  a completed 6-frame warm every 100 ms forever.
+- **What it cannot reach: anything that draws nothing during the window.**
+  `_projectObject` skips invisible and frustum-culled objects, so a material that is
+  hidden until first use compiles on the frame it appears. `warmupState.active` is the
+  contract for those: force yourself visible at zero alpha while it is true and the gate
+  waits for your pipelines (`TestGame/fx/CarExhaustFlames.svelte`'s tips are the case it
+  exists for). **Never force a LIGHT visible for this** — the lights array is part of every
+  lit material's cache key, so toggling one recompiles the whole scene.
 
 ## Renderer.svelte — pipeline ownership
 

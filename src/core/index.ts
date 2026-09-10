@@ -40,6 +40,9 @@ export { default as PhysicsWorld } from './utils/PhysicsWorld.svelte';
 export { engineClock, setFixedStepSource } from './utils/engineClock';
 export type { FixedStepSource } from './utils/engineClock';
 export { default as Telemetry } from './utils/Telemetry.svelte';
+export { default as Warmup } from './utils/Warmup.svelte';
+export { warmupState, warmScene } from './utils/warmup.svelte';
+export type { WarmOutcome } from './utils/warmup.svelte';
 export {
 	capabilityState,
 	probeCapabilities,

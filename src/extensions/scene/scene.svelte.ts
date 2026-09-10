@@ -3,8 +3,10 @@ import { logEngine } from '$extensions/logger';
 // for the scene-transition veil, and the barrel exports Loader — a module cycle.
 // globalAudio is a leaf, so importing it directly breaks the ring.
 import { soundActions } from '$core/audio/globalAudio.svelte';
-// Same reason for the direct path: assetGate is a leaf (loading manager + logger).
+// Same reason for the direct paths: both gates are leaves (loading manager / renderer
+// info + logger), so importing them cannot close the ring back through Loader.
 import { waitForAssetsIdle } from '$core/utils/assetGate';
+import { warmScene } from '$core/utils/warmup.svelte';
 import type { SceneType, SceneConfig, ExtensionState, ExtensionActions } from './types';
 
 export type { ExtensionState, ExtensionActions } from './types';
@@ -75,25 +77,24 @@ export const sceneActions: ExtensionActions = {
 	 *      scene's assets; every later scene used to enter on a fixed budget and
 	 *      pop its track/car in afterwards. Capped by a timeout, so this can delay
 	 *      an entry but never block one
-	 *   5. two more rAFs: one for the Svelte mount effects to flush (the subtrees
-	 *      gated on those assets — `{#if $carModel}` and friends — mount here),
-	 *      one for the new scene to be rendered — that first frame is the warm frame:
-	 *      it goes through the real pipeline, kicking three's async pipeline
-	 *      compilation (createRenderPipelineAsync) for every material variant of the
-	 *      new scene, MRT contextNode included — the variants renderer.compileAsync
-	 *      cannot produce (postprocessing/CLAUDE.md's shader-cache trap). Warming
-	 *      AFTER the gate is the point: a frame drawn before the textures land
-	 *      compiles the wrong material variants
-	 *   6. a grace budget while the compiles land in the background, then the veil lifts
+	 *   5. one rAF for the Svelte mount effects to flush — the subtrees gated on those
+	 *      assets (`{#if $carModel}` and friends) mount here
+	 *   6. THE WARM GATE — `warmScene()` (core/utils/warmup.svelte.ts) forces real
+	 *      frames of the real pipeline until three stops building shader programs, then
+	 *      the veil lifts. Warming AFTER the asset gate is the point: a material's
+	 *      pipeline is built on its first DRAW, so a frame drawn before the textures
+	 *      land warms the wrong thing
 	 *
-	 * The grace is a fixed budget, not a completion signal: three exposes no awaitable
-	 * handle for passes it compiles internally, so there is nothing to await. Anything
-	 * not compiled when the veil lifts finishes off-screen-ish, same as before this
-	 * existed — the veil only moves the bulk of the stall somewhere invisible.
+	 * The warm used to be a fixed grace budget on the theory that three compiled in the
+	 * background. It does not: outside `compileAsync` every pipeline is created
+	 * synchronously on the frame that first draws it, which is exactly why entering a
+	 * scene hitched. So the veil now waits on a real signal — the live program count
+	 * holding still across several drawn frames — and a light scene leaves sooner than
+	 * the old budget while a heavy one gets as long as it needs, capped.
 	 *
-	 * No warm frame is forced by hand: mounting a scene's T.* attachments invalidate,
-	 * and on-demand rendering draws the frame by itself — forcing one from here would
-	 * need Threlte context this module (outside the Canvas) does not have.
+	 * No warm frame is forced from HERE: this module lives outside the Canvas and has
+	 * no Threlte context. `warmScene()` is the handshake with the component that does
+	 * (Warmup.svelte), and it resolves immediately when there is no Canvas at all.
 	 */
 	async transitionTo(scene: SceneType) {
 		if (sceneState.currentScene === scene || sceneState.isTransitioning) return;
@@ -112,11 +113,9 @@ export const sceneActions: ExtensionActions = {
 			// The scene's own assets, under the same cover as the swap.
 			await waitForAssetsIdle();
 
-			// Warm: mount flush for what those assets gated, then the first rendered
-			// frame of the complete scene.
+			// Mount flush for what those assets gated, then warm the complete scene.
 			await nextFrame();
-			await nextFrame();
-			await delay(WARM_GRACE_MS);
+			await warmScene();
 		} finally {
 			sceneState.isTransitioning = false;
 		}
@@ -124,7 +123,3 @@ export const sceneActions: ExtensionActions = {
 };
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/** Post-swap budget for background pipeline compilation, under the veil. */
-const WARM_GRACE_MS = 450;

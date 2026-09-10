@@ -12,6 +12,7 @@
 		Skybox,
 		GlobalAudio,
 		Telemetry,
+		Warmup,
 		PhysicsWorld,
 		capabilityState
 	} from '$core';
@@ -85,6 +86,11 @@
 		<Renderer />
 		<!-- Samples renderer.info after the pipeline draws — feeds the Settings ▸ System tab. -->
 		<Telemetry />
+		<!-- Draws nothing until asked: forces real frames behind the loading cover until
+		     three stops building shader programs, so a scene's pipelines compile under the
+		     veil instead of hitching on entry (core/utils/warmup.svelte.ts). Same slot rule
+		     as Telemetry — after <Renderer /> so it samples the frame that was just drawn. -->
+		<Warmup />
 		<Camera />
 		<GlobalAudio />
 		<Skybox />

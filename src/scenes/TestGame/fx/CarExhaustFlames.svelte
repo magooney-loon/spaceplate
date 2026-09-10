@@ -21,6 +21,7 @@
 		vec3,
 		vec4
 	} from 'three/tsl';
+	import { warmupState } from '$core';
 	import { currentCar } from '../cars';
 	import { UNITS_PER_METER } from '../units';
 	import { clamp } from '../sim/carMath';
@@ -578,12 +579,17 @@
 	// blow-up), which must lead the flame and die much faster than it.
 	let ageL = 99;
 	let ageR = 99;
-	// Boot warm window, in seconds of task time: forces both tips VISIBLE at zero
-	// alpha for the first moments after mount, so their six materials' pipelines
-	// compile at scene entry — behind the transition veil — instead of hitching
-	// the FIRST pop. The per-frame visibility write in the visual task below
-	// would otherwise hide them before a frame ever rendered. (The smoke pool no
-	// longer needs warming: its single mesh is permanently in the graph.)
+	// Warm window: forces both tips VISIBLE at zero alpha, so their six materials'
+	// pipelines compile at scene entry — behind the transition veil — instead of
+	// hitching the FIRST pop. The per-frame visibility write in the visual task
+	// below would otherwise hide them before a frame ever rendered. (The smoke pool
+	// no longer needs warming: its single mesh is permanently in the graph.)
+	//
+	// TWO SOURCES, and both matter. `warmupState.active` is the engine's own warm
+	// window (core/utils/warmup.svelte.ts) — while it is up the veil is still on
+	// screen AND the tips' new pipelines are counted by the gate, so the veil does
+	// not lift until they are built. The local countdown is the floor for entries
+	// that never warm: the Studio panel's instant setScene has no veil at all.
 	let warm = 0.3;
 
 	/** Roll a pop: style, per-tip shares, per-tip noise phase, maybe a bang-bang. */
@@ -725,10 +731,10 @@
 
 			tipL.group.visible = iL > 0.02 || flashL > 0.02;
 			tipR.group.visible = iR > 0.02 || flashR > 0.02;
-			// Boot warm window (see `warm`): force the tips visible at their default
-			// (zero-alpha) uniforms for the first moments, so the first REAL pop
-			// doesn't pay their six pipeline compiles.
-			if (warm > 0) {
+			// Warm window (see `warm`): force the tips visible at their default
+			// (zero-alpha) uniforms while the engine is warming the scene, so the
+			// first REAL pop doesn't pay their six pipeline compiles.
+			if (warm > 0 || warmupState.active) {
 				warm -= delta;
 				tipL.group.visible = true;
 				tipR.group.visible = true;
