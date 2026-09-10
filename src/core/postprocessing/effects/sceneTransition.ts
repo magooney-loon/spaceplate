@@ -1,6 +1,12 @@
 // Scene transition — the composite that dissolves the outgoing scene's FROZEN LAST
-// FRAME into the incoming live one. Why a snapshot rather than three's two-live-pass
-// `TransitionNode`, and why it is mixed here in linear chain colour: ../transitionState.
+// FRAME down to a flat veil, and the veil back up into the incoming live one. Why a
+// snapshot rather than three's two-live-pass `TransitionNode`, why it is mixed here in
+// linear chain colour, and why there is a veil in the middle at all: ../transitionState.
+//
+// ONE MASK, TWO FRONTS. The dip (frozen → veil) and the reveal (veil → live) run the
+// same threshold expression over the same mask, so a wipe sweeps once in each direction
+// rather than being a dissolve on one side and a fade on the other, and a dissolve's
+// blobs return in the order they left.
 //
 // LAST IN THE CHAIN (order 60, after the vignette) and DEFAULT ON at mix 0, the
 // afterimage's bargain rather than the lenses': a structural latch would rebuild the
@@ -30,12 +36,7 @@ import {
 } from 'three/tsl';
 import { HalfFloatType, LinearMipmapLinearFilter } from 'three/webgpu';
 import type { EffectDef } from '../types';
-import { registerSnapshot, uTransitionHold, uTransitionMix } from '../transitionState.svelte';
-
-/** Ceiling on the push-in, as a fraction of the frame. A long load drifts, then settles. */
-const PUSH_MAX = 0.3;
-/** How fast the blur and the desaturation reach their full value, per second. */
-const RAMP_RATE = 0.8;
+import { registerSnapshot, uTransitionMix, uTransitionVeil } from '../transitionState.svelte';
 
 export type SceneTransitionParams = {
 	/** 0 fade · 1 wipe · 2 radial · 3 dissolve. Structural — a different mask, not a branch. */
@@ -47,16 +48,35 @@ export type SceneTransitionParams = {
 	/** Noise frequency of the dissolve. Dissolve only. */
 	scale: number;
 	/**
-	 * Dissolve duration in SECONDS. Not a shader value — the driver reads it from the
-	 * panel state (`postprocessingState.sceneTransition.revealSeconds`); its uniform in
-	 * the bag goes unused, which is the price of keeping every knob in one place.
+	 * The three durations, in SECONDS. None of them is a shader value — the driver reads
+	 * them from the panel state (`postprocessingState.sceneTransition.*`) and their
+	 * uniforms in the bag go unused, which is the price of keeping every knob in one
+	 * place.
+	 *
+	 * `veilSeconds`     — the dip: how long the frozen frame takes to dissolve to flat.
+	 * `minCoverSeconds` — floor on the whole cover, dip included. A re-entry into an
+	 *                     already-cached scene passes its asset and warm gates in a
+	 *                     couple of frames; without a floor the loading UI would strobe
+	 *                     on and straight back off.
+	 * `revealSeconds`   — the reveal: the veil dissolving into the live scene.
 	 */
+	veilSeconds: number;
+	minCoverSeconds: number;
 	revealSeconds: number;
-	/** Push-in per second the cover is up, as a fraction of the frame. 0 = dead still. */
+	/**
+	 * Zoom the frozen frame reaches at full dip, as a fraction of the frame. 0 = still.
+	 *
+	 * This and the two below are the plate's degradation, and all three RIDE THE DIP
+	 * rather than a clock: `uTransitionVeil` is 0 at capture and 1 at flat, so they reach
+	 * their full value exactly as the plate goes flat, whatever the load costs. The first
+	 * version ramped them off seconds-held, which meant a long load walked them off the
+	 * end of their own range and then revealed a mip-2, 45%-grey, 30%-zoomed plate into a
+	 * sharp scene.
+	 */
 	push: number;
-	/** Mip level the frozen frame blurs to while it covers. 0 = stays sharp. */
+	/** Mip level the frozen frame blurs to at full dip. 0 = stays sharp. */
 	blur: number;
-	/** How far the frozen frame drains toward grey while it covers. 0 = keeps its colour. */
+	/** How far the frozen frame drains toward grey at full dip. 0 = keeps its colour. */
 	desaturate: number;
 };
 
@@ -104,14 +124,16 @@ export const sceneTransitionEffect: EffectDef<SceneTransitionParams> = {
 	role: 'chain',
 	order: 60,
 	requires: [],
-	note: 'Freezes the outgoing scene and dissolves it into the new one. Driven by scene switches — at rest it does nothing.',
+	note: 'Freezes the outgoing scene, dissolves it to the loading veil and the veil into the new one. Driven by scene switches — at rest it does nothing.',
 	params: () => ({
 		pattern: PATTERN_DISSOLVE,
 		softness: 0.18,
 		angle: 0,
 		scale: 6,
+		veilSeconds: 0.4,
+		minCoverSeconds: 0.9,
 		revealSeconds: 0.7,
-		push: 0.045,
+		push: 0.06,
 		blur: 2.2,
 		desaturate: 0.45
 	}),
@@ -121,8 +143,10 @@ export const sceneTransitionEffect: EffectDef<SceneTransitionParams> = {
 		softness: { min: 0.02, max: 1, step: 0.01 },
 		angle: { min: 0, max: 1, step: 0.01 },
 		scale: { min: 1, max: 40, step: 0.5 },
+		veilSeconds: { min: 0.1, max: 2, step: 0.05 },
+		minCoverSeconds: { min: 0, max: 4, step: 0.05 },
 		revealSeconds: { min: 0.1, max: 3, step: 0.05 },
-		push: { min: 0, max: 0.2, step: 0.005 },
+		push: { min: 0, max: 0.3, step: 0.005 },
 		blur: { min: 0, max: 5, step: 0.1 },
 		desaturate: { min: 0, max: 1, step: 0.01 }
 	},
@@ -154,43 +178,53 @@ export const sceneTransitionEffect: EffectDef<SceneTransitionParams> = {
 		) as any;
 		registerSnapshot(snapshot);
 
-		// ── The cover MOVES ───────────────────────────────────────────────────────
+		// ── The plate degrades across the DIP, not across the load ────────────────
 		//
-		// A frozen frame held for a whole load reads as a hang, however good the
-		// dissolve at the end is. So the still image gets a slow push-in, a blur that
-		// racks over the first second or so, and a drain toward grey — the shape of a
-		// film dissolve, and enough motion that the player reads "going somewhere"
-		// rather than "stopped". `uTransitionHold` is the seconds it has been up, and
-		// it keeps rising THROUGH the reveal so the motion carries into the new scene
-		// instead of stopping dead as it arrives.
+		// The frozen frame gets a push-in, a mip blur and a drain toward grey as it
+		// dissolves away, so the exit is a film dissolve rather than a hard cut. All
+		// three ride `uTransitionVeil` (0 at capture, 1 at flat), which is why a
+		// ten-second load and a one-second load leave the plate in exactly the same
+		// state: the motion that has to carry the LOAD is Loader.svelte's veil, on the
+		// compositor, where a blocked main thread cannot stop it.
 		//
 		// `uvNode` and `levelNode` are set IN PLACE, never through `.sample()`/`.level()`:
 		// those return plain TextureNode clones and only the RTT node ITSELF carries the
 		// `updateBefore` that fills the target (fogScatter's header has the full note).
-		const hold = uTransitionHold;
-		// Zoom about the centre. Capped so a very long download cannot walk the frame
-		// into a close-up of four pixels.
-		const zoom = float(1).add(u.push.mul(hold).min(float(PUSH_MAX)));
+		const veil = uTransitionVeil;
+		// Zoom about the centre.
+		const zoom = float(1).add(u.push.mul(veil));
 		snapshot.uvNode = uv().sub(0.5).div(zoom).add(0.5);
-		snapshot.levelNode = hold.mul(RAMP_RATE).min(float(1)).mul(u.blur);
+		snapshot.levelNode = veil.mul(u.blur);
 
-		const drained = hold.mul(RAMP_RATE).min(float(1)).mul(u.desaturate);
-		const frozen = vec4(saturation(snapshot.rgb, float(1).sub(drained)), snapshot.a);
+		const frozen = vec4(saturation(snapshot.rgb, float(1).sub(veil.mul(u.desaturate))), snapshot.a);
 
 		// Reading the pattern from the VALUE, not the uniform: it is structural, so this
 		// runs again whenever it changes and the graph carries one mask.
 		const pattern = Math.round(u.pattern.value);
 		const mask = maskFor(pattern, u, ctx.aspect);
-		const m = uTransitionMix;
-
-		if (mask === null) return mix(ctx.color, frozen, m);
-
-		// The front sweeps from -softness to 1+softness so both ends clear the mask
-		// range completely; `+0.5` centres the soft edge on the front itself.
 		const soft = u.softness;
-		const front = m.mul(soft.mul(2).add(1)).sub(soft);
-		const weight = clamp(front.sub(mask).div(soft.mul(2)).add(0.5), float(0), float(1));
 
-		return mix(ctx.color, frozen, weight);
+		/**
+		 * Where a 0…1 driver value puts the front. The front sweeps from -softness to
+		 * 1+softness so both ends clear the mask range completely; `+0.5` centres the
+		 * soft edge on the front itself. Without a mask (the plain fade) the value IS
+		 * the weight — a uniform mask cannot produce a full-range fade through this.
+		 */
+		const advance = (t: any): any => {
+			if (mask === null) return t;
+			const front = t.mul(soft.mul(2).add(1)).sub(soft);
+			return clamp(front.sub(mask).div(soft.mul(2)).add(0.5), float(0), float(1));
+		};
+
+		// THE COVER: the frozen plate dissolving to the veil colour. Draining to black is
+		// a multiply, so it costs one op and cannot disturb alpha. Black is the veil
+		// colour on purpose — it is 0 in linear working colour and 0 after any output
+		// transform, so it matches Loader.svelte's `#000` exactly with nothing to keep
+		// in sync. A game restyling its veil should fade its own background IN over the
+		// dip rather than expect this plate to match it.
+		const covered = vec4(frozen.rgb.mul(float(1).sub(advance(veil))), frozen.a);
+
+		// THE SCREEN: the live scene under whatever the cover currently is.
+		return mix(ctx.color, covered, advance(uTransitionMix));
 	}
 };

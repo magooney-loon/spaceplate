@@ -94,13 +94,15 @@ model is lit from the inside by the whole sky. Off by default — read its secti
   params only shape what it does once the weather has.
 - `sceneTransition` is the scene switch's cover, and it is DEFAULT-ENABLED at mix 0 for
   the afterimage's reason (a latch would rebuild the graph exactly when a transition
-  starts). Its params are the LOOK of every scene switch in the app — pattern (fade /
-  wipe / radial / dissolve, structural), `softness`, `angle`, `scale`, then `push`,
-  `blur` and `desaturate` — the motion the frozen frame carries while it covers, which is
-  what stops a long load reading as a hang — and `revealSeconds`, the only one that is
-  not a shader value: the driver reads it from this state. Tune it here and every
-  `goTo*` picks it up. Engine side and the
-  frozen-frame design: `$core/postprocessing/CLAUDE.md`.
+  starts). Its params are the LOOK of every scene switch in the app. Shape: pattern
+  (fade / wipe / radial / dissolve, structural), `softness`, `angle`, `scale`. Plate
+  degradation across the dip: `push`, `blur`, `desaturate`. Timing: `veilSeconds` (the
+  dip), `minCoverSeconds` (floor on the whole cover, so a cached re-entry does not
+  strobe the loading UI) and `revealSeconds`. **The three timings are not shader
+  values** — the driver reads them from this state and their uniforms in the bag go
+  unused, which is the price of keeping every knob in one place. Tune here and every
+  `goTo*` picks it up. Engine side, and why the cover is three phases with a loading
+  screen in the middle: `$core/postprocessing/CLAUDE.md`.
 - `afterimage` is the one effect that is DEFAULT-ENABLED with a zero look: `damp`
   defaults 0 (a passthrough — the node trails only bright pixels), and runtime
   drivers add a boost on top inside the shader (`uAfterimageBoost`; TestGame's

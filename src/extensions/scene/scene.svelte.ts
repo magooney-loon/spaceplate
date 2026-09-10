@@ -7,7 +7,11 @@ import { soundActions } from '$core/audio/globalAudio.svelte';
 // info + logger), so importing them cannot close the ring back through Loader.
 import { waitForAssetsIdle } from '$core/utils/assetGate';
 import { warmScene } from '$core/utils/warmup.svelte';
-import { coverWithSnapshot, revealScene } from '$core/postprocessing/transitionState.svelte';
+import {
+	coverWithSnapshot,
+	revealScene,
+	waitForCoverSettled
+} from '$core/postprocessing/transitionState.svelte';
 import type { SceneType, SceneConfig, ExtensionState, ExtensionActions } from './types';
 
 export type { ExtensionState, ExtensionActions } from './types';
@@ -64,33 +68,38 @@ export const sceneActions: ExtensionActions = {
 
 	/**
 	 * Warm scene transition — the per-scene "bootloader". Every user-facing switch
-	 * goes through here (the goTo* actions); the swap happens under a full-screen veil
-	 * (Loader.svelte, driven by isTransitioning) so the entry cost is never on screen:
+	 * goes through here (the goTo* actions); the swap happens under a full-screen cover
+	 * so the entry cost is never on screen:
 	 *
-	 *   1. THE COVER — the pipeline freezes the outgoing scene's last frame and pins it
-	 *      over the screen (core/postprocessing/transitionState.svelte.ts). The player
-	 *      keeps looking at the world they were in, not at black. When there is no
-	 *      pipeline to do it with, Loader.svelte's black veil covers instead and this
-	 *      waits two rAFs for it to paint
-	 *   2. setScene swaps the scene ({#if} routing: old unmounts, new mounts — the
+	 *   1. THE CAPTURE — the pipeline freezes the outgoing scene's last frame
+	 *      (core/postprocessing/transitionState.svelte.ts). When there is no pipeline to
+	 *      do it with, Loader.svelte's black veil covers instead and this waits two rAFs
+	 *      for it to paint
+	 *   2. THE DIP — that frozen frame dissolves to a flat veil while the loading UI
+	 *      fades in over it. IT HAPPENS BEFORE THE SWAP, and that is the point: the
+	 *      outgoing scene is still mounted, nothing is blocking the main thread, so the
+	 *      one dissolve the player actually watches runs clean. Everything expensive
+	 *      happens after it, under a cover that no longer has to animate
+	 *   3. setScene swaps the scene ({#if} routing: old unmounts, new mounts — the
 	 *      swoosh fires here, under the cover)
-	 *   3. one rAF for the mount to flush: component init is where every useGltf /
+	 *   4. one rAF for the mount to flush: component init is where every useGltf /
 	 *      TextureLoader call in the new scene fires, so the loading queue is filled
 	 *      by the end of it
-	 *   4. THE ASSET GATE — hold the veil until that queue drains
+	 *   5. THE ASSET GATE — hold the cover until that queue drains
 	 *      (core/utils/assetGate.ts). The boot Loader only ever covered the BOOT
 	 *      scene's assets; every later scene used to enter on a fixed budget and
 	 *      pop its track/car in afterwards. Capped by a timeout, so this can delay
 	 *      an entry but never block one
-	 *   5. one rAF for the Svelte mount effects to flush — the subtrees gated on those
+	 *   6. one rAF for the Svelte mount effects to flush — the subtrees gated on those
 	 *      assets (`{#if $carModel}` and friends) mount here
-	 *   6. THE WARM GATE — `warmScene()` (core/utils/warmup.svelte.ts) forces real
+	 *   7. THE WARM GATE — `warmScene()` (core/utils/warmup.svelte.ts) forces real
 	 *      frames of the real pipeline until three stops building shader programs.
 	 *      Warming AFTER the asset gate is the point: a material's pipeline is built on
 	 *      its first DRAW, so a frame drawn before the textures land warms the wrong
-	 *      thing. Those frames are drawn UNDER the frozen one, which is what makes them
-	 *      free to look at
-	 *   7. THE REVEAL — the frozen frame dissolves into the live scene
+	 *      thing. Those frames are drawn UNDER the cover, which is what makes them free
+	 *      to look at
+	 *   8. THE REVEAL — the veil dissolves into the live scene, after a minimum cover
+	 *      time the driver enforces so a cached re-entry does not strobe the loading UI
 	 *
 	 * The warm used to be a fixed grace budget on the theory that three compiled in the
 	 * background. It does not: outside `compileAsync` every pipeline is created
@@ -113,15 +122,22 @@ export const sceneActions: ExtensionActions = {
 			// processing bypassed at low quality, the effect switched off, a failed
 			// build) this returns false and Loader.svelte's black veil covers instead.
 			//
-			// `isTransitioning` is raised AFTER this, and the ordering is the difference
-			// between a clean freeze and a black flash: the capture needs two frames of
-			// the LIVE scene to grab, and the flag is what puts the black veil on screen.
-			// The re-entrancy guard is the plain `busy` below precisely so this flag is
-			// free to mean "a cover is warranted" rather than "a call is in flight".
+			// `isTransitioning` is raised AFTER the capture and BEFORE the dip, and both
+			// halves of that matter: the capture needs frames of the LIVE scene to grab
+			// and the flag is what puts the black veil on screen, while the dip is
+			// exactly the window the loading UI should be fading in across. The
+			// re-entrancy guard is the plain `busy` below precisely so this flag is free
+			// to mean "a cover is warranted" rather than "a call is in flight".
 			const frozen = await coverWithSnapshot();
 			sceneState.isTransitioning = true;
 
-			if (!frozen) {
+			if (frozen) {
+				// Let the dip finish before touching the scene graph. The swap and the
+				// mount that follows it are the biggest main-thread stall in the whole
+				// sequence, and running them under a dissolve is what made the old
+				// transition judder — the dissolve is now over before they start.
+				await waitForCoverSettled();
+			} else {
 				await nextFrame();
 				await nextFrame();
 			}
@@ -137,8 +153,9 @@ export const sceneActions: ExtensionActions = {
 			await nextFrame();
 			await warmScene();
 
-			// Reveal — the frozen frame dissolves into the scene that is now loaded,
-			// warmed and drawing. A no-op when nothing froze.
+			// Reveal — the veil dissolves into the scene that is now loaded, warmed and
+			// drawing. A no-op when nothing froze. The driver holds this until the
+			// minimum cover time has elapsed, so this await can outlast the work.
 			await revealScene();
 		} finally {
 			sceneState.isTransitioning = false;

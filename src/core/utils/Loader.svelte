@@ -6,7 +6,7 @@
 	import { audioActions } from '$extensions/settings';
 	import { sceneState } from '$extensions/scene';
 	import { capabilityState, isBlocked, WEBGPU_REPORT_URL } from './capabilities.svelte';
-	import { warmScene } from './warmup.svelte';
+	import { warmScene, warmupState } from './warmup.svelte';
 	import { transitionFxState } from '$core/postprocessing/transitionState.svelte';
 
 	const { progress, active, item, loaded, total, errors } = useProgress();
@@ -92,6 +92,29 @@
 		logEngine.info('Sounds skipped by user');
 		readyToHide = true;
 	}
+
+	// --- the scene-transition veil -------------------------------------------------
+
+	/**
+	 * Up during the dip and the hold, down for the capture and the reveal — so the
+	 * content fades IN as the frozen frame dissolves away and OUT as the new scene
+	 * dissolves in. When nothing froze this is the whole cover, so it is up throughout.
+	 */
+	const veilUp = $derived(
+		!transitionFxState.covering ||
+			transitionFxState.phase === 'dip' ||
+			transitionFxState.phase === 'hold'
+	);
+
+	/**
+	 * What the transition is actually waiting on. The old veil showed a bar only while
+	 * `$active` and nothing otherwise, which meant it VANISHED for the whole warm gate —
+	 * the longest phase of a heavy scene's first entry, and the one that most looks like
+	 * a hang without a label on it.
+	 */
+	const veilLabel = $derived(
+		$active ? 'Loading assets' : warmupState.active ? 'Compiling shaders' : 'Preparing scene'
+	);
 
 	function truncatePath(path: string | undefined): string {
 		if (!path) return '';
@@ -188,30 +211,39 @@
 	</div>
 {/if}
 
-{#if sceneState.isTransitioning && (!transitionFxState.covering || $active)}
-	<!-- Scene-transition cover, in its HTML half. WHO COVERS DEPENDS ON THE PIPELINE:
-	     normally the post-processing composite freezes the outgoing scene's last frame
-	     (core/postprocessing/transitionState.svelte.ts) and this steps aside — no black
-	     screen at all — reappearing only as a TRANSPARENT status readout while assets
-	     are genuinely downloading, because a frozen frame alone cannot say "still
-	     fetching the track". When nothing froze (low quality bypasses post-processing,
-	     the effect is off, a build failed) this is the whole cover, opaque black, the
-	     way it always was. Lives here because this component owns every full-screen
-	     cover and never unmounts. z-index 150: over every HUD, under this loader (200)
-	     and the notice (210). Reuses the boot screen's own bar and status markup. -->
-	<div class="veil" class:clear={transitionFxState.covering}>
-		<p class="label">Loading</p>
+{#if sceneState.isTransitioning}
+	<!-- THE SCENE-TRANSITION VEIL, and the middle phase of every scene switch. The
+	     post-processing composite dissolves the outgoing scene's frozen last frame down
+	     to flat black (core/postprocessing/transitionState.svelte.ts) and this fades in
+	     across that dip, so from the end of the dip to the start of the reveal THIS is
+	     the entire picture — which is exactly why it is now unconditional rather than
+	     gated on `$active`. It used to disappear the moment the downloads finished,
+	     leaving a still frozen frame alone on screen for the whole warm gate.
 
-		{#if $active}
-			<div class="track">
+	     When nothing froze (low quality bypasses post-processing, the effect is off, a
+	     build failed) this is the whole cover, opaque black, the way it always was.
+
+	     Lives here because this component owns every full-screen cover and never
+	     unmounts. z-index 150: over every HUD, under this loader (200) and the notice
+	     (210). Reuses the boot screen's own bar and status markup. -->
+	<div class="veil" class:clear={transitionFxState.covering} class:up={veilUp}>
+		<p class="label">{veilLabel}</p>
+
+		<div class="track">
+			{#if $active}
 				<div class="fill" style="width: {tweened.current * 100}%;"></div>
-			</div>
+			{:else}
+				<!-- The indeterminate phases (mount, warm) get a sweep instead of a bar. -->
+				<div class="sweep"></div>
+			{/if}
+		</div>
 
-			<div class="status">
+		<div class="status">
+			{#if $active}
 				<p class="item">{truncatePath($item)}</p>
 				<p class="count">{$loaded} / {$total}</p>
-			</div>
-		{/if}
+			{/if}
+		</div>
 	</div>
 {/if}
 
@@ -371,6 +403,15 @@
 		opacity: 0.9;
 	}
 
+	/* THE ONE PLACE THIS APP USES CSS ANIMATION, AND IT IS THE WHOLE POINT OF IT.
+	   Everything else here animates off the engine clock (src/CLAUDE.md's "no CSS or
+	   Svelte transitions"), but a scene entry is mostly main-thread STALLS — GLB parse,
+	   texture decode, three's synchronous pipeline creation — and nothing driven by rAF
+	   or a frame task draws at all while one is in progress. That is what made the old
+	   frozen-frame cover read as a hang: its push-in and blur stopped exactly when the
+	   player needed proof the app was alive. Opacity and transform animate on the
+	   COMPOSITOR, so the sweep below keeps moving through a blocked main thread. Keep
+	   every property in here to opacity/transform for that reason. */
 	.veil {
 		position: absolute;
 		inset: 0;
@@ -383,11 +424,59 @@
 		color: #fff;
 	}
 
-	/* The frozen frame is the cover — this is only the status text over it, so it
-	   drops the black and takes a shadow to stay legible against any scene. */
+	/* The composite is drawing the cover — this is only the status readout over it, so
+	   it drops the black and fades with the dip and the reveal instead of popping.
+
+	   KEYFRAMES RATHER THAN A `transition`, and not by taste: this element is INSERTED
+	   already carrying `.up` (the driver is in its dip phase by the time `transitionTo`
+	   raises `isTransitioning`), and a transition does not run on a newly mounted node —
+	   it would land at full opacity on the first frame. An animation runs on insertion. */
 	.veil.clear {
 		background: transparent;
 		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+		/* Out fast, so the reveal's dissolve is not read through a half-lit overlay. */
+		animation: veil-out 180ms ease-out forwards;
+	}
+
+	/* In across the dip (`veilSeconds`, default 0.4s), a touch ahead of it so the text
+	   has landed by the time the plate goes flat. */
+	.veil.clear.up {
+		animation: veil-in 320ms ease-in forwards;
+	}
+
+	@keyframes veil-in {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes veil-out {
+		from {
+			opacity: 1;
+		}
+		to {
+			opacity: 0;
+		}
+	}
+
+	.sweep {
+		width: 40%;
+		height: 100%;
+		background: #fff;
+		border-radius: 9999px;
+		animation: sweep 1.1s ease-in-out infinite;
+	}
+
+	@keyframes sweep {
+		0% {
+			transform: translateX(-100%);
+		}
+		100% {
+			transform: translateX(250%);
+		}
 	}
 
 	.notice {

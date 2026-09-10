@@ -71,6 +71,9 @@ Defined in both `vite.config.ts` and `tsconfig.json` — keep the two in sync wh
 
 - **Svelte 5 runes only** — no stores, no legacy `export let`. Reactive state lives in `.svelte.ts` modules.
 - **Plain scoped CSS** in components — no Tailwind, no CSS or Svelte transitions.
+  One deliberate exception: the scene-transition veil in `src/core/utils/Loader.svelte`,
+  where compositor-driven opacity/transform is the only animation that survives the
+  main-thread stalls a scene entry is made of. Don't generalise from it.
 - **pnpm** is the package manager (`pnpm@11.5.2`); workspace covers `.` and `spacetimedb`.
 - Prettier with tabs + single quotes (`.prettierrc`).
 

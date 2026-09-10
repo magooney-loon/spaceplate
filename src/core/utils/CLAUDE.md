@@ -21,7 +21,10 @@ Loader.svelte         — Asset loading screen (useProgress) + sound-enable prom
                         unlock), armed once assets settle. Owns every full-screen cover:
                         the blocking unsupported screen, the dismissible WebGL-fallback
                         badge, and the scene-transition veil (sceneState.isTransitioning),
-                        which shows the same bar/status when a scene entry is loading
+                        which is the MIDDLE PHASE of every scene switch — up for the whole
+                        transition, labelled by what it is waiting on (assets / shaders),
+                        and animated in CSS so it keeps moving through a blocked main
+                        thread. The one deliberate CSS-animation exception in the app
 assetGate.ts          — waitForAssetsIdle(): "the loading queue has drained", awaited by
                         the scene transition so a scene's own assets land under the veil
 warmup.svelte.ts      — warmScene() + warmupState: "the scene has stopped compiling",

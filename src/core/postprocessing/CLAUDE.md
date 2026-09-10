@@ -324,14 +324,41 @@ between them. Nothing renders twice.
   transform as the live one, every frame. At mix 1 the screen therefore _is_ the frame
   that was captured. A canvas grab (`copyFramebufferToTexture`) would be display-referred
   and could not be mixed at this point without tone-mapping it twice.
-- **THE COVER MOVES, and that is not decoration.** A still frame held for a whole load
-  reads as a hang however good the dissolve at the end is, which is exactly how the first
-  version looked. So the frozen image gets a slow push-in, a mip blur that racks over the
-  first second and a drain toward grey, all riding `uTransitionHold` (seconds covered),
-  and the push carries ON through the reveal so the motion never stops dead as the new
-  scene arrives. `uvNode` and `levelNode` are configured IN PLACE on the RTT node —
-  `.sample()`/`.level()` return plain TextureNode clones and only the node itself carries
-  the `updateBefore` that fills the target (fogScatter's header has the long version).
+- **THREE PHASES, AND THE MIDDLE ONE IS A LOADING SCREEN.** The first version held the
+  frozen frame up for the whole load and tried to keep it alive with a push-in and a
+  blur riding seconds-covered. That fails exactly where it matters: those move on
+  RENDERED frames, and a heavy scene's entry is mostly main-thread stalls (GLB parse,
+  texture decode, three's synchronous pipeline creation) during which nothing is drawn
+  at all — so the motion stopped precisely when the player needed proof the app was
+  alive, and a long load then revealed a mip-2, 45%-grey, 30%-zoomed plate into a sharp
+  scene. The sequence is now **dip → hold → reveal**: the plate dissolves to flat black
+  in `veilSeconds` _before_ the swap, the load and the warm happen under that flat cover
+  with `Loader.svelte`'s veil as the whole picture, and the veil dissolves into the live
+  scene at the end.
+- **The degradation rides `uTransitionVeil` (dip progress), never a clock.** Push-in,
+  mip blur and desaturation all reach full value exactly as the plate goes flat, so a
+  ten-second load and a one-second load leave it in the same state and the reveal always
+  starts from the same place. `uvNode` and `levelNode` are configured IN PLACE on the RTT
+  node — `.sample()`/`.level()` return plain TextureNode clones and only the node itself
+  carries the `updateBefore` that fills the target (fogScatter's header has the long
+  version).
+- **The veil colour is black because black needs no synchronising.** It is 0 in linear
+  working colour and 0 after any output transform, so the chain's flat plate matches
+  `Loader.svelte`'s `#000` exactly. A game restyling its veil fades its own background in
+  over the dip rather than expecting the plate to match it. Holding at `uTransitionVeil`
+  1 also makes a mid-transition pipeline rebuild invisible: the rebuilt effect registers
+  a fresh never-captured snapshot, and a snapshot multiplied by zero is black either way.
+- **The motion during the hold is CSS, on the compositor** (`Loader.svelte`'s `sweep`
+  keyframes) — the one deliberate exception to the no-CSS-animation rule in
+  `src/CLAUDE.md`, and the only kind of animation that survives a blocked main thread.
+  Nothing driven by a frame task can do that job.
+- **The driver stops its task through the hold.** Nothing is moving under a flat cover,
+  so forcing full-rate frames of a half-mounted scene through the whole download was
+  waste; the warm gate starts its own forced-frame loop when that phase's turn comes.
+  The minimum-cover floor is therefore wall-clock (`minCoverSeconds`), on the asset
+  gate's rationale — it exists so a cached re-entry does not strobe the loading UI, which
+  is a fact about the player's eyes, not about scene time. The dissolves stay on the
+  task's delta like everything else.
 - **A true two-live-scene crossfade is still not on the table**, and the reason is no
   longer the node: it is one scene graph, one borrowed camera and one Rapier world. Both
   scenes mounted at once means both trees in the same graph overlapping in world space
@@ -348,12 +375,20 @@ between them. Nothing renders twice.
 - **Patterns are procedural TSL and the choice is structural** — fade, wipe (angle),
   radial (aspect-corrected), dissolve (MaterialX fractal noise). Each is a different mask
   expression, not a runtime branch, so the shader carries only the one in use. The mask
-  ranks pixels (low reveals first) and `softness` is the width of the front.
-- **The sequence lives in `sceneActions.transitionTo`**: cover (freeze) → swap → assets →
-  warm → reveal (dissolve). The frozen frame is what hides the load and the pipeline
-  warm, so there is no black screen at all.
+  ranks pixels (low reveals first) and `softness` is the width of the front. **One mask,
+  two fronts:** the dip and the reveal run the same threshold over it, so a wipe sweeps
+  once each way and a dissolve's blobs return in the order they left.
+- **The sequence lives in `sceneActions.transitionTo`**: capture → dip → swap → assets →
+  warm → reveal. **The dip happens BEFORE the swap**, and that is the ordering fix: the
+  swap and the mount behind it are the biggest main-thread stall in the sequence, and
+  running them under a live dissolve is what made the old transition judder. The one
+  dissolve the player watches now runs while the outgoing scene is still mounted and
+  nothing is blocking.
 - **`Loader.svelte`'s black veil is still the fallback** and still load-bearing: quality
   `low` bypasses post-processing entirely, the effect can be switched off, and a build
-  can fail. `coverWithSnapshot()` returns false in all three and the veil covers instead.
-  While a frozen frame IS covering, the veil returns only as a transparent status readout
-  and only while assets are genuinely downloading.
+  can fail. `coverWithSnapshot()` returns false in all three and the veil covers instead,
+  opaque and without the fades. While the composite IS covering, the same veil is the
+  transparent status readout on top of it — **unconditionally, for the whole
+  transition**. Gating it on `$active` (as it first shipped) made it vanish the moment
+  the downloads finished, which is the start of the warm gate: the longest phase of a
+  heavy scene's first entry, and the one that most needs a label on it.
