@@ -3,6 +3,8 @@ import { logEngine } from '$extensions/logger';
 // for the scene-transition veil, and the barrel exports Loader — a module cycle.
 // globalAudio is a leaf, so importing it directly breaks the ring.
 import { soundActions } from '$core/audio/globalAudio.svelte';
+// Same reason for the direct path: assetGate is a leaf (loading manager + logger).
+import { waitForAssetsIdle } from '$core/utils/assetGate';
 import type { SceneType, SceneConfig, ExtensionState, ExtensionActions } from './types';
 
 export type { ExtensionState, ExtensionActions } from './types';
@@ -65,13 +67,24 @@ export const sceneActions: ExtensionActions = {
 	 *   1. veil drops — two rAFs so it has actually painted before anything moves
 	 *   2. setScene swaps the scene ({#if} routing: old unmounts, new mounts — the
 	 *      swoosh fires here, under the cover)
-	 *   3. two more rAFs: one for the Svelte mount effects to flush (T attachments),
+	 *   3. one rAF for the mount to flush: component init is where every useGltf /
+	 *      TextureLoader call in the new scene fires, so the loading queue is filled
+	 *      by the end of it
+	 *   4. THE ASSET GATE — hold the veil until that queue drains
+	 *      (core/utils/assetGate.ts). The boot Loader only ever covered the BOOT
+	 *      scene's assets; every later scene used to enter on a fixed budget and
+	 *      pop its track/car in afterwards. Capped by a timeout, so this can delay
+	 *      an entry but never block one
+	 *   5. two more rAFs: one for the Svelte mount effects to flush (the subtrees
+	 *      gated on those assets — `{#if $carModel}` and friends — mount here),
 	 *      one for the new scene to be rendered — that first frame is the warm frame:
 	 *      it goes through the real pipeline, kicking three's async pipeline
 	 *      compilation (createRenderPipelineAsync) for every material variant of the
 	 *      new scene, MRT contextNode included — the variants renderer.compileAsync
-	 *      cannot produce (postprocessing/CLAUDE.md's shader-cache trap)
-	 *   4. a grace budget while the compiles land in the background, then the veil lifts
+	 *      cannot produce (postprocessing/CLAUDE.md's shader-cache trap). Warming
+	 *      AFTER the gate is the point: a frame drawn before the textures land
+	 *      compiles the wrong material variants
+	 *   6. a grace budget while the compiles land in the background, then the veil lifts
 	 *
 	 * The grace is a fixed budget, not a completion signal: three exposes no awaitable
 	 * handle for passes it compiles internally, so there is nothing to await. Anything
@@ -94,7 +107,13 @@ export const sceneActions: ExtensionActions = {
 
 			this.setScene(scene);
 
-			// Warm: mount flush, then the first rendered frame of the new scene.
+			// Mount flush — the new scene's component init fills the loading queue.
+			await nextFrame();
+			// The scene's own assets, under the same cover as the swap.
+			await waitForAssetsIdle();
+
+			// Warm: mount flush for what those assets gated, then the first rendered
+			// frame of the complete scene.
 			await nextFrame();
 			await nextFrame();
 			await delay(WARM_GRACE_MS);

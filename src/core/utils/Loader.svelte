@@ -35,9 +35,18 @@
 	let readyToHide = $state(false);
 	let showPrompt = $state(false);
 
+	// The bar. `progress` is per BATCH (useProgress rebases it on the previous
+	// drain), so a scene transition's queue starts it back at 0 — snapped, not
+	// swept, or the veil's bar animates 100% → 0% for 600ms before it fills. The
+	// previous target is a plain `let` on purpose: reading tweened.current here
+	// would be a read+write of the same reactive value in one effect.
 	const tweened = new Tween(0, { duration: 600, easing: cubicOut });
+	let lastTarget = 0;
 	$effect(() => {
-		tweened.target = $total === 0 ? 1 : $progress;
+		const next = $total === 0 ? 1 : $progress;
+		if (next < lastTarget) tweened.set(next, { duration: 0 });
+		else tweened.target = next;
+		lastTarget = next;
 	});
 
 	$effect(() => {
@@ -172,12 +181,25 @@
 
 {#if sceneState.isTransitioning}
 	<!-- Scene-transition veil — the warm swap's cover (sceneActions.transitionTo lifts
-	     it once the new scene's first frame has rendered and its shader pipelines have
-	     had their grace budget). Lives here because this component owns every
-	     full-screen cover and never unmounts. z-index 150: over every HUD, under this
-	     loader (200) and the notice (210). Reuses .label for the text. -->
+	     it once the new scene's assets have landed, its first frame has rendered and
+	     its shader pipelines have had their grace budget). Lives here because this
+	     component owns every full-screen cover and never unmounts. z-index 150: over
+	     every HUD, under this loader (200) and the notice (210). Reuses the boot
+	     screen's own bar and status markup — same queue, same numbers, and a scene
+	     whose assets are already cached shows the bare label. -->
 	<div class="veil">
 		<p class="label">Loading</p>
+
+		{#if $active}
+			<div class="track">
+				<div class="fill" style="width: {tweened.current * 100}%;"></div>
+			</div>
+
+			<div class="status">
+				<p class="item">{truncatePath($item)}</p>
+				<p class="count">{$loaded} / {$total}</p>
+			</div>
+		{/if}
 	</div>
 {/if}
 
@@ -342,6 +364,7 @@
 		inset: 0;
 		z-index: 150;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		background: #000;

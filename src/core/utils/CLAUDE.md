@@ -20,7 +20,10 @@ capabilities.svelte.ts — Boot probe (WebGPU adapter / WebGL2 / WASM) awaited i
 Loader.svelte         — Asset loading screen (useProgress) + sound-enable prompt (autoplay
                         unlock), armed once assets settle. Owns every full-screen cover:
                         the blocking unsupported screen, the dismissible WebGL-fallback
-                        badge, and the scene-transition veil (sceneState.isTransitioning)
+                        badge, and the scene-transition veil (sceneState.isTransitioning),
+                        which shows the same bar/status when a scene entry is loading
+assetGate.ts          — waitForAssetsIdle(): "the loading queue has drained", awaited by
+                        the scene transition so a scene's own assets land under the veil
 Renderer.svelte       — RenderPipeline owner: structural rebuild + hot uniform effects + render
                         task
 PhysicsWorld.svelte   — <World> with Rapier's synchronization stage pinned before the MAIN
@@ -53,6 +56,30 @@ the app. It also pins TSL `time`, which the scheduler cannot reach.
   TSL layer's motion is a function of absolute elapsed time, so a jump either way
   teleports the cloud deck, re-phases every star and relocates the rain — on frame 0 of
   a take, the one frame that must not do that.
+
+## The asset gate (`assetGate.ts`)
+
+`waitForAssetsIdle()` is "has the app stopped loading yet?", callable. The scene
+transition awaits it after the swap (`$extensions/scene`), which is what makes the veil
+cover a scene's OWN assets — the boot Loader only ever covered the boot scene's, so every
+later entry used to run on a fixed budget and pop its GLBs in afterwards.
+
+- **Idle means QUIET FOR A GRACE PERIOD, not `loaded === total`.** three's LoadingManager
+  has no drain event worth latching: `loaded` catches up with `total` transiently BETWEEN
+  items. Same rule as `Loader.svelte`'s boot `settled`, and the nothing-to-load case falls
+  out of it for free.
+- **It watches the DEFAULT loading manager**, which is where every loader in this app ends
+  up — `useGltf`/`useLoader`, the bare `TextureLoader`s, the audio buffers. That is why a
+  scene declares nothing: mounting it starts its loads and the gate sees them.
+- **A promise that never touches the manager is invisible to it.** The escape hatch for
+  one is `@threlte/extras`' `<Suspense>` + `useSuspense()` around that scene's subtree.
+  Nothing needs it today, which is why no per-scene declaration API exists — an empty
+  layer is the mistake the deleted scene-preset system made.
+- **It can delay an entry, never block one:** a timeout caps the wait and logs, and the
+  transition proceeds either way.
+- Wall-clock (`Date.now`), deliberately. The engine clock's ban covers things ANIMATED off
+  a delta; a download takes as long as it takes and a below-realtime capture take must not
+  stretch the timeout with it.
 
 ## Renderer.svelte — pipeline ownership
 
