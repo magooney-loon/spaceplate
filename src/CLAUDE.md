@@ -19,7 +19,9 @@ main.ts             — Entry point
 Scene.svelte        — 3D scene router: plain {#if} on currentScene — exactly one scene
                       mounted at a time; switching unmounts (disposes THREE resources,
                       tears down Rapier bodies) and the next scene mounts fresh
-SceneHud.svelte     — HTML overlay router (sibling to Canvas) + global settings overlay
+SceneHud.svelte     — HTML overlay router (sibling to Canvas) + global settings overlay.
+                      Routes on visibleScene, NOT currentScene, and fades with the
+                      transition phase — a HUD waits for the scene it belongs to
 app.css             — Global styles
 module_bindings/    — Generated SpacetimeDB bindings — DO NOT EDIT
 lib/                — Empty by convention; app-specific shared code goes here
@@ -55,6 +57,7 @@ would create a circular module graph.
 
 - **3D content** (meshes, lights, cameras) lives inside `<Canvas>` — `Scene.svelte` → scene components.
 - **HTML overlays** (buttons, panels, forms) cannot live inside Canvas — `SceneHud.svelte` → HUD components.
+- **A HUD waits for its scene.** `SceneHud.svelte` routes on `sceneState.visibleScene`, published at the reveal, not `currentScene`, which flips at the swap — i.e. at the START of a transition's load. The scene-transition cover is inside the canvas, so an HTML sibling routed on the swap shows straight through it and runs its effects against a scene that is still downloading.
 - HUD components are siblings to Canvas in a `position: relative` wrapper.
 - Scene HUD routing uses separate `{#if}` blocks, not `{:else if}`.
 

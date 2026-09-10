@@ -32,6 +32,7 @@ export const SCENES: SceneConfig[] = [
 
 export const sceneState = $state<ExtensionState>({
 	currentScene: 'mainMenu',
+	visibleScene: 'mainMenu',
 	previousScene: null,
 	isTransitioning: false
 });
@@ -46,6 +47,10 @@ export const sceneActions: ExtensionActions = {
 
 		sceneState.previousScene = sceneState.currentScene;
 		sceneState.currentScene = scene;
+		// An INSTANT swap shows immediately by definition — nothing is covering, so the
+		// HUD has nothing to wait for. `transitionTo` is the caller that separates the
+		// two, by publishing `visibleScene` itself at the reveal instead.
+		if (!sceneState.isTransitioning) sceneState.visibleScene = scene;
 	},
 
 	goToMainMenu() {
@@ -153,12 +158,24 @@ export const sceneActions: ExtensionActions = {
 			await nextFrame();
 			await warmScene();
 
+			// THE HUD JOINS HERE, one statement before the reveal. `currentScene` flipped
+			// at the swap, which is the START of the load — routing the HUD on that put
+			// the incoming scene's overlay on screen for the whole hold (the veil is
+			// transparent while the composite covers, so HTML siblings show straight
+			// through it) and started its effects against a scene that was still
+			// downloading. Publishing it here means a HUD mounts to a scene that is
+			// loaded, warmed and drawing, and fades in WITH it.
+			sceneState.visibleScene = scene;
+
 			// Reveal — the veil dissolves into the scene that is now loaded, warmed and
 			// drawing. A no-op when nothing froze. The driver holds this until the
 			// minimum cover time has elapsed, so this await can outlast the work.
 			await revealScene();
 		} finally {
 			sceneState.isTransitioning = false;
+			// Belt and braces: a throw between the swap and the reveal must not strand
+			// the HUD on a scene that is no longer mounted.
+			sceneState.visibleScene = sceneState.currentScene;
 			busy = false;
 		}
 	}

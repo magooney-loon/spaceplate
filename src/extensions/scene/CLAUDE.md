@@ -13,7 +13,8 @@ index.ts            — barrel re-exports
 
 - **SceneType**: `'mainMenu' | 'demoScene' | 'testGame'`. Add new scenes here and in `SCENES`.
 - **SCENES**: `SceneConfig[]` — each entry has `id`, `label`, `icon`. Per-scene `environment` block is planned but not implemented — see below.
-- **sceneState**: `{ currentScene, previousScene, isTransitioning }`.
+- **sceneState**: `{ currentScene, visibleScene, previousScene, isTransitioning }`.
+  - **`currentScene` is what is MOUNTED, `visibleScene` is what the player can SEE**, and during a transition they differ for the whole covered period: the swap happens at the start of the load, the reveal at the end of it. 3D routing (`Scene.svelte`) follows `currentScene`; HUD routing (`SceneHud.svelte`) follows `visibleScene`, which `transitionTo` publishes one statement before the reveal. Anything else asking "which scene is this" wants `currentScene`.
 - **sceneActions**: `setScene`, `goToMainMenu`, `goToDemoScene`, `goToTestGame`, `goBack`, `transitionTo`.
 
 ## Key behavior

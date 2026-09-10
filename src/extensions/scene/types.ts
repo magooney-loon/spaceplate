@@ -9,7 +9,15 @@ export type SceneConfig = {
 };
 
 export type SceneState = {
+	/** The MOUNTED 3D scene — what `Scene.svelte`'s `{#if}` routing follows. */
 	currentScene: SceneType;
+	/**
+	 * The scene the player can actually SEE, which lags `currentScene` for the whole
+	 * covered part of a transition: the swap happens at the start of the load and the
+	 * reveal is at the end of it, so between the two a scene is mounted but hidden. HUDs
+	 * route on this — see `src/SceneHud.svelte`.
+	 */
+	visibleScene: SceneType;
 	previousScene: SceneType | null;
 	isTransitioning: boolean;
 };

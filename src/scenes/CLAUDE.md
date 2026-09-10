@@ -41,3 +41,6 @@ TestGame/  standalone tech demo game (driving prototype) — self-contained, has
 2. Create the directory with the scene component + HUD component.
 3. Mount it in `Scene.svelte` inside a plain `{#if sceneState.currentScene === '…'}`
    group — copy an existing block.
+4. Mount the HUD in `SceneHud.svelte` inside a `{#if sceneState.visibleScene === '…'}`
+   group. **`visibleScene`, not `currentScene`** — the HUD waits for the transition's
+   reveal instead of appearing at the swap, which is the start of the load.
