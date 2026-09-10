@@ -7,6 +7,7 @@ import { soundActions } from '$core/audio/globalAudio.svelte';
 // info + logger), so importing them cannot close the ring back through Loader.
 import { waitForAssetsIdle } from '$core/utils/assetGate';
 import { warmScene } from '$core/utils/warmup.svelte';
+import { coverWithSnapshot, revealScene } from '$core/postprocessing/transitionState.svelte';
 import type { SceneType, SceneConfig, ExtensionState, ExtensionActions } from './types';
 
 export type { ExtensionState, ExtensionActions } from './types';
@@ -66,7 +67,11 @@ export const sceneActions: ExtensionActions = {
 	 * goes through here (the goTo* actions); the swap happens under a full-screen veil
 	 * (Loader.svelte, driven by isTransitioning) so the entry cost is never on screen:
 	 *
-	 *   1. veil drops — two rAFs so it has actually painted before anything moves
+	 *   1. THE COVER — the pipeline freezes the outgoing scene's last frame and pins it
+	 *      over the screen (core/postprocessing/transitionState.svelte.ts). The player
+	 *      keeps looking at the world they were in, not at black. When there is no
+	 *      pipeline to do it with, Loader.svelte's black veil covers instead and this
+	 *      waits two rAFs for it to paint
 	 *   2. setScene swaps the scene ({#if} routing: old unmounts, new mounts — the
 	 *      swoosh fires here, under the cover)
 	 *   3. one rAF for the mount to flush: component init is where every useGltf /
@@ -80,10 +85,12 @@ export const sceneActions: ExtensionActions = {
 	 *   5. one rAF for the Svelte mount effects to flush — the subtrees gated on those
 	 *      assets (`{#if $carModel}` and friends) mount here
 	 *   6. THE WARM GATE — `warmScene()` (core/utils/warmup.svelte.ts) forces real
-	 *      frames of the real pipeline until three stops building shader programs, then
-	 *      the veil lifts. Warming AFTER the asset gate is the point: a material's
-	 *      pipeline is built on its first DRAW, so a frame drawn before the textures
-	 *      land warms the wrong thing
+	 *      frames of the real pipeline until three stops building shader programs.
+	 *      Warming AFTER the asset gate is the point: a material's pipeline is built on
+	 *      its first DRAW, so a frame drawn before the textures land warms the wrong
+	 *      thing. Those frames are drawn UNDER the frozen one, which is what makes them
+	 *      free to look at
+	 *   7. THE REVEAL — the frozen frame dissolves into the live scene
 	 *
 	 * The warm used to be a fixed grace budget on the theory that three compiled in the
 	 * background. It does not: outside `compileAsync` every pipeline is created
@@ -97,14 +104,27 @@ export const sceneActions: ExtensionActions = {
 	 * (Warmup.svelte), and it resolves immediately when there is no Canvas at all.
 	 */
 	async transitionTo(scene: SceneType) {
-		if (sceneState.currentScene === scene || sceneState.isTransitioning) return;
-
-		sceneState.isTransitioning = true;
+		if (sceneState.currentScene === scene || busy) return;
+		busy = true;
 
 		try {
-			// Cover first — the veil must be on screen before the old scene disappears.
-			await nextFrame();
-			await nextFrame();
+			// Cover first — something must be over the old scene before it disappears.
+			// The pipeline composite freezes its last frame; when it cannot (post-
+			// processing bypassed at low quality, the effect switched off, a failed
+			// build) this returns false and Loader.svelte's black veil covers instead.
+			//
+			// `isTransitioning` is raised AFTER this, and the ordering is the difference
+			// between a clean freeze and a black flash: the capture needs two frames of
+			// the LIVE scene to grab, and the flag is what puts the black veil on screen.
+			// The re-entrancy guard is the plain `busy` below precisely so this flag is
+			// free to mean "a cover is warranted" rather than "a call is in flight".
+			const frozen = await coverWithSnapshot();
+			sceneState.isTransitioning = true;
+
+			if (!frozen) {
+				await nextFrame();
+				await nextFrame();
+			}
 
 			this.setScene(scene);
 
@@ -116,10 +136,18 @@ export const sceneActions: ExtensionActions = {
 			// Mount flush for what those assets gated, then warm the complete scene.
 			await nextFrame();
 			await warmScene();
+
+			// Reveal — the frozen frame dissolves into the scene that is now loaded,
+			// warmed and drawing. A no-op when nothing froze.
+			await revealScene();
 		} finally {
 			sceneState.isTransitioning = false;
+			busy = false;
 		}
 	}
 };
+
+/** Re-entrancy guard — see the note in transitionTo for why it is not `isTransitioning`. */
+let busy = false;
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));

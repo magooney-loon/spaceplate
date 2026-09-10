@@ -8,7 +8,7 @@
 	import Nebula from './layers/celestial/Nebula.svelte';
 	import Stars from './layers/celestial/Stars.svelte';
 	import Meteors from './layers/celestial/Meteors.svelte';
-/* 	import Birds from './layers/fauna/Birds.svelte'; */
+	/* 	import Birds from './layers/fauna/Birds.svelte'; */
 	import Rain from './layers/precipitation/Rain.svelte';
 	import Snow from './layers/precipitation/Snow.svelte';
 	import LensDriver from './layers/precipitation/LensDriver.svelte';

@@ -41,8 +41,8 @@ pipeline itself never imports from here except the state (via Renderer.svelte).
 
 Base passes (mutually exclusive): `ssaa`, `retro` — else the default `pass()`. Chain:
 `ao`, `dof`, `fogScatter`, `motionBlur`, `rainLens`, `snowLens`, `bloom`, `afterimage`,
-`vignette`. Grade (**not** exclusive): `lut`. Anti-aliasing (mutually exclusive):
-`smaa`, `fxaa`.
+`vignette`, `sceneTransition`. Grade (**not** exclusive): `lut`. Anti-aliasing (mutually
+exclusive): `smaa`, `fxaa`.
 
 `pixelation`, `ssgi`, `ssr` and `traa` were **removed** — files deleted, not
 disabled. Don't re-add one by half-measures: `$core/postprocessing/CLAUDE.md`
@@ -92,6 +92,15 @@ model is lit from the inside by the whole sky. Off by default — read its secti
   (`$core/skybox/fogScatter.svelte.ts`) that keeps it out of the graph below a low
   threshold, hysteresis and all. "Enabled" here means "let the weather decide"; the
   params only shape what it does once the weather has.
+- `sceneTransition` is the scene switch's cover, and it is DEFAULT-ENABLED at mix 0 for
+  the afterimage's reason (a latch would rebuild the graph exactly when a transition
+  starts). Its params are the LOOK of every scene switch in the app — pattern (fade /
+  wipe / radial / dissolve, structural), `softness`, `angle`, `scale`, then `push`,
+  `blur` and `desaturate` — the motion the frozen frame carries while it covers, which is
+  what stops a long load reading as a hang — and `revealSeconds`, the only one that is
+  not a shader value: the driver reads it from this state. Tune it here and every
+  `goTo*` picks it up. Engine side and the
+  frozen-frame design: `$core/postprocessing/CLAUDE.md`.
 - `afterimage` is the one effect that is DEFAULT-ENABLED with a zero look: `damp`
   defaults 0 (a passthrough — the node trails only bright pixels), and runtime
   drivers add a boost on top inside the shader (`uAfterimageBoost`; TestGame's

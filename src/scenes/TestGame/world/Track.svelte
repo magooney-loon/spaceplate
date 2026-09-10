@@ -33,7 +33,10 @@
 	// untrack: the decoders (like the URL) are fixed per mount — TestGame creates
 	// the loader set once and never swaps it, and useGltf is an init-time hook
 	// anyway (same pattern as the gltf-viewer extension's instance).
-	const track = useGltf(`${BASE_URL}models/testgame/track.glb`, untrack(() => decoders));
+	const track = useGltf(
+		`${BASE_URL}models/testgame/track.glb`,
+		untrack(() => decoders)
+	);
 
 	// Static collision for the track — built once when the GLB lands. Hand-rolled
 	// instead of <AutoColliders> because the trimesh flags (FIX_INTERNAL_EDGES,

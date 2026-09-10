@@ -20,7 +20,7 @@
 	let { target }: { target?: THREE.Object3D } = $props();
 
 	const CHASE_DISTANCE = 16; // world units behind the car
-	const CHASE_POLAR = 1.30; // rad from +Y — ~24° above the horizon, so it reads "bird"
+	const CHASE_POLAR = 1.3; // rad from +Y — ~24° above the horizon, so it reads "bird"
 	// The anchor sits at the car's middle and the car is ~3.3 world units tall, so anything
 	// under ~1.5 puts the camera inside the cabin — that is the point, zoom all the way in
 	// and you are sitting in it. The floor is a hair off zero because camera-controls
@@ -279,11 +279,7 @@
 
 			// ── Grind: the level, then the wobble both trembles ride. ──
 			const grindRaw = carSim.hullContact
-				? clamp(
-						(carSim.hullSlideMs - GRIND_MIN_SPEED) / (GRIND_FULL_SPEED - GRIND_MIN_SPEED),
-						0,
-						1
-					)
+				? clamp((carSim.hullSlideMs - GRIND_MIN_SPEED) / (GRIND_FULL_SPEED - GRIND_MIN_SPEED), 0, 1)
 				: 0;
 			grindLevel +=
 				(grindRaw - grindLevel) * damp(grindRaw > grindLevel ? GRIND_ATTACK : GRIND_RELEASE, delta);
@@ -297,7 +293,13 @@
 			}
 			const wobble = Math.sin(grindPhase) * grindLevel;
 
-			if (kickLevel > 0.001 || shiftLevel !== 0 || hitLevel > 0.001 || grindLevel > 0.001 || appliedKick !== 0) {
+			if (
+				kickLevel > 0.001 ||
+				shiftLevel !== 0 ||
+				hitLevel > 0.001 ||
+				grindLevel > 0.001 ||
+				appliedKick !== 0
+			) {
 				// Recover the player's zoom from under last frame's kick, then apply
 				// this frame's — a wheel zoom mid-launch lands in the base, not the kick.
 				// The sustained pull-ins (launch, hit, grind flinch) share the 60% cap so

@@ -11,9 +11,12 @@ registry.ts    — EFFECTS list + resolveEnabledSet policy + structuralKeyOf
 build.ts       — the builder: base pass, MRT union, chain fold, grade, resolve, fallback
 uniforms.ts    — createUniformBag / writeUniformBag — the hot-update path
 luts.svelte.ts — LUT catalogue + async load cache (three's nine example LUTs, public/luts/)
-effects/*.ts   — 14 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, motionBlur,
+transitionState.svelte.ts — the scene transition's shared state: the mix uniform, the
+                 snapshot registration, and the cover/reveal API the scene switch awaits
+TransitionDriver.svelte — its one writer: capture, hold, dissolve. Mount inside <Canvas>
+effects/*.ts   — 15 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, motionBlur,
                  rainLens, snowLens, bloom (+lensflare sub-toggle), afterimage,
-                 vignette (chain) · lut (grade) · smaa, fxaa (AA)
+                 vignette, sceneTransition (chain) · lut (grade) · smaa, fxaa (AA)
 ```
 
 ## Roles — effects are not peers
@@ -25,7 +28,7 @@ Four `PassRole`s exist because a flat enable-grid cannot express the relationshi
   asks `basePass.getMRT()` instead of assuming the default — a base pass may provision
   attachments the registry never asked for (pixelationPass did exactly that).
 - **chain** (`ao`, `dof`, `motionBlur`, `rainLens`, `snowLens`, `bloom`, `afterimage`,
-  `vignette`) — plain
+  `vignette`, `sceneTransition`) — plain
   colour-in/colour-out, folded in `order` threading `ctx.color`. Some are TSL `Fn`s,
   not node classes (`motionBlur`, `vignette`, our `dof`) — no instance holds uniforms,
   so **the uniform bag is the only way to animate them**.
@@ -83,6 +86,10 @@ schedules the task again to decay them.
   a fog bank and very wrong on a clear evening. **A storm activates this AND `rainLens`**
   — two full-frame targets and two mip chains, the one place the weather-latched effects
   stack. Budget for it there, not in clear weather where neither is in the graph.
+- **`sceneTransition`** — the scene switch itself, via `TransitionDriver.svelte`. Same
+  contract, one extra wrinkle: the driver also owns a RESOURCE (the snapshot `rtt()`),
+  which the effect hands over on every build and `Renderer.svelte` clears to `null`
+  before every rebuild — a node that dies with its build must never be poked afterwards.
 - **`afterimage`** — nitrous trails (TestGame's `NitrousAfterimage.svelte`
   writes `uAfterimageBoost` from the car's spray flow). The OPPOSITE latch
   decision: enabled by DEFAULT with `damp` 0 (a pure passthrough — the node is a
@@ -303,16 +310,50 @@ What a revival restores:
 Not built: `anamorphic` (no shipped node — the example composes a custom high-pass `Fn`,
 bloom, tint, add; budget it as real work).
 
-## Scene transitions — decided, not built
+## Scene transitions — built, and it IS a crossfade
 
-Single-scene **fade**, not a true two-scene crossfade: `TransitionNode` needs both
-scenes rendering every frame, and plain `{#if}` routing unmounts the outgoing scene
-at the swap. Plan: pass A is
-the live scene pass, pass B a cheap constant node; all the mask-texture machinery
-(wipes, dissolves) still works, only a genuine A→B crossfade doesn't. `mixRatio` is one
-`uniform()` eased by a task; the scene swap happens at `mixRatio === 1` — the covered
-midpoint, which is also where a scene's environment swap should land (see the plan in
-`src/extensions/scene/CLAUDE.md`). Today the cover is the HTML veil in `Loader.svelte`
-(`sceneActions.transitionTo`) — opaque black over everything, with the swap and the
-shader-compilation grace hidden under it; the pipeline fade would make the same swap
-gradual instead.
+`effects/sceneTransition.ts` + `transitionState.svelte.ts` + `TransitionDriver.svelte`.
+The old plan here said a true A→B crossfade was impossible because `TransitionNode`
+needs both scenes rendering and `{#if}` routing unmounts the outgoing one. **A frozen
+frame retires that objection**: side A is an `rtt()` of the chain colour captured on the
+outgoing scene's last frame, side B is the live scene, and the mix is a real crossfade
+between them. Nothing renders twice.
+
+- **Captured and mixed IN THE CHAIN** (order 60, last, pre-tonemap) so both sides are
+  linear working colour and the frozen frame goes through the same grade, AA and output
+  transform as the live one, every frame. At mix 1 the screen therefore _is_ the frame
+  that was captured. A canvas grab (`copyFramebufferToTexture`) would be display-referred
+  and could not be mixed at this point without tone-mapping it twice.
+- **THE COVER MOVES, and that is not decoration.** A still frame held for a whole load
+  reads as a hang however good the dissolve at the end is, which is exactly how the first
+  version looked. So the frozen image gets a slow push-in, a mip blur that racks over the
+  first second and a drain toward grey, all riding `uTransitionHold` (seconds covered),
+  and the push carries ON through the reveal so the motion never stops dead as the new
+  scene arrives. `uvNode` and `levelNode` are configured IN PLACE on the RTT node —
+  `.sample()`/`.level()` return plain TextureNode clones and only the node itself carries
+  the `updateBefore` that fills the target (fogScatter's header has the long version).
+- **A true two-live-scene crossfade is still not on the table**, and the reason is no
+  longer the node: it is one scene graph, one borrowed camera and one Rapier world. Both
+  scenes mounted at once means both trees in the same graph overlapping in world space
+  and both sets of bodies in the same world colliding. It would need per-scene camera
+  layers, a second camera and dormancy rules for the outgoing scene's physics, audio and
+  input.
+- **The capture is manual**: `rtt(ctx.color, null, null, { autoUpdate: false })` renders
+  only on frames where the driver sets `textureNeedsUpdate`, and holds that image until
+  the next capture. It also means the target stays 1×1 until the first real transition —
+  a session that never switches scenes never allocates a full-screen buffer for this.
+- **Default ON at mix 0**, the afterimage's bargain rather than the lenses' latch: a
+  structural rebuild at the moment a transition starts is the hitch the cover exists to
+  hide. At rest it is one texture fetch and one `mix`.
+- **Patterns are procedural TSL and the choice is structural** — fade, wipe (angle),
+  radial (aspect-corrected), dissolve (MaterialX fractal noise). Each is a different mask
+  expression, not a runtime branch, so the shader carries only the one in use. The mask
+  ranks pixels (low reveals first) and `softness` is the width of the front.
+- **The sequence lives in `sceneActions.transitionTo`**: cover (freeze) → swap → assets →
+  warm → reveal (dissolve). The frozen frame is what hides the load and the pipeline
+  warm, so there is no black screen at all.
+- **`Loader.svelte`'s black veil is still the fallback** and still load-bearing: quality
+  `low` bypasses post-processing entirely, the effect can be switched off, and a build
+  can fail. `coverWithSnapshot()` returns false in all three and the veil covers instead.
+  While a frozen frame IS covering, the veil returns only as a transparent status readout
+  and only while assets are genuinely downloading.

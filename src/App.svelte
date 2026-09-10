@@ -13,6 +13,7 @@
 		GlobalAudio,
 		Telemetry,
 		Warmup,
+		TransitionDriver,
 		PhysicsWorld,
 		capabilityState
 	} from '$core';
@@ -91,6 +92,10 @@
 		     veil instead of hitching on entry (core/utils/warmup.svelte.ts). Same slot rule
 		     as Telemetry — after <Renderer /> so it samples the frame that was just drawn. -->
 		<Warmup />
+		<!-- Captures the outgoing scene's last frame and dissolves it into the incoming
+		     one (core/postprocessing/transitionState.svelte.ts). Renders nothing itself;
+		     the composite lives in the effect chain like any other effect. -->
+		<TransitionDriver />
 		<Camera />
 		<GlobalAudio />
 		<Skybox />

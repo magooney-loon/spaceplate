@@ -18,6 +18,7 @@
 	import { postprocessingState } from '$extensions/postprocessing';
 	import { buildPipeline, type PipelineBuild } from '$core/postprocessing/build';
 	import { EFFECTS, structuralKeyOf } from '$core/postprocessing/registry';
+	import { registerSnapshot } from '$core/postprocessing/transitionState.svelte';
 	import type { EffectValues } from '$core/postprocessing/types';
 	import { armKeyShadow } from '$core/skybox/keyShadow';
 	import { engineClock } from './engineClock';
@@ -94,6 +95,11 @@
 		untrack(() => {
 			build?.dispose();
 			build = null;
+			// The transition's snapshot node dies with the build. Clear the reference
+			// before anything can poke a disposed render target; the effect re-registers
+			// a fresh one from its own `build` below, and nothing does on bypass — which
+			// is exactly how Loader.svelte knows to use the black veil instead.
+			registerSnapshot(null);
 
 			// Disposing the build disposed the base pass and its render target — the
 			// only large one we own — so dropping to low actually releases the memory.

@@ -14,6 +14,7 @@ import { lutEffect } from './effects/lut';
 import { motionBlurEffect } from './effects/motionblur';
 import { rainLensEffect } from './effects/rainLens';
 import { retroEffect } from './effects/retro';
+import { sceneTransitionEffect } from './effects/sceneTransition';
 import { snowLensEffect } from './effects/snowLens';
 import { smaaEffect } from './effects/smaa';
 import { ssaaEffect } from './effects/ssaa';
@@ -32,6 +33,9 @@ export const EFFECTS: EffectDef<any>[] = [
 	bloomEffect,
 	afterimageEffect,
 	vignetteEffect,
+	// Last in the chain: it composites the frozen previous scene over everything the
+	// chain produced, and wants the vignette (and the rest) applied to both sides alike.
+	sceneTransitionEffect,
 	lutEffect,
 	smaaEffect,
 	fxaaEffect

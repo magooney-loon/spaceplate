@@ -10,6 +10,7 @@ import type { FxaaParams } from '$core/postprocessing/effects/fxaa';
 import type { LutParams } from '$core/postprocessing/effects/lut';
 import type { MotionBlurParams } from '$core/postprocessing/effects/motionblur';
 import type { RetroParams } from '$core/postprocessing/effects/retro';
+import type { SceneTransitionParams } from '$core/postprocessing/effects/sceneTransition';
 import type { SmaaParams } from '$core/postprocessing/effects/smaa';
 import type { SsaaParams } from '$core/postprocessing/effects/ssaa';
 import type { VignetteParams } from '$core/postprocessing/effects/vignette';
@@ -23,6 +24,7 @@ type ParamMap = {
 	fogScatter: FogScatterParams;
 	motionBlur: MotionBlurParams;
 	vignette: VignetteParams;
+	sceneTransition: SceneTransitionParams;
 	lut: LutParams;
 	smaa: SmaaParams;
 	fxaa: FxaaParams;

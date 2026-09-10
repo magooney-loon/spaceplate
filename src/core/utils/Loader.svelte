@@ -7,6 +7,7 @@
 	import { sceneState } from '$extensions/scene';
 	import { capabilityState, isBlocked, WEBGPU_REPORT_URL } from './capabilities.svelte';
 	import { warmScene } from './warmup.svelte';
+	import { transitionFxState } from '$core/postprocessing/transitionState.svelte';
 
 	const { progress, active, item, loaded, total, errors } = useProgress();
 
@@ -187,15 +188,18 @@
 	</div>
 {/if}
 
-{#if sceneState.isTransitioning}
-	<!-- Scene-transition veil — the warm swap's cover (sceneActions.transitionTo lifts
-	     it once the new scene's assets have landed, its first frame has rendered and
-	     its shader pipelines have had their grace budget). Lives here because this
-	     component owns every full-screen cover and never unmounts. z-index 150: over
-	     every HUD, under this loader (200) and the notice (210). Reuses the boot
-	     screen's own bar and status markup — same queue, same numbers, and a scene
-	     whose assets are already cached shows the bare label. -->
-	<div class="veil">
+{#if sceneState.isTransitioning && (!transitionFxState.covering || $active)}
+	<!-- Scene-transition cover, in its HTML half. WHO COVERS DEPENDS ON THE PIPELINE:
+	     normally the post-processing composite freezes the outgoing scene's last frame
+	     (core/postprocessing/transitionState.svelte.ts) and this steps aside — no black
+	     screen at all — reappearing only as a TRANSPARENT status readout while assets
+	     are genuinely downloading, because a frozen frame alone cannot say "still
+	     fetching the track". When nothing froze (low quality bypasses post-processing,
+	     the effect is off, a build failed) this is the whole cover, opaque black, the
+	     way it always was. Lives here because this component owns every full-screen
+	     cover and never unmounts. z-index 150: over every HUD, under this loader (200)
+	     and the notice (210). Reuses the boot screen's own bar and status markup. -->
+	<div class="veil" class:clear={transitionFxState.covering}>
 		<p class="label">Loading</p>
 
 		{#if $active}
@@ -377,6 +381,13 @@
 		justify-content: center;
 		background: #000;
 		color: #fff;
+	}
+
+	/* The frozen frame is the cover — this is only the status text over it, so it
+	   drops the black and takes a shadow to stay legible against any scene. */
+	.veil.clear {
+		background: transparent;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 	}
 
 	.notice {

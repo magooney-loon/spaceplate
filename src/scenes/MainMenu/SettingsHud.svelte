@@ -123,7 +123,6 @@
 		inputActions.cancelCapture();
 	}
 
-
 	function switchTab(tab: Tab) {
 		soundActions.playClick();
 		if (isCapturing) inputActions.cancelCapture();
@@ -315,8 +314,8 @@
 				<div class="bindings">
 					{#if !hasBindableSlots}
 						<p class="section-note">
-							No rebindable controls yet. Scenes declare their own — Settings lists whatever
-							input maps exist, so this fills in as games register theirs.
+							No rebindable controls yet. Scenes declare their own — Settings lists whatever input
+							maps exist, so this fills in as games register theirs.
 						</p>
 					{/if}
 					{#each mapIds as mapId (mapId)}
@@ -450,7 +449,6 @@
 
 				<!-- Reset all -->
 				<button onclick={resetAllControls} class="reset-all"> Reset All Controls </button>
-
 
 				<!-- System tab -->
 			{:else if activeTab === 'system'}

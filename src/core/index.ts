@@ -43,6 +43,11 @@ export { default as Telemetry } from './utils/Telemetry.svelte';
 export { default as Warmup } from './utils/Warmup.svelte';
 export { warmupState, warmScene } from './utils/warmup.svelte';
 export type { WarmOutcome } from './utils/warmup.svelte';
+
+// postprocessing/ — the pipeline itself is Renderer.svelte's; this is the scene
+// transition's driver + the state Loader.svelte reads to know who is covering.
+export { default as TransitionDriver } from './postprocessing/TransitionDriver.svelte';
+export { transitionFxState } from './postprocessing/transitionState.svelte';
 export {
 	capabilityState,
 	probeCapabilities,
