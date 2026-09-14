@@ -53,10 +53,21 @@
 	// them). What LATCHES is still this scene's (sim/carSwitches.svelte.ts).
 
 	const car = currentCar();
+	// MAP EXPERIMENT — spawn for the NFSU2 airport map, measured from
+	// airport.glb's JSON (the flattest big FWY_TOP road patch: dead-flat
+	// 190×643 units at model y 271.9, centred x 2350 / z 725 — minus the map's
+	// -220 offset, plus the same ~2-unit drop the track spawn uses). The runway
+	// runs along z, which is yaw 0 for this car. THE TRACK SPAWN lives in the
+	// spec, cars/gr86.ts: position [15, 2, 0], rotation [0, 0, 0] — delete this
+	// override to give it back to the car.
+	const MAP_SPAWN = {
+		position: [2289.6, 54, 725] as [number, number, number],
+		rotation: [0, 0, 0] as [number, number, number]
+	};
 	// T.Group's position/rotation props want mutable tuples; the spec's are
 	// readonly data. Widened once, here, at the only consumer.
-	const spawnPosition = [...car.model.spawn.position] as [number, number, number];
-	const spawnRotation = [...car.model.spawn.rotation] as [number, number, number];
+	const spawnPosition = [...MAP_SPAWN.position] as [number, number, number];
+	const spawnRotation = [...MAP_SPAWN.rotation] as [number, number, number];
 
 	// Both models are draco + KTX2 compressed, so the decoders must be handed to useGltf
 	// (same setup as the gltf-viewer extension: DRACO/KTX2 fetch their decoder binaries
