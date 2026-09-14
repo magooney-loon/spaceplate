@@ -1,11 +1,5 @@
-// The Milky Way band, defined once because two components have to agree on it:
-// Stars.svelte concentrates star density along it, and Nebula.svelte lays the
-// unresolved glow of all those too-faint stars into the smoke. If the two ever
-// drift apart, the band of stars and the band of light separate and the illusion
-// collapses.
-//
+// The Milky Way band shared by Stars.svelte and Nebula.svelte — see ../CLAUDE.md.
 // The band's great circle is the set of directions where dot(dir, normal) ~ 0.
-// `sigma` is the Gaussian falloff off the plane, in radians.
 
 const RAW_NORMAL: [number, number, number] = [0.42, 0.58, -0.7];
 const LEN = Math.hypot(RAW_NORMAL[0], RAW_NORMAL[1], RAW_NORMAL[2]);
@@ -16,17 +10,12 @@ export const MILKY_WAY_NORMAL: [number, number, number] = [
 	RAW_NORMAL[2] / LEN
 ];
 
-/** ~10 deg to half density -- roughly the visual width of the real thing. */
+/** Gaussian falloff off the band plane, in radians. ~10 deg to half density. */
 export const MILKY_WAY_SIGMA = 0.17;
 
-// Direction of the galactic bulge -- the swell in Sagittarius. The real Milky Way is
-// strongly ASYMMETRIC: one side of the band is a broad, warm, obviously-structured
-// glow, the far side a thin cold thread you have to look for. A band of even width and
-// even brightness all the way round is the single clearest tell that a sky was
-// generated, so both consumers weight themselves toward this direction.
-//
-// Authored by eye, then Gram-Schmidt'd against the normal below: the bulge has to lie
-// IN the band plane, and eyeballed numbers never quite do.
+// Direction of the galactic bulge (the swell in Sagittarius) — see ../CLAUDE.md on why
+// the band is asymmetric. Authored by eye, then Gram-Schmidt'd against the normal below:
+// the bulge has to lie IN the band plane, and eyeballed numbers never quite do.
 const RAW_CORE: [number, number, number] = [-0.9, 0.25, -0.35];
 
 const CORE_DOT =

@@ -7,18 +7,10 @@ export type CaptureImageFormat = 'png' | 'jpeg' | 'webp';
 export type CaptureContainer = 'webm' | 'mp4';
 
 /**
- * Output sizes offered for both stills and video.
- *
- * Every entry is an EXACT pixel size the frame is genuinely re-rendered at
- * (`Capture.svelte` resizes the renderer for the duration of the capture) — a 4K take out
- * of a half-screen window is real 4K, not an upscale, and the output no longer depends on
- * the window or the display's DPR.
- *
- * There used to be a `viewport` entry meaning "whatever the canvas already is". It was
- * removed rather than deprecated: it is the one setting whose output nobody can predict
- * from the panel, and every other part of this extension had a branch for it.
- *
- * All widths and heights are even: H.264 and most hardware encoders reject odd dimensions.
+ * Output sizes offered for both stills and video. Every entry is an exact pixel size the
+ * frame is genuinely re-rendered at (see "Resolution: always a preset" in CLAUDE.md) — a 4K
+ * take out of a half-screen window is real 4K. Widths/heights are even: H.264 and most
+ * hardware encoders reject odd dimensions.
  */
 export const CAPTURE_RESOLUTIONS = [
 	{ value: '720p', text: '720p · 1280×720', width: 1280, height: 720 },

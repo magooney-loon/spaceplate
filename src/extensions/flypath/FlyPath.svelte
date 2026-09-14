@@ -1,34 +1,8 @@
 <script lang="ts">
 	// The flypath driver — owns the curve, drives the camera, draws the authoring overlay.
-	//
-	// WHICH CAMERA. Waypoints snapshot `camera.current` and playback drives
-	// `camera.current` — the same object either way, never swapped: `Renderer.svelte`'s
-	// structural effect tracks `$camera` and rebuilds the entire post-processing
-	// pipeline when it changes, so a swap mid-recording would hitch the take. Which camera
-	// `camera.current` IS, though, is chosen: the path switches Studio's editor camera on
-	// and drives that, so the app's own camera is never touched — see "the editor camera"
-	// below, and flypath/CLAUDE.md for the workflow.
-	//
-	// TASK ORDER: THE MAIN STAGE, and the absence of a constraint here is the whole point.
-	// The pose must be written before the frame is drawn — but also before every task that
-	// READS the camera, and there are six of those (Rain, Snow, LensDriver, HeightField,
-	// Lightning, SkyFog: each anchors a mesh, a pass or a uniform to `camera.current` —
-	// LensDriver measures its SPEED, which is the same dependency and the same race).
-	// They all sit at `{ before: autoRenderTask }`, where order falls back to mount order
-	// (DOCS/webgpu-notes.md §2) — and `<Skybox />` is a STATIC import in App.svelte while
-	// this component is a dynamic one, so it mounts in a later tick no matter where its
-	// markup goes. A `before: autoRenderTask` task here can therefore never win that race:
-	// every camera-anchored layer read the pose one frame stale, forever.
-	//
-	// The main stage is `before: renderStage` STRUCTURALLY (threlte core
-	// `scheduler.svelte.js` — renderStage is created `{ after: mainStage }`), so ordering
-	// by stage is the one form mount order cannot defeat. Capture's blit is still
-	// `{ after: autoRenderTask }`, so within one frame the order is unchanged where it
-	// mattered: move camera → sky layers follow it → render → grab.
-	//
-	// `applyPose()` invalidates, and `shouldRender()` is evaluated in the render stage
-	// AFTER this one, so a pose still lands on the frame it was written for — which is
-	// what keeps the pre-roll's "one pose per RENDERED frame" guarantee intact.
+	// Camera ownership (never the scene camera, never swapped) and why this task has no
+	// `before`/`after` constraint (the main-stage race with camera-anchored layers): see
+	// "Key behavior" in flypath/CLAUDE.md.
 
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { HTML } from '@threlte/extras';
@@ -51,28 +25,9 @@
 	const activeCamera = () => camera.current as THREE.PerspectiveCamera | undefined;
 
 	// --- the editor camera ------------------------------------------------------------
-	//
-	// THE PATH OWNS THE EDITOR CAMERA, never the scene camera. Waypoints are authored by
-	// flying the editor camera, so replaying them on the same camera is the symmetric
-	// thing — and it means a flythrough NEVER touches the app's own camera, which is the
-	// game's framing and not a dev tool's to move. Driving the scene camera parked it at
-	// the last scrub/waypoint pose, and only an explicit Stop put it back.
-	//
-	// It also deletes a whole mechanism: there is nothing to save or restore. Studio's
-	// `CameraControls` holds the editor camera's own home, so releasing it at the end
-	// snaps the camera back to wherever the user had it, for free.
-	//
-	// What it costs is one patch. `CameraControls.update()` writes `position` and
-	// `lookAt(target)` on EVERY call, outside any dirty check (camera-controls 3.1.2), so
-	// two writers cannot share the camera — and running after it is not a guarantee,
-	// because that component remounts (task re-registered, moving to the back) whenever
-	// the editor camera is toggled. `patches/@threlte__studio` therefore adds
-	// `controlsSuspended` to the editor-camera extension, which its task honours by not
-	// calling `update()` at all.
-	//
+	// The path owns the editor camera, never the scene camera — see flypath/CLAUDE.md.
 	// `useStudio()` is a plain `getContext`, undefined when Studio is toggled off
-	// (shift+alt+S) — hence the optional calls rather than the try/catch the `useX.ts`
-	// hooks use. With no Studio there is no editor camera and the path cannot run.
+	// (shift+alt+S) — hence optional calls rather than the try/catch the `useX.ts` hooks use.
 	const studio = useStudio();
 
 	/**
@@ -106,20 +61,16 @@
 	};
 
 	/**
-	 * The editor camera's own FOV, taken on the first frame the path drives it and put back
-	 * on release. The ONLY thing that needs saving: `CameraControls` restores position and
-	 * orientation from its own state, but it never touches the lens, and `applyPose` lerps
-	 * FOV between waypoints — so without this a dolly-zoom path leaves the editor camera
-	 * permanently at its last waypoint's FOV. Null when the path does not hold it.
+	 * The editor camera's own FOV, taken on first drive and restored on release — the only
+	 * thing CameraControls doesn't restore itself (applyPose lerps FOV between waypoints).
+	 * Null when the path does not hold it.
 	 */
 	let editorFov: number | null = null;
 
 	/**
-	 * Hand the editor camera back. Un-suspending IS the restore for the transform: the
-	 * controls resume from the state they kept the whole time, so the camera returns to
-	 * where the user last flew it. `enabled` is deliberately left ON — you asked to fly a
-	 * camera path, so ending up on that camera is the expected place to be, and it keeps
-	 * `camera.current` stable across claim and release.
+	 * Un-suspending IS the restore for the transform (CameraControls kept its own state the
+	 * whole time). `enabled` stays ON — you asked to fly a camera path, so ending up on that
+	 * camera is expected, and it keeps `camera.current` stable across claim/release.
 	 */
 	const releaseEditorCamera = () => {
 		const cam = activeCamera();
@@ -164,15 +115,8 @@
 	});
 
 	// --- direction arrows -----------------------------------------------------------
-	//
-	// ONE draw call however long the path — the arrows are identical cones spaced along
-	// the curve, so they are a single hand-rolled InstancedMesh in the shape of
-	// `scenes/DemoScene/SpawnedBodies.svelte`. NOT @threlte/extras' `<InstancedMesh>`:
-	// its Api task invalidate()s unconditionally on every sync, which would pin the
-	// on-demand render loop forever (best-practices.md §2.7). The sync is an $effect,
-	// not a task, because arrow transforms derive from the curve alone — they change
-	// exactly when it does (including every frame of a marker drag, which is what keeps
-	// the overlay tracking the drag), so the effect cannot pin the loop either.
+	// One hand-rolled InstancedMesh, not @threlte/extras' <InstancedMesh> (its Api task
+	// invalidate()s unconditionally, which would pin the on-demand loop). See CLAUDE.md.
 
 	const ARROW_SPACING = 4.5;
 	const ARROW_LENGTH = 0.4;
@@ -259,9 +203,8 @@
 	markerMaterial.color.set('#4ec9b0');
 	markerMaterial.fog = false;
 
-	// The first waypoint is ALWAYS green and the last ALWAYS red — the tube itself is
-	// symmetrical and says nothing about direction. Selection is a scale bump rather
-	// than a colour, which would mask an endpoint.
+	// First waypoint is always green, last always red — the tube itself says nothing about
+	// direction. Selection is a scale bump, not colour (would mask an endpoint).
 	const startMaterial = new THREE.MeshBasicNodeMaterial();
 	startMaterial.color.set('#3ddc84');
 	startMaterial.fog = false;
@@ -335,8 +278,7 @@
 		const waypoints = flyPathState.waypoints;
 		const clamped = Math.min(1, Math.max(0, progress));
 
-		// Global easing, never per segment (see flypath.svelte.ts). A looping path forces
-		// linear — easing in and out of every lap makes the wrap visibly hitch.
+		// Global easing, never per segment. Looping forces linear (see CLAUDE.md).
 		const ease = flyPathState.loop ? EASINGS.linear : EASINGS[flyPathState.easing];
 		const eased = ease(clamped);
 
@@ -384,11 +326,8 @@
 			}
 		}
 
-		// $state write — epsilon-gated so a 60Hz playback does not wake the panel 60x/s.
-		// Every write that lands re-renders the panel's Scrub slider (FlyPathExtension):
-		// tweakpane laying out a widget inside the very frame a take is trying to blit and
-		// encode, so the gate widens 25x while recording. The exact 0 and 1 endpoints
-		// always land either way.
+		// Epsilon-gated $state write so 60Hz playback doesn't wake the panel every frame —
+		// widens 25x while recording (tweakpane layout mid-encode). See CLAUDE.md.
 		const epsilon = recording ? 0.05 : 0.002;
 		if (Math.abs(flyPathState.progress - clamped) > epsilon || clamped === 0 || clamped === 1) {
 			flyPathState.progress = clamped;
@@ -461,8 +400,6 @@
 		}
 		if (engaged) {
 			engaged = false;
-			// Un-suspending is the restore: the controls resume from the state they kept the
-			// whole time, so the editor camera returns to where the user last flew it.
 			releaseEditorCamera();
 		}
 		flyPathState.status =
@@ -483,11 +420,8 @@
 		engaged = true;
 		flyPathState.isPlaying = false;
 		elapsed = progress * totalDuration(flyPathState);
-		// Posed by the task, not here: `camera.current` only BECOMES the editor camera on
-		// the next effect flush, and posing now would move the scene camera instead. A drag
-		// fires this many times per frame — the latest write wins and the task poses once,
-		// which is a bonus rather than a compromise. invalidate() because applyPose() is no
-		// longer here to do it.
+		// Posed by the task, not here: camera.current only becomes the editor camera on the
+		// next effect flush. A drag fires this many times per frame; latest write wins.
 		pendingScrub = progress;
 		flyPathState.status = `Scrubbing ${(progress * 100).toFixed(0)}%`;
 		invalidate();
@@ -532,24 +466,14 @@
 	};
 
 	// --- pre-roll ---------------------------------------------------------------------
-	//
-	// On-demand rendering means the scene is only compiled for angles it has actually
-	// been drawn from, so a flythrough into new territory compiles pipelines MID-TAKE —
-	// a one-off 150-300ms stall that no per-frame trimming can prevent. Sweeping the
-	// whole path once first draws every pose through the real pipeline, so those
-	// compiles land before frame 0 and the far end of the path is warmed too.
-	//
-	// It runs through the normal render loop, one pose per rendered frame (applyPose
-	// invalidates, which pins it), so every pose is actually drawn and compiled before
-	// the take arms.
+	// Sweeps the whole path once before arming so pipeline compiles land before frame 0
+	// (on-demand rendering compiles mid-take otherwise) — see CLAUDE.md "A take pre-rolls".
 
 	const PREROLL_FRAMES = 12;
 
 	const armTake = () => {
-		// Rewind and pose BEFORE arming the recorder, so frame 0 of the video is frame 0
-		// of the path rather than the end of the pre-roll sweep. Capture's clock source
-		// releases that head frame with a step of 0, so the take encodes the path exactly
-		// where this leaves it.
+		// Rewind and pose BEFORE arming: frame 0 of the video must be frame 0 of the path.
+		// Capture's clock source releases the head frame with a step of 0 — see CLAUDE.md.
 		elapsed = 0;
 		applyPose(0);
 
@@ -631,14 +555,10 @@
 
 	useTask(
 		(delta) => {
-			// THE CAMERA HANDOVER, and it gates everything below that drives the camera.
-			// play(), recordFlythrough() and scrub() switch Studio's editor camera ON
-			// (claimEditorCamera) and suspend its controls, but `setEnabled` runs through
-			// Svelte state: `camera.current` only BECOMES the editor camera on the next
-			// effect flush. Posing before then would drive the scene camera — the one this
-			// whole design exists to leave alone — so hold until the swap has landed.
-			// invalidate() while holding, because renderMode is on-demand and this frame is
-			// being thrown away, so nothing else here would ask for the next one.
+			// The camera handover gates everything below: play()/scrub()/recordFlythrough()
+			// switch the editor camera on, but the swap lands on the next effect flush, so
+			// hold until it has (see "task holds until" in CLAUDE.md). invalidate() while
+			// holding since renderMode is on-demand.
 			//
 			// Scoped to the driving branches, so authoring is untouched: syncMarkers must
 			// keep running whether the editor camera is on or off.
@@ -655,11 +575,8 @@
 				if (cam && editorFov === null) editorFov = cam.fov ?? 60;
 			}
 
-			// A SCRUB IS A POSE, NOT A TIME ADVANCE, so it is settled above the zero-delta
-			// guard below: it neither reads `delta` nor moves `elapsed`, and a scrub dropped on
-			// a zero-delta frame would sit in the queue with nothing left to invalidate for it.
-			// It cannot coexist with a take (scrub() refuses while one is in flight) or with
-			// playback (it clears isPlaying), so nothing after this cares that it ran.
+			// A scrub is a pose, not a time advance — settled above the zero-delta guard below
+			// (see "A scrub is queued" in CLAUDE.md).
 			if (pendingScrub !== null) {
 				const progress = pendingScrub;
 				pendingScrub = null;
@@ -667,13 +584,8 @@
 				return;
 			}
 
-			// A ZERO-DELTA FRAME IS INERT, and saying so explicitly is what the move to the
-			// main stage costs. In the render stage this task simply did not run on a frame
-			// the offline clock held (the render stage is gated on `shouldRender()`); the
-			// main stage runs regardless, and `applyPose()` invalidates — so without this a
-			// held frame would render a frame the take is going to discard, which is exactly
-			// the cost holds were made free of (core/utils/engineClock.ts). Every branch
-			// below this point either advances time or reacts to time having advanced.
+			// A zero-delta frame is inert — see "A zero-delta frame returns immediately" in
+			// CLAUDE.md for why this guard is what the main-stage move costs.
 			if (delta === 0) return;
 
 			// Pre-roll owns the loop until it has swept the path: poses 0 → 1 inclusive
@@ -728,12 +640,8 @@
 				const total = totalDuration(flyPathState);
 				if (total <= 0) return;
 
-				// `delta` IS the offline clock. An offline take encodes frame N at exactly
-				// N/fps, so the camera has to move on that same counter — and it does,
-				// without a word about capture here, because an offline take takes over the
-				// engine clock (core/utils/engineClock.ts) and `delta` is whatever that
-				// clock says the frame is worth: 1/fps on a frame of the take, 0 on a frame
-				// the encoder made it hold, the wall-clock delta the rest of the time.
+				// `delta` IS the offline clock (core/utils/engineClock.ts) — 1/fps on a take
+				// frame, 0 on a held frame, wall-clock otherwise. See CLAUDE.md.
 				elapsed += delta;
 				if (elapsed >= total) {
 					if (flyPathState.loop) elapsed %= total;

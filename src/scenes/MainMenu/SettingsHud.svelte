@@ -51,13 +51,8 @@
 	const mark = (ok: boolean): string => (ok ? '✓' : '✕');
 
 	// --- Controls tab data ---
-	//
-	// FULLY REGISTRY-DRIVEN: this file used to re-declare the engine's action enum,
-	// its labels and its grouping, which meant a new action had to be added in three
-	// places. Now every row below comes from whatever maps games have declared
-	// ($extensions/input), and the label tables live with the engine
-	// (bindingLabels.ts) because what a KeyboardEvent.code is called is not a HUD
-	// decision.
+	// Fully registry-driven: every row comes from whatever maps games have declared
+	// ($extensions/input); label tables live with the engine (bindingLabels.ts).
 
 	const mapIds = $derived(registeredMaps());
 
@@ -135,7 +130,6 @@
 		<div class="panel" class:wide={activeTab === 'controls' || activeTab === 'system'}>
 			<h2>Settings</h2>
 
-			<!-- Tab bar -->
 			<div class="tabs">
 				{#each [['general', 'General'], ['audio', 'Audio'], ['controls', 'Controls'], ['system', 'System']] as const as [id, label] (id)}
 					<button onclick={() => switchTab(id)} class="tab" class:active={activeTab === id}>
@@ -144,7 +138,6 @@
 				{/each}
 			</div>
 
-			<!-- General tab -->
 			{#if activeTab === 'general'}
 				<div class="section">
 					<p class="section-label">Graphics Quality</p>
@@ -268,7 +261,6 @@
 					<p class="section-note">Reserved engine shortcuts. Not rebindable.</p>
 				</div>
 
-				<!-- Audio tab -->
 			{:else if activeTab === 'audio'}
 				<div class="audio-section">
 					{#each [{ key: 'sfx', label: 'Sound Effects', enabled: settingsState.audio.sfxEnabled, volume: settingsState.audio.sfxVolume, toggle: audioActions.toggleSfx, setVol: audioActions.setSfxVolume }, { key: 'music', label: 'Music', enabled: settingsState.audio.musicEnabled, volume: settingsState.audio.musicVolume, toggle: audioActions.toggleMusic, setVol: audioActions.setMusicVolume }, { key: 'ambience', label: 'Ambient', enabled: settingsState.audio.ambienceEnabled, volume: settingsState.audio.ambienceVolume, toggle: audioActions.toggleAmbience, setVol: audioActions.setAmbienceVolume }] as ch (ch.key)}
@@ -296,11 +288,9 @@
 					{/each}
 				</div>
 
-				<!-- Controls tab — every row comes from the input registry, nothing is
-				     hardcoded here. Inactive maps (a scene that isn't running) are shown
-				     dimmed but still rebindable, which the old per-player UI could not do. -->
+				<!-- Every row comes from the input registry. Inactive maps (a scene that
+				     isn't running) are shown dimmed but still rebindable. -->
 			{:else if activeTab === 'controls'}
-				<!-- Capture banner -->
 				{#if isCapturing && captureSlotLabel}
 					<div class="capture-banner">
 						<span class="pulse">
@@ -447,10 +437,8 @@
 					{/each}
 				</div>
 
-				<!-- Reset all -->
 				<button onclick={resetAllControls} class="reset-all"> Reset All Controls </button>
 
-				<!-- System tab -->
 			{:else if activeTab === 'system'}
 				<div class="system">
 					<div>
@@ -605,7 +593,6 @@
 				</div>
 			{/if}
 
-			<!-- Back -->
 			<button
 				onclick={() => {
 					soundActions.playClick();

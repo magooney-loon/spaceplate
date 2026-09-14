@@ -34,10 +34,9 @@
 	const finalizing = $derived(captureState.isFinalizing);
 	const duration = $derived(totalDuration(flyPathState));
 
-	// svelte-tweakpane-ui fires `change` for PROGRAMMATIC value writes too, tagged
-	// `origin: 'external'`. The driver writes flyPathState.progress every frame while
-	// playing, so an unguarded handler would call scrub() back — and scrub() pauses
-	// playback. Only act on 'internal', i.e. an actual drag.
+	// tweakpane fires `change` for programmatic writes too (origin: 'external') — the driver
+	// writes progress every frame while playing, so only act on 'internal' (see the
+	// tweakpane rule in extensions/CLAUDE.md); scrub() pauses playback otherwise.
 	const onScrub = (e: CustomEvent<{ value: number; origin: 'external' | 'internal' }>) => {
 		if (e.detail.origin === 'external') return;
 		flyPathActions.scrub(e.detail.value);

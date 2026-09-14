@@ -1,18 +1,9 @@
-// THE CAR'S LATCHED STATE — the half of the car's input that is a SWITCH rather
-// than a pedal, plus the HUD → scene restart signal.
-//
-// The pedals used to live here too, behind a hand-rolled `svelte:window` keymap.
-// They are the engine's now: `sim/carControls.ts` declares the slots and
-// `$extensions/input` owns the keys, the rebinding, the persistence, the held-code
-// bookkeeping (both Shift keys as one pedal) and the blur release. What is LEFT here
-// is what the engine deliberately has no opinion about — that a headlight is a
-// switch, that flicking to main beam turns the lamps on, that the ignition runs a
-// startup sequence. The engine presses `lights`; this file decides what that means.
-//
-// Everything below LATCHES: it flips on the press edge (TestGame.svelte subscribes
-// with `carControls.on(slot, 'press', …)`, which fires exactly once per real press —
-// no auto-repeat to filter), and it deliberately survives scene exit and Restart.
-// Coming back to the car with the lights you left on is the point.
+// THE CAR'S LATCHED STATE — the half of the car's input that is a SWITCH
+// rather than a pedal, plus the HUD → scene restart signal. The engine owns
+// the keys/pedals (`sim/carControls.ts`); this file decides what LATCHING one
+// of its switch slots MEANS — see CLAUDE.md's Controls section. Everything
+// below flips on the press edge (`carControls.on(slot, 'press', …)`) and
+// deliberately survives scene exit and Restart.
 
 import { HANDLING_MODES, type HandlingMode } from './handling';
 import type { CarToggleSlot } from './carControls';
@@ -28,29 +19,14 @@ export const carLights = $state({
 });
 
 /**
- * Ignition — one toggle (the `ignition` slot). A latched switch like the lights: it
- * survives the Restart button. The ENGINE AUDIO follows it (carAudio
- * gates the bed/pops/nitrous and voices turnon/turnoff); the driving model is
- * also gated — throttle, brake and shifting do nothing until `ready` is true.
- *
- * Sequence: toggle on → `on = true`, `ready = false` (turnon sound plays, RPM revs to
- * ~2k then settles). When the turnon sound ends, `ready = true` and the idle
- * bed fades in — only then can the player drive. Toggle off → everything cuts instantly
- * (`on = false`, `ready = false`, bed silences under the turnoff shot).
- *
- * Note: its default key M collides with Studio's dev-mode binds (w a s z t r c v m) —
- * accepted, Studio is dev-only, and Settings ▸ Controls now flags the chip amber so
- * it can be rebound by anyone it bites.
+ * Ignition — one toggle. `ready` gates the driving model (throttle/brake/
+ * shift) and the engine audio's bed/pops/nitrous — see CLAUDE.md's Controls
+ * section for the startup sequence.
  */
 export const carIgnition = $state({ on: true, ready: true });
 
-/**
- * The selected setup — Grip (the validated road car) or Drift (a loose rear axle
- * and real oversteer). See handling.ts for what actually changes. A switch, not a
- * pedal: it survives the Restart button, and the controller reads the current car's
- * `tunes[mode]` fresh every physics step, so flipping it mid-corner is legal and
- * instant.
- */
+/** The selected setup — Grip or Drift (see handling.ts). Read fresh every
+ *  physics step, so flipping mid-corner is legal and instant. */
 export const carHandling = $state({ mode: 'grip' as HandlingMode });
 
 export const setHandlingMode = (mode: HandlingMode): void => {
@@ -62,17 +38,8 @@ export const cycleHandlingMode = (): void => {
 	carHandling.mode = HANDLING_MODES[next];
 };
 
-/**
- * MANUAL or AUTOMATIC — which half of the gearbox the player is driving. A switch
- * like the rest: it survives Restart and scene exit, and `drivetrain.step()` reads
- * it fresh every physics step (through the controller's `auto` input), so flipping
- * it mid-corner is legal.
- *
- * What AUTOMATIC means is the drivetrain's (`sim/drivetrain.ts`, `autoShift`): the
- * box picks the FORWARD gear off the car's shift schedule, and Q/E stay live both
- * as a tiptronic override and as the R/N selector they always were. Nothing about
- * the car changes — same gears, same clutch, same launch.
- */
+/** MANUAL or AUTOMATIC — read fresh every physics step through the
+ *  controller's `auto` input; see `sim/drivetrain.ts`'s `autoShift`. */
 export const GEARBOX_MODES = ['manual', 'auto'] as const;
 export type GearboxMode = (typeof GEARBOX_MODES)[number];
 
@@ -83,11 +50,7 @@ export const cycleGearboxMode = (): void => {
 };
 
 // --- View -----------------------------------------------------------------------
-//
-// What the camera looks AT: the full car model, the debug rig (wheels / axles /
-// suspension — the kinematics the driving model actually computes, see
-// debug/DebugRig.svelte), or both overlaid. A latched switch like the lights —
-// the view you chose is the view you come back to.
+// model / rig (debug/DebugRig.svelte) / both — a latched switch like the lights.
 
 export const VIEW_MODES = ['model', 'rig', 'both'] as const;
 export type CarViewMode = (typeof VIEW_MODES)[number];

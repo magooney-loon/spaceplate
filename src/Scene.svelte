@@ -6,10 +6,6 @@
 	import TestGame from '$scenes/TestGame/TestGame.svelte';
 </script>
 
-<!-- Plain {#if} scene routing: exactly one scene mounted at a time. Unmounting a
-     scene destroys it — its components' teardown disposes their THREE resources and
-     removes its Rapier bodies from the world — so a switch re-pays mount and shader
-     compilation on the way back in. -->
 {#if sceneState.currentScene === 'mainMenu'}
 	<T.Group name="MainMenu">
 		<MainMenu />

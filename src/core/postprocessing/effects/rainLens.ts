@@ -1,49 +1,21 @@
 // WATER ON THE LENS -- the screen-space droplet effect, ported from Martijn Steinrucken's
-// "Heartfelt" (shadertoy.com/view/ltffzl) with its demo scaffolding stripped: no heart,
-// no story timeline, no faked lightning or vignette. This app has a real Lightning layer
-// and a real sky; the port keeps only the water.
+// "Heartfelt" (shadertoy.com/view/ltffzl), demo scaffolding stripped. Drops act as tiny
+// lenses, the wet glass between them is defocused, and the trails they leave are clear
+// streaks. Moved here from a scene mesh (`layers/precipitation/RainLens.svelte`) because a
+// screen-filling quad in the scene pass overwrites every non-`output` MRT attachment,
+// which was silently disabling motion blur in any rain (`lensState.svelte.ts`).
 //
-// WHAT IT IS. Drops act as tiny lenses, the wet glass between them is defocused, and the
-// trails they leave behind are clear streaks. It used to be a mesh in the scene
-// (`layers/precipitation/RainLens.svelte`) reading the framebuffer through
-// `viewportMipTexture` -- "post-processing without a pipeline". `lensState.svelte.ts`
-// records why that had to stop; the short version is that one screen-filling quad inside
-// the scene pass overwrites every non-`output` MRT attachment, which had been quietly
-// disabling motion blur in any rain.
+// The chain carries UNBOUNDED linear HDR (unlike the old mesh's framebuffer read), so this
+// effect MIPS an unclamped sun disc into a screen-wide smear without `inputClamp` -- same
+// trap as bloom, same fix. The mip source is an `rtt()` over the clamped chain colour, not
+// the framebuffer (`viewportMipTexture` is meaningless mid-chain).
 //
-// WHAT THE MOVE CHANGED, and it is not nothing:
+// ONLY WHEN MOVING, and that is also why the drops don't fall: airflow, not gravity, so
+// they stream OUTWARD from the point the camera is heading at -- a windscreen, not a
+// window. See "The windshield" in `build` below for the coordinate change that gives it.
 //
-//   * NO COLOUR-SPACE ROUND TRIP. The mesh sampled the FRAMEBUFFER, which holds
-//     output-referred values (tone-mapped and encoded), so it had to decode back to
-//     working space or the frame was sRGB-encoded twice and washed out. The chain carries
-//     linear working values, so that whole dance is gone.
-//   * ...WHICH MEANS THE INPUT IS UNBOUNDED HDR, and that is the new trap. The sun disc is
-//     `min(vSunE * Fex, 80) * 760` in SkyMesh.js -- up to 60800 against a noon sky of
-//     order 1 -- and this effect MIPS its input. Un-clamped, one drop passing over the sun
-//     smears it across the lens exactly as bloom does without its `inputClamp`. Hence
-//     `inputClamp` here, for the same reason and with the same caveat: it clamps only what
-//     the LENS samples, never the image, so the disc still renders at full brightness.
-//   * THE BLUR SOURCE IS AN RTT, NOT THE FRAMEBUFFER. `viewportMipTexture` copies whatever
-//     render target is bound at the time -- meaningless mid-chain -- so the mip chain comes
-//     from `rtt()` over the (clamped) chain colour instead. `minFilter` must be a mipmap
-//     filter or the explicit-LOD sample clamps to level 0; `ViewportTextureNode` sets
-//     exactly that on its own framebuffer texture, which is where the value came from.
-//
-// ONLY WHEN MOVING. The lens is clear standing still and beads up as the camera drives
-// into the rain. That measurement lives in `LensDriver.svelte` -- `wetness` is an
-// accumulator with asymmetric time constants, quick to wet and slow to dry, because a mask
-// that tracked speed directly would pop on and off every time the player stopped.
-//
-// ...WHICH IS ALSO WHY THE DROPS DO NOT FALL. If the lens only exists while the camera is
-// driving into the rain, then the force on the water is the airflow and not gravity, and
-// the drops stream OUTWARD from the point the camera is heading at -- a windscreen, not a
-// window. That is a change of coordinates rather than a change of shader; the whole
-// argument is at "The windshield" in `build` below.
-//
-// ORDER 36 -- after every geometry consumer (ao 10, dof 30, motionBlur 35), before bloom
-// (40). Both halves matter. AO/DoF/motion blur are SCENE-space and must see the un-lensed,
-// geometry-aligned frame; bloom is optics, and light scattered by water on the front
-// element is exactly the sort of thing that should then bloom.
+// ORDER 36 -- after every geometry consumer (ao 10, dof 30, motionBlur 35, SCENE-space),
+// before bloom (40, optics: water-scattered light should then bloom).
 import {
 	Fn,
 	atan,

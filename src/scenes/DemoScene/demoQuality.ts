@@ -1,10 +1,6 @@
-// Per-quality settings for the demo scene, in one table.
-//
-// Consumers read `DEMO_QUALITY[settingsState.graphics.quality]` through a `$derived`,
-// so flipping the preset in Settings ▸ General retunes the scene live. Everything here
-// is a knob that costs real frame time; the engine-wide knob (device pixel ratio) lives
-// in App.svelte, and the preset itself is seeded from the boot capability probe
-// (extensions/settings, seedGraphicsQuality).
+// Per-quality settings for the demo scene, in one table. Consumers read
+// `DEMO_QUALITY[settingsState.graphics.quality]` through a `$derived`, so flipping the
+// preset in Settings ▸ General retunes the scene live.
 //
 // What the expensive ones actually cost:
 //

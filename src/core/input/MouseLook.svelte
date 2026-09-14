@@ -3,16 +3,7 @@
 	import { mouseLookState, mouseLookActions } from './mouseLook.svelte';
 	import { overlayState } from '$extensions/settings';
 
-	/**
-	 * Mouse-look rig — mount inside a scene to enable pointer-locked mouse look.
-	 *
-	 * `aiming` is the scene's to supply — the engine no longer has an opinion about
-	 * which slot means "aim", because it no longer declares any gameplay slots:
-	 *
-	 * ```svelte
-	 * <MouseLook aiming={() => fpsControls.pressed('aim')} />
-	 * ```
-	 */
+	/** Mouse-look rig — mount inside a scene to enable pointer-locked mouse look. */
 	interface Props {
 		/** Polled on mouse move; true switches to `settingsState.general.aimSensitivity`. */
 		aiming?: () => boolean;

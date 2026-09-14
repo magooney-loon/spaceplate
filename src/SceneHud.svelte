@@ -1,19 +1,9 @@
 <script lang="ts">
-	// HTML overlay router — a sibling to <Canvas> in App.svelte.
-	//
-	// IT ROUTES ON `visibleScene`, NOT `currentScene`, AND THAT IS THE WHOLE POINT.
-	// `currentScene` flips at the SWAP, which is the start of a transition's load; the
-	// reveal is at the end of it. Routing the HUD on the swap put the incoming scene's
-	// overlay on screen for the entire hold — the composite's cover is inside the canvas
-	// and the loading veil is transparent over it, so an HTML sibling shows straight
-	// through both — and started its effects against a scene that was still downloading.
-	// `sceneState.visibleScene` is published one statement before the reveal, so a HUD
-	// only ever mounts to a scene that is loaded, warmed and drawing.
-	//
-	// The fade is the second half: mounting early is not the same as SHOWING early. The
-	// container tracks the transition phase so the outgoing HUD dissolves with the plate
-	// during the dip, stays down through the hold (mounted, so its DOM cost is paid under
-	// the cover) and comes back with the reveal.
+	// Routes on `visibleScene`, not `currentScene` (src/CLAUDE.md). The fade is the
+	// second half: mounting early isn't the same as SHOWING early — the container tracks
+	// the transition phase so the outgoing HUD dissolves with the plate during the dip,
+	// stays mounted (DOM cost paid under the cover) through the hold, and returns with
+	// the reveal.
 	import { sceneState } from '$extensions/scene';
 	import { transitionFxState } from '$core';
 	import { settingsState, overlayState } from '$extensions/settings';
@@ -35,7 +25,6 @@
 	const hudUp = $derived(!sceneState.isTransitioning || transitionFxState.phase === 'reveal');
 </script>
 
-<!-- HTML overlay — rendered as a sibling to <Canvas> in App.svelte -->
 {#if settingsState.general.uiVisible && !overlayState.settingsOpen}
 	<div class="hud-layer" class:up={hudUp}>
 		{#if sceneState.visibleScene === 'mainMenu'}
@@ -58,17 +47,12 @@
 {/if}
 
 <style>
-	/* A `transition` rather than the keyframes Loader.svelte's veil needs: this
-	   container is mounted for the whole session, so there is no insertion frame to
-	   miss.
-
-	   `visibility`, NOT `pointer-events`, and that is forced rather than chosen: every
-	   HUD in this app sets `pointer-events: auto` on its own root, which overrides a
-	   `none` on this parent — a faded-out overlay would still be a live click target,
-	   with its Back button sitting invisibly under the loading veil. `visibility` is
-	   inherited the same way but nothing here re-declares it, and it takes the layer out
-	   of hit-testing and the accessibility tree together. Its transition is a zero-length
-	   step DELAYED to the end of the fade-out, so the opacity still animates. */
+	/* `visibility`, not `pointer-events`: every HUD sets `pointer-events: auto` on its
+	   own root, which would override a `none` here — a faded-out overlay would stay a
+	   live click target. `visibility` inherits the same way, but nothing re-declares it,
+	   and it removes the layer from hit-testing and the accessibility tree together. Its
+	   transition is a zero-length step DELAYED to the end of the fade, so opacity still
+	   animates. */
 	.hud-layer {
 		opacity: 0;
 		visibility: hidden;

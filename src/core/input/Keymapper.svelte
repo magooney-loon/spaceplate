@@ -1,13 +1,7 @@
 <script lang="ts">
-	// The app's ONE keyboard/mouse listener. It owns the DOM concerns — typing
-	// guards, preventDefault, the rebind capture flow — and hands physical device
-	// state to the slot registry ($extensions/input); which slots that lights up is
-	// the registry's business, and what those slots MEAN is the game's.
-	//
-	// Deliberately OUTSIDE <Canvas> (App.svelte mounts it first): the settings
-	// overlay and its capture banner are HTML siblings of the canvas, and with
-	// `capabilityState.tier === 'none'` there is no canvas at all. The gamepad half
-	// needs Threlte context and lives in InputRuntime.svelte instead.
+	// The app's ONE keyboard/mouse listener. Owns the DOM concerns — typing guards,
+	// preventDefault, the rebind capture flow — and hands device state to the slot
+	// registry ($extensions/input). See input/CLAUDE.md for why it's outside <Canvas>.
 	import { onDestroy } from 'svelte';
 	import {
 		engineControls,

@@ -1,23 +1,10 @@
-// Scene transition — the composite that dissolves the outgoing scene's FROZEN LAST
-// FRAME down to a flat veil, and the veil back up into the incoming live one. Why a
-// snapshot rather than three's two-live-pass `TransitionNode`, why it is mixed here in
-// linear chain colour, and why there is a veil in the middle at all: ../transitionState.
+// Scene transition — dissolves the outgoing scene's FROZEN LAST FRAME down to a flat
+// veil, and the veil back up into the incoming live one. Full rationale (why a snapshot
+// rather than a two-live-pass crossfade, the three-phase sequence, default-on):
+// postprocessing/CLAUDE.md "Scene transitions" and ../transitionState.svelte.ts.
 //
-// ONE MASK, TWO FRONTS. The dip (frozen → veil) and the reveal (veil → live) run the
-// same threshold expression over the same mask, so a wipe sweeps once in each direction
-// rather than being a dissolve on one side and a fade on the other, and a dissolve's
-// blobs return in the order they left.
-//
-// LAST IN THE CHAIN (order 60, after the vignette) and DEFAULT ON at mix 0, the
-// afterimage's bargain rather than the lenses': a structural latch would rebuild the
-// graph at the exact moment a transition starts, and a rebuild is the hitch the veil
-// exists to hide. At rest it costs one texture fetch and one `mix` per pixel, and the
-// snapshot target is still 1×1 — `rtt()` sizes itself on its first real capture, so a
-// session that never switches scenes never allocates a full-screen target for this.
-//
-// THE PATTERN IS STRUCTURAL, on purpose: each one is a different mask expression rather
-// than a branch, so the shader carries only the wipe actually in use. It is a panel
-// choice, never something a running transition changes.
+// ONE MASK, TWO FRONTS: the dip and the reveal run the same threshold over the same mask,
+// so a wipe sweeps once each way and a dissolve's blobs return in the order they left.
 
 import {
 	clamp,

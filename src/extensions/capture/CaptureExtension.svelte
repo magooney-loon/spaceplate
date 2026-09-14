@@ -88,9 +88,7 @@
 
 		<Separator />
 
-		<!-- One video path: an offline render. Frames are timestamped from a counter, so the
-		     output is exactly-spaced however slowly the scene draws — the viewport crawls
-		     while a take runs, and that is the take working, not a stall. -->
+		<!-- Offline render: the viewport crawls while a take runs — that's the take working. -->
 		<Folder title="Video (offline render)" expanded={true}>
 			<List
 				label="Container"

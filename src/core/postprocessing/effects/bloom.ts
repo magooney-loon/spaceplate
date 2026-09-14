@@ -1,8 +1,7 @@
-// Bloom — additive, in two flavors: GLOBAL blooms the whole colour buffer, MATERIAL
-// blooms only the emissive MRT attachment (selective — materials must actually emit;
-// mirrors webgpu_postprocessing_bloom_emissive). Lensflare lives here as a sub-toggle
-// rather than a sibling effect because LensflareNode literally samples the bloom
-// buffer (no bloom, no flare): output = color + bloom + gaussianBlur(lensflare(bloom))
+// Bloom — additive, two flavors: GLOBAL blooms the whole colour buffer, MATERIAL blooms
+// only the emissive MRT attachment. Lensflare is a sub-toggle here, not a sibling effect,
+// because LensflareNode samples the bloom buffer directly:
+//   output = color + bloom + gaussianBlur(lensflare(bloom))
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { lensflare } from 'three/addons/tsl/display/LensflareNode.js';
 import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';

@@ -1,34 +1,8 @@
 // Ground Truth Ambient Occlusion — three's GTAONode, wired to the depth + normal
-// buffers of the scene pass.
-//
-// WHY IT EXISTS, which is not "because AO looks nice". Nothing in this engine occludes
-// the ambient term: `Sky.svelte` bakes the dome into `scene.environment` and
-// `SkyLight.svelte` mounts a hemisphere fill, and neither knows geometry is in the way.
-// A closed model is therefore lit from every direction by the full sky, so the inside
-// of a building reads as if the sun shone through its walls. Shadow maps do not touch
-// this — they attenuate the ONE key light, and by day `DAY_AMBIENT` is 0 precisely
-// because the env map is carrying all of it (`core/skybox/model/CLAUDE.md`).
-//
-// IT MULTIPLIES THE COMPOSITE, NOT THE INDIRECT TERM. Physically the occlusion belongs
-// to the ambient/IBL contribution alone, but separating that out in a post pass needs a
-// `diffuse` MRT attachment (one of the members removed with the old ao/ssgi effects).
-// Multiplying the beauty is what every screen-space AO does and it darkens directly-lit
-// surfaces slightly too — that is the known error, not a bug to chase. Keep `scale`
-// modest for the same reason.
-//
-// Ordered FIRST in the chain (10, ahead of dof's 30): AO belongs on the raw beauty,
-// before anything blurs it, and before bloom — a creased corner that bloom has already
-// filled with halo cannot be darkened back.
-//
-// NON-`output` MRT ATTACHMENTS DO NOT BLEND (../CLAUDE.md), so every transparent thing
-// drawn inside the scene pass OVERWRITES the normal buffer rather than compositing into
-// it. Adding this effect is what surfaced that: the two lens layers were screen-filling
-// quads in the scene pass and would have wiped the whole buffer in any rain — they had
-// already been doing it to `velocity`, silently disabling the default-enabled motion blur.
-// They are chain effects now (`rainLens.ts`, `snowLens.ts`), which removes the fullscreen
-// case entirely. What remains is the precipitation FIELDS: thousands of small transparent
-// quads that still punch their own normals through. Localised rather than total, and the
-// real fix is still the prePass under CLAUDE.md's "Removed effects".
+// buffers of the scene pass. Why it exists, and the non-output-MRT-doesn't-blend
+// gotcha it surfaced: postprocessing/CLAUDE.md, "ao — the one effect that is not a look".
+// Ordered FIRST in the chain (10): belongs on the raw beauty, before anything blurs it
+// or bloom fills a crease with halo.
 import { vec3, vec4 } from 'three/tsl';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import type { EffectDef } from '../types';
@@ -47,16 +21,10 @@ export type AoParams = {
 	/** How fast occlusion decays with distance. Lower = larger-looking AO. */
 	distanceFallOff: number;
 	/**
-	 * AO render-target size as a fraction of the DRAWING BUFFER. Structural — resizes
-	 * the RT, and the node reads it as a plain property, not a uniform.
-	 *
-	 * **It multiplies on top of Settings ▸ Render Scale, it does not replace it.**
-	 * GTAONode sizes itself from `renderer.getDrawingBufferSize()`, which is already
-	 * `devicePixelRatio × settingsState.graphics.renderScale` (App.svelte's `dpr`). So
-	 * the AO buffer is `canvas × dpr × renderScale × this`, and 0.5 on both knobs
-	 * computes AO at a sixteenth of native. Named `aoBufferScale` rather than three's
-	 * `resolutionScale` for exactly that reason — there are three near-identically
-	 * named scales in this app (the third is DemoScene's mirror-floor reflector).
+	 * AO render-target size as a fraction of the DRAWING BUFFER. Structural (resizes
+	 * the RT; the node reads it as a plain property, not a uniform). **Multiplies on
+	 * top of Settings ▸ Render Scale, does not replace it** — AO buffer is
+	 * `canvas × dpr × renderScale × this`, so 0.5 on both is a sixteenth of native.
 	 */
 	aoBufferScale: number;
 };
@@ -97,13 +65,8 @@ export const aoEffect: EffectDef<AoParams> = {
 	build: (ctx, u) => {
 		const aoNode = ctx.track(ao(ctx.depth, ctx.normal, ctx.camera));
 
-		// GTAONode takes only (depth, normal, camera); every other parameter is a
-		// `uniform()` it constructs for itself. Replacing those with the pipeline's own
-		// bag BEFORE the node is set up is what puts them on the hot path — `setup()` is
-		// lazy (first draw) and reads `this.radius` & co. at that point, so the bag's
-		// nodes are the ones that end up in the compiled graph. Assigning after a build
-		// would silently do nothing. Same rule as "never pass a raw number to a node
-		// factory" in ../CLAUDE.md, for a node with no factory arguments to pass them to.
+		// Assign onto the node BEFORE it's used — `setup()` is lazy (first draw) and reads
+		// `this.radius` & co. then; assigning after a build silently does nothing.
 		aoNode.radius = u.radius;
 		aoNode.scale = u.scale;
 		aoNode.samples = u.samples;

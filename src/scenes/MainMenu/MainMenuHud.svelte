@@ -4,15 +4,13 @@
 	import { overlayState, BASE_URL } from '$extensions/settings';
 </script>
 
-<!-- Main Menu HUD -->
 <div class="hud">
-	<!-- Menu Title. The wordmark carries its own glow, so no text-shadow stand-in; the
-	     alt text keeps the old title for anyone who never sees the image. -->
+	<!-- The wordmark carries its own glow, so no text-shadow stand-in; the alt text
+	     keeps the old title for anyone who never sees the image. -->
 	<div class="title">
 		<img class="logo" src="{BASE_URL}logo.png" alt="Spaceplate Engine" />
 	</div>
 
-	<!-- Menu Buttons -->
 	<div class="menu-buttons">
 		<button
 			onclick={() => {

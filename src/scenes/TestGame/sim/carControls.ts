@@ -1,27 +1,10 @@
 // THE CAR'S INPUT MAP — this scene's half of the engine's slot system
-// (src/extensions/input/CLAUDE.md). It replaces the scene-local `svelte:window`
-// keymap that used to live in carSwitches.svelte.ts: the engine owns the keys, the
-// rebinding, the persistence and the settings rows now, and this file says only
-// what the car's inputs are CALLED and what they default to.
-//
-// Plain .ts on purpose — a map definition is data. The handle is a module
-// singleton, so `sim/controller.ts` and `TestGame.svelte` import it directly the
-// way they imported `carInput` before; nothing is drilled through props.
-//
-// ── Key choice ───────────────────────────────────────────────────────────────
-// Unchanged from the hand-rolled keymap, and for the same reason: Studio's
-// dev-mode toolbar binds bare `w a s z t r c v m`, so the car deliberately uses
-// arrows / Space / Q / E / Shift and L K G B for the switches (Shift is a
-// modifier — Studio's bare-letter binds never see it). M IS in Studio's set and
-// stays there as an accepted collision; it is now FLAGGED in Settings ▸ Controls
-// (amber chip) rather than only being written down.
-//
-// ── What is NOT here ─────────────────────────────────────────────────────────
-// The latched switches themselves. `lights`, `ignition`, `handling` and `view`
-// are plain button slots as far as the engine is concerned — it presses them, and
-// carSwitches.svelte.ts decides what latching one MEANS. A headlight being a switch
-// and a handbrake being a pedal is game semantics, and putting it in the engine is
-// how the old FPS action enum happened.
+// (src/extensions/input/CLAUDE.md): what the car's inputs are CALLED and
+// what they default to. The engine owns the keys, rebinding and persistence;
+// `carSwitches.svelte.ts` decides what latching a switch MEANS (data, not
+// logic, lives here). Plain .ts, module singleton — see CLAUDE.md's Controls
+// section for the key-choice rationale (Studio's bare-letter binds, M's
+// flagged collision).
 
 import { defineInputMap, key, pad, stick } from '$extensions/input';
 

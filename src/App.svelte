@@ -27,9 +27,7 @@
 	import { settingsState } from '$extensions/settings';
 	import './app.css';
 
-	// WebGPURenderer auto-falls back to WebGL2 when WebGPU isn't available; the boot
-	// probe (capabilities.svelte.ts) decides which, and Loader.svelte badges the
-	// fallback. Tier 'none' = neither backend, so the Canvas is never constructed —
+	// Tier 'none' (src/CLAUDE.md) means the Canvas below is never constructed —
 	// WebGPURenderer would throw asynchronously inside its own init. antialias is
 	// disabled in favour of post-processing anti-aliasing.
 	const createRenderer = (canvas: HTMLCanvasElement): WebGPURenderer => {

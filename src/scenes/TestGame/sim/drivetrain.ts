@@ -1,45 +1,14 @@
 // Engine + clutch + gearbox, generic over a CarSpec (cars/). Pure SI, pure
 // function of its own state — no runes, no Three, no Rapier. The controller
 // (sim/controller.ts) owns the body and calls `step()` once per physics step
-// with the road speed it measured.
-//
-// What this models, and why each piece is here for FEEL rather than realism:
-//
-// - A torque CURVE through GEARS, so acceleration falls off through the rev range
-//   and snaps back on every upshift. That contrast is the whole point of gears.
-// - A clutch that is fully OPEN for the length of a shift: torque cuts, revs
-//   drop, the car coasts for the shift window. Shifting has to cost something
-//   or nobody cares which gear they are in.
-// - A slipping clutch below `launchSpeed`, so pulling away from a light holds
-//   the launch rpm instead of bogging at idle.
-// - A REV-MATCH LAUNCH: slot 1st out of N with the revs inside the car's launch
-//   window (spec `launchWindowMinRpm/MaxRpm`) and the clutch drops CLEAN — bite
-//   and driven-axle plant both scale with DEPTH in
-//   the window, so the closer to the top the harder the launch. Miss the window
-//   and the soft slip above eats the excess like every other launch.
-// - Engine BRAKING off-throttle, scaled by the gear you are in. Lifting in 2nd
-//   should feel different from lifting in 6th.
-// - A bouncing rev limiter (fuel cut, not a clamp), which is what tells you to
-//   shift without a HUD.
-// - A traction limit at the DRIVEN axle including load transfer, so flooring 1st
-//   spins the wheels instead of teleporting the car forward. The leftover torque
-//   becomes WHEEL SPEED (`spin`), which the revs follow and the controller turns
-//   into lost lateral grip — power oversteer, for free. The axle's static load
-//   and transfer sign come from the spec's `layout` (cars/spec.ts,
-//   `drivenAxleLoad`) — RWD is the original formula; FWD/AWD are the plumbing
-//   until their handling feel is tuned against real cars.
-// - TRACTION CONTROL, as a per-setup switch. The real car has it and Grip runs it;
-//   Drift turns it off, and that is what lets the rears run away to the limiter.
-// - An AUTOMATIC mode, which is the same box shifting itself (`autoShift`): the
-//   car's schedule out of the spec, the player's Q/E still live as a tiptronic
-//   override, and R/N still selected by hand. Every rule above survives it,
-//   because the automatic asks for shifts through exactly the same
-//   `requestShift` the keys do.
-//
-// Everything above is the CAR and is fixed. The three numbers that are the SETUP —
-// how much the driven axle can put down, how much lateral grip wheelspin costs, and
-// whether the ECU intervenes — come in per step as a `HandlingTune` (handling.ts),
-// because the player can switch tunes mid-corner and nothing here may cache them.
+// with the road speed it measured. What this models — torque curve through
+// gears, clutch cut on a shift, slipping-clutch launch, engine braking,
+// fuel-cut limiter, traction-limited driven axle with load transfer, traction
+// control, the automatic — is CLAUDE.md's "engine feel" bullet; this header
+// only covers what that doesn't. The three SETUP numbers (driven-axle grip,
+// wheelspin's lateral cost, traction control) come in per step as a
+// `HandlingTune` (handling.ts) and are never cached, since the player can
+// switch tunes mid-corner.
 //
 // ── Wheelspin is a SPEED, not a ratio ──────────────────────────────────────────
 // `spin` is how much faster the driven tyre's contact patch is running than the
@@ -268,30 +237,10 @@ export function createDrivetrain(spec: CarSpec) {
 	}
 
 	/**
-	 * THE AUTOMATIC. It drives the same `requestShift` the player's Q/E do — the
-	 * box is one box, and an automatic that reached past the manual's guards
-	 * would be a second gearbox to keep in step with this one.
-	 *
-	 * FORWARD GEARS ONLY. R and N stay the driver's call, because an automatic
-	 * still has a selector and here that selector is Q/E: you walk down to N or R
-	 * exactly as before, and the box takes over again the moment you are back in
-	 * a forward gear. It is also what keeps the REV-MATCH LAUNCH alive in auto —
-	 * sit in N, rev into the window, tap E, and the automatic picks up the
-	 * upshifts from there.
-	 *
-	 * The schedule is `autoUpshiftRpm` / `autoDownshiftRpm` interpolated across
-	 * the smoothed pedal (`autoDemand`), plus two rules that are physics rather
-	 * than taste:
-	 *
-	 * - **Upshift only if the next gear is still turning above `lugRpm` at the
-	 *   ROAD SPEED we actually have.** This is what stops a standing burnout from
-	 *   walking the box up to 6th: the revs are on the limiter, but the road is
-	 *   doing 4 m/s, where 2nd is ~1100 rpm. It costs nothing anywhere else,
-	 *   because a gear the car has genuinely out-run is never near the lug line.
-	 * - **Downshift only if the lower gear lands clear of the upshift point**
-	 *   (`AUTO_HUNT_MARGIN`) — the anti-hunt rule above.
-	 * - **Stopped means 1st** (`AUTO_REST_SPEED`), directly and not a gear at a
-	 *   time — see the comment on it.
+	 * THE AUTOMATIC — drives the same `requestShift` the player's Q/E do, forward
+	 * gears only (R/N stay the driver's call). See CLAUDE.md's automatic-gearbox
+	 * section for the schedule and the three rules (lug-rpm upshift guard,
+	 * anti-hunt downshift margin, stopped-means-1st).
 	 */
 	function autoShift(dt: number, speedMs: number, throttle: number): void {
 		autoDemand += (throttle - autoDemand) * damp(hw.autoDemandRate, dt);

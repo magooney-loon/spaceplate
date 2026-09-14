@@ -1,69 +1,22 @@
 // What the chassis hull is actually touching — read straight off Rapier's
 // narrow phase, once per physics step, and published into `carSim`'s debug
-// feed so `debug/DebugRig.svelte` can highlight the hull on a real hit and
-// `debug/DebugHud.svelte` can print the numbers. NOT the ground contact (the
-// four raycast springs in suspension.ts are); this is the bump stop and
-// barrier scrapes — kerbs, fence bases, a belly-out over a lip. The impact fx
-// (`fx/CarImpacts.svelte`, sparks/dust) reads this exact same signal.
-//
-// ── WHY MANIFOLDS, NOT EVENTS ────────────────────────────────────────────
-// A `sensor` collider reports overlap and NOTHING else (no position, no
-// normal, no force) — and the car's one collider is the load-bearing hull, so
-// making it a sensor would delete the car's collisions outright.
-// `oncollisionenter` only fires the FIRST step of a touch, which is exactly
-// half of what's wanted: a scrape along a fence is every step AFTER the
-// first, and that's the one that lasts long enough to look at. `oncontact`
-// (contact-force events) fires every step but hands back a force with NO
-// POSITION. So instead: `world.contactPairsWith(hull)` → `world.contactPair(
-// hull, other)` → the manifold. No `sensor`, no `ActiveEvents`, no
-// `contactForceEventThreshold`: the collider's markup is untouched apart from
-// `bind:collider` in TestGame.svelte, so nothing here can change how the car
-// actually collides. With the car on the road the hull has ZERO pairs (the
-// springs are the ground contact), so the sweep costs one wasm call a step
-// until something is actually touched.
-//
-// ── WHY THIS DOESN'T READ SOLVER CONTACTS ─────────────────────────────────
-// It used to (`numSolverContacts()` / `solverContactPoint(i)` /
-// `contactImpulse(i)`), and that is exactly why it only ever lit up on the
-// FLOOR (an analytic `cuboid`) and never on a fence/wall (a `trimesh`):
-// verified empirically against the installed rapier3d-compat — a rounded
-// convex hull driven straight into a static trimesh at speed DOES get
-// stopped by the solver (the body's velocity genuinely zeroes, the contact is
-// real), but `numSolverContacts()` reports 0 and `contactImpulse()` reports 0
-// for every manifold of that shape PAIR, for the entire duration of the
-// touch. Parry only populates the solver-contact/impulse introspection for
-// certain shape-pair combinations, and round-hull-vs-trimesh isn't one of
-// them in the installed version — this is a Rapier/Parry gap, not a
-// misreading of a real API. `numContacts()` / `contactDist(i)` /
-// `localContactPoint1/2(i)` / `normal()`, by contrast, ARE populated for
-// every pair this scene has (plain `cuboid` and `trimesh` alike), so this
-// module reads those instead and derives "how hard" from the car's own
-// tracked velocity at the contact point rather than from the solver's
-// (here, absent) impulse.
+// feed. NOT the ground contact (the raycast springs in suspension.ts are);
+// this is barrier/kerb scrapes. Reads manifolds, never events, and never
+// solver contacts — see CLAUDE.md's `sim/hullContacts.ts` section for why
+// (a real Rapier/Parry gap: solver-contact introspection is unpopulated for
+// this hull-vs-trimesh shape pair).
 //
 // ── WHY THE HIT SEVERITY IS READ FROM THE *PREVIOUS* STEP'S VELOCITY ──────
-// `usePhysicsTask` (TestGame.svelte, which calls `pollHullContacts`) runs
-// BEFORE `world.step()`, so every poll reads narrow-phase state left over
-// from the LAST completed step. For a hard arrival that also proved out
-// empirically: `contactDist` goes from "no manifold at all" straight to
-// "touching" WITHIN ONE STEP — Rapier's CCD sweeps the body to the point of
-// impact and the solver kills its closing velocity in that SAME step, so by
-// the time the manifold is visible to us at all, `body.linvel()` is already
-// the POST-impact (near-zero, sometimes slightly bounced) velocity. Reading
-// "how fast are we closing" off the current step at a rising edge therefore
-// reads close to zero almost every time — measured directly against the
-// installed engine: an 8 m/s wall arrival read back as −0.35 m/s (already
-// reversed) the instant `contactDist` first went negative, with the true 8.0
-// only ever visible on the POLL BEFORE. This is why sliding worked (its
-// velocity is read continuously, every step, and a scrape's contact-patch
-// speed genuinely doesn't get killed in one step the way a hard stop does)
-// while a HIT barely ever crossed `HIT_MIN_DV`. The fix: this module keeps a
-// standing snapshot of the body's kinematics from the last step it was
-// DEFINITELY NOT touching (`_cleanLin/_cleanAng/_cleanCom`) and uses THAT —
-// the true pre-impact velocity — for the rising edge's severity, while the
-// continuous `bestClosing`/`bestSlide` (current-step velocity) keep doing the
-// live "how fast is it closing/sliding right now" job they already did
-// correctly.
+// This poll runs BEFORE `world.step()`, so it reads narrow-phase state left
+// over from the last completed step. For a hard arrival, Rapier's CCD sweeps
+// to the point of impact and the solver kills the closing velocity in that
+// SAME step — so by the time a manifold is first visible, `body.linvel()` is
+// already POST-impact (measured: an 8 m/s wall arrival read back as −0.35 m/s
+// the instant `contactDist` first went negative). The fix: keep a standing
+// snapshot of the body's kinematics from the last step it was DEFINITELY NOT
+// touching (`_cleanLin/_cleanAng/_cleanCom`) and use THAT for the rising
+// edge's severity; the continuous `bestClosing`/`bestSlide` (current-step)
+// still do the live closing/sliding job correctly.
 
 import type { Collider, RigidBody, TempContactManifold, World } from '@dimforge/rapier3d-compat';
 import * as THREE from 'three/webgpu';

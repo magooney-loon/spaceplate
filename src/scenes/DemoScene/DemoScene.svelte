@@ -16,40 +16,26 @@
 
 	const { scene, invalidate } = useThrelte();
 
-	// Mirror floor (plain gray + reflection). The reflector's target is
-	// transform-only (rotated flat, it defines the mirror plane at y = 0 under the
-	// floor plate). bounces is left at its DEFAULT (true) ON PURPOSE: that sets the
-	// reflector's update type to per-render-pass, so every camera that renders the
-	// floor (Studio's PiP game-cam and selection pre-renders, the editor camera,
-	// the mirror sphere's cube faces) re-renders the reflection RT for itself — with
-	// bounces: false the one per-frame refresh anchored it to whichever camera drew
-	// first, and it slid with the editor camera. The reflection rides the emissive
-	// slot so the gray base keeps the sky system's lighting and shadows; clamped
-	// because the reflector RT holds RAW HDR dome radiance (render-target passes
-	// skip tone mapping) and the sunset sky peaks well past 1. resolutionScale comes
-	// from the quality preset (demoQuality.ts) and is applied below — full canvas
-	// resolution on high is affordable because the cube captures swap the reflector
-	// out (mirrorFloor.ts), so it renders once per frame. The value here is just the
-	// starting one.
+	// Mirror floor. bounces stays at its DEFAULT (true) ON PURPOSE: that makes the
+	// reflector re-render per render-pass, so every camera that draws the floor gets
+	// its own reflection RT — with bounces: false the single per-frame refresh
+	// anchored to whichever camera drew first and slid with the editor camera.
+	// Reflection rides the emissive slot (keeps the sky system's lighting/shadows on
+	// the gray base), clamped because the RT holds RAW HDR dome radiance (render-target
+	// passes skip tone mapping). resolutionScale starts here and is retuned by the
+	// quality preset below.
 	const reflection = reflector({ resolutionScale: 0.5 });
 	reflection.target.rotateX(-Math.PI / 2);
 	reflection.target.userData = { selectable: false, hideInTree: true };
 	scene.add(reflection.target);
 
-	// THE REFLECTOR'S VIRTUAL CAMERA IS A CLONE, SO IT INHERITS THE LAYER MASK.
-	// `ReflectorNode.getVirtualCamera()` is `camera.clone()`, and `Object3D.copy` copies
-	// `layers.mask` (three 0.185, Object3D.js:1615) — so unlike the cube cameras, which
-	// are constructed fresh with the default layer-0 mask, this one arrives with every
-	// bit the active camera has enabled. Measured `mask=3` at runtime: bit 1 is
-	// LENS_LAYER, so the floor was reflecting the screen-space rain/frost lens quads —
-	// the "re-sampled, wrong-viewport garbage that reads as blown-out bloom" that
-	// skyLayer.ts's LENS_LAYER comment exists to prevent, plus a second fullscreen
-	// `viewportMipTexture` read per frame for the privilege.
-	//
-	// Stripping it here rather than in the lens layers is deliberate: the inheritance is
-	// a property of THIS reflector, and PRECIPITATION_LAYER (bit 2) is inherited on
-	// purpose — that is what keeps rain and snow in the floor's reflection while the cube
-	// captures skip them.
+	// THE REFLECTOR'S VIRTUAL CAMERA IS A CLONE, SO IT INHERITS THE LAYER MASK:
+	// `ReflectorNode.getVirtualCamera()` clones the active camera, which (unlike the
+	// freshly-constructed cube cameras) carries every layer bit it has enabled — measured
+	// `mask=3`, so the floor was reflecting LENS_LAYER's screen-space rain/frost quads as
+	// blown-out bloom garbage. Stripped here rather than in the lens layers because the
+	// inheritance is a property of THIS reflector; PRECIPITATION_LAYER stays inherited on
+	// purpose, so rain/snow keep showing in the floor's reflection.
 	const baseGetVirtualCamera = reflection.reflector.getVirtualCamera.bind(reflection.reflector);
 	reflection.reflector.getVirtualCamera = (camera: THREE.Camera) => {
 		const virtual = baseGetVirtualCamera(camera);
@@ -147,7 +133,6 @@
 
 <DemoPhysicsBodies />
 
-<!-- Spawned physics bodies — one InstancedMesh per shape, see SpawnedBodies.svelte -->
 <SpawnedBodies mountId={sceneMountId} />
 
 {#if import.meta.env.VITE_GAME_ENGINE === 'true'}

@@ -1,22 +1,9 @@
-// The offline video path — WebCodecs instead of MediaRecorder.
+// The offline video path — WebCodecs instead of MediaRecorder. Frames are timestamped
+// `frameIndex / fps`, a counter rather than a clock, so the output is exactly-spaced no
+// matter how long a frame took to render. Why MediaRecorder can't do this: capture/CLAUDE.md
+// ("One video path: the offline render").
 //
-// WHY THIS EXISTS. MediaRecorder timestamps a frame by the WALL-CLOCK MOMENT
-// `requestFrame()` was called. That makes the output timeline a recording of how the
-// browser felt at the time: a 25ms hitch is not smoothed over, it is encoded verbatim as
-// one long frame, and no amount of making the frame cheaper can do better than reduce how
-// often it happens. Realtime capture can be made to hitch rarely; it cannot be made not to.
-//
-// A VideoEncoder is told each frame's timestamp explicitly. Here that timestamp is
-// `frameIndex / fps` — derived from a counter, never from a clock. A frame that took 400ms
-// to render still occupies exactly 1/fps in the output. The result is not "smoother", it is
-// exactly-spaced by construction, and it stays that way on a machine that renders the scene
-// at 8fps. The trade is that a take is no longer realtime: it is an offline render, and the
-// viewport crawls through it.
-//
-// It also means the pose driver must advance on the same counter — see `captureRuntime` in
-// capture.svelte.ts for that handshake, and `FlyPath.svelte` for the one driver that honours it.
-//
-// mediabunny (not webm-muxer/mp4-muxer — same author, supersedes both, and one dependency
+// mediabunny (not webm-muxer/mp4-muxer — same author, supersedes both, one dependency
 // covers both containers) owns the muxing and the WebCodecs plumbing. `CanvasSource` pulls
 // each frame straight off the canvas, so there is no VideoFrame lifecycle to get wrong.
 
@@ -43,13 +30,8 @@ const CODECS: Record<CaptureContainer, VideoCodec[]> = {
 };
 
 /**
- * How many frames may be in flight before the caller has to hold one.
- *
- * `CanvasSource.add()` snapshots the canvas synchronously and encodes asynchronously,
- * so queueing is safe — and a hold costs the take a frame of wall-clock time for
- * nothing, so holds should be rare rather than universal.
- *
- * Four frames of NV12 at 3840×2160 is ~50 MB, which is the real ceiling on this number.
+ * How many frames may be in flight before the caller has to hold one. Safe to queue since
+ * `CanvasSource.add()` snapshots synchronously; ~50MB of NV12 at 4K is the real ceiling.
  */
 const MAX_QUEUE = 4;
 
@@ -62,10 +44,7 @@ export interface OfflineTake {
 	readonly frameCount: number;
 	/** Scene seconds encoded so far — `frameCount / fps`, never a wall clock. */
 	readonly encodedSec: number;
-	/**
-	 * The queue is full: the caller must hold this frame. Frames are deliberately allowed to
-	 * queue several deep rather than stalling on every one — see MAX_QUEUE.
-	 */
+	/** Queue is full: caller must hold this frame — see MAX_QUEUE. */
 	readonly saturated: boolean;
 	/** Set if the encoder or writer failed. Checked by the caller each frame. */
 	readonly failure: Error | null;
@@ -96,9 +75,8 @@ export const createOfflineTake = async (options: {
 	}
 
 	const output = new Output({
-		// fastStart puts the mp4 index at the front, so the file is seekable the moment it
-		// lands rather than only after a full download. The take is already buffered in
-		// memory, so 'in-memory' costs nothing extra here.
+		// fastStart puts the mp4 index at the front so the file is seekable immediately;
+		// 'in-memory' costs nothing extra since the take is already buffered in memory.
 		format:
 			container === 'mp4'
 				? new Mp4OutputFormat({ fastStart: 'in-memory' })
@@ -125,10 +103,8 @@ export const createOfflineTake = async (options: {
 	let failure: Error | null = null;
 	let finished = false;
 	/**
-	 * Every `add()` still in flight, all of them awaited before finalizing. `finalize()` is
-	 * documented as "call after all samples have been added" and says nothing about samples
-	 * still being digested, so a Stop landing while the queue is draining would be relying
-	 * on undocumented flushing — for the one guarantee this whole path exists to provide.
+	 * Every `add()` still in flight, awaited before finalizing — `finalize()` is documented
+	 * as "call after all samples added" but says nothing about samples still digesting.
 	 */
 	const inFlight = new Set<Promise<void>>();
 
@@ -152,9 +128,8 @@ export const createOfflineTake = async (options: {
 
 		push() {
 			if (finished || failure) return;
-			// The timestamp is the whole point: a counter, not a clock. `add` snapshots the
-			// canvas synchronously, so the frame is safely captured the moment this returns
-			// even though the encode itself finishes later.
+			// The timestamp is a counter, not a clock. `add` snapshots the canvas synchronously,
+			// so the frame is captured the moment this returns even though encoding finishes later.
 			const timestamp = frameCount / fps;
 			frameCount += 1;
 

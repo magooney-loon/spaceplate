@@ -1,15 +1,6 @@
 <script lang="ts">
 	// The capture driver — stills and video. Renders nothing; owns the grab task.
-	//
-	// What ends up in the output (HTML excluded for free, Studio's 3D helpers captured
-	// on purpose) and why App.svelte must mount this in the same `{#await}` as <Studio>,
-	// immediately before it, are documented in capture/CLAUDE.md. The load-bearing local
-	// ordering: the grab task is `{ after: autoRenderTask }`, and among tasks sharing a
-	// constraint the DAG falls back to registration order (DOCS/webgpu-notes.md §2) — so
-	// it runs after the pipeline draws the frame but BEFORE the corner Gizmo composites
-	// on top. The same constraint also means the task only runs on frames that actually
-	// rendered (the renderStage gates on `shouldRender()`), which is the guarantee a
-	// canvas read-back needs.
+	// Mount position, task ordering vs. the Gizmo, and what ends up in the output: capture/CLAUDE.md.
 
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import { PerspectiveCamera, Vector2 } from 'three/webgpu';
@@ -41,64 +32,21 @@
 		setTimeout(() => URL.revokeObjectURL(url), 1000);
 	};
 
-	// THE BLIT. Both grabs below copy the live canvas into a 2D canvas of their own. The
-	// WebGPU canvas is configured with COPY_SRC, so it is a valid drawImage source
-	// (DOCS/webgpu-notes.md §5.2) — but only while the frame is still current, which is
-	// why every caller is inside the task.
-	//
-	// This copy is the single most expensive thing capture does per frame: it scales with
-	// the BACKING STORE, not the CSS size, so at `high` on a 2× display a 1920px canvas
-	// costs a 3840×2160 copy on the main thread. Two things keep it as cheap as it can be:
-	// each context is acquired ONCE, at module scope (getContext() options only take
-	// effect on the first call for a given canvas, so they cannot be passed from a
-	// per-frame lookup — and the video path wants `alpha: false`), and that opaque video
-	// context starts out black with no per-pixel alpha to composite, which is what lets
-	// blitVideo() skip a fillRect entirely.
-	//
-	// Writing canvas.width/height clears the pixels but keeps the context object, so both
-	// survive the resizes below.
+	// THE BLIT. Both grabs copy the live canvas (COPY_SRC, DOCS/webgpu-notes.md §5.2) into a
+	// 2D canvas of their own, only from inside the task while the frame is current. Cost
+	// scales with the backing store, not CSS size — see capture/CLAUDE.md for why contexts
+	// are acquired once at module scope. Writing canvas.width/height clears the pixels but
+	// keeps the context object, so both survive the resizes below.
 
 	// --- render resolution ---------------------------------------------------------
-	//
-	// EVERY capture resizes the renderer for its duration, so the frame is genuinely DRAWN
-	// at the selected size rather than scaled up from a window-sized one afterwards. A 4K
-	// take out of a half-screen window is real 4K, and everything resolution-dependent
-	// follows for free: the post-processing passes size their targets from the drawing
-	// buffer every frame (three's PassNode), and the blits below read
-	// `renderer.domElement` at its new size.
-	//
-	// There is no longer a "viewport, as-is" option — see CAPTURE_RESOLUTIONS in types.ts.
-	// The upshot here is that `applyResolution()` always has a target and the whole
-	// codebase below has one case instead of two.
-	//
-	// `updateStyle: false` is the whole trick. The canvas's CSS size is left exactly as
-	// Threlte set it, so only the backing store changes and page layout never moves; the
-	// browser just scales the backing store into the same box. The visible consequence is
-	// that the VIEWPORT looks stretched while a preset with a different aspect ratio is
-	// active — the encoded frame is the correct one, and the panel warns about it.
-	//
-	// The camera aspect has to be set by hand, because nothing in Threlte derives it from the
-	// drawing buffer — its resize task and the T camera plugin both compute it from the CSS
-	// size, which we deliberately are not changing.
-	//
-	// Threlte can still take the canvas back: its resize task (`resizeStage`, ahead of every
-	// other stage) calls `renderer.setSize()` whenever the DOM element actually changes size,
-	// and the `dpr` effect calls `setPixelRatio()`. Neither fires on its own — that is why the
-	// override survives at all — but a window resize mid-take does trigger the first, so
-	// `holdResolution()` below re-claims it on the next frame.
+	// Every capture resizes the renderer for its duration so the frame is genuinely drawn
+	// at the selected size. See "Resolution: always a preset, never as-is" in capture/CLAUDE.md
+	// for the updateStyle trick, why aspect is set by hand, and Threlte reclaiming the canvas.
 
-	// THE PRIME FRAME. Changing the camera's projection leaves three's VelocityNode one
-	// frame stale: it writes `ndc(current proj) - ndc(previous frame's proj)`, and it copies
-	// current → previous once per RENDERED frame (VelocityNode.update, keyed on frameId). So
-	// the first frame drawn after an aspect change reports a full-screen bogus velocity —
-	// zero in the middle, growing horizontally towards the left and right edges — and
-	// motionBlur (`defaultEnabled: true`) smears the frame along it. That frame is exactly
-	// the one a still is grabbed on and the one a take encodes as frame 0 — the reason
-	// stills came out smeared while the same shot looked sharp in the viewport.
-	//
-	// One rendered-and-discarded frame is precisely enough. It also covers the resize
-	// itself: `holdResolution()` re-applying mid-capture CLEARS the canvas, and grabbing in
-	// that same tick used to read the blanked pixels.
+	// THE PRIME FRAME: a projection change leaves VelocityNode one frame stale (copies
+	// current→previous proj once per rendered frame), so the first frame after a resize
+	// reports bogus velocity and motionBlur smears it. See capture/CLAUDE.md. One
+	// rendered-and-discarded frame fixes it, and also covers holdResolution()'s mid-capture clear.
 	let primeFrames = 0;
 	const PRIME_FRAMES = 1;
 
@@ -154,12 +102,10 @@
 	};
 
 	/**
-	 * Threlte reclaimed the canvas mid-capture — a window resize (its resize task) or a
-	 * graphics-quality change (its dpr effect). Compared on the DRAWING BUFFER because that
-	 * catches both: a `setPixelRatio` alone leaves the logical size untouched.
-	 *
-	 * Re-applying rather than restoring the old numbers is deliberate: where the window is
-	 * NOW is the right place to restore to when the take ends.
+	 * Threlte reclaimed the canvas mid-capture (resize or dpr change) — compared on the
+	 * drawing buffer since a pixel-ratio-only change wouldn't show in the logical size.
+	 * Re-applies rather than restoring old numbers: where the window is NOW is where a take
+	 * should restore to when it ends.
 	 */
 	const holdResolution = () => {
 		const target = sizeOverride;
@@ -171,12 +117,8 @@
 	};
 
 	// --- stills ---------------------------------------------------------------------
-	// Armed here, grabbed in the task: the canvas outside the render loop holds the last
-	// frame's FINAL composite, Gizmo included. Only a grab from inside the task, on a
-	// frame that actually rendered, lands in the pre-Gizmo window.
-	//
-	// Stills keep an alpha-capable context: PNG and WebP are allowed to carry the
-	// canvas's transparency, and only the JPEG path flattens onto black.
+	// Armed here, grabbed in the task — see "Screenshots are armed, not taken" in CLAUDE.md.
+	// Alpha-capable context: PNG/WebP carry transparency, JPEG flattens onto black.
 
 	const stillCanvas = document.createElement('canvas');
 	const stillContext = stillCanvas.getContext('2d');
@@ -200,10 +142,9 @@
 	const screenshot = () => {
 		if (stillPending) return;
 		stillPending = true;
-		// Installed HERE, not in the task: the frame that gets grabbed has to be drawn at the
-		// target size, and this runs a frame ahead of it. Released after the grab — unless a
-		// recording already owns the override, in which case the still just joins that take's
-		// resolution and must not restore anything.
+		// Installed HERE, a frame ahead of the grab, so the target frame is drawn at the right
+		// size. Not released if a recording already owns the override — the still just joins
+		// that take's resolution.
 		stillOwnsResolution = applyResolution();
 		captureState.status = 'Capturing…';
 		invalidate();
@@ -242,20 +183,9 @@
 	};
 
 	// --- video ------------------------------------------------------------------------
-	//
-	// ONE MODE: WebCodecs via mediabunny (encoder.ts). Frames are timestamped from a frame
-	// COUNTER, never a clock, so the output is exactly-spaced however slowly the scene
-	// renders — a take is an offline render, and the viewport crawls while it runs.
-	//
-	// There used to be a `realtime` mode as well (MediaRecorder off `captureStream`). It is
-	// gone rather than deprecated. MediaRecorder's timeline IS the wall clock, so a hitch
-	// went into the file as a long frame and no amount of making the frame cheaper could
-	// fix it — only reduce how often it happened. Everything below therefore assumes a
-	// take owns the engine clock, which is what makes an 8fps render a correct 30fps video.
-	//
-	// Frames are read from this 2D canvas rather than the live one, so what the encoder
-	// sees is the pre-Gizmo blit described above; it is sized once at the start of a take
-	// so a mid-take resize is absorbed by scaling.
+	// One mode: WebCodecs via mediabunny (encoder.ts) — frames timestamped from a counter,
+	// never a clock; see "One video path" in capture/CLAUDE.md for why realtime/MediaRecorder
+	// was removed. Read from this 2D canvas (the pre-Gizmo blit), sized once at take start.
 
 	const videoCanvas = document.createElement('canvas');
 	const videoContext = videoCanvas.getContext('2d', { alpha: false });
@@ -275,35 +205,24 @@
 	/** Frames the clock has released to this take. Only frame 0 is special (see below). */
 	let takeFrames = 0;
 
-	// THE FIXED-STEP SOURCE (core/utils/engineClock.ts). A take owns the engine clock for
-	// its duration, and this is the one decision that gives it away, made once per frame,
-	// before any stage runs. Everything downstream — the flypath camera, the sky model,
-	// every TSL layer, Rapier's accumulator — advances by whatever this returns, because
-	// the clock substitutes it for the frame's real delta at the scheduler.
-	//
-	// THE LATCH (the full story is in capture.svelte.ts): `saturated` is asynchronous —
-	// the encoder's promise can resolve between this call and the capture task at the
-	// end of the same frame — so the decision is LATCHED into `captureRuntime.posed`
-	// here and the capture task only ever reads the latch.
+	// The fixed-step source (core/utils/engineClock.ts): decides once per frame, before any
+	// stage runs, what every task in the app advances by. Latches the decision into
+	// captureRuntime.posed because `saturated` is async and can flip mid-frame — see
+	// "The advance decision is latched" in capture/CLAUDE.md.
 	const takeStep = (): number | null => {
-		// Not ready, or the queue is full: hold. The clock does not advance and the frame is
-		// not even rendered — nothing about this frame reaches the take, whatever the
-		// encoder's state has become by the time the capture task runs.
+		// Not ready, or queue full: hold — frame isn't even rendered, so nothing reaches the take.
 		if (!offlineTake || captureRuntime.saturated) {
 			captureRuntime.posed = false;
 			return null;
 		}
-		// A prime frame is the one case that must RENDER without being part of the take: a
-		// hold (null) would not draw it, and drawing it is the entire point. Step 0, so scene
-		// time does not move either — the take still starts where the pose driver left it.
+		// Prime frame: must render without being part of the take. Step 0 — draws but doesn't
+		// move scene time.
 		if (primeFrames > 0) {
 			captureRuntime.posed = false;
 			return 0;
 		}
 		captureRuntime.posed = true;
-		// Frame 0 is encoded where it already is. A pose driver rewinds and poses before
-		// arming (flypath's armTake), so advancing before the first encode would make frame 0
-		// of the video the scene at 1/fps and leave the take a frame short at the head.
+		// Frame 0 encodes where the pose driver already left it (see "head frame" in CLAUDE.md).
 		return takeFrames++ === 0 ? 0 : captureRuntime.frameStep;
 	};
 
@@ -321,9 +240,9 @@
 	};
 
 	/**
-	 * A queued frame finished encoding. Clears the stall once the queue has drained below its
-	 * limit and wakes the loop, which is load-bearing: a held frame is not rendered at all,
-	 * so this is the only thing that can end a hold.
+	 * A queued frame finished encoding — clears the stall once the queue drains below its
+	 * limit and wakes the loop. Load-bearing: a held frame isn't rendered, so this is the
+	 * only thing that can end a hold.
 	 */
 	const onEncoderReady = () => {
 		const take = offlineTake;
@@ -333,10 +252,8 @@
 	};
 
 	const startOfflineRecording = () => {
-		// isRecording flips optimistically: `CaptureDriver.startRecording` is synchronous
-		// and callers (flypath) check the flag on the next line, but building an encoder
-		// means probing codecs and starting a muxer. Held saturated until it exists, so the
-		// clock cannot advance into a take that has not begun.
+		// isRecording flips optimistically (callers like flypath check it next line); held
+		// saturated until the encoder actually exists — see capture/CLAUDE.md.
 		offlinePending = true;
 		takeFrames = 0;
 		captureState.isRecording = true;
@@ -345,9 +262,8 @@
 		captureRuntime.saturated = true;
 		captureRuntime.frameStep = 1 / captureState.fps;
 		captureState.status = 'Preparing encoder…';
-		// Claim the clock now, not on the frame the encoder lands: from here every frame is
-		// either a frame of the take or a deliberate hold, and nothing animates on the wall
-		// clock in between.
+		// Claim the clock now, not when the encoder lands: from here every frame is either
+		// part of the take or a deliberate hold.
 		setFixedStepSource(takeStep);
 
 		void createOfflineTake({
@@ -387,9 +303,8 @@
 		teardownOffline();
 		if (!take) return;
 
-		// Draining the encode queue, muxing and building the Blob all happen here, and at
-		//4K none of it is instant. Gate the panel for the whole window so the take does not
-		// read as finished seconds before the download prompt appears.
+		// Draining, muxing and building the Blob happen here — not instant at 4K. Gate the
+		// panel for the whole window (see isFinalizing in capture/CLAUDE.md).
 		captureState.isFinalizing = true;
 		captureState.status = 'Preparing video…';
 		void take.finish().then(
@@ -427,16 +342,12 @@
 			return;
 		}
 
-		// Resize the renderer BEFORE measuring: the source canvas is about to become exactly
-		// the selected size, and the recording canvas has to match it or the take is a scaled
-		// copy of the window after all. Released by teardownOffline, and by the failure check
-		// at the bottom of this function.
+		// Resize BEFORE measuring: source canvas is about to become exactly the selected size.
+		// Released by teardownOffline, or by the failure check below.
 		applyResolution();
 
-		// Fixed for the whole recording — a mid-recording resize of the source canvas is
-		// absorbed by scaling instead of breaking the take. Rounded DOWN TO EVEN because
-		// H.264 (and most hardware encoders) reject odd dimensions; it costs at most one
-		// pixel and keeps every codec in the probe list viable.
+		// Fixed for the whole recording; a mid-recording resize is absorbed by scaling.
+		// Rounded down to even — H.264 and most hardware encoders reject odd dimensions.
 		const source = renderer.domElement;
 		videoCanvas.width = source.width - (source.width % 2);
 		videoCanvas.height = source.height - (source.height % 2);
@@ -449,9 +360,7 @@
 
 		startOfflineRecording();
 
-		// The starter sets the flag optimistically and only its ASYNC failure clears it again
-		// (teardownOffline releases the override there), so this covers the synchronous
-		// failure paths without one release per early return.
+		// Covers the synchronous failure paths; the async failure path releases via teardownOffline.
 		if (!captureState.isRecording) releaseResolution();
 	};
 
@@ -463,8 +372,7 @@
 
 	const tickOffline = () => {
 		const take = offlineTake;
-		// Still building the encoder. The clock source is holding every frame until it
-		// exists, so nothing is being missed.
+		// Still building the encoder — the clock source holds every frame until it exists.
 		if (!take) return;
 
 		if (take.failure) {
@@ -476,10 +384,8 @@
 			return;
 		}
 
-		// THE LATCH (captureRuntime.posed, see capture.svelte.ts). The ONLY thing consulted:
-		// the clock source already decided, before this frame rendered, whether it is part
-		// of the take. Never re-derive it from `take.saturated` — the encoder can resolve
-		// between the two, and a held frame would be encoded as a duplicate pose.
+		// The latch (captureRuntime.posed) is the only thing consulted — never re-derive from
+		// `take.saturated`, which can resolve mid-frame and would encode a held frame twice.
 		if (!captureRuntime.posed) return;
 		captureRuntime.posed = false;
 
@@ -498,9 +404,8 @@
 
 		const whole = Math.floor(take.encodedSec);
 		if (whole !== captureState.elapsedSec) captureState.elapsedSec = whole;
-		// No invalidate() here: the engine clock invalidates every non-held frame of a take
-		// (core/utils/engineClock.ts), which is what makes the take's pace its own rather
-		// than a side effect of the sky layers happening to invalidate every frame.
+		// No invalidate() here: the engine clock invalidates every non-held frame of a take,
+		// which is what makes the take's pace its own.
 	};
 
 	useTask(
@@ -509,11 +414,8 @@
 			// claim it again (see holdResolution).
 			holdResolution();
 
-			// This frame was drawn only to bring the velocity buffer back in step with the
-			// projection (PRIME_FRAMES). Decremented HERE and nowhere else, so both consumers
-			// — the still and the clock source — skip the same frame: nothing is grabbed,
-			// nothing is blitted, nothing is encoded. invalidate() because on the still path
-			// nothing else would.
+			// Prime frame: decremented HERE and nowhere else, so both consumers (still + clock
+			// source) skip the same frame. invalidate() because the still path needs it.
 			if (primeFrames > 0) {
 				primeFrames--;
 				invalidate();
@@ -523,9 +425,8 @@
 			if (stillPending) {
 				stillPending = false;
 				grabStill();
-				// toBlob() reads stillCanvas, which the grab already blitted into, so the
-				// renderer can go back to the viewport immediately — the encode is async but
-				// no longer depends on it.
+				// toBlob() reads stillCanvas (already blitted), so the renderer can go back to
+				// the viewport immediately — the encode no longer depends on it.
 				if (stillOwnsResolution) {
 					stillOwnsResolution = false;
 					// …unless a recording started in the meantime (armed on one frame, ⏺ on the
@@ -545,9 +446,8 @@
 		registerCaptureDriver({ screenshot, startRecording, stopRecording });
 		return () => {
 			stopRecording();
-			// stopRecording covers a take; this covers a still armed but never grabbed. Leaving
-			// the renderer resized after this component unmounts would be permanent — nothing
-			// else resizes it until the window does.
+			// stopRecording covers a take; this covers a still armed but never grabbed — leaving
+			// the renderer resized after unmount would be permanent.
 			releaseResolution();
 			unregisterCaptureDriver();
 		};

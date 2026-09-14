@@ -1,11 +1,4 @@
-/**
- * Is this event aimed at something the user is TYPING into?
- *
- * Studio's tweakpane panes are real `<input>`s, which is why every keyboard
- * consumer in the app needs this and why there used to be a copy of it in
- * `TestGame.svelte`. One copy now: `Keymapper.svelte` applies it before any key
- * reaches the slot system, so nothing downstream has to think about it.
- */
+/** Is this event aimed at something the user is TYPING into (incl. Studio's tweakpane inputs)? */
 export const isTypingTarget = (target: EventTarget | null): boolean => {
 	if (!(target instanceof HTMLElement)) return false;
 	return !!target.closest('input, textarea, select, [contenteditable="true"]');

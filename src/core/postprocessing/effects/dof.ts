@@ -1,8 +1,6 @@
-// The "basic" DoF — composed by hand, not the bokeh DepthOfFieldNode (dropped for
-// performance: one box blur vs its multi-pass kernel). Mirrors
-// webgpu_postprocessing_dof_basic: mix(color, boxBlur(color), smoothstep(min, max,
-// |viewZ + focus|)). boxBlur is a plain TSL Fn (no render targets) whose loops take
-// uniform bounds, so every param here stays hot — no structural keys, no rebuilds.
+// The "basic" DoF (see postprocessing/CLAUDE.md, "Hand-written effects"). boxBlur is a
+// plain TSL Fn (no render targets) whose loops take uniform bounds, so every param here
+// stays hot — no structural keys, no rebuilds.
 import { mix, smoothstep } from 'three/tsl';
 import { boxBlur } from 'three/addons/tsl/display/boxBlur.js';
 import type { EffectDef } from '../types';

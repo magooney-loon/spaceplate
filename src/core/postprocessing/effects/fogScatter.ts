@@ -1,26 +1,8 @@
-// Fog scattering — the frame blended against a blurred copy of itself on the scene fog's
-// own distance ramp. three's `webgpu_custom_fog_scattering` demo, adapted to this
-// pipeline's conventions.
-//
-// WHY IT EXISTS. `SkyFog.svelte` tints surfaces toward the fog colour by distance, which
-// is the absorption half of fog and all a `fogNode` can do. The other half is
-// SCATTERING: a volume of droplets redirects light between neighbouring paths, so a
-// distant lamp gets a halo and a distant edge stops being an edge. Tinting alone leaves
-// every silhouette inside a fog bank perfectly crisp and merely paler — haze in a
-// photograph rather than weather you are standing in. One blur, mixed on the fog factor,
-// is most of the difference.
-//
-// IT IS DRIVEN BY THE WEATHER, NOT BY THE PANEL. `$core/skybox/fogScatter.svelte.ts`
-// carries the band and the weight, written by SkyFog's task; the params here only shape
-// what the driver asks for. It follows the lens effects' contract exactly, including the
-// structural activity latch — read that module's header before changing either.
-//
-// THE BLUR IS A MIPMAP, not a gaussian. The effect wants a broad, low-frequency
-// smear, which is precisely what a mip chain already is, and the lens effects had
-// already established the `rtt()` + `levelNode` route here (see rainLens.ts on why it is
-// configured in place rather than through `.sample()`/`.level()`). The reference demo
-// reaches for `gaussianBlur` instead, which is several taps per pixel for a result this
-// one approximates in one.
+// Fog scattering — the frame blended against a blurred (mip, not gaussian) copy of
+// itself on the scene fog's distance ramp: the scattering half of fog a `fogNode` can't
+// do (SkyFog.svelte only tints/absorbs). Driven by the weather, not the panel —
+// `$core/skybox/fogScatter.svelte.ts` carries the band/weight; see postprocessing/CLAUDE.md
+// for the full rationale and the shared activity-latch contract with the lens effects.
 
 import { mix, rtt, screenUV, smoothstep, vec3, vec4 } from 'three/tsl';
 import { HalfFloatType, LinearMipmapLinearFilter } from 'three/webgpu';

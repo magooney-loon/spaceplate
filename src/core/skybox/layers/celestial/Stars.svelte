@@ -1,22 +1,9 @@
 <script lang="ts">
 	// The star field. A descriptor consumer, driven by `descriptor.sky.starVisibility`.
-	//
-	// WHY QUADS AND NOT POINTS. The obvious implementation is THREE.Points with
-	// PointsNodeMaterial.sizeNode. It does not work here, and it fails silently. From
-	// three's own source (PointsNodeMaterial, 0.185.1):
-	//
-	//   "WebGPU only supports point primitives with 1 pixel size. Consequently, this
-	//    node has no effect when the material is used with Points and a WebGPU backend."
-	//
-	// So every star would be exactly one pixel, with sizeNode quietly ignored. This
-	// builds camera-facing quads instead and billboards them in TSL -- two triangles per
-	// star, one draw call, full control over size and falloff. That is also why
-	// @threlte/extras' <Stars> was dropped: it is a raw ShaderMaterial, which WebGPU
-	// silently replaces with a blank NodeMaterial (DOCS/webgpu-notes.md §1).
-	//
-	// The quad is INSTANCED (skyLayer.ts): one four-vertex quad drawn `count` times,
-	// with each star's centre, colour, size, seed and magnitude as per-instance
-	// attributes. It used to write all six of those into four vertices apiece.
+	// Camera-facing INSTANCED quads, billboarded in TSL -- never THREE.Points, which
+	// clamps to 1px and silently ignores sizeNode on WebGPU (DOCS/webgpu-notes.md §1.1,
+	// ../CLAUDE.md). One four-vertex quad drawn `count` times, with each star's centre,
+	// colour, size, seed and magnitude as per-instance attributes.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import {
@@ -48,31 +35,20 @@
 
 	interface Props {
 		/**
-		 * Total stars, ALL OF THEM VISIBLE -- see `HORIZON_MIN`. Pair-tuned with the nest
-		 * acceptance below: this keeps the band's river dense while the surplus populates
-		 * the off-band knots, and it rose once with the size cut -- smaller quads cover
-		 * less sky, and a deep field needs the count to pay for it.
-		 *
-		 * IT USED TO BE 6000 OVER THE WHOLE SPHERE, of which 3119 (52%) were below the
-		 * horizon and drawn every night frame to produce nothing. 2900 on the visible cap
-		 * is the same sky at half the cost; retune it against what you SEE, which is now
-		 * what the number means.
+		 * Total stars, ALL OF THEM VISIBLE -- see `HORIZON_MIN` / ../CLAUDE.md for why the
+		 * field is sampled on the visible cap rather than the whole sphere. Pair-tuned with
+		 * the nest acceptance below: keeps the band's river dense while the surplus
+		 * populates the off-band knots. Retune against what you SEE, which is what the
+		 * number means.
 		 */
 		count?: number;
 		/** Distance the field is placed at. Cosmetic -- depth is pinned to the far plane. */
 		radius?: number;
 		/**
-		 * Apparent diameter of the faintest and brightest stars, in degrees.
-		 *
-		 * `minSizeDeg` sits just under the old shimmer floor (0.22 deg, which held the
-		 * core above ~1.8 px at 1080p / fov 60), and that is deliberate: the shimmer the
-		 * floor guarded against belonged to the OLD brightness floor of 0.28, where a
-		 * faint star was a plainly visible dot popping in and out of pixels as the camera
-		 * turned. Faint stars are ~7x dimmer now, sub-pixel flicker in a near-invisible
-		 * dot is nothing anyone can see, and the post-processing AA catches the rest.
-		 * 0.18 deg is a 3.2 px quad -- a point, not a blob. `maxSizeDeg` shrank with it
-		 * (0.5 -> 0.34): the brightest stars are tight glints now, and glints instead of
-		 * cushions are most of what sells the field as far away.
+		 * Apparent diameter of the faintest and brightest stars, in degrees. `minSizeDeg`
+		 * (0.18, ~3.2px quad) reads as a point, not a blob; `maxSizeDeg` (0.34) keeps the
+		 * brightest stars as tight glints rather than cushions, which is most of what
+		 * sells the field as far away.
 		 */
 		minSizeDeg?: number;
 		maxSizeDeg?: number;
@@ -97,61 +73,34 @@
 
 	let mesh = $state.raw<THREE.Mesh>();
 
-	// Two ends of the stellar-colour ramp: hot blue-white to cool amber.
-	//
-	// These used to be [1, 0.55, 0.28] and [0.58, 0.72, 1] -- a deep ember and a frank
-	// blue -- and the field read as confetti, because the tails are half the sky by the
-	// warmth roll below AND every star used to carry its tint at full strength. The
-	// ends were pulled in on the theory that only the population tails should reach
-	// them, but the coupling that actually stopped the confetti was SATURATION RIDING
-	// MAGNITUDE (see `sat` below): scotopic vision is nearly colourblind, so only the
-	// bright population may show colour. With that gate holding, the ends can sit a
-	// little deeper again -- only stars the eye actually lands on ever reach them,
-	// and a sky whose brightest stars are all lukewarm white reads as monochrome.
+	// Two ends of the stellar-colour ramp: hot blue-white to cool amber. Deeper tails than
+	// you'd expect work only because saturation rides magnitude (see `sat` below) --
+	// scotopic vision is nearly colourblind, so only the bright population shows colour;
+	// without that gate these ends read as confetti.
 	const COOL: [number, number, number] = [1, 0.7, 0.42];
 	const HOT: [number, number, number] = [0.68, 0.79, 1];
 
 	const DEG = Math.PI / 180;
 
 	/**
-	 * Altitude sine at which the horizon fade reaches ZERO -- and therefore the floor of
-	 * the spherical cap the field is sampled on. **THE FIELD DOES NOT ROTATE**: the sky
-	 * group has no rotation, this layer applies none, and the centres are baked at build
-	 * time, so a star below this line is not "currently" invisible, it is invisible for
-	 * the whole session. Sampling the full sphere put 52% of the field (3119 of 6000)
-	 * there, and `frustumCulled={false}` -- mandatory for a far-plane-pinned layer -- meant
-	 * every one of them was still vertex-shaded on every night frame to come out at
-	 * opacity zero.
-	 *
-	 * Uniform in cos(theta) over the RESTRICTED range is still uniform by area over the
-	 * cap, so the "band and nest are the only anisotropy" contract below holds exactly as
-	 * it did over the sphere; a rejection loop would have been the biased way to do this.
-	 * The shader's `horizon` smoothstep reads the same constant, so the two cannot drift.
-	 *
-	 * Give this layer a diurnal rotation one day and the cap has to go with it.
+	 * Altitude sine at which the horizon fade reaches ZERO, and therefore the floor of the
+	 * spherical cap the field is sampled on rather than the whole sphere (see ../CLAUDE.md
+	 * -- the field does not rotate, so anything below this line is invisible for the whole
+	 * session, not just currently). Uniform in cos(theta) over this restricted range is
+	 * still uniform by area, so the "band and nest are the only anisotropy" contract below
+	 * holds exactly as it did over the sphere. The shader's `horizon` smoothstep reads the
+	 * same constant, so the two cannot drift. Give this layer a diurnal rotation one day
+	 * and the cap has to go with it.
 	 */
 	const HORIZON_MIN = -0.06;
 
-	// ── The star-nest field: a build-time placement oracle ───────────────────────
-	//
-	// Ported from the Shadertoy "Star Nest" demo (p = abs(p)/dot(p,p) - formuparam,
-	// the accumulated orbit drift as brightness) because what that demo sells is
-	// CLUMPING: stars in filaments, knots and star clouds with honestly empty
-	// stretches between them. That was the ingredient this field lacked -- measure
-	// the old sky's off-band neighbour dispersion and it sits at ~1.1, a Poisson
-	// process, television static. The band concentrated the static into a river,
-	// but the river itself accepted ~100% along its whole length: an evenly bright
-	// stripe, which is its own generated-sky tell.
-	//
-	// The demo buys its look with a volumetric raymarch -- 20 steps x 17 iterations
-	// per pixel per frame, roughly 8x the Nebula's fragment cost (already the most
-	// expensive shader in the sky, see layers/CLAUDE.md). That is a non-starter on
-	// the dome; every point would clamp to 1 px on WebGPU anyway (header note), and
-	// none of it would twinkle. So the same march runs ONCE, on the CPU, at build
-	// time, over candidate directions: same field, same clumping, zero per-frame
-	// cost, and the stars stay the sized, twinkling, airmass-extincted quads they
-	// already are. The overlapping additive halos of a knot's members supply the
-	// demo's characteristic glow for free.
+	// The star-nest field: a build-time placement oracle, ported from the Shadertoy "Star
+	// Nest" demo (see ../CLAUDE.md) for its CLUMPING -- filaments, knots and star clouds
+	// with genuinely empty stretches between them, which a flat rejection-sampled band
+	// lacks. The demo's raymarch is ~8x the Nebula's fragment cost, so it runs ONCE on the
+	// CPU at build time over candidate directions instead: same clumping, zero per-frame
+	// cost. The overlapping additive halos of a knot's members supply the demo's
+	// characteristic glow for free.
 	const NEST_TILE = 0.85;
 	const NEST_FORMUPARAM = 0.53;
 	const NEST_VOLSTEPS = 20;
@@ -206,14 +155,10 @@
 	const visibility = uniform(0);
 
 	/**
-	 * Builds the field and its material together, once.
-	 *
-	 * ONE CLOSURE because every input here is a BUILD-TIME prop. Reading `count`, `seed`
-	 * or `radius` at the top level would capture only their initial value anyway, which
-	 * is what Svelte's `state_referenced_locally` warning is for -- and it is what we
-	 * want: change one and re-mount, exactly as Sky.svelte treats its SkyMesh. A
-	 * `$derived` would be worse than useless, since it would hand the teardown effect
-	 * the NEW geometry to dispose while the old one leaked.
+	 * Builds the field and its material together, once. ONE CLOSURE because every input
+	 * here is a BUILD-TIME prop: change one and re-mount, exactly as Sky.svelte treats its
+	 * SkyMesh. A `$derived` would be worse than useless -- it would hand the teardown
+	 * effect the NEW geometry to dispose while the old one leaked.
 	 */
 	const build = () => {
 		const rng = mulberry32(seed);
@@ -230,20 +175,12 @@
 		const mags = new Float32Array(count);
 
 		for (let i = 0; i < count; i++) {
-			// Direction, rejection-sampled against the Milky Way profile (see
-			// milkyWay.ts) AND the star-nest field above. The two modulate each other:
-			// the nest carves the band's river into star clouds with gaps between them
-			// (Sagittarius vs Aquila -- an evenly bright river is a generated-sky tell),
-			// and off-band it supplies the clusters, filaments and empty stretches the
-			// real sky keeps beyond the galactic plane. Acceptance runs from 3% in a nest
-			// void to 100% inside a knot; after 64 failed tries the star keeps the last
-			// candidate, so the voids keep a thin uniform floor -- a literally starless
-			// patch reads as a culling bug, not as wilderness.
-			//
-			// The underlying sample is still uniform-by-area (uniform cos(theta)) over the
-			// VISIBLE CAP, so band and nest are the only anisotropy -- rejection sampling on
-			// top of a biased sample would compound the bias. See HORIZON_MIN for why the
-			// cap rather than the sphere, and why that is not a bias.
+			// Direction, rejection-sampled against the Milky Way profile AND the star-nest
+			// field above (../CLAUDE.md). Acceptance runs 3% in a nest void to 100% in a
+			// knot; after 64 failed tries the star keeps the last candidate, so voids keep
+			// a thin uniform floor rather than reading as a culling bug. Still uniform-by-
+			// area over the VISIBLE CAP (see HORIZON_MIN), so band and nest are the only
+			// anisotropy.
 			let dx = 0;
 			let dy = 0;
 			let dz = 0;
@@ -283,25 +220,15 @@
 			// size, so no per-vertex distance maths is needed in the shader.
 			sizes[i] = radius * Math.tan(halfAngle);
 
-			// Brightness is folded into the colour: the material is additive, so a dim
-			// star is simply a dim colour and no extra attribute is needed.
-			//
-			// THE FLOOR IS THE WHOLE BALLGAME. It used to be 0.28, against a ceiling of
-			// 1.10 -- a 4:1 range, so all 3000 stars were plainly visible dots of roughly
-			// equal weight, which is the definition of television static. A real sky spans
-			// magnitude 1 to 6, about 100:1 in flux, and reads as a few obvious stars over
-			// a haze of barely-there ones. 0.04 to 1.44 is 36:1: not physical, but enough
-			// that the faint majority sinks into suggestion and the eye gets somewhere to
-			// land. The ceiling also pays for the size cut -- a bright star is a tight glint
-			// now, and a glint has to be BRIGHT to read as one.
+			// Brightness folded into the colour (additive material, so a dim star is just a
+			// dim colour). Range is 0.04-1.44, 36:1 -- not physical, but enough that the
+			// faint majority sinks into suggestion instead of reading as television static.
 			const brightness = 0.04 + 1.4 * mag;
 
-			// Three rough stellar populations rather than a flat ramp, which tints every
-			// star the same lukewarm white: a hot blue-white tail, an amber tail, and a
-			// mostly-white middle. Naked-eye skies skew blue -- hot stars are luminous
-			// enough to be seen from much further away -- so the hot tail is the wider
-			// one, and it widens further inside the nests: young open clusters are
-			// blue-giant country.
+			// Three rough stellar populations rather than a flat ramp: hot blue-white tail,
+			// amber tail, mostly-white middle. Hot tail is wider (naked-eye skies skew
+			// blue) and widens further inside nests (young open clusters are blue-giant
+			// country).
 			const roll = rng();
 			let warmth: number;
 			if (roll < 0.26 + 0.18 * nest) {
@@ -312,14 +239,10 @@
 				warmth = 0.34 + rng() * 0.34; // Sirius: near-white, leaning either way
 			}
 
-			// Saturation rides magnitude. Below about magnitude 3 the rods are doing all
-			// the work and colour vision is simply not available, so the faint population
-			// has to render white no matter what class it nominally belongs to. But the
-			// first cut of this over-applied the principle: mag^1.2 left the MEDIAN star at
-			// 88% white and the whole field read monochrome. Rods saturate too -- the
-			// brighter half of a real sky shows obvious golds and blues (Betelgeuse is not
-			// a white star). mag^0.45 with a 0.16 floor keeps the faint haze white and lets
-			// everything the eye lands on carry its tint: median ~46%, mag 0.5 at ~78%.
+			// Saturation rides magnitude: scotopic (rod) vision is nearly colourblind, so
+			// the faint population renders white regardless of nominal class. mag^0.45 with
+			// a 0.16 floor keeps the faint haze white while letting everything the eye
+			// lands on carry its tint (median ~46%, mag 0.5 at ~78%).
 			const sat = 0.16 + 0.84 * Math.pow(mag, 0.45);
 			const tintR = HOT[0] + (COOL[0] - HOT[0]) * warmth;
 			const tintG = HOT[1] + (COOL[1] - HOT[1]) * warmth;
@@ -343,71 +266,42 @@
 		const aMag = instancedFloat(mags);
 
 		// The quad corner. With the star's centre in an instanced attribute, the base
-		// geometry's `position` IS the corner -- so `positionLocal.xy` reads exactly where
-		// the old per-vertex `aCorner` attribute did.
+		// geometry's `position` IS the corner.
 		const corner = positionLocal.xy;
 
-		// Billboarded in view space and pinned to the far plane. Both are load-bearing;
-		// see skyLayer.ts for why neither may be skipped or written with assignments.
+		// Billboarded in view space and pinned to the far plane (skyLayer.ts).
 		material.vertexNode = pinFarPlane(billboardClip(aCenter, corner.mul(aSize)));
 
-		// Round falloff from the quad's centre. Two lobes -- a tight core plus a wide,
-		// weak glow -- so a star reads as a point with a halo rather than a fuzzy blob.
-		// Squared distance, which saves the sqrt and rounds the profile off nicely.
-		//
-		// Note the oneMinus() rather than smoothstep(1, 0, d): both GLSL and WGSL leave
-		// smoothstep UNDEFINED when edge0 >= edge1, so the descending form is a portability
-		// trap that happens to work on some drivers.
-		// The halo's weight scales with magnitude instead of sitting at a flat 0.22: a
-		// halo is what makes a star read as BRIGHT -- it is the eye's own scatter -- so
-		// giving one to every star just fogs the field. Faint stars get 0.04 (a clean
-		// point), the brightest 0.26.
-		// The halo was rebuilt when the field went small (see minSizeDeg): disc^2 at up
-		// to 0.35 weight put a soft six-pixel cushion under every bright star, and a
-		// field of cushions reads as a dome NEARBY -- planetarium, not sky. disc^3 at a
-		// lower weight keeps the glint tight; what the nests lose in individual halo
-		// they keep in overlap, which is the part that makes a knot glow.
-		//
-		// WRITTEN AS MULTIPLIES, NOT `pow()`. This is the one genuinely per-fragment term
-		// in the material, so its cost is the only cost that scales with the field's
-		// screen area -- and `pow(x, n)` is `exp2(n * log2(x))`, two transcendentals,
-		// against four multiplies for disc^3 and disc^7 together. `disc` is EXACTLY zero
-		// at and beyond the quad's inscribed circle, which is most of its fragments, and
-		// `log2(0)` is -inf: the identity held only because the driver's `0 * -inf` came
-		// out as 0 rather than NaN. The multiplies are exact and have no such opinion.
+		// Round falloff from the quad's centre, two lobes (tight core + wide weak glow) so
+		// a star reads as a point with a halo. Squared distance saves the sqrt. `oneMinus()`
+		// rather than descending smoothstep(1, 0, d) -- both GLSL and WGSL leave smoothstep
+		// UNDEFINED when edge0 >= edge1. Halo weight scales with magnitude (0.04 faint /
+		// 0.26 brightest, disc^3 not disc^2) so it reads as the eye's own scatter around a
+		// bright point rather than fogging the whole field with soft cushions. Written as
+		// MULTIPLIES, not `pow()` -- the one genuinely per-fragment term, and `pow(x,n)` is
+		// two transcendentals against four multiplies for disc^3 and disc^7 together
+		// (../CLAUDE.md).
 		const dist2 = dot(corner, corner);
 		const disc = smoothstep(float(0), float(1), dist2).oneMinus();
 		const disc3 = disc.mul(disc).mul(disc);
 		const disc7 = disc3.mul(disc3).mul(disc);
 
-		// Fade out below the horizon. Scenes without a ground plane would otherwise show
-		// a full sphere of stars underfoot; scenes with one occlude them by depth anyway.
-		// Defined before the twinkle because scintillation keys off it too.
-		//
-		// It is still a FADE and not just a floor -- stars between HORIZON_MIN and 0.1 ramp
-		// in, and those exist. What no longer exists is anything below HORIZON_MIN: the
-		// field is sampled on the cap this smoothstep opens (see the constant), so the
-		// zero half of this term is now unreachable rather than merely unlit.
-		//
-		// Read from the instanced CENTRE, never from `positionWorld` -- that is now the
-		// +/-1 quad corner. See `altitudeOf` for the bug the old form caused in Meteors.
+		// Fade out below the horizon (ramps between HORIZON_MIN and 0.1; nothing below
+		// HORIZON_MIN because the field is sampled on that cap -- see the constant).
+		// Defined before twinkle because scintillation keys off it too. Read from the
+		// instanced CENTRE, never `positionWorld` (that's the +/-1 quad corner -- see
+		// `altitudeOf` in skyLayer.ts).
 		const altitude = altitudeOf(aCenter, radius);
 		const horizon = smoothstep(float(HORIZON_MIN), float(0.1), altitude);
 
-		// AIRMASS, the term this file was missing. 1 at the horizon, 0 above ~17 deg.
-		// Everything atmospheric hangs off it: scintillation, reddening, and dimming are
-		// all the same fact -- how much air the light crossed -- and they were previously
-		// either applied uniformly or applied over a band so wide (27 deg, which is 55% of
-		// the hemisphere by solid angle) that they read as a filter rather than as depth.
-		//
-		// Ascending form with .oneMinus(), never smoothstep(0.3, 0.02, x): both GLSL and
-		// WGSL leave smoothstep UNDEFINED when edge0 >= edge1.
+		// Airmass: 1 at the horizon, 0 above ~17deg. Scintillation, reddening and dimming
+		// all hang off it (how much air the light crossed). Ascending form with
+		// `.oneMinus()`, never a descending smoothstep -- undefined when edge0 >= edge1.
 		const airmass = smoothstep(float(0.02), float(0.3), altitude).oneMinus();
 
-		// Twinkle. A single sine at a single frequency reads as a disco ball no matter
-		// the phase offsets; real scintillation is irregular, and every star has its own
-		// rhythm and depth. The extra per-star randoms are derived from the seed
-		// attribute rather than shipping more vertex data.
+		// Twinkle: irregular, with per-star rhythm and depth (a single sine reads as a
+		// disco ball). Extra randoms derived from the seed attribute rather than shipping
+		// more vertex data.
 		const rndA = fract(aSeed.mul(7.31));
 		const rndB = fract(aSeed.mul(5.19));
 		const rndC = fract(aSeed.mul(3.73));
@@ -423,77 +317,41 @@
 		)
 			.mul(0.5)
 			.add(0.5);
-		// THE FAST LOBE IS MIXED IN BY AIRMASS, not applied everywhere. This was the single
-		// worst thing in the file: `slow.mul(fast)` ran across the entire sky, so 3000
-		// stars strobed at 0.76-2.3 Hz with a mean of 0.25 -- every star dimmed most of
-		// the time and flashing occasionally. That is television static, not a sky.
-		// Scintillation is refraction through moving air, so it scales with the amount of
-		// air crossed: at the zenith a star is nearly steady and only breathes (the slow
-		// lobe alone, mean 0.5); low down it thrashes. Watching that difference is the
-		// strongest cue the viewer gets that the sky has ATMOSPHERE rather than being a
-		// backdrop with a shimmer pass on it.
+		// The fast lobe is mixed in BY AIRMASS, not applied everywhere: scintillation is
+		// refraction through moving air, so a zenith star only breathes (slow lobe alone)
+		// while a low one thrashes -- that difference is the strongest cue the sky has
+		// atmosphere rather than a flat shimmer pass.
 		const beat = mix(slow, slow.mul(fast), airmass);
-		// Skewed three ways: per-star character (some barely move, a few flash hard),
-		// airmass, and magnitude. The magnitude term matters -- a faint star flickering
-		// hard is indistinguishable from sampling noise, and there are thousands of them.
-		//
-		// THE FLOORS ROSE when the field was first judged DEAD rather than calm: with
-		// the old 0.55 / 0.15-1.0 / 0.3-1.2 / 0.4-1.0 stack, the median mid-sky star
-		// landed at a ~6% brightness wobble -- physically defensible, visually nothing.
-		// Now the median mid-sky star swings ~20%, a bright star near the horizon
-		// flashes past 50%, and only the zenith keeps its slow breath. Alive, layered.
+		// Skewed three ways: per-star character, airmass, and magnitude (a faint star
+		// flickering hard is indistinguishable from sampling noise).
 		const depth = float(twinkle)
 			.mul(float(0.3).add(rndC.pow(1.6).mul(0.7)))
 			.mul(float(0.55).add(airmass.mul(0.65)))
 			.mul(float(0.45).add(aMag.mul(0.55)))
 			.min(0.9);
 		const flicker = beat.oneMinus().mul(depth).oneMinus();
-		// Saturation rides the beat: dim moments go pale, glints go vivid. The range is
-		// 0.85-1.30, and anything past 1 EXTRAPOLATES beyond the authored colour. That
-		// is deliberate now: the ramps were pulled in precisely so glints could be
-		// pushed past them -- a glint that flashes COLOUR is half of what makes a bright
-		// star read as alive (the prismatic term below is the other half).
+		// Saturation rides the beat: dim moments go pale, glints go vivid. Range is
+		// 0.85-1.30 -- past 1 deliberately EXTRAPOLATES beyond the authored colour, since a
+		// glint that flashes colour is half of what makes a bright star read as alive (the
+		// prismatic term below is the other half).
 		const lum = dot(aColor, vec3(0.299, 0.587, 0.114));
 
-		// Atmospheric extinction. Same airmass, doing the other half of its job: light
-		// that crosses more air is both reddened and dimmed. The dimming is the part that
-		// was missing -- the old term only tinted, mixing toward vec3(1, 0.66, 0.42),
-		// which holds red at full strength and therefore SATURATES a low star instead of
-		// fading it. Dimming goes through opacity so it cannot fight the saturation above.
+		// Atmospheric extinction: light crossing more air is both reddened and dimmed.
+		// Dimming goes through opacity so it cannot fight the saturation above.
 		const extinction = mix(vec3(1), vec3(1, 0.84, 0.68), airmass);
 		const airmassDim = mix(float(1), float(0.55), airmass);
 
-		// PRISMATIC SCINTILLATION, the colour half of the horizon flutter: the same
-		// turbulence that flashes a low star also splits its colours -- horizon stars
-		// visibly flash warm and cool as the air disperses the beam. Keyed off the FAST
-		// lobe (so it flutters, it does not tint) and killed above ~17 deg by the same
-		// airmass gate, because dispersion needs the long path exactly as scintillation
-		// does. +-9% R / +-11% B at the horizon, 0 at the zenith.
+		// Prismatic scintillation, the colour half of the horizon flutter: keyed off the
+		// FAST lobe (so it flutters, not tints) and killed above ~17deg by the same
+		// airmass gate. +-9% R / +-11% B at the horizon, 0 at the zenith.
 		const prismatic = fast.sub(0.5).mul(airmass).mul(0.5);
 		const chroma = vec3(1).add(prismatic.mul(vec3(0.35, 0.02, -0.42)));
 
-		// ── EVERYTHING ABOVE IS CONSTANT ACROSS A STAR'S QUAD ────────────────────────
-		//
-		// Altitude, airmass, both twinkle lobes, the flicker depth, the extinction, the
-		// prismatic flutter and the colour itself are all functions of the star's own
-		// attributes and of `time` -- not one of them varies between the four corners of
-		// its quad. TSL builds a node in whatever stage CONSUMES it and only
-		// `AttributeNode` lifts itself to a varying, so naming any of them in `colorNode`
-		// or `opacityNode` re-emitted the entire chain PER FRAGMENT: two `sin`, a `pow`,
-		// four `smoothstep`s and a `dot`, on every pixel of every star. Snow's `flakeAlpha`
-		// is the same fix for the same trap (`../precipitation/Snow.svelte`).
-		//
-		// It is a smaller win here than there, and the reason is worth writing down:
-		// stars are 3-6 px quads, so a star costs ~25 shaded fragments against 4 vertices,
-		// where a snowflake near the lens costs thousands. Lifting the work would have
-		// been close to a WASH while half the field sat below the horizon paying vertex
-		// cost for nothing -- `HORIZON_MIN` is what makes this worth doing, and the two
-		// changes belong together.
-		//
-		// The values are identical at all four corners, so interpolating them is exact,
-		// not an approximation. Interstage traffic drops as well: four attributes (8
-		// floats: centre, colour, seed, magnitude) become two varyings (5), because the
-		// fragment stage stops reading the attributes at all.
+		// Everything above is CONSTANT across a star's quad (functions of the star's
+		// attributes and `time`, not corner position), so it is lifted into two
+		// `varying()`s rather than re-evaluated per fragment -- same fix as Snow's
+		// `flakeAlpha`, smaller win here since a star is only ~25 shaded fragments
+		// (see ../CLAUDE.md).
 		const vStarColor = varying(
 			mix(vec3(lum), aColor, beat.mul(0.45).add(0.85)).mul(extinction).mul(chroma),
 			'vStarColor'

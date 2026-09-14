@@ -1,31 +1,13 @@
 <script lang="ts">
-	// The spawned physics bodies: N Rapier bodies, TWO draw calls.
-	//
-	// WHY THIS IS ITS OWN COMPONENT. Every body used to be its own `<T.Mesh>` with its
-	// own `MeshStandardMaterial` (the colour is random per spawn). That is one draw call
-	// per body -- and this scene renders the whole scene many times per frame, so the
-	// real multiplier is much worse than it looks:
-	//
-	//   main pass                                    1
-	//   shadow pass (quality.spawnShadows)           1
-	//   mirror-floor reflector, every frame          1
-	//   mirror sphere cube capture, 6 faces @ 30 Hz  3   (per 60 fps frame, averaged)
-	//   corner-ball cube capture, 6 faces @ 15 Hz    1.5
-	//                                              ----
-	//                                              ~7.5 draw calls per frame PER BODY
-	//
-	// i.e. the whole "under 100 draw calls" budget was gone at about fourteen balls.
-	// Now: one `InstancedMesh` per shape, one shared material, colour per instance.
-	// Two shapes = two draw calls, whatever the body count.
+	// The spawned physics bodies: N Rapier bodies, TWO draw calls — one InstancedMesh
+	// per shape, one shared material, colour per instance, instead of a `<T.Mesh>` per
+	// body. This scene renders itself up to ~7.5x per frame, so per-body meshes blew the
+	// 100-draw-call budget at about fourteen balls (see scenes/CLAUDE.md for the
+	// generalisable rules — draw calls per FRAME, and why `<InstancedMesh>` from
+	// @threlte/extras isn't used here).
 	//
 	// Rapier is unchanged -- every body still needs its own `<RigidBody>` and collider.
 	// Only the rendering collapses. `MAX_BODIES` caps the simulation side.
-	//
-	// NOT USED: `<InstancedMesh>` from @threlte/extras. Its Api task calls `invalidate()`
-	// unconditionally whenever it syncs instances (`update` defaults to true), so
-	// mounting one pins the render loop at full rate for as long as this scene is
-	// current, killing on-demand rendering (see src/CLAUDE.md, "Frame tasks"). The
-	// sync below invalidates only when a matrix actually changed.
 
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { RigidBody, Collider } from '@threlte/rapier';

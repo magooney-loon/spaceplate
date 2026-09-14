@@ -1,25 +1,12 @@
 <script lang="ts">
-	// Occasional meteors. A descriptor consumer like Stars.svelte, faded by
-	// `descriptor.sky.starVisibility` so nothing streaks across a noon sky.
-	//
-	// SCHEDULING IS PURE GPU. Every meteor is a quad whose head position, travel
-	// progress and brightness are pure functions of `time` and per-meteor constant
-	// attributes: life = fract(t / period + phase) * period, active while life <
-	// duration. There is no CPU clock, no state to reset, no event queue -- the sky
-	// simply has meteors in it, at the cost of one small draw call.
-	//
-	// Each quad stretches from head to tail in the VERTEX stage: both endpoints are
-	// projected to view space, the quad's cross-axis is taken perpendicular to the
-	// screen-space motion, and depth is pinned to the far plane exactly as Stars.svelte
-	// does (both constructions live in skyLayer.ts). The trail is a decaying streak --
-	// bright at the head, gone at the tail.
-	//
-	// WHY THE SCALARS ARE PACKED INTO vec4S: WebGPU caps a pipeline at 8 VERTEX
-	// BUFFERS (maxVertexBuffers), and three's WebGPU backend gives every attribute its
-	// own buffer -- instanced or not. Six separate float attributes + the quad + aStart
-	// + aVel would be 9 buffers, and pipeline creation fails with exactly:
-	//   "Vertex buffer count (9) exceeds the maximum number of vertex buffers (8)"
-	// Packing the per-meteor constants into two vec4s brings it to 5.
+	// Occasional meteors. A descriptor consumer, faded by `descriptor.sky.starVisibility`.
+	// Scheduling is pure GPU: head position, travel progress and brightness are pure
+	// functions of `time` and per-meteor constant attributes (life = fract(t/period +
+	// phase) * period, active while life < duration) -- no CPU clock, no event queue.
+	// Each quad stretches from head to tail in the vertex stage, pinned to the far plane
+	// like Stars.svelte. Per-meteor scalars are packed into two vec4s to stay under
+	// WebGPU's 8-vertex-buffer cap (skyLayer.ts) -- unpacked this hits 9 and pipeline
+	// creation fails.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import {
@@ -50,14 +37,8 @@
 		/**
 		 * Meteor "slots". Each fires once per its own period, so the expected number on
 		 * screen at any instant is `count * E[duration] / E[period]` -- with the periods
-		 * and durations rolled below, `count * 0.013`. 24 slots is therefore about one
-		 * meteor visible a third of the time, which is what "occasional" means here.
-		 *
-		 * THIS WAS 180 (a permanent 2.4 meteors on screen) and it was compensating for a
-		 * bug: the horizon fade below divided an already-unit value by `radius`, so every
-		 * meteor rendered at a constant ~0.06 opacity. Two-and-a-half invisible smudges
-		 * read as "occasional". With the fade fixed they are visible, so the count had to
-		 * come back down to match the intent. Raise it for a shower.
+		 * and durations rolled below, `count * 0.013`. 24 slots is about one meteor
+		 * visible a third of the time. Raise it for a shower.
 		 */
 		count?: number;
 		/** Distance the streaks are placed at. Cosmetic -- depth is pinned to the far plane. */
@@ -161,8 +142,7 @@
 		const aBright = aParams1.y;
 
 		// The quad corner: with the meteor's start point instanced, the base geometry's
-		// `position` IS the corner. One pure expression, no assignments, exactly as TSL
-		// requires outside an Fn stack (see skyLayer.ts). 0 = head end, 1 = tail end.
+		// `position` IS the corner. 0 = head end, 1 = tail end.
 		const corner = positionLocal.xy;
 		const along = corner.x.mul(0.5).add(0.5);
 		const across = corner.y;
@@ -176,8 +156,7 @@
 		const head = aStart.add(aVel.mul(progress)).normalize();
 		const tail = aStart.add(aVel.mul(progress.sub(aTrail))).normalize();
 
-		// Motion-aligned billboard, then far-plane depth pinning: honest depth at radius
-		// 1000 would be clipped by the camera's far plane.
+		// Motion-aligned billboard, then far-plane depth pinning (skyLayer.ts).
 		material.vertexNode = pinFarPlane(
 			streakClip(head.mul(float(radius)), tail.mul(float(radius)), along, across, aWidth)
 		);
@@ -190,14 +169,10 @@
 		const across2 = across.mul(across);
 		const shape = pow(smoothstep(float(0), float(1), across2).oneMinus(), float(2));
 
-		// THE HORIZON FADE, FIXED. This used to read `positionWorld.y.div(radius)`, copied
-		// from Stars -- but Stars stores its positions AT the dome radius while this layer
-		// stores unit directions and scales in the shader. So the division by 1000 was
-		// applied to an already-unit value, every meteor came out at a flat
-		// smoothstep(-0.02, 0.12, ~0.001) = 0.06, and the fade did nothing it was written
-		// for. `head`/`tail` are normalised, so their `.y` IS the sine of altitude
-		// directly; taking it along the spine also fades a streak as it crosses the
-		// horizon rather than popping the whole quad.
+		// `head`/`tail` are normalised, so their `.y` IS the sine of altitude directly
+		// (see `altitudeOf` in skyLayer.ts for the bug this form avoids); taking it along
+		// the spine also fades a streak as it crosses the horizon rather than popping the
+		// whole quad.
 		const altitude = mix(head, tail, along).y;
 		const horizon = smoothstep(float(-0.02), float(0.12), altitude);
 

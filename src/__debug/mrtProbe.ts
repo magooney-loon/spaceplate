@@ -1,42 +1,19 @@
 // MRT attachment-count probe — the tool that found the motion-blur crash.
 //
-// ## What it checks
+// Checks the invariant WebGPU enforces: a pipeline's colour-target count must equal
+// the attachment count of the pass it's bound in. For every draw, compares the
+// `@location(...)` outputs the compiled fragment shader DECLARES against the
+// attachments the render context HAS.
 //
-// The invariant WebGPU actually enforces: a pipeline's colour-target count must equal
-// the attachment count of the pass it is bound in. Violating it is fatal on
-// Chromium/Dawn and invisible on lenient backends:
+// MISMATCH lines carry the material's node/flags/ancestry so the offending mesh is
+// identifiable without guessing. "stage N now drawn under attachments=…" means one
+// fragment ProgrammableStage is being reused under two different attachment counts —
+// shader stages are deduplicated by WGSL source, not by attachment count, so identical
+// WGSL across two contexts can silently share one GPU pipeline (the MRT shader-cache
+// trap; see `core/postprocessing/CLAUDE.md`).
 //
-//   Attachment state of [RenderPipeline "renderPipeline_NodeMaterial_22"] is not
-//   compatible with [RenderPassEncoder]. Expects colorTargets [0, 1]; pipeline has [0].
-//
-// So for every draw this counts the `@location(...)` outputs the compiled fragment
-// shader DECLARES and compares that to the attachments the render context HAS. It
-// deliberately measures the end state rather than any theory about caching — an earlier
-// version stamped NodeBuilderStates and watched for one crossing an attachment
-// boundary, which stayed silent through a live failure and cost a debugging round.
-//
-// ## Reading the output
-//
-// One `[MRT PROBE]` line per distinct (material, outputs, attachments) triple, so a
-// normal load prints an inventory and then goes quiet. Rows with `attachments=2` are the
-// contents of the MRT pass.
-//
-//   MISMATCH   the bug, with the material's node/flags/ancestry so you can identify the
-//              mesh without guessing. This is what named Studio's selection overlay.
-//   stage N now drawn under attachments=…
-//              one fragment ProgrammableStage used under two attachment counts. Stages
-//              are deduplicated by shader SOURCE (`Pipelines.programs.fragment` is a Map
-//              keyed on the WGSL string) while `WebGPUBackend.getRenderCacheKey()`
-//              records only attachment 0's format and never the COUNT — so identical
-//              WGSL across two contexts silently shares one GPU pipeline. That is how a
-//              wrong shader becomes a wrong pipeline instead of a recompile.
-//
-// Everything goes through `console.log`, never `console.error`: Chromium attaches a full
-// stack to every error and the render loop buries the finding under hundreds of frames.
-//
-// The MRT traps are written up in src/core/postprocessing/CLAUDE.md (Gotchas) and
-// DOCS/webgpu-notes.md §§1.4-1.6 for the two failure modes this distinguishes and the
-// blending trap that follows fixing them.
+// Uses `console.log`, never `console.error`: Chromium attaches a full stack to every
+// error and the render loop buries the finding under hundreds of frames.
 
 import * as THREE from 'three/webgpu';
 

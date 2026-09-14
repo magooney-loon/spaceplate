@@ -1,20 +1,7 @@
 <script lang="ts">
-	// The moon disc: a textured sphere on the sky dome, phase-shaded by the sun.
-	//
-	// A descriptor consumer like Sky and SkyLight -- it reads `descriptor.moon` and
-	// `descriptor.sun` in a task and writes the three object directly. No $effect, no
-	// reactive props, so no cycle can form (DOCS/webgpu-notes.md §3).
-	//
-	// The original sketch was a billboard with "phase from the sun-moon angle". A sphere is
-	// barely more work and strictly better: the phase falls out of the surface normal for
-	// free, and the equirectangular map wraps it properly instead of being cropped.
-	//
-	// THERE IS NO PHASE PARAMETER HERE, and that is the whole reason the sphere was worth
-	// it. The terminator is `dot(normal, sunDirection)`, so once the model's moon lag
-	// started advancing through the synodic cycle (sunPath.ts) this file rendered every
-	// phase correctly with no change at all. The one thing it does owe the cycle is
-	// `newMoonFade` below -- geometry cannot know that a dark disc crossing a bright sky
-	// should not be drawn.
+	// The moon disc: a textured sphere on the sky dome, phase-shaded by the sun — see
+	// ../CLAUDE.md ("celestial/"). A descriptor consumer: reads `descriptor.moon` /
+	// `.sun` in a task, no $effect, no reactive props, so no cycle can form.
 	import { untrack } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
@@ -67,17 +54,12 @@
 	const moonCenter = uniform(new THREE.Vector3());
 	const discOpacity = uniform(0);
 
-	// `toneMapped` on, unlike the emissive layers: the disc has to sit in the same
-	// exposure space as the SkyMesh dome it is seen against. The disc is also convex and
-	// single-sided from here, so it never needs to depth-sort against itself --
-	// `skyLayerMaterial`'s `depthWrite = false` would otherwise let it punch a hole in
-	// the sky.
+	// `toneMapped` on, unlike the emissive layers: the disc sits in the same exposure
+	// space as the SkyMesh dome it's seen against. Convex and single-sided from here, so
+	// it never needs to depth-sort against itself despite `depthWrite = false`.
 	const material = skyLayerMaterial({ toneMapped: true });
 
-	// Depth pinned to the far plane, exactly as SkyMesh does (`position.z = position.w`).
-	// This is load-bearing, not an optimisation: the camera's far plane is 144 while the
-	// dome sits at radius 1000, so a normally-projected moon would be clipped away
-	// entirely. Pinning z also guarantees the disc sorts behind all scene geometry.
+	// Depth pinned to the far plane, exactly as SkyMesh does (see pinFarPlane in skyLayer.ts).
 	material.vertexNode = domeVertexNode();
 
 	// The lit fraction is the angle between the surface normal and the sun -- which IS
@@ -129,24 +111,14 @@
 			moonCenter.value.copy(moon.position);
 			sunDirection.value.set(sun.direction.x, sun.direction.y, sun.direction.z);
 
-			// `visibility` already ramps smoothly across the horizon (sunPath.ts), so the
-			// disc fades in at moonrise instead of popping. The daylight term is separate:
-			// a real moon stays faintly visible by day, so this dims rather than hides.
+			// Daylight term: a real moon stays faintly visible by day, so this dims rather
+			// than hides it.
 			const daylight = clamp01((sun.elevation + 2) / 8);
-			// A new moon is INVISIBLE, and not because it is unlit -- it sits on the sun,
-			// crossing a bright sky with its dark side out. Without this the earthshine
-			// term draws it as a dim blob a couple of degrees from the sun disc, which is
-			// the one place in the sky nothing may appear. Narrow on purpose: 4% lit is
-			// well inside the crescent the shading gets right on its own, so this fires
-			// for about half a game day either side of exact new and never touches a
-			// crescent worth looking at.
+			// newMoonFade hides the disc near new moon (see ../CLAUDE.md) -- narrow on
+			// purpose, 4% lit is inside the crescent the shading already gets right.
 			const newMoonFade = smooth01(0, 0.04, descriptor.moonPhase.illumination);
 			discOpacity.value = body.visibility * (1 - daylightFade * daylight) * newMoonFade;
 
-			// Nothing here animates on its own -- the disc moves only when the model's
-			// time does, and Skybox's driver task invalidates for that. So this task only
-			// has to invalidate when it moved the mesh itself, which is never
-			// independently. Skip the draw entirely once the disc has faded out.
 			moon.visible = discOpacity.value > 0.002;
 		},
 		{ before: autoRenderTask, autoInvalidate: false }

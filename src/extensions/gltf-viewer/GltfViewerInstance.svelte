@@ -11,13 +11,9 @@
 
 	let { model }: { model: GltfViewerModel } = $props();
 
-	// Decoders so the viewer opens compressed GLTFs too. DRACO and KTX2 fetch their
-	// decoder binaries on demand from a CDN pinned to the installed three version
-	// (jsdelivr resolves the 0.<REVISION> range; the decoders must match the
-	// GLTFLoader). Meshopt ships inside three — no download. Loaders are cached
-	// module-side by threlte, so N instances cost one decoder fetch. Uncompressed
-	// models never touch the decoders — GLTFLoader only invokes them when the file
-	// actually uses those extensions.
+	// DRACO/KTX2 decoders fetch on demand from jsdelivr pinned to the installed three
+	// version; cached module-side by threlte, so N instances cost one fetch. Meshopt is
+	// bundled. Uncompressed models never touch the decoders. See gltf-viewer/CLAUDE.md.
 	const threeCdn = `https://cdn.jsdelivr.net/npm/three@0.${REVISION}`;
 	const dracoLoader = useDraco(`${threeCdn}/examples/jsm/libs/draco/gltf/`);
 	const meshoptDecoder = useMeshopt();
@@ -64,10 +60,8 @@
 		}
 	});
 
-	// Rig (skeleton) overlay. Parented to the root scene and gated on model.visible —
-	// when the mesh is hidden the GLTF scene detaches from the graph, bones stop
-	// updating and a still-visible helper would freeze at the last pose. Helpers of
-	// bone-less (static) meshes render nothing, so they are skipped entirely.
+	// Rig overlay, gated on model.visible (a detached mesh stops updating bone matrices —
+	// see "Show Rig" in CLAUDE.md). Bone-less meshes render nothing and are skipped.
 	$effect(() => {
 		const gltfScene = $gltf?.scene;
 		if (!gltfScene || !model.showRig || !model.visible) return;
@@ -145,13 +139,9 @@
 		prevActive = currentActive;
 	});
 
-	// Slowly spins the loaded scene around Y while enabled — driven off the group so
-	// it never fights the animation mixer's own transforms on the GLTF scene root.
-	//
-	// This is the one task in the app that invalidates unconditionally per frame (the
-	// group genuinely moved, so it has to), which pins Threlte's 'on-demand' renderMode
-	// at full rate for as long as it runs — expect the FPS readout to drop to the
-	// scene's real cost while it's on.
+	// Spins the wrapper group (not the GLTF scene root — would fight the mixer). The only
+	// task in the app that invalidates unconditionally every frame — see "Auto Rotate" in
+	// CLAUDE.md for what that costs the render loop.
 	useTask(
 		(delta) => {
 			if (!group || !model.autoRotate) return;

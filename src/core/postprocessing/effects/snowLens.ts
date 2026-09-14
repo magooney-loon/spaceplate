@@ -1,40 +1,21 @@
-// FROST ON THE LENS -- the snow counterpart to rainLens.ts, and deliberately not a
-// recolour of it. Water beads and runs; ice GROWS. So where the rain lens is a field of
-// drops sliding down the glass, this is a front creeping inward from the edges of the
-// frame, thickest in the corners, that never moves once it has arrived -- it only advances
-// and retreats.
+// FROST ON THE LENS -- the snow counterpart to rainLens.ts, deliberately not a recolour of
+// it: water beads and runs, ice GROWS. This is a front creeping inward from the frame edges
+// (thickest in the corners) that only advances and retreats, never slides. Mechanically the
+// same effect and inherits every one of rainLens.ts's constraints (RTT mip source,
+// `inputClamp`, dry-lens latch) — read that header first.
 //
-// MECHANICALLY IT IS THE SAME EFFECT and inherits every one of rainLens.ts's constraints,
-// documented there in full rather than repeated here: the RTT mip source and its mipmap
-// `minFilter`, the `inputClamp` that stops the sun disc smearing through the blur, why the
-// colour-space round trip the old mesh needed is gone, and why a dry lens must leave the
-// graph rather than multiply out to zero. Read that header first.
+// Ordered after the rain lens (37 > 36) so during sleet its RTT captures the already-rain-
+// lensed frame and the two composite in the right order.
 //
-// TWO LENSES, ONE CHAIN. During sleet both are live, and this one is ordered after the rain
-// lens (37 > 36), so its RTT captures the already-rain-lensed frame and the two composite
-// in the right order. As meshes this was left to `ViewportTextureNode`'s internals and the
-// old header noted that either answer was acceptable; in the chain it is simply correct.
+// Frost is dendritic (thin branching filaments, not blobs), so the shape is RIDGED noise:
+// fractal noise folded about zero, `1 - |fbm|`, puts a bright thin ridge at every zero
+// crossing. Two scales — fine needles over coarse plates — is the whole crystal structure.
+// Only the ridges need a gradient (for refraction), and only at two octaves each (a third
+// octave ran past the pixel grid into shimmer) — down from 27 evaluated octaves/pixel to 14.
 //
-// THE SHAPE OF FROST, and why it is ridged noise. Frost is dendritic -- it grows in thin
-// branching filaments, not in blobs -- and the cheapest honest way to draw that is to take
-// fractal noise and fold it about zero: `1 - |fbm|` puts a bright thin ridge along every
-// zero crossing of the field. Two scales of it, a fine needle layer over coarse plates, is
-// the whole crystal structure. Plain (unfolded) fbm gives smoke, which is what makes most
-// frost shaders look like a dirty window instead of a cold one.
-//
-// WHAT IT COSTS, because this one is fullscreen and unavoidable while it is snowing. The
-// first version evaluated the WHOLE field three times per pixel for the refraction
-// normal -- vignette, lobe noise, needles and plates, 27 noise octaves per pixel. Only the
-// crystal ridges have a gradient worth taking, so coverage is computed once and the ridges
-// dropped to two octaves each (the third ran past the pixel grid and produced shimmer):
-// 14 octaves, and the cheap half of the shader stopped being paid for in triplicate.
-//
-// THE FRONT is a threshold on a vignette: distance from the centre of the frame, pushed
-// around by a low-frequency noise so the growth edge is lobed rather than a clean circle,
-// against a level that `uGrowth` walks inward from beyond the corners to past the centre.
-// That single number is what the CPU side drives, and it is slow in BOTH directions -- ice
-// takes seconds to form and longer to go, which is exactly what distinguishes it from the
-// rain lens's quick beading.
+// The front is a threshold on a vignette (distance from frame centre, perturbed by low-freq
+// noise for a lobed edge) against a level `uGrowth` walks inward from the CPU side, slow in
+// both directions — ice takes seconds to form and longer to go.
 import {
 	Fn,
 	float,

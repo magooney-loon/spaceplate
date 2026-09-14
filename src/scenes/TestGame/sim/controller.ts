@@ -1,16 +1,11 @@
 // The driving controller — the physics task's brain, extracted from
-// TestGame.svelte so the scene component is composition + markup and the
-// driving model lives with its siblings (drivetrain.ts, handling.ts).
-//
-// Owns: the drivetrain instance, the nitrous gameplay (bottle, ramp), the
-// startup sequence, the spawn capture / restart teleport, the yaw + lateral
-// grip cornering model, and the carSim telemetry writes. The SCENE owns the
-// Rapier body and calls `step(delta, body)` from a `usePhysicsTask`;
-// `restart(body)` from the HUD token effect; `park()` on unmount.
-//
-// All comments below were written against TestGame.svelte's inline task and
-// moved here verbatim in spirit — the driving-model rules are load-bearing
-// documentation (see CLAUDE.md's driving-model section).
+// TestGame.svelte. Owns the drivetrain instance, the nitrous gameplay
+// (bottle, ramp), the startup sequence, the spawn capture / restart
+// teleport, the yaw + lateral grip cornering model, and the carSim
+// telemetry writes. The SCENE owns the Rapier body and calls
+// `step(delta, body)` from a `usePhysicsTask`; `restart(body)` from the HUD
+// token effect; `park()` on unmount. See CLAUDE.md's driving-model section
+// for the cornering model this implements.
 
 import type {
 	RigidBody as RapierRigidBody,
@@ -29,61 +24,27 @@ import { carControls } from './carControls';
 import { clamp, damp } from './carMath';
 import { createSuspension } from './suspension';
 
-// ── Driving ──────────────────────────────────────────────────────────────────
-//
-// Still ONE dynamic box for the chassis (no per-wheel suspension), but the
-// longitudinal half is a real drivetrain: torque curve → clutch → gearbox →
-// traction limit at the driven axle (drivetrain.ts, all SI, numbers in the
-// car's spec). Grip stays a lateral-velocity damp per step, and the drivetrain
-// hands back how much of it is left — the handbrake takes it all, wheelspin
-// takes a chunk (power oversteer). Pitch AND roll are both disabled on the
-// body (enabledRotations={[false, true, false]}) — only yaw is free; see the
-// scene markup for the full world-axes argument.
-//
 // UNITS: the sim thinks in metres, the world is 2.5 units to the metre. Forces
 // and velocities convert at this boundary and nowhere else — see units.ts.
-//
-// Steering is DIRECT yaw-rate control, not torque, and the base target is the smaller
-// of two real limits rather than a speed ramp: what the front wheels GEOMETRICALLY
-// point at (v·tan δ / wheelbase, an Ackermann bicycle) and what the tyres can HOLD
-// (μ·g / v). Below ~25 km/h the geometry binds and you get a tight turning radius;
-// above it grip binds and the same key press is a lane change. Nothing turns on the
-// spot: yaw falls out of speed. The two are wired to the same μ as the sideways
-// bleed below — see `latMu`, which is the knob for cornering at speed.
-//
-// On top of that base, `powerYawBoost` scales the yaw AUTHORITY when the rear is
-// loose and `driftAlign` pulls the nose back toward the direction of travel
-// (the car's tunes). They are 1 and 0 in the Grip tune, which collapses everything
-// back to the base — a pure function of the steering angle, where the car can only
-// ever rotate as fast as the front wheels point and centring the wheel stops the
-// rotation dead. That model cannot express a drift however the grip numbers are set.
-//
-// Every tuneable number lives in the car's `tunes` and is read FRESH each step: the
-// player can flip Grip ↔ Drift mid-corner and nothing here may cache it.
-const YAW_MIN_SPEED = 1.5; // m/s floor under the grip cap, so it can't divide by ~0
-// m/s — the slip angle fades in across `1 → 1 + this`. Forwards only, above walking
-// pace: under it the angle is numerical noise, and in reverse it reads inverted. A
-// ramp rather than an `if`, because a step here is a kick in the steering.
+// Every tuneable number lives in the car's `tunes` and is read FRESH each
+// step: the player can flip Grip ↔ Drift mid-corner and nothing here may
+// cache it.
+/** m/s floor under the grip cap, so it can't divide by ~0. */
+const YAW_MIN_SPEED = 1.5;
+/** m/s — the slip-angle drift gate fades in across `1 → 1 + DRIFT_GATE_RAMP`,
+ *  forwards only above walking pace (below it the angle is numerical noise
+ *  and reverse reads inverted). A ramp, not an `if` — a step here is a kick
+ *  in the steering. */
 const DRIFT_GATE_SPEED = 1;
 const DRIFT_GATE_RAMP = 2;
 
-// ── Nitrous (Shift) ──────────────────────────────────────────────────────────
-// A wet kit on a throttle switch: Shift with the throttle open in a forward
-// gear SPRAYS; Shift with that gate shut (no throttle, or N/R) PURGES the line
-// at the hood instead — the show-off hiss at a standstill and on the line. The
-// KIT is the car's (spec hardware: torque gain, bottle size, regen, the
-// flow ramp — `hw.nitrous*`); the controller owns the live state — bottle level,
-// smoothed flow — and the gating. The drivetrain applies the torque gain inside
-// its own traction limit. So a shot in 1st is wheelspin, a shot in 3rd is thrust,
-// and Drift + spray in 3rd is smoke.
+// Nitrous: Shift sprays with the throttle open in a forward gear, purges
+// (vents at the hood) with that gate shut. Kit hardware is the spec's
+// (`hw.nitrous*`); this controller owns the live bottle level and smoothed
+// flow/purge state.
 /** Below this the bottle counts as dry and the switch opens. */
 const NITROUS_DRY = 0.01;
 
-// ── The purge valve ─────────────────────────────────────────────────────────
-// A solenoid SNAP, not the kit's flow ramp: the vent dumps line pressure into
-// the air, so it opens faster than the spray bites and shuts on a short tail.
-// 1/s rates like every damping constant here, so the physics framerate stays a
-// free knob (the 200 Hz note above).
 /** Purge flow ramp in, 1/s. */
 const PURGE_ATTACK = 30;
 /** Purge flow ramp out, 1/s. */
@@ -103,13 +64,10 @@ export function createCarController(spec: CarSpec, world: World) {
 	const hw = spec.hardware;
 
 	/**
-	 * Clear Rapier's force accumulator and immediately re-apply what holds the car
-	 * up. THE CAR HAS NO GROUND COLLIDERS — `sim/suspension.ts` casts four rays
-	 * and the summed spring force IS the contact — so `resetForces` and the
-	 * suspension are one operation, and every early return below goes through
-	 * here. Splitting them is how the parked car ends up on its undertray.
-	 * `wake` is passed through: the idle branch must not wake a sleeping body
-	 * just to hold up a car that is already resting.
+	 * Clear Rapier's force accumulator and immediately re-apply what holds the
+	 * car up (the suspension's rays — see CLAUDE.md's colliders section). Every
+	 * early return below goes through here. `wake` is passed through: the idle
+	 * branch must not wake a sleeping body just to hold up one already resting.
 	 */
 	function resetForces(body: RapierRigidBody, wake: boolean): void {
 		body.resetForces(wake);
@@ -356,37 +314,17 @@ export function createCarController(spec: CarSpec, world: World) {
 		);
 
 		// ── Yaw ──────────────────────────────────────────────────────────────
-		// Slip angle at the CG: the angle between where the nose points and where the
-		// car is actually going. A drift IS a large, HELD value here. Gated to
-		// forwards-and-above-walking-pace — under that it is numerical noise, and in
-		// reverse it reads inverted.
-		//
-		// NOTHING below depends on the SIGN of this angle except `driftAlign`, and that
-		// is the whole stability argument. An earlier version added an oversteer moment
-		// pointed along sign(beta): its gradient at beta → 0 was ~5× the aligning
-		// term's, so every bump fed back into more rotation than anything could remove
-		// and the car could not be held in a straight line. Yaw AUTHORITY is safe
-		// because it multiplies the steering — no steering, no yaw, straight is straight.
+		// Slip angle at the CG. NOTHING below may depend on its SIGN except
+		// `driftAlign` — see CLAUDE.md's "stability rule".
 		const driftGate = clamp((speedMs - DRIFT_GATE_SPEED) / DRIFT_GATE_RAMP, 0, 1);
 		const beta =
 			driftGate > 0 ? Math.atan2(vLateral, Math.max(Math.abs(vForward), 1e-3)) * driftGate : 0;
 		carSim.drift = beta;
 
-		// How loose the rear is right now, 0…1. Whichever source is loosest wins; they
-		// do NOT stack, or brake-and-power would simply pin the boost at maximum.
-		//   handbrake  — all of it.
-		//   brake      — trail-braking oversteer, the deliberate way in.
-		//   powerLoad  — the friction circle: grip spent driving the car along is not
-		//                available to hold it sideways. THE drift control, and the
-		//                reason the throttle works in gears that never spin the rears.
-		//   slip       — actual wheelspin. Only 1st and 2nd can ever out-pull the tyre,
-		//                but with Drift's traction control OFF they take it all the way
-		//                to 1, and at 1 the aligning term below is gone with it.
-		//   looseBase  — a floor, deliberately SMALL: the car has to be planted until
-		//                something provokes it, or the whole tune reads floaty.
-		// Faded back out as the slide reaches `maxDriftAngle` — that fade is what makes
-		// the drift SETTLE at an angle rather than carry on into a spin, because the
-		// aligning term below grows while this one shrinks.
+		// How loose the rear is, 0…1 — whichever source is loosest wins, they do
+		// NOT stack (see CLAUDE.md's "Looseness is max(...)" bullet). Faded back
+		// out as the slide reaches `maxDriftAngle`, which is what lets a drift
+		// SETTLE rather than spin.
 		const loose = handbrake
 			? 1
 			: Math.max(
@@ -399,27 +337,12 @@ export function createCarController(spec: CarSpec, world: World) {
 		const flick = handbrake ? tune.handbrakeYawBoost : 1;
 		const boost = flick * (1 + (tune.powerYawBoost - 1) * loose * (1 - reach));
 
-		// The planted car: the lesser of the geometric and the grip-limited rate, both
-		// scaled by the boost. Signed by `speedMs`, so reversing steers backwards like a
-		// real car, and zero at rest. The boost has to scale BOTH — lifting the cap
-		// alone does nothing below ~25 km/h, where the geometric term is the binding
-		// one, i.e. at exactly the speeds anyone yanks a handbrake. The cap runs on the
-		// full lateral μ, not the reduced one below: the fronts are never the axle that
-		// lets go, and it is the fronts that set how fast a car can rotate.
+		// The planted car: the lesser of the geometric and grip-limited rate, both
+		// scaled by the boost (see CLAUDE.md's yaw-authority bullets).
 		const yawDemand = ((speedMs * Math.tan(carSim.steerAngle)) / hw.wheelbase) * boost;
 		const yawCap = (latGrip * boost * G) / Math.max(absSpeed, YAW_MIN_SPEED);
-		// …minus the rear tyres pulling the nose back toward the direction of travel —
-		// SCALED BY HOW MUCH REAR GRIP IS LEFT TO DO IT WITH. A spinning tyre aligns
-		// nothing, so the aligning moment has to fade exactly as the rear lets go.
-		// As a constant it did the opposite: the harder you loosened the rear, the
-		// harder the car fought you, and full lock plus full throttle at walking pace
-		// produced a 130 m circle instead of a donut. With the scaling that same input
-		// settles into a 7-14 m circle at ~33°/s.
-		//
-		// Zero in Grip. Elsewhere it is the auto-catch: it ends a slide when you lift
-		// (looseness drops back to `looseBase`, so this roughly doubles), it is what
-		// opposite lock is helping, and it is what makes the straight line
-		// self-correcting instead of merely uneventful.
+		// The auto-catch, scaled by how much rear grip is left — a spinning tyre
+		// aligns nothing (CLAUDE.md's `driftAlign` bullet). Zero in Grip.
 		const align = tune.driftAlign * (1 - loose);
 		const targetYaw = clamp(yawDemand, -yawCap, yawCap) - align * beta;
 
@@ -427,40 +350,25 @@ export function createCarController(spec: CarSpec, world: World) {
 		ang.y += (targetYaw - ang.y) * damp(tune.yawResponse, delta);
 		body.setAngvel(ang, true);
 
-		// Grip — bleed the sideways velocity, but never faster than the tyres could
-		// actually pull it back. That LIMIT is the whole cornering model: the bleed used
-		// to be a bare exponential, which is an infinitely strong constraint (at the
-		// car's gripRate it removes ~70 g), so even the drift end still snapped the car
-		// straight inside a tenth of a second and the handbrake read as a turn-tighter
-		// button rather than a slide. μ is what a slide IS — full grip when planted,
-		// `handbrakeMuLat` with the rears locked, interpolated across the drivetrain's
-		// `gripFactor` so wheelspin steps the back out too.
-		//
-		// The two agree by construction: holding the yaw cap costs exactly v·ω = μ·g of
-		// sideways bleed per second, so a planted car never runs out and never slides.
-		// Vertical motion (gravity, slopes) passes through untouched.
+		// Bleed the sideways velocity, capped at what the tyres could actually pull
+		// back (CLAUDE.md "Cornering is the μ, not the damp rate"). μ runs from
+		// `handbrakeMuLat` to `latGrip`, interpolated across the drivetrain's
+		// `gripFactor`.
 		const muLat =
 			tune.handbrakeMuLat + (latGrip - tune.handbrakeMuLat) * clamp(out.gripFactor, 0, 1);
 		const settle = vLateral * damp(hw.gripRate, delta);
 		const bleedLimit = muLat * G * UNITS_PER_METER * delta; // m/s² → world units/s this step
-		// The share of the lateral budget this corner demands — demanded bleed over
-		// the cap. Pins at 1 exactly at max banking (v·ω = μ·g at the yaw cap), sits
-		// well under it in a normal corner. The squeal reads it (carAudio): Grip's
-		// planted limit cornering has no drift angle and no wheelspin for any other
-		// source to see.
+		/** Share of the lateral budget this corner demands, 0..1 — pins at 1
+		 *  exactly at max banking; the squeal (carAudio) reads it. */
 		const latLoad = clamp(Math.abs(settle) / bleedLimit, 0, 1);
 		const bleed = clamp(settle, -bleedLimit, bleedLimit);
 		_vel.addScaledVector(_right, -bleed);
 		body.setLinvel({ x: _vel.x, y: _vel.y, z: _vel.z }, true);
 
-		// ── What the suspension leans on ────────────────────────────────────
-		// Both accelerations are the MODEL'S OWN, not a finite difference of the
-		// body's pose: this is the exact longitudinal force handed to Rapier over
-		// the mass, and the exact sideways delta-v the grip model just applied,
-		// over the step. Free, noiseless and one frame EARLIER than differencing
-		// the result would be. `-bleed` because the bleed is applied along
-		// `-_right` and the reaction the body feels points the other way — so
-		// this is positive in a left-hand corner, matching body +X.
+		// The suspension's input: the model's OWN accelerations, not a finite
+		// difference of the pose (CLAUDE.md's suspension section). `-bleed`
+		// because the bleed is applied along `-_right` and the reaction points
+		// the other way, so this is positive in a left-hand corner (body +X).
 		carSim.accelFwd = (out.driveForce + out.resistForce) / hw.mass;
 		carSim.accelLat = -bleed / delta / UNITS_PER_METER;
 
@@ -496,13 +404,9 @@ export function createCarController(spec: CarSpec, world: World) {
 		carSim.nitrousTank = nitrousBottle;
 		carSim.nitrousPurge = nitrousPurge;
 
-		// ── The debug feed ──────────────────────────────────────────────────
-		// Publishes only — every number here was already computed above. They
-		// exist because `debug/DebugRig.svelte` draws them and the HUD's debug
-		// panel prints them, and because a rig that re-derives them from what IS
-		// published ends up showing a car the physics never drove: its wheel
-		// spin used to be `speedMs × (1 + slip·0.8)`, a fudge for the real
-		// overspeed `state.spin` carries.
+		// The debug feed — publishes only, every number already computed above.
+		// The rig must never re-derive one of these (CLAUDE.md's "if the rig
+		// needs a number, publish the number").
 		carSim.spin = drivetrain.state.spin;
 		carSim.clutch = drivetrain.state.clutch;
 		carSim.driveForce = out.driveForce;

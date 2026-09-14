@@ -113,17 +113,11 @@
 		}
 	});
 
-	// ── Weather ──────────────────────────────────────────────────────────────────
-	//
-	// The rain bed and thunder claps live in ./weatherAudio.ts (rationale in its
-	// header and audio/CLAUDE.md). This component only registers the sound files and
-	// ticks the module — never an $effect; the descriptor is plain state.
+	// Weather: rain bed + thunder claps live in ./weatherAudio.ts; this just ticks it.
 	useTask(
 		(delta) => {
 			tickWeatherAudio(delta);
 		},
-		// autoInvalidate OFF, as everywhere else — an audio tick must not force frames.
-		// The main stage runs every rAF regardless of draws, so the tick is unaffected.
 		{ autoInvalidate: false }
 	);
 </script>
@@ -170,9 +164,7 @@
 	userData={{ hideInTree: true, selectable: false }}
 />
 
-<!-- Weather. The rain bed loops forever, faded by volume rather than started/stopped
-     per shower; thunder is one-shots, cloned so strikes overlap. All are played by
-     ./weatherAudio.ts via the task above, never by an effect. -->
+<!-- Rain bed loops forever, faded by volume; thunder is one-shots, cloned so strikes overlap. -->
 <Audio
 	src={RAIN_URL}
 	loop

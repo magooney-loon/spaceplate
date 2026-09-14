@@ -1,10 +1,6 @@
 // Camera flypath state + actions. Anything that needs the camera, the curve or a
 // frame task is in `FlyPath.svelte`, reached through the driver slot below.
-//
-// EASING IS GLOBAL, NOT PER SEGMENT. Easing each segment separately would drive velocity
-// to zero at every waypoint — a stop-and-go crawl rather than a flythrough. So the ease
-// shapes progress across the whole path, and the per-waypoint durations shape pacing
-// within it. The two are independent knobs.
+// Easing is global, not per segment — see "Easing is global" in flypath/CLAUDE.md.
 
 import { logEngine } from '$extensions/logger';
 import type {

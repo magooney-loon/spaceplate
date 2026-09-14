@@ -115,27 +115,11 @@ const MRT_FINALIZE: Record<MrtRequirement, (basePass: any, mrtNode: any) => void
 };
 
 /**
- * The private shader-cache namespaces the MRT base pass renders under, ONE PER
- * ATTACHMENT SET and reused for the lifetime of the module. See step 2b below for what
- * they are for; this is about how long they live.
- *
- * **A FRESH `context()` PER BUILD RECOMPILES THE ENTIRE SCENE.** `RenderObject`'s cache
- * key hashes `renderer.contextNode.id`/`.version` (RenderObject.js `getDynamicCacheKey`)
- * into `initialCacheKey`, `RenderObjects.js` throws away any render object whose key has
- * moved, and `NodeManager` keys the compiled program off the same value — so a new
- * context identity is a full-scene shader rebuild, every material, in the frame the new
- * graph first draws. That is a real hitch, and structural rebuilds are not rare: the two
- * lens effects latch on weather and camera speed (`lensActivity`), so driving into rain
- * recompiled every material in the scene, and then again on the way out.
- *
- * Keying on the ATTACHMENT SET keeps the property the isolation was bought for — a
- * different set of attachments must not reuse a shader compiled for another one — while a
- * rebuild that leaves the attachments alone (every chain effect: they declare
- * `requires: []`) keeps the whole scene's shader cache warm. Toggling an MRT consumer off
- * and back on returns to the SAME namespace and hits that cache too.
- *
- * Deliberately never disposed and never `track`ed: these must outlive the builds that use
- * them, and the map is bounded by the number of distinct attachment sets (≤ 8 today).
+ * Private shader-cache namespaces the MRT base pass renders under, ONE PER ATTACHMENT
+ * SET, reused for the module's lifetime — a fresh `context()` per build recompiles the
+ * whole scene (the MRT shader-cache trap, ./CLAUDE.md). Deliberately never disposed or
+ * `track`ed: must outlive the builds that use them; bounded by distinct attachment sets
+ * (≤ 8 today).
  */
 const passContexts = new Map<string, any>();
 
@@ -229,19 +213,11 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			}
 		}
 
-		// 2b. Shader-cache isolation for the MRT pass — LOAD-BEARING, not a tuning
-		// knob (full trap in ./CLAUDE.md). Compiled shaders are cached under
-		// `RenderObject.initialCacheKey`, which carries NO MRT information, so any
-		// other render of this scene without MRT (Studio's viewport, Sky.svelte's
-		// CubeCamera env bake) compiles a one-output shader under the same key —
-		// this pass then reuses it against N attachments and motion blur dies on a
-		// WebGPU validation error.
-		//
-		// `renderer.contextNode.id` IS in the key, and PassNode swaps in its own
-		// contextNode for the duration of its render — so an empty `context()` here
-		// gives the pass a private cache namespace: same generated code, different
-		// key. Ask the PASS, not `resolution.mrt`: a base-pass effect may provision
-		// its own MRT internally and slip through unisolated.
+		// 2b. Shader-cache isolation for the MRT pass — LOAD-BEARING, not a tuning knob
+		// (full trap in ./CLAUDE.md). An empty `context()` gives the pass a private cache
+		// namespace so a differently-shaped render of the same scene can't reuse its
+		// compiled shader. Ask the PASS, not `resolution.mrt`: a base-pass effect may
+		// provision its own MRT internally and slip through unisolated.
 		const passMrt = basePass.getMRT();
 		if (passMrt !== null) basePass.contextNode = isolationContext(passMrt);
 
@@ -275,11 +251,10 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			uniforms.set(def.id, bag);
 		}
 
-		// 5. The output colour transform, owned here rather than by an effect: if any
-		// active effect declares `displayColor`, disable the pipeline's automatic
-		// transform once and fold in exactly one renderOutput() — two callers would
-		// tone-map twice. Tone mapping stays Threlte's: this READS
-		// renderer.toneMapping, never writes it.
+		// 5. Output colour transform, owned here: if any active effect declares
+		// `displayColor`, disable the pipeline's automatic transform and fold in exactly
+		// one renderOutput() — two callers would tone-map twice. Reads
+		// renderer.toneMapping, never writes it (Threlte owns it).
 		const activeDefs = resolution.active.map((id) => EFFECTS_BY_ID.get(id)!);
 		const wantsDisplayColor = activeDefs.some((def) => def.displayColor);
 		// Reset first — a previous build may have disabled it.

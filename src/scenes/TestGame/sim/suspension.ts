@@ -1,51 +1,9 @@
-// The suspension — FOUR RAYCAST SPRINGS, and the one owner of the car's ride
-// height and body attitude. Created PER CAR from its spec (`createSuspension`);
-// the controller owns the instance — the same pattern as its drivetrain — so
-// every tuning knob is the spec's `suspension` block (cars/types.ts) and two
-// cars cannot share a ride. Two halves that must not be confused:
-//
-//   PHYSICS (`step`, physics rate, from the controller's resetForces) — casts a
-//   ray down at each wheel patch, turns the four compressions into ONE vertical
-//   force and hands it to Rapier. This is what the car stands on. It replaced
-//   four rigid ball colliders, and the reason is the kerbs: a ball is an
-//   infinitely stiff spring, so a 3 cm lip under one wheel had to lift the whole
-//   car 3 cm inside a single step, and with pitch and roll LOCKED there was no
-//   corner free to absorb it. A spring takes ~0.2 s over the same lip. Rays also
-//   cannot generate a ghost contact at a trimesh's internal edges, which is the
-//   other half of the "snags on nothing" class of bug.
-//
-//   VISUAL (`update`, render rate, from TestGame.svelte) — the body attitude
-//   the model, the wheels and the debug rig are all posed with.
-//
-// ── Why the force is a SUM and the lean is a fake ────────────────────────────
-// `enabledRotations={[false, true, false]}` leaves only yaw free, so a force
-// applied at a corner contributes its share of the lift and its torque is
-// DISCARDED. Four corner springs therefore buy exactly one thing physically —
-// heave — and that is the half that matters for smoothness. The pitch and roll
-// are synthesised here from two sources the body cannot express itself:
-//   · LOAD TRANSFER, from the driving model's own accelerations (`carSim.accelFwd`
-//     / `accelLat` — the force the controller hands Rapier over the mass, and the
-//     sideways delta-v the grip model applied over the step; exact and noiseless,
-//     where finite-differencing the interpolated pose needed a filter to be
-//     readable, and `accelLat` inherits the grip clamp so a car already sliding
-//     at μ·g stops leaning harder);
-//   · ROAD FOLLOW, from how much further the ground is under each wheel than
-//     under the others. This is what makes a kerb ROLL the car onto it instead of
-//     jolting it, and what leans the body on camber.
-// The two are summed into one per-corner target and chased by a spring-damper —
-// so the visual body MOVES to an attitude rather than arriving at one. ζ < 1
-// buys the overshoot; at 1 it is a soft slide into place, over 1 it is mush.
-//
-// ── THE COMPRESSION MOVES THE BODY, NOT THE WHEELS ──────────────────────────
-// Getting this backwards is the bug the whole file came out of: the rig dived
-// under power, squatted under braking and leaned INTO its corners. The corner
-// numbers were right; the wrong END of the strut was moving. Wheels sit where
-// their ray says the ground is (`wheelY`); the body moves around them, and
-// `travel` is the per-corner offset that reconciles the two — measured off the
-// attitude matrix, not assumed equal to the compression.
-//
-// Nothing here reads a rendered object or writes one. The physics half only ever
-// adds a force; the visual half only ever produces numbers.
+// Four raycast springs: the car's ride height and body attitude, per car
+// (`createSuspension(spec)`). Two halves — see CLAUDE.md "The suspension":
+// PHYSICS (`step`, physics rate) casts a ray per wheel patch and hands Rapier
+// one summed vertical force; VISUAL (`update`, render rate) turns the four
+// compressions into the heave/pitch/roll the model, wheels and debug rig are
+// posed with. Nothing here reads or writes a rendered object directly.
 
 import * as THREE from 'three/webgpu';
 import { Ray, type RigidBody as RapierRigidBody, type World } from '@dimforge/rapier3d-compat';
@@ -178,20 +136,12 @@ export function createSuspension(spec: CarSpec) {
 	const _bodyQ = new THREE.Quaternion();
 
 	/**
-	 * Cast the four rays, apply the summed spring force. Call from the controller's
-	 * physics step, AFTER its `resetForces` — Rapier accumulates forces until they
-	 * are cleared, so clearing after this would throw the car's own weight support
-	 * away. It must run on EVERY path through the step, including the parked and
-	 * startup early-returns: there are no wheel colliders any more, so a step that
-	 * skips this is a step the car falls through its own suspension onto the
-	 * undertray.
-	 *
-	 * The ray is straight down in WORLD space, which is also the body's own down —
-	 * only yaw is free, so the two can never diverge.
-	 *
-	 * Takes no `delta`: nothing here is integrated. The spring force is a pure
-	 * function of the current compression and the body's current vertical velocity,
-	 * and Rapier does the integrating.
+	 * Cast the four rays, apply the summed spring force. Call AFTER the
+	 * controller's `resetForces`, on EVERY path through the physics step
+	 * (including parked/startup early-returns) — there are no wheel colliders,
+	 * so a skipped step falls through onto the undertray. Takes no `delta`:
+	 * the force is a pure function of the current compression and vertical
+	 * velocity; Rapier does the integrating.
 	 */
 	function step(body: RapierRigidBody, world: World): void {
 		const t = body.translation();
@@ -262,12 +212,9 @@ export function createSuspension(spec: CarSpec) {
 	const road = [0, 0, 0, 0];
 
 	/**
-	 * Advance the visual springs and rebuild the pose. Call ONCE per rendered frame
-	 * from a `{ before: autoRenderTask }` task — the scene's own (TestGame.svelte),
-	 * which registers before its children so everything downstream reads a fresh
-	 * pose in the same frame. Never from a physics task: this is pixels, not
-	 * simulation, and the substep count per frame is never constant (the CarWheels
-	 * rule).
+	 * Advance the visual springs and rebuild the pose. Call ONCE per rendered
+	 * frame from the scene's `{ before: autoRenderTask }` task, never from a
+	 * physics task (see CLAUDE.md "The suspension").
 	 */
 	function update(delta: number): void {
 		const dt = Math.min(delta, MAX_STEP);

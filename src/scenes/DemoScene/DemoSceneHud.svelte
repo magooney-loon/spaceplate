@@ -8,9 +8,7 @@
 	);
 </script>
 
-<!-- Demo Scene HUD -->
 <div class="hud">
-	<!-- Back Button -->
 	<button
 		onclick={() => {
 			soundActions.playClick();
@@ -21,7 +19,6 @@
 		← Back to Menu
 	</button>
 
-	<!-- Demo Instructions -->
 	<div class="info">
 		<p>Physics running at {framerateLabel}</p>
 	</div>

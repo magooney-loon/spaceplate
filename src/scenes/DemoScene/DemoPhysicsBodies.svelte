@@ -4,10 +4,6 @@
 	import { PositionalAudio } from '@threlte/extras';
 	import { RigidBody, Collider, usePhysicsTask, useRapier } from '@threlte/rapier';
 	import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';
-	// three/webgpu, not 'three' (src/CLAUDE.md): the two entrypoints are separate builds,
-	// so the same class name from each is a DIFFERENT class object — the mixing hazard
-	// behind DOCS/webgpu-notes.md §1. three/webgpu re-exports all of Three.Core, so this
-	// is a drop-in. (Bundle size is unchanged; the duplicate classes were tree-shaken.)
 	import * as THREE from 'three/webgpu';
 	import { CubeCamera, CubeRenderTarget } from 'three/webgpu';
 	import { FlakesTexture } from 'three/addons/textures/FlakesTexture.js';
@@ -188,27 +184,15 @@
 		return () => geometry.dispose();
 	});
 
-	// Live reflections for the corner balls — one SHARED cube capture instead of four:
-	// a single CubeCamera parks at the floor's center at ball height, safely inside the
-	// mirror sphere's orbit ring, and all four materials sample the same map.
-	// Trade-off: parallax is center-of-floor rather than per-ball — broad content
-	// (sky, sun disc, the mirror floor, the orbiting sphere, spawned bodies) reads
-	// correctly; only precise neighbour geometry lands slightly off, which
-	// 0.8-radius spheres don't show.
-	//
-	// The map goes through the same PMREM chain as scene.environment (CubeCamera
-	// flags needsPMREMUpdate itself, PMREMNode re-filters on version change), so the
-	// balls keep roughness-filtered reflections. envMapIntensity is mirrored from
-	// scene.environmentIntensity each tick because an explicit material.envMap
-	// switches the intensity source away from the scene value (MaterialProperties).
-	// Size, rate and the low-quality fallback (scene.environment instead of a capture)
-	// come from the quality preset (demoQuality.ts). The balls are stationary, so only
-	// moving content (the mirror sphere, spawned bodies, weather) needs the refresh.
-	//
-	// The target and camera are REBUILT when the size changes rather than resized:
-	// RenderTarget.setSize() writes width/height onto `texture.image`, which for a
-	// CubeTexture is the six-image ARRAY, so the faces themselves never change size.
-	// Preset changes come from a settings click, never per frame.
+	// Live reflections for the corner balls — one SHARED cube capture (a CubeCamera
+	// parked at the floor's center at ball height) instead of four. Trade-off: parallax
+	// is center-of-floor rather than per-ball, which 0.8-radius spheres don't show.
+	// The map goes through the same PMREM chain as scene.environment, so reflections
+	// stay roughness-filtered. envMapIntensity is mirrored from scene.environmentIntensity
+	// each tick — an explicit material.envMap switches the intensity source away from
+	// the scene value. Rebuilt (not resized) when the size preset changes: for a
+	// CubeTexture, RenderTarget.setSize() only writes the six-image array's per-image
+	// size, never the faces themselves.
 	const ballCapture = $derived(
 		new CubeRenderTarget(quality.ballCaptureSize, { type: THREE.HalfFloatType })
 	);
@@ -249,23 +233,15 @@
 		{ after: autoRenderTask, autoInvalidate: false }
 	);
 
-	// Orbiting mirror sphere — three's webgpu_materials_basic example (MeshBasicMaterial
-	// + envMap), except the envMap is a LIVE cube capture: a small CubeCamera rides at
-	// the sphere's position and re-renders six faces, so the reflection shows the floor
-	// (itself a mirror — see DemoScene), the corner balls, spawned bodies and the sun
-	// disc (which Sky.svelte's env bake hides). The capture runs AFTER the main render
-	// on purpose: the floor's reflector updates its render target per
-	// renderer.render() call for the active camera, so rendering the main view first
-	// keeps the floor's reflection correct for the player's camera — the sphere then
-	// samples a one-frame-old map, which a perpetually moving mirror never shows.
-	// HalfFloat, sphere hidden during capture to avoid a fully self-occluded frame. Same
-	// CubeCamera-in-a-task pattern as Sky.svelte's bake. Face size and rate come from
-	// the quality preset (rebuilt on change, same CubeRenderTarget reason as the balls);
-	// unlike the ball capture this one is never switched off (demoQuality.ts).
-	//
-	// PERF: each capture is six scene renders, hence the throttle — a 4 u/s mirror shows
-	// no visible stepping at 30 Hz. The floor's reflection is suspended for the duration
-	// (mirrorFloor.ts).
+	// Orbiting mirror sphere — MeshBasicMaterial with a LIVE cube capture: a CubeCamera
+	// at the sphere's position re-renders six faces each tick, showing the floor, corner
+	// balls, spawned bodies and the sun disc. Capture runs AFTER the main render on
+	// purpose — the floor's reflector updates per `renderer.render()` call, so rendering
+	// the main view first keeps the floor's reflection correct for the player's camera;
+	// the sphere then samples a one-frame-old map, invisible on a perpetually moving
+	// mirror. Sphere hidden during capture to avoid a fully self-occluded frame. Never
+	// switched off at low quality, unlike the ball capture (demoQuality.ts) — it's the
+	// centrepiece.
 	const mirrorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 	const mirrorCapture = $derived(
 		new CubeRenderTarget(quality.mirrorCaptureSize, { type: THREE.HalfFloatType })

@@ -1,13 +1,8 @@
 import type { EnvTextureEntry, CubeTextureEntry } from './types';
 import { BASE_URL } from '$extensions/settings';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Equirectangular / HDR / EXR textures  →  used with <Environment>
-// Drop files into: public/textures/skybox/hdr/   (*.hdr)
-//                  public/textures/skybox/exr/   (*.exr)
-//                  public/textures/skybox/equi_env/  (*.jpg / *.png)
-// Then add an entry below.
-// ─────────────────────────────────────────────────────────────────────────────
+// Equirectangular / HDR / EXR textures — used with <Environment>. Registering a new one
+// is described in ./CLAUDE.md.
 export const ENV_TEXTURES: EnvTextureEntry[] = [
 	{
 		id: 'aerodynamics_workshop',
@@ -46,11 +41,7 @@ export const ENV_TEXTURES: EnvTextureEntry[] = [
 	}
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Cube map textures  →  used with <CubeEnvironment>
-// Drop 6 face files into: public/textures/skybox/cube/<set-name>/
-// Face order: [px, nx, py, ny, pz, nz]  (pos/neg X Y Z)
-// ─────────────────────────────────────────────────────────────────────────────
+// Cube map textures — used with <CubeEnvironment>. Face order: [px, nx, py, ny, pz, nz].
 export const CUBE_TEXTURES: CubeTextureEntry[] = [
 	{
 		id: 'pisa',

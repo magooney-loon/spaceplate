@@ -1,16 +1,6 @@
 <script lang="ts">
-	// The gamepad half of the slot system: `useGamepad` from @threlte/extras, read
-	// once per frame into the registry's device state.
-	//
-	// WRAPPED, NOT REIMPLEMENTED. useGamepad already owns standard-mapping button
-	// names, the vendor:product table for non-standard pads, hotplug, analog trigger
-	// values and its own `autoInvalidate: false` polling task — and its button names
-	// (`clusterBottom`, `leftTrigger`, …) are the ones this project's binding types
-	// were copied from in the first place. What it does not do is bindings,
-	// persistence or a settings UI, which is exactly the part that lives here.
-	//
-	// KEYED ON THE PAD INDEX by the parent: useGamepad takes its options once, so
-	// selecting a different pad means a fresh instance.
+	// The gamepad half of the slot system: wraps `useGamepad` (@threlte/extras), read
+	// once per frame into the registry's device state. See input/CLAUDE.md.
 	import { untrack } from 'svelte';
 	import { useTask } from '@threlte/core/webgpu';
 	import { useGamepad } from '@threlte/extras';
@@ -43,13 +33,9 @@
 		'directionalRight'
 	];
 
-	// Deadzone is applied HERE, not by useGamepad: its `axisDeadzone` is one number
-	// for the whole pad and a hard cut, while the settings expose a per-stick value
-	// and a slow stick should stay usable. So: 0 there, radial + RESCALED here —
-	// magnitude is remapped from (deadzone…1] onto (0…1], which keeps small
-	// deflections available instead of snapping to zero and then jumping.
-	// `untrack` because reading `index` once IS the contract: useGamepad takes its
-	// options at construction, and the parent's `{#key}` remounts us when it changes.
+	// Deadzone applied HERE (not useGamepad's `axisDeadzone`, a hard per-pad cut): per-stick,
+	// magnitude rescaled from (deadzone…1] onto (0…1] so a slow stick stays usable.
+	// `untrack` — reading `index` once is the contract; the parent's `{#key}` remounts on change.
 	const gamepad = useGamepad({ index: untrack(() => index) ?? undefined, axisDeadzone: 0 });
 
 	const buttons = new Map<GamepadButton, number>();
@@ -80,10 +66,8 @@
 
 	let wasLive = false;
 
-	// Registered `after: gamepad.task` — which puts it in useGamepad's own (main)
-	// stage, right behind the poll that fills it. The input frame stage runs earlier,
-	// before simulation, so a poll placed there would read the PREVIOUS frame's
-	// snapshot; this reads the current one.
+	// `after: gamepad.task` — right behind the poll that fills it, in useGamepad's main
+	// stage; the input frame stage runs earlier (before simulation) and would read stale data.
 	useTask(
 		'input.gamepad',
 		() => {

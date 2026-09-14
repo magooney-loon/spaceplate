@@ -1,12 +1,5 @@
-// Weather audio: the rain bed and the thunder claps, driven from the sky.
-//
-// THE CONTRACT: the audio consumer of the sky's plain state (core/skybox/CLAUDE.md) --
-// the descriptor is a plain mutable object written by one model task, lightning
-// publishes strikes to `flashState`, and nothing here may be an `$effect` (it would
-// run once at mount and never again). GlobalAudio mounts the `<Audio>` objects, hands
-// them over via the attach functions, and its task calls `tickWeatherAudio(delta)`.
-// The triggers deliberately do NOT live in the layers: layers unmount with the
-// environment mode, and a looping bed must not (audio/CLAUDE.md).
+// Weather audio: the rain bed and the thunder claps, driven from the sky. See
+// audio/CLAUDE.md for the contract (never an `$effect` here).
 
 import type { Audio as ThreeAudio } from 'three';
 import { settingsState } from '$extensions/settings';
@@ -20,20 +13,11 @@ const RAIN_FADE = 1.6;
 /** Snow is nearly silent, but not silent -- a whiteout has a hiss to it. */
 const SNOW_SHARE = 0.18;
 
-/**
- * Metres per second. Real thunder is the same event as the flash arriving late, and
- * that delay is most of what gives a storm a sense of scale -- a bolt overhead cracks
- * within a second, one on the horizon rumbles ten seconds after you saw it.
- */
+/** Metres per second -- paces the flash-to-thunder delay that sells a storm's scale. */
 const SPEED_OF_SOUND = 343;
 /** Distance at which a strike is inaudible. Beyond this no thunder is scheduled. */
 const THUNDER_RANGE = 4200;
-/**
- * Share of bolt strikes that voice thunder. The strike scheduler is paced for the EYE
- * (a bolt every couple of seconds at a full channel), and a clap at that rate stops
- * reading as weather. Uniform in distance on purpose: nearness already decides how a
- * clap sounds, not whether the storm owes you one.
- */
+/** Share of bolt strikes that voice thunder -- a clap for every bolt reads as an fx loop, not weather. */
 const BOLT_THUNDER_CHANCE = 0.75;
 
 let lastStrikeId = flashState.strikeId;
@@ -55,19 +39,10 @@ export const attachThunderAudio = (audio: ThreeAudio): void => {
 };
 
 /**
- * Make one clap not sound like the last -- a storm that replays one take
- * byte-for-byte reads as a sound effect, not weather. Both terms derive from the
- * strike's distance:
- *
- * - Playback rate. A near strike cracks sharp and short; a far one stretches into a
- *   deeper, longer rumble (tape-style rate moves pitch and duration together).
- * - Lowpass cutoff. Air scatters the high frequencies out over kilometres, so the
- *   far end keeps only the rumble. Nearness is squared so the crack is reserved for
- *   genuinely close strikes -- mid-range stays dark.
- *
- * Both are jittered, so two strikes at the same distance never match. The filter
- * node must be created per clap: `clone()` shares the template's filter array by
- * reference.
+ * Vary each clap by the strike's distance: playback rate (near = sharp and short, far =
+ * deep and long) and lowpass cutoff (air scatters highs over distance; nearness squared
+ * so only close strikes crack). Both jittered so no two claps match. A new filter node
+ * per clap -- `clone()` shares the template's filter array by reference.
  */
 const modulateClap = (clap: ThreeAudio, distance: number): void => {
 	const nearness = Math.max(0, 1 - distance / THUNDER_RANGE);
