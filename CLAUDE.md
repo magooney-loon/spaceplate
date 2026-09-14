@@ -37,35 +37,20 @@ DOCS/              — webgpu-notes.md (WebGPU/Studio gotchas — read before de
 ## Commands
 
 ```bash
-pnpm dev                          # Vite dev server
 pnpm build                        # Production build (also writes stats.html bundle report)
-pnpm preview
-
-pnpm spacetime:generate           # Regenerate src/module_bindings from spacetimedb/
-pnpm spacetime:publish:local      # Publish module to local server
-pnpm spacetime:publish:local:fresh # Publish with --delete-data
-pnpm spacetime:publish            # Publish to maincloud
 
 npx svelte-check                  # Type-check (tsconfig is noEmit)
 ```
 
 Studio mode (dev-only 3D editor toolbar): `VITE_GAME_ENGINE=true pnpm dev`.
 
-Target database and server live in `spacetime.json` (`spaceplate-j29m7` on `maincloud`).
+Target database and server live in `spacetime.json`.
 Client connection host/db come from `VITE_SPACETIMEDB_HOST` / `VITE_SPACETIMEDB_DB_NAME` (see `.env.example`).
 
 ## Path aliases
 
-Defined in both `vite.config.ts` and `tsconfig.json` — keep the two in sync when adding one.
-
-| Alias         | Path                   |
-| ------------- | ---------------------- |
-| `$root`       | `src/`                 |
-| `$core`       | `src/core/`            |
-| `$extensions` | `src/extensions/`      |
-| `$scenes`     | `src/scenes/`          |
-| `$lib`        | `src/lib/`             |
-| `$bindings`   | `src/module_bindings/` |
+Six aliases (`$root`, `$core`, `$extensions`, `$scenes`, `$lib`, `$bindings`) map to `src/` subdirectories —
+see `vite.config.ts`. Defined in both `vite.config.ts` and `tsconfig.json` — keep the two in sync when adding one.
 
 ## Conventions
 
