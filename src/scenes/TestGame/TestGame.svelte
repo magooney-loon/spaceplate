@@ -31,7 +31,10 @@
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
 	import { buildCarHull, chassisMassProperties } from './cars/hull';
-	import Track from './world/Track.svelte';
+	// MAP EXPERIMENT: NFSU2 map mounted instead of the track — Track.svelte is
+	// untouched, restore this import and the <Track /> line below to revert.
+	// import Track from './world/Track.svelte';
+	import Nfsu2Map from './world/Nfsu2Map.svelte';
 	import { resetCarTelemetry, publishCarPose } from './sim/carTelemetry.svelte';
 	import { pollHullContacts, resetHullContacts } from './sim/hullContacts';
 
@@ -277,10 +280,12 @@
 	});
 </script>
 
-<!-- The world — the track GLB, its scene pose, its static colliders and its
-     half of the shadow policy. Maps live in world/; see world/Track.svelte
-     (decoders passed down so the scene shares ONE loader set with the car). -->
-<Track {decoders} />
+<!-- The world — MAP EXPERIMENT: the NFSU2 rips (world/Nfsu2Map.svelte, one
+     AutoColliders-trimesh piece per GLB, loaded as is) are mounted instead of
+     the track. Track.svelte is unchanged — swap this one line back to
+     <Track {decoders} /> (and its import above) to revert. Decoders are passed
+     down so the scene shares ONE loader set with the car. -->
+<Nfsu2Map {decoders} />
 
 <!-- Player car. The outer group is the spec's spawn pose (RigidBody reads its
      world transform at creation); the visual scale lives on the children so the
