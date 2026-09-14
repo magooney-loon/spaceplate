@@ -31,10 +31,7 @@
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
 	import { buildCarHull, chassisMassProperties } from './cars/hull';
-	// MAP EXPERIMENT: NFSU2 map mounted instead of the track — Track.svelte is
-	// untouched, restore this import and the <Track /> line below to revert.
-	// import Track from './world/Track.svelte';
-	import Nfsu2Map from './world/Nfsu2Map.svelte';
+	import Track from './world/Track.svelte';
 	import { resetCarTelemetry, publishCarPose } from './sim/carTelemetry.svelte';
 	import { pollHullContacts, resetHullContacts } from './sim/hullContacts';
 
@@ -53,21 +50,10 @@
 	// them). What LATCHES is still this scene's (sim/carSwitches.svelte.ts).
 
 	const car = currentCar();
-	// MAP EXPERIMENT — spawn for the NFSU2 airport map, measured from
-	// airport.glb's JSON (the flattest big FWY_TOP road patch: dead-flat
-	// 190×643 units at model y 271.9, centred x 2350 / z 725 — minus the map's
-	// -220 offset, plus the same ~2-unit drop the track spawn uses). The runway
-	// runs along z, which is yaw 0 for this car. THE TRACK SPAWN lives in the
-	// spec, cars/gr86.ts: position [15, 2, 0], rotation [0, 0, 0] — delete this
-	// override to give it back to the car.
-	const MAP_SPAWN = {
-		position: [2289.6, 54, 725] as [number, number, number],
-		rotation: [0, 0, 0] as [number, number, number]
-	};
 	// T.Group's position/rotation props want mutable tuples; the spec's are
 	// readonly data. Widened once, here, at the only consumer.
-	const spawnPosition = [...MAP_SPAWN.position] as [number, number, number];
-	const spawnRotation = [...MAP_SPAWN.rotation] as [number, number, number];
+	const spawnPosition = [...car.model.spawn.position] as [number, number, number];
+	const spawnRotation = [...car.model.spawn.rotation] as [number, number, number];
 
 	// Both models are draco + KTX2 compressed, so the decoders must be handed to useGltf
 	// (same setup as the gltf-viewer extension: DRACO/KTX2 fetch their decoder binaries
@@ -291,12 +277,10 @@
 	});
 </script>
 
-<!-- The world — MAP EXPERIMENT: the NFSU2 rips (world/Nfsu2Map.svelte, one
-     AutoColliders-trimesh piece per GLB, loaded as is) are mounted instead of
-     the track. Track.svelte is unchanged — swap this one line back to
-     <Track {decoders} /> (and its import above) to revert. Decoders are passed
-     down so the scene shares ONE loader set with the car. -->
-<Nfsu2Map {decoders} />
+<!-- The world — the track GLB, its scene pose, its static colliders and its
+     half of the shadow policy. Maps live in world/; see world/Track.svelte
+     (decoders passed down so the scene shares ONE loader set with the car). -->
+<Track {decoders} />
 
 <!-- Player car. The outer group is the spec's spawn pose (RigidBody reads its
      world transform at creation); the visual scale lives on the children so the
