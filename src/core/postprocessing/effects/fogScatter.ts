@@ -6,14 +6,7 @@
 
 import { mix, rtt, screenUV, smoothstep, vec3, vec4 } from 'three/tsl';
 import { HalfFloatType, LinearMipmapLinearFilter } from 'three/webgpu';
-import {
-	fogScatterActivity,
-	uFogCameraFar,
-	uFogColor,
-	uFogFar,
-	uFogNear,
-	uFogScatter
-} from '$core/skybox/fogScatter.svelte';
+import { fogScatterActivity, uFogFar, uFogNear, uFogScatter } from '$core/skybox/fogScatter.svelte';
 import type { EffectDef } from '../types';
 
 export type FogScatterParams = {
@@ -38,17 +31,6 @@ export type FogScatterParams = {
 	 * scattering is thin.
 	 */
 	inputClamp: number;
-	/**
-	 * How far the SKY is pulled toward the fog colour at full weather fog — the one thing
-	 * scene fog structurally cannot do. Every sky layer sets `material.fog = false` (at
-	 * radius 1000 any fog at all resolves the dome to flat fog colour), so without this a
-	 * whiteout dissolves the ground while leaving a perfectly legible sky above it, which
-	 * is the single loudest tell that the fog is a distance ramp and not weather.
-	 *
-	 * Not 1 by default: a fogged sky still has a bright side, and the dome is the only
-	 * thing left carrying where the sun is once the ground has gone.
-	 */
-	skyFill: number;
 };
 
 export const fogScatterEffect: EffectDef<FogScatterParams> = {
@@ -62,15 +44,14 @@ export const fogScatterEffect: EffectDef<FogScatterParams> = {
 	// `viewZ` is a PassNode builtin — no MRT attachment, so this effect adds no
 	// attachment to the union and never forces a scene-wide shader rebuild.
 	requires: ['viewZ'],
-	params: () => ({ strength: 0.85, blur: 3.2, inputClamp: 8, skyFill: 0.7 }),
+	params: () => ({ strength: 0.85, blur: 3.2, inputClamp: 8 }),
 	// Enabled by default and free when the weather is dry: with no fog the latch below
 	// keeps it out of the graph entirely, so the cost is exactly zero until it rains.
 	defaultEnabled: true,
 	ranges: {
 		strength: { min: 0, max: 1, step: 0.01 },
 		blur: { min: 0.5, max: 6, step: 0.1 },
-		inputClamp: { min: 1, max: 32, step: 0.5 },
-		skyFill: { min: 0, max: 1, step: 0.01 }
+		inputClamp: { min: 1, max: 32, step: 0.5 }
 	},
 	// The latch (see fogScatter.svelte.ts): the graph must not contain this effect while
 	// the weather is dry, because an inactive one still allocates a full-frame target and
@@ -115,16 +96,6 @@ export const fogScatterEffect: EffectDef<FogScatterParams> = {
 		// The base of the mix is the UNCLAMPED frame, so a bright light source keeps its
 		// real radiance wherever the scattering is thin (and keeps feeding bloom, which
 		// folds in after this).
-		const softened = mix(ctx.color, scattered, weight);
-
-		// THE DOME'S HALF. Restricted to SKY pixels rather than applied over the frame,
-		// which is what makes it safe to stack on top of scene fog: geometry out at the
-		// band's far edge has already been resolved to the fog colour by the `fogNode`, and
-		// mixing it there a second time would only flatten the inscatter that colour is
-		// carrying. A cleared depth buffer resolves to exactly the camera's `far` through
-		// `perspectiveDepthToViewZ`, so "nothing was drawn here" is a distance test; the
-		// ramp starts just inside it so the mask is smooth rather than a stencil.
-		const skyMask = smoothstep(uFogCameraFar.mul(0.97), uFogCameraFar.mul(0.999), distance);
-		return mix(softened, vec4(uFogColor, ctx.color.a), skyMask.mul(uFogScatter).mul(u.skyFill));
+		return mix(ctx.color, scattered, weight);
 	}
 };

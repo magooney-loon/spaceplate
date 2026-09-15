@@ -77,8 +77,7 @@ schedules the task again to decay them.
   `LensDriver.svelte`; DRY effects leave the graph entirely via the
   `lensActivity` structural latch, because a dry lens still evaluates the droplet
   field three times per pixel, fullscreen.
-- **`fogScatter`** — the fog band, the camera far plane, the base fog colour and the
-  weather's `fog` channel, written by
+- **`fogScatter`** — the fog band and the weather's `fog` channel, written by
   `SkyFog.svelte`'s task into `$core/skybox/fogScatter.svelte.ts`. Same shape as the
   lenses, including the latch (an inactive scatter still allocates a full-frame target
   and regenerates a mip chain every frame), and the same reason for the hysteresis. Its
@@ -171,22 +170,6 @@ bug, unpatched). The culprit was Studio's selection outline (`fragmentNode` for 
 overlay) — `patches/@threlte__studio` switches it to `colorNode`, which is visually
 identical and folds MRT correctly. Dev-only either way.
 
-### An in-scene overlay that writes no depth reads as SKY
-
-`fogScatter`'s `skyFill` tells sky from geometry by distance — a cleared depth buffer
-resolves to exactly the camera's `far`, and `SkyMesh` sets `depthWrite = false`, so the
-dome legitimately leaves the buffer cleared. Any OTHER material that opts out of depth
-writes is therefore indistinguishable from the sky, and gets the full whiteout mixed over
-it, plus the band's full blur.
-
-That is what made TestGame's rear-view mirror go transparent in fog: an overlay quad at
-the top of the frame, `depthWrite = false`, sitting over sky. The fix is on the overlay —
-**write depth** (`RearViewMirror.svelte`), which is also what keeps DoF and AO from
-reading the same lie. `depthTest` can stay off; it is the write that matters.
-
-Third entry in the same family as the two below, and the same underlying rule: overlays
-belong after post-processing, not in the base pass.
-
 ### Non-`output` MRT attachments do not blend
 
 `MRTNode` seeds blending for `output` only; every other attachment falls to no-blending
@@ -235,12 +218,7 @@ abs(viewZ + focus)))`. The bokeh `DepthOfFieldNode` was dropped for performance 
   `levelNode` route the lens effects established. The reference demo uses `gaussianBlur`,
   several taps per pixel for something one bilinear fetch approximates here. The mip
   level RAMPS with the band rather than sitting at its maximum everywhere, or the pixels
-  at the camera's feet would be as soft as the horizon. It also carries **`skyFill`**,
-  which is not scattering at all: the sky layers set `material.fog = false`, so the dome
-  is the one surface `scene.fogNode` can never reach, and this pass is where a whiteout
-  gets to white out the sky too. Masked to SKY PIXELS via `uFogCameraFar` (a cleared
-  depth buffer resolves to exactly `far`) so it cannot double-apply over geometry that
-  scene fog has already resolved — see `core/skybox/CLAUDE.md` for the full argument.
+  at the camera's feet would be as soft as the horizon.
 - **`motionBlur`** — three's Fn is the one sampler addon that does NOT
   `convertToTexture` its input; our wrapper does (an RTT when fed a computed node,
   e.g. anything after the basic DoF), otherwise it throws `inputNode.sample is not a
