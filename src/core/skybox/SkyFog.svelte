@@ -14,11 +14,14 @@
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import {
-		exponentialHeightFogFactor,
+		cameraPosition,
+		float,
 		fog as tslFog,
+		positionWorld,
 		rangeFogFactor,
 		reference,
 		renderGroup,
+		select,
 		uniform
 	} from 'three/tsl';
 	import { clamp01, descriptor, lerp } from './model';
@@ -43,18 +46,24 @@
 		/** Used before a default camera is registered, or for unusual cameras without `far`. */
 		fallbackFar?: number;
 		/**
-		 * Peak density of the GROUND layer -- the height-fog term that makes fog sit in
-		 * the world rather than hang at a fixed distance. Units are 1/(world unit²) and
-		 * the sane range is small: at a 144-unit far plane and a 20-unit layer, 0.0022 is
-		 * a thick bank and 0.0005 a suggestion. Retune against camera range, not by eye.
+		 * Density of the GROUND layer AT ITS BASE -- the height-fog term that makes fog sit
+		 * in the world rather than hang at a fixed distance. Units are 1/(world unit): the
+		 * optical depth of a horizontal ray at the base is `density × length`, so 0.05 puts
+		 * a ray at ~95% fogged by 60 units and 0.01 leaves it at 45% after 60.
 		 */
 		groundFogDensity?: number;
 		/**
-		 * World-Y the ground layer fades out by, at no fog and at full fog. A dawn mist is
-		 * shallow and a fog bank is deep, so the ceiling rises with the same weight the
-		 * density does. Assumes the playable ground sits near y = 0.
+		 * SCALE HEIGHT of the ground layer, at no fog and at full fog -- the rise over which
+		 * density falls by 1/e. A dawn mist is shallow and a fog bank is deep, so it grows
+		 * with the same weight the density does.
+		 *
+		 * Not a ceiling: the layer has none, it thins forever (see the node below). Roughly
+		 * three scale heights up is where it stops reading as fog at all, so 6 is a bank
+		 * that laps at a car and 18 one that swallows trees.
 		 */
-		groundFogHeightRange?: [number, number];
+		groundFogFalloffRange?: [number, number];
+		/** World-Y the ground layer's base sits at — where `groundFogDensity` is measured. */
+		groundFogBase?: number;
 		/**
 		 * How much ground fog the day curve's own haze may produce with NO weather fog,
 		 * as a fraction of the full amount -- mist in the valley at dawn/dusk (where
@@ -70,8 +79,9 @@
 		weatherNearFraction = 0.08,
 		weatherFarFraction = 0.55,
 		fallbackFar = 144,
-		groundFogDensity = 0.0022,
-		groundFogHeightRange = [4, 20],
+		groundFogDensity = 0.05,
+		groundFogFalloffRange = [3, 11],
+		groundFogBase = 0,
 		clearGroundFogShare = 0.35
 	}: Props = $props();
 
@@ -91,18 +101,55 @@
 	const previousFogNode = (scene as any).fogNode ?? null;
 	const fog = new THREE.Fog(0x000000, 0, 1);
 
-	// The ground layer's two knobs. Plain uniforms rather than `reference()`s, because
+	// The ground layer's knobs. Plain uniforms rather than `reference()`s, because
 	// unlike colour/near/far they have nowhere on THREE.Fog to live.
 	// Both start at zero rather than at the props' values: the task writes them before the
 	// first render (it is ordered `before: autoRenderTask`), and reading a prop here would
 	// capture only its initial value anyway.
 	const groundDensityNode = uniform(0).setGroup(renderGroup);
-	const groundTopNode = uniform(0).setGroup(renderGroup);
+	const groundFalloffNode = uniform(1).setGroup(renderGroup);
+	const groundBaseNode = uniform(0).setGroup(renderGroup);
 
 	// @types/three declares these looser than they run (`reference()` without `setGroup`,
 	// fog factors as bare `Node`). Node plumbing is `any` on purpose rather than fought
 	// (see src/core/postprocessing/CLAUDE.md).
 	const node = (value: unknown): any => value;
+
+	// THE GROUND LAYER, as the analytic integral of an exponential density along the ray.
+	//
+	// This replaces three's `exponentialHeightFogFactor`, which is wrong in two ways that
+	// both show. It measures `max(top - fragmentY, 0)` and multiplies by viewZ, so (a) it
+	// has a HARD CEILING -- above `top` there is exactly no fog -- and because the product
+	// is then squared, the ramp under that ceiling saturates within a few percent of the
+	// layer at any real distance, which draws a flat horizontal LINE across the world where
+	// the bank ends; and (b) it never looks at where the CAMERA is, so a camera inside the
+	// bank looking up at a roof gets no fog on a ray that crossed the whole layer, and one
+	// above it looking down gets the full amount on a ray that barely clipped it.
+	//
+	// Density falls off as exp(-(y - base) / falloff) and the optical depth along the ray
+	// is its integral, which has a closed form:
+	//
+	//   ρ(camera) · |P - C| · (1 - exp(-t)) / t,   t = Δy / falloff
+	//
+	// No ceiling (it thins forever, so there is no line to draw), and both endpoints are in
+	// it, so climbing out of a fog bank now looks like climbing out of a fog bank.
+	const rayDelta = node(positionWorld.sub(cameraPosition));
+	const rayLength = rayDelta.length();
+	const heightT = rayDelta.y.div(groundFalloffNode);
+	// (1 - exp(-t))/t is smooth and ~1 through t = 0, but the expression is 0/0 there --
+	// a horizontal ray is the single most common case in a driving game, not an edge case.
+	// Substituting a small POSITIVE t is exact to float precision: avg(1e-3) = 0.9995.
+	const safeT = node(select(heightT.abs().lessThan(1e-3), float(1e-3), heightT));
+	const heightAverage = safeT.negate().exp().oneMinus().div(safeT);
+	const densityAtCamera = groundDensityNode.mul(
+		cameraPosition.y.sub(groundBaseNode).div(groundFalloffNode).negate().exp()
+	);
+	const heightFogFactor = densityAtCamera
+		.mul(rayLength)
+		.mul(heightAverage)
+		.negate()
+		.exp()
+		.oneMinus();
 
 	// Built once, at mount. `reference` binds by property name, so these track the Fog
 	// instance the task mutates below -- the exact wiring NodeManager.updateFog() uses.
@@ -114,7 +161,7 @@
 		// is that the horizon still dissolves for a camera standing ABOVE the ground layer.
 		node(rangeFogFactor(reference('near', 'float', fog), reference('far', 'float', fog)))
 			.oneMinus()
-			.mul(node(exponentialHeightFogFactor(groundDensityNode, groundTopNode)).oneMinus())
+			.mul(heightFogFactor.oneMinus())
 			.oneMinus()
 	);
 
@@ -144,10 +191,14 @@
 			fog.far = Math.max(fog.near + 1, far * farFraction);
 
 			// The ground layer answers to the same two signals as the band (weather channel,
-			// day-curve haze scaled down); its ceiling rises with its density.
+			// day-curve haze scaled down); it deepens with its density.
 			const groundWeight = clamp01(Math.max(fogWeight, clearHaze * clearGroundFogShare));
 			groundDensityNode.value = groundFogDensity * groundWeight;
-			groundTopNode.value = lerp(groundFogHeightRange[0], groundFogHeightRange[1], groundWeight);
+			groundFalloffNode.value = Math.max(
+				0.01,
+				lerp(groundFogFalloffRange[0], groundFogFalloffRange[1], groundWeight)
+			);
+			groundBaseNode.value = groundFogBase;
 
 			// The scattering effect's half of the band (fogScatter.svelte.ts). Mirrors, not
 			// state: everything here was computed above, and the effect needs it as uniforms.

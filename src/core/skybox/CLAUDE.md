@@ -28,11 +28,36 @@ Two factors, unioned as transmittances (`1 - (1 - range)(1 - height)`):
 
 - **range** — camera-relative horizon masking, starting near the active camera's `far`.
   The weather `fog` channel pulls that band inward for actual low visibility.
-- **height** — `exponentialHeightFogFactor`, a ground layer that thins with world Y, so
-  fog sits in the world instead of hanging at a fixed distance. Driven by the same two
-  signals as the band plus `clearGroundFogShare`, which lets the day curve's own haze
-  peak (dawn/dusk) produce valley mist with no `setWeather` call at all. Its ceiling
-  rises with its density: thin mist is shallow, a fog bank is deep.
+- **height** — a ground layer that thins with world Y, so fog sits in the world instead
+  of hanging at a fixed distance. Driven by the same two signals as the band plus
+  `clearGroundFogShare`, which lets the day curve's own haze peak (dawn/dusk) produce
+  valley mist with no `setWeather` call at all. It deepens with its density: thin mist is
+  shallow, a fog bank is deep.
+
+### The height term is our own integral, NOT `exponentialHeightFogFactor`
+
+Three's helper was tried and removed, and both of its problems were visible on screen:
+
+- **It has a hard ceiling.** `max(top - fragmentY, 0)` means exactly no fog above `top`,
+  and since the product with viewZ is then SQUARED, the ramp underneath saturates within
+  a few percent of the layer at any real distance. The result is a flat horizontal LINE
+  drawn across the world where the bank ends — the giveaway that fog is a formula.
+- **It never looks at the camera.** Only the fragment's Y is in it, so a camera inside
+  the bank looking up at a roof gets no fog on a ray that crossed the whole layer, and a
+  camera above it looking down gets the full amount on a ray that barely clipped it.
+
+So density falls off as `exp(-(y - base) / falloff)` and the term is its closed-form
+integral along the view ray, `ρ(camera) · |P − C| · (1 − exp(−t)) / t` with
+`t = Δy / falloff`. **No ceiling — it thins forever, so there is no line to draw**, and
+both endpoints are in it, so climbing out of a fog bank looks like climbing out of one.
+
+- `(1 − exp(−t))/t` is smooth and ≈1 through `t = 0`, but the expression is 0/0 there,
+  and a horizontal ray is the most common case in a driving game rather than an edge
+  case. A small positive `t` is substituted; `avg(1e-3) = 0.9995`, exact to float.
+- **`groundFogDensity` is 1/(world unit), not 1/(unit²)** — the optical depth of a
+  horizontal ray at the base is `density × length`. `groundFogFalloffRange` is a SCALE
+  HEIGHT (density falls by 1/e), not a ceiling; about three of them up is where it stops
+  reading as fog.
 
 Every sky layer sets `material.fog = false` — at radius 1000 any fog would resolve the
 whole sky to flat fog colour (see `layers/CLAUDE.md`). That opt-out still applies on the
