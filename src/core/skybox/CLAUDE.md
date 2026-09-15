@@ -28,25 +28,101 @@ Two factors, unioned as transmittances (`1 - (1 - range)(1 - height)`):
 
 - **range** — camera-relative horizon masking, starting near the active camera's `far`.
   The weather `fog` channel pulls that band inward for actual low visibility.
-- **height** — `exponentialHeightFogFactor`, a ground layer that thins with world Y, so
-  fog sits in the world instead of hanging at a fixed distance. Driven by the same two
-  signals as the band plus `clearGroundFogShare`, which lets the day curve's own haze
-  peak (dawn/dusk) produce valley mist with no `setWeather` call at all. Its ceiling
-  rises with its density: thin mist is shallow, a fog bank is deep.
+- **height** — a ground layer that thins with world Y, so fog sits in the world instead
+  of hanging at a fixed distance. Driven by the same two signals as the band plus
+  `clearGroundFogShare`, which lets the day curve's own haze peak (dawn/dusk) produce
+  valley mist with no `setWeather` call at all. It deepens with its density: thin mist is
+  shallow, a fog bank is deep.
+
+### The height term is our own integral, NOT `exponentialHeightFogFactor`
+
+Three's helper was tried and removed, and both of its problems were visible on screen:
+
+- **It has a hard ceiling.** `max(top - fragmentY, 0)` means exactly no fog above `top`,
+  and since the product with viewZ is then SQUARED, the ramp underneath saturates within
+  a few percent of the layer at any real distance. The result is a flat horizontal LINE
+  drawn across the world where the bank ends — the giveaway that fog is a formula.
+- **It never looks at the camera.** Only the fragment's Y is in it, so a camera inside
+  the bank looking up at a roof gets no fog on a ray that crossed the whole layer, and a
+  camera above it looking down gets the full amount on a ray that barely clipped it.
+
+So density falls off as `exp(-(y - base) / falloff)` and the term is its closed-form
+integral along the view ray, `ρ(camera) · |P − C| · (1 − exp(−t)) / t` with
+`t = Δy / falloff`. **No ceiling — it thins forever, so there is no line to draw**, and
+both endpoints are in it, so climbing out of a fog bank looks like climbing out of one.
+
+- `(1 − exp(−t))/t` is smooth and ≈1 through `t = 0`, but the expression is 0/0 there,
+  and a horizontal ray is the most common case in a driving game rather than an edge
+  case. A small positive `t` is substituted; `avg(1e-3) = 0.9995`, exact to float.
+- **`groundFogDensity` changed units** with this — 1/(world unit), not 1/(unit²), so the
+  optical depth of a horizontal ray at the base is `density × length`. Old numbers do not
+  carry over. `groundFogFalloffRange` is a SCALE HEIGHT (density falls by 1/e), not the
+  ceiling the old `groundFogHeightRange` was; about three of them up is where it stops
+  reading as fog.
+
+### The fog's colour is directional (`sunInscatter`)
+
+`reference('color')` is only the **ambient-scattered base** — what the fog looks like
+with your back to the light. On top of it the node ADDS a forward-scattering lobe,
+`pow(max(dot(viewRay, keyDirection), 0), inscatterSharpness)` times a colour uniform, so
+looking toward the sun through haze glows and looking away does not. Without it a misty
+sunrise is grey haze that happens to occur at a warm time of day.
+
+- **Additive, not a mix toward a second colour.** Inscattered light is light _arriving_;
+  a thick bank toward a low sun is the brightest thing in the frame.
+- `descriptor.light` is the source, so the sun→moon crossover comes free and the lobe
+  costs one vec3 uniform, not two colours plus a blend.
+- **The gain is computed in TS, never in the shader** — a `horizonGain` off the key's Y
+  (a low key means a long grazing path; at noon the lobe points at empty sky), times the
+  day curve's fog-colour luminance as the daylight proxy, the same trick and the same
+  reason as the mixer's white lift (`weatherMixer.ts`). The uniform carries colour × gain
+  together, so the whole term goes to black at night and at noon with no branch.
+- **Deliberately NOT gated on `light.intensity`.** `keyAttenuation` pulls that down as
+  fog thickens, which is right for the key and backwards here.
+- `light.color` is read as WORKING space (no colour-space argument), matching
+  `SkyLight.svelte`, the field's other consumer. `sky.fogColor` is the authored-sRGB one.
+  They are different fields and they are converted differently — don't unify them.
+
+### Lightning lights the fog (`flashFogLift`)
+
+`flashState.flash` lifts the base fog colour toward white, in working space, before the
+scatter effect's mirror is taken — so the bank, the deck's inside-lighting and the dome's
+wash are one event. Uniform, not directional: a bank lit from inside has no single
+direction, and the envelope is already amplitude-capped at the source.
+
+### The sky is fogged in POST, not by the node
 
 Every sky layer sets `material.fog = false` — at radius 1000 any fog would resolve the
 whole sky to flat fog colour (see `layers/CLAUDE.md`). That opt-out still applies on the
 `fogNode` path; `NodeMaterial` gates on `material.fog` before touching the node.
 
+Which leaves the dome as the one surface scene fog can never reach, and a whiteout that
+dissolves the ground while leaving a legible sky is the loudest possible tell that the
+fog is a distance ramp rather than weather. So `fogScatter`'s `skyFill` param mixes SKY
+PIXELS ONLY toward the fog colour, keyed off `uFogCameraFar` — a cleared depth buffer
+resolves to exactly the camera's `far`, so "nothing was drawn here" is a distance test.
+Restricting it to the sky is what makes it safe to stack on scene fog: geometry out at
+the band's far edge is already at fog colour, and mixing it again would flatten the
+inscatter that colour carries. Default is 0.7, not 1 — a fogged sky still has a bright
+side, and once the ground has gone the dome is the only thing left carrying where the
+sun is.
+
 **Both of those terms are ABSORPTION.** The scattering half — a fog bank taking the edge
 off what is inside it, rather than only paling it — is a post-processing effect
 (`core/postprocessing/effects/fogScatter.ts`), because it blurs the composed frame and
 nothing a material can do reaches its neighbours. `SkyFog`'s task drives it through
-`fogScatter.svelte.ts`: the band as uniforms, the weather `fog` channel as the weight,
-and an activity latch with hysteresis so the effect leaves the pipeline graph entirely in
-dry weather. It is gated on the weather channel and never on the day curve's own haze —
-the sky lies past the band's far edge, so it always takes the maximum blur, which is
-right in a fog bank and wrong on a clear evening.
+`fogScatter.svelte.ts`: the band + the camera far plane + the base fog colour as uniforms,
+the weather `fog` channel as the weight, and an activity latch with hysteresis so the
+effect leaves the pipeline graph entirely in dry weather. It is gated on the weather
+channel and never on the day curve's own haze — the sky lies past the band's far edge, so
+it always takes the maximum blur, which is right in a fog bank and wrong on a clear
+evening. That same pass also carries the dome's whiteout (`skyFill`, below).
+
+The colour it takes is the FLAT base, inscatter excluded: the directional term needs a
+world-space view ray and a fullscreen pass would have to reconstruct one per pixel. The
+dome's sun side is brighter to begin with, so a partial mix toward flat fog compresses
+that gradient rather than erasing it. To make it exact, rebuild the ray from `screenUV` +
+`cameraProjectionMatrixInverse` and share `SkyFog`'s expression.
 
 ## The shadow frustum is fitted to the CAMERA (`SkyLight.svelte`)
 

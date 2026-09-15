@@ -34,7 +34,8 @@
 	// constructed fresh with the layer-0 mask, so nothing re-samples the strip —
 	// the same guarantee the lens quads used to rely on. `transparent` +
 	// renderOrder 999 draws it after the scene's transparents (smoke must not
-	// wash over it); depthTest/Write off, fog off. The casing is a
+	// wash over it); depthTest off, depth WRITTEN (see the material — it is what
+	// keeps the depth-driven post effects off the glass), fog off. The casing is a
 	// rounded-rectangle SDF with an alphaTest cutout — discarded fragments
 	// write NOTHING, so the velocity stamp below only covers the visible shape.
 	// KNOWN MRT TRADE (postprocessing/CLAUDE.md §"Non-output attachments do not
@@ -183,7 +184,16 @@
 	// the quad in the late list.
 	quadMaterial.transparent = true;
 	quadMaterial.depthTest = false;
-	quadMaterial.depthWrite = false;
+	// DEPTH IS WRITTEN, and it is the strip's only defence against the depth-driven
+	// post effects. An overlay that writes no depth leaves the buffer holding whatever
+	// was BEHIND it — usually the sky, since the strip rides the top of the frame — and
+	// every screen-space pass then treats the strip as being at that distance:
+	// `fogScatter` blurred it on the fog band and mixed its `skyFill` straight over the
+	// glass (a fogged mirror went transparent), and DoF/AO would read the same lie.
+	// Writing 2 units instead marks it as the near, opaque thing it is. Safe because the
+	// quad draws last in the scene pass with `depthTest` off, and `alphaTest` discards
+	// outside the casing so nothing is stamped beyond the visible shape.
+	quadMaterial.depthWrite = true;
 	quadMaterial.fog = false;
 
 	const quad = new THREE.Mesh(quadGeometry, quadMaterial);
