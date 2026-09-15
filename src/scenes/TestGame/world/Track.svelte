@@ -62,24 +62,28 @@
 	//     324 640 car triangles — 5 + 29 draw calls — were re-rendered into the
 	//     2048² map to produce nothing.
 	//
-	// So: THE CAR CASTS, THE WORLD RECEIVES (the car's half of the policy — its
-	// CAR_NON_CASTERS list — is in TestGame.svelte), and the shadow pass draws
-	// the car alone.
+	// So the fix (`1.1` in testperf.md) was: THE CAR CASTS, THE WORLD RECEIVES —
+	// the car's half of the policy (its CAR_NON_CASTERS list) is in
+	// TestGame.svelte, and for a while the shadow pass drew the car alone.
 	//
 	// THE CORRECTNESS HALF OF THAT ARGUMENT EXPIRED with three r186: `SkyLight`
 	// is a `SunLight` now and its two cascades are fitted to the VIEW CAMERA
 	// (core/skybox/CLAUDE.md), so an oversized caster can no longer drag the box
 	// off the car — a 3 km track and a 4 m car are what cascades are for.
 	//
-	// THE COST HALF DID NOT. Flipping this on re-renders 313 725 track triangles
-	// into the shadow map ONCE PER CASCADE, twice a frame, and this scene is
-	// already fill-bound (DOCS/testperf.md). Do it as a measurement, with a
-	// per-mesh caster list for the track the way the car has CAR_NON_CASTERS —
-	// most of a track contributes nothing to a silhouette — not as a flag flip.
-	const TRACK_CASTS_SHADOWS = false;
-	/** Which track materials would cast, if they did. Ground/Asphalt are the flat
-	 *  surfaces the shadows land ON, and Decals are painted onto them — 51 062
-	 *  triangles that can only ever shadow themselves. */
+	// THE COST HALF DID NOT. This renders Metal + Leafs_Mat -- 262 663 of the
+	// track's 313 725 triangles (Ground/Asphalt/Decals stay excluded, see
+	// TRACK_CASTERS below) -- into the shadow map ONCE PER CASCADE, twice a
+	// frame, and this scene is already fill-bound (DOCS/testperf.md §1.1). Watch
+	// the Stats HUD (triangles/programs/frame time) if the car judders under
+	// barriers or trees; the escape hatch is trimming TRACK_CASTERS further
+	// (Metal alone is the highest-value caster -- it is what actually throws
+	// shade across the car passing barriers; Leafs_Mat is the cheaper one to
+	// drop first).
+	const TRACK_CASTS_SHADOWS = true;
+	/** Which track materials cast. Ground/Asphalt are the flat surfaces the
+	 *  shadows land ON, and Decals are painted onto them — 51 062 triangles
+	 *  that can only ever shadow themselves, so all three stay excluded. */
 	const TRACK_CASTERS = new Set(['Metal', 'Leafs_Mat']);
 
 	const materialName = (mesh: Mesh): string =>

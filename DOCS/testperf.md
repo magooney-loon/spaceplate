@@ -87,11 +87,19 @@ back is not a flag flip: one cascade cannot serve a 3 km track and a 4 m car, an
 > `SunLight` whose two cascades are fitted to the view camera, so the failure
 > above (a caster-fitted box saturating on the track and losing the car) cannot
 > happen any more, and `TRACK_CASTS_SHADOWS` is no longer forced off by
-> correctness. **It is still off, and turning it on is still a measurement, not
-> a flag flip**: the 313 725 track triangles would be re-rendered into the map
-> twice a frame, once per cascade. Measure it against the numbers in this table
-> before flipping it, and expect to need per-mesh caster culling on the track
-> the same way the car got `CAR_NON_CASTERS`.
+> correctness.
+>
+> **It is now on** (`world/Track.svelte`), scoped to `TRACK_CASTERS` (`Metal` +
+> `Leafs_Mat`) rather than the whole track — Ground/Asphalt/Decals stay excluded
+> (they can only ever shadow themselves). That is still **262 663 of the
+> track's 313 725 triangles**, re-rendered into the shadow map twice a frame
+> (once per cascade), on a scene this doc already calls fill-bound — flipped
+> without a profiled measurement first. If the car judders near barriers or
+> tree lines, that is the first place to look: read `triangles`/`programs`/
+> frame time off the Stats HUD, and trim `TRACK_CASTERS` down to `Metal` alone
+> (the barriers are the caster that actually throws visible shade across the
+> car; `Leafs_Mat` is the cheaper 71 982 to drop first) before reaching for
+> anything more invasive.
 
 ### 1.2 Smoke pools were N meshes with N materials — the first-puff hitch
 

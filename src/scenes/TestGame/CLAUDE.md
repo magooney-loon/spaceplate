@@ -609,7 +609,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   If the model is ever replaced, re-measure the anchors (the accessor min/max
   in the GLB JSON is readable without decoding Draco).
 
-## Shadows — the car casts, the world receives
+## Shadows — the car casts, the track casts too now, everything receives
 
 `DOCS/testperf.md` is this scene's performance reference; read it before
 touching anything on the frame path. The one rule that lives here because it is
@@ -627,18 +627,24 @@ cast or received a sun shadow at all** — while the renderer re-rendered all
 313 725 track triangles into the 2048² map every frame to achieve it (the car
 moves, so `needsUpdate` is armed every frame).
 
-Now: the track does not cast (`TRACK_CASTS_SHADOWS`, `world/Track.svelte`), the
-car does, and the car's
-interior/engine materials (`CAR_NON_CASTERS` — 117 176 of its 324 640 triangles,
-never in its silhouette) do not either, so the shadow pass draws the car alone.
+The fix (`testperf.md` §1.1) was: the track stops casting, the car does, and
+the car's interior/engine materials (`CAR_NON_CASTERS` — 117 176 of its
+324 640 triangles, never in its silhouette) do not either.
 
 **Since three r186 the single cascade is gone** — `SkyLight` is a `SunLight`
 fitting two cascades to the view camera (`core/skybox/CLAUDE.md`), so an
-oversized caster can no longer drag the box off the car. That removes the
-correctness objection to track shadows and none of the cost one: every track
-triangle would be re-rendered per cascade, twice a frame, in a scene that is
-already fill-bound. Turn it on as a measurement with a per-mesh caster list,
-not as a flag flip.
+oversized caster can no longer drag the box off the car. That removed the
+correctness objection to track shadows; the cost one is real but partial now.
+`TRACK_CASTS_SHADOWS` is **on**, scoped to `TRACK_CASTERS` (`Metal` +
+`Leafs_Mat`, 262 663 of the track's 313 725 triangles — Ground/Asphalt/Decals
+stay excluded, they can only ever shadow themselves) — so the car finally gets
+barrier and tree shade, at the cost of that geometry re-rendering into the
+shadow map twice a frame (once per cascade) in a scene that is already
+fill-bound. **Flipped without a profiled measurement** — watch the Stats HUD
+(triangles/programs/frame time) if the car judders near barriers or tree
+lines, and trim `TRACK_CASTERS` down to `Metal` alone first (the actual visible
+caster; `Leafs_Mat` is the cheaper 71 982 to drop) before reaching for
+anything more invasive. Full numbers: `testperf.md` §1.1's update note.
 
 ## The suspension — the car leans, the physics doesn't
 
