@@ -25,6 +25,7 @@
 		uniform
 	} from 'three/tsl';
 	import { clamp01, descriptor, lerp } from './model';
+	import { flashState } from './layers/lightning/flashState';
 	import { fogScatterActivity, uFogFar, uFogNear, uFogScatter } from './fogScatter.svelte';
 
 	interface Props {
@@ -70,6 +71,28 @@
 		 * `fogDensity` peaks) and a clear noon, with no `setWeather` call.
 		 */
 		clearGroundFogShare?: number;
+		/**
+		 * How much forward-scattered key light the fog glows with when you look TOWARD the
+		 * sun (or the moon — `descriptor.light` is one vector across the crossover). 0 is the
+		 * old flat-coloured fog. This is the term that makes a misty sunrise read as a
+		 * sunrise rather than as grey haze at a warm time of day, and it costs a dot and a
+		 * pow per fogged fragment.
+		 */
+		sunInscatter?: number;
+		/**
+		 * Exponent on the forward-scattering lobe. Low is a broad wash across half the sky,
+		 * high is a tight halo around the body. Mie forward scattering is genuinely narrow,
+		 * but a lobe this cheap has no disc to sit on, so keep it wide enough to read as air.
+		 */
+		inscatterSharpness?: number;
+		/**
+		 * How far toward white a full lightning flash lifts the fog. A strike illuminates
+		 * the whole bank at once — the fog is what makes the flash have a SHAPE, and without
+		 * this the bolt lights the scene and the clouds while the air it travels through
+		 * stays dead. Applied uniformly, not directionally: a bank lit from inside has no
+		 * single direction, and `flashState.flash` is already amplitude-capped at the source.
+		 */
+		flashFogLift?: number;
 	}
 
 	let {
@@ -82,7 +105,10 @@
 		groundFogDensity = 0.05,
 		groundFogFalloffRange = [3, 11],
 		groundFogBase = 0,
-		clearGroundFogShare = 0.35
+		clearGroundFogShare = 0.35,
+		sunInscatter = 0.5,
+		inscatterSharpness = 6,
+		flashFogLift = 0.85
 	}: Props = $props();
 
 	/**
@@ -110,11 +136,32 @@
 	const groundFalloffNode = uniform(1).setGroup(renderGroup);
 	const groundBaseNode = uniform(0).setGroup(renderGroup);
 
+	// The inscatter term's three knobs. `inscatterColorNode` carries the key light's colour
+	// ALREADY SCALED by the gain, so there is one uniform instead of two and the whole term
+	// vanishes numerically (black × anything) at night, at noon, and at `sunInscatter` 0 --
+	// no branch in the shader for a case the uniform can express.
+	const keyDirectionNode = uniform(new THREE.Vector3(0, 1, 0)).setGroup(renderGroup);
+	const inscatterColorNode = uniform(new THREE.Color(0, 0, 0)).setGroup(renderGroup);
+	const inscatterSharpnessNode = uniform(1).setGroup(renderGroup);
+
+	// Scratch + constant for the per-frame colour maths, so the task allocates nothing.
+	const scratchColor = new THREE.Color();
+	const WHITE = new THREE.Color(1, 1, 1);
+
 	// @types/three declares these looser than they run (`reference()` without `setGroup`,
 	// fog factors as bare `Node`). Node plumbing is `any` on purpose rather than fought
 	// (see src/core/postprocessing/CLAUDE.md).
 	const node = (value: unknown): any => value;
 
+	// FORWARD SCATTERING, the directional half of the fog's colour. `reference('color')` is
+	// the ambient-scattered base -- what the fog looks like with your back to the light --
+	// and the lobe ADDS the light that came the other way down the view ray. Additive
+	// rather than a mix toward a second colour: inscattered light is light arriving, so a
+	// thick bank toward a low sun gets brighter, which is exactly what one does.
+	//
+	// The view ray, shared by BOTH terms below: the inscatter lobe wants its direction and
+	// the height integral wants its length, and `length()` is most of a `normalize()`.
+	//
 	// THE GROUND LAYER, as the analytic integral of an exponential density along the ray.
 	//
 	// This replaces three's `exponentialHeightFogFactor`, which is wrong in two ways that
@@ -135,6 +182,9 @@
 	// it, so climbing out of a fog bank now looks like climbing out of a fog bank.
 	const rayDelta = node(positionWorld.sub(cameraPosition));
 	const rayLength = rayDelta.length();
+	const viewDirection = rayDelta.div(rayLength);
+	const towardKey = viewDirection.dot(node(keyDirectionNode)).max(0).pow(inscatterSharpnessNode);
+
 	const heightT = rayDelta.y.div(groundFalloffNode);
 	// (1 - exp(-t))/t is smooth and ~1 through t = 0, but the expression is 0/0 there --
 	// a horizontal ray is the single most common case in a driving game, not an edge case.
@@ -154,7 +204,9 @@
 	// Built once, at mount. `reference` binds by property name, so these track the Fog
 	// instance the task mutates below -- the exact wiring NodeManager.updateFog() uses.
 	const fogNode = tslFog(
-		node(reference('color', 'color', fog)).setGroup(renderGroup),
+		node(reference('color', 'color', fog))
+			.setGroup(renderGroup)
+			.add(node(inscatterColorNode).mul(towardKey)),
 		// TWO FACTORS, UNIONED AS TRANSMITTANCES: 1 - (1 - range)(1 - height), the same
 		// composition webgpu_custom_fog uses for its valley band plus distance haze. `max`
 		// would also work but flattens the overlap, and the point of keeping the range term
@@ -190,6 +242,13 @@
 			fog.near = far * nearFraction;
 			fog.far = Math.max(fog.near + 1, far * farFraction);
 
+			// A strike lights the air it passes through. Lifted in WORKING space, after the
+			// sRGB read above, because this is light being added rather than a swatch being
+			// authored -- and lifted on the base colour so the scatter effect's copy (below)
+			// and the dome's own flash wash stay one event.
+			const flashLift = clamp01(flashState.flash) * flashFogLift;
+			if (flashLift > 0) fog.color.lerp(WHITE, flashLift);
+
 			// The ground layer answers to the same two signals as the band (weather channel,
 			// day-curve haze scaled down); it deepens with its density.
 			const groundWeight = clamp01(Math.max(fogWeight, clearHaze * clearGroundFogShare));
@@ -199,6 +258,35 @@
 				lerp(groundFogFalloffRange[0], groundFogFalloffRange[1], groundWeight)
 			);
 			groundBaseNode.value = groundFogBase;
+
+			// FORWARD SCATTERING toward the key. Three gates, all of them in TS rather than
+			// in the shader, so the fragment cost is a constant dot/pow whatever they say:
+			//
+			// - `horizonGain` -- a low key means a long, grazing path through the air, which
+			//   is when forward scattering dominates. At noon the lobe points at the sky and
+			//   there is nothing to see, so it closes to nothing.
+			// - luminance of the day curve's own fog colour as the DAYLIGHT proxy, the same
+			//   trick (and the same reason) as the mixer's white lift: ungated, a midnight
+			//   fog bank glowed toward a moon that is not lighting anything.
+			// - the light's own colour and the crossover with it, for free.
+			//
+			// Deliberately NOT gated on `light.intensity`: `keyAttenuation` pulls that down
+			// as fog thickens, which is right for the key and backwards here -- a thick bank
+			// toward the sun is the brightest thing in the frame, not the dimmest.
+			const key = descriptor.light;
+			const horizonGain = 1 - clamp01(key.direction.y);
+			const daylight = Math.min(
+				1,
+				(0.299 * fogColor[0] + 0.587 * fogColor[1] + 0.114 * fogColor[2]) * 2
+			);
+			const inscatterGain = sunInscatter * horizonGain * daylight;
+			// No colour-space argument: `descriptor.light.color` is consumed as WORKING space
+			// by SkyLight, the field's other reader, and this adds into a working-space fog
+			// colour. (`sky.fogColor` is the authored-sRGB one -- they are different fields.)
+			scratchColor.setRGB(key.color[0], key.color[1], key.color[2]);
+			inscatterColorNode.value.copy(scratchColor).multiplyScalar(inscatterGain);
+			keyDirectionNode.value.set(key.direction.x, key.direction.y, key.direction.z);
+			inscatterSharpnessNode.value = Math.max(1, inscatterSharpness);
 
 			// The scattering effect's half of the band (fogScatter.svelte.ts). Mirrors, not
 			// state: everything here was computed above, and the effect needs it as uniforms.

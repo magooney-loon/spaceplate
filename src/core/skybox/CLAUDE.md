@@ -63,6 +63,37 @@ Every sky layer sets `material.fog = false` — at radius 1000 any fog would res
 whole sky to flat fog colour (see `layers/CLAUDE.md`). That opt-out still applies on the
 `fogNode` path; `NodeMaterial` gates on `material.fog` before touching the node.
 
+### The fog's colour is directional (`sunInscatter`)
+
+`reference('color')` is only the **ambient-scattered base** — what the fog looks like
+with your back to the light. On top of it the node ADDS a forward-scattering lobe,
+`pow(max(dot(viewRay, keyDirection), 0), inscatterSharpness)` times a colour uniform, so
+looking toward the sun through haze glows and looking away does not. Without it a misty
+sunrise is grey haze that happens to occur at a warm time of day.
+
+- **Additive, not a mix toward a second colour.** Inscattered light is light _arriving_;
+  a thick bank toward a low sun is the brightest thing in the frame.
+- `descriptor.light` is the source, so the sun→moon crossover comes free and the lobe
+  costs one vec3 uniform, not two colours plus a blend.
+- **The gain is computed in TS, never in the shader** — a `horizonGain` off the key's Y
+  (a low key means a long grazing path; at noon the lobe points at empty sky), times the
+  day curve's fog-colour luminance as the daylight proxy, the same trick and the same
+  reason as the mixer's white lift (`weatherMixer.ts`). The uniform carries colour × gain
+  together, so the whole term goes to black at night and at noon with no branch.
+- **Deliberately NOT gated on `light.intensity`.** `keyAttenuation` pulls that down as
+  fog thickens, which is right for the key and backwards here.
+- `light.color` is read as WORKING space (no colour-space argument), matching
+  `SkyLight.svelte`, the field's other consumer. `sky.fogColor` is the authored-sRGB one.
+  They are different fields and they are converted differently — don't unify them.
+
+### Lightning lights the fog (`flashFogLift`)
+
+`flashState.flash` lifts the base fog colour toward white, in working space, so a strike
+gives the bank a SHAPE instead of lighting the scene while the air it travels through
+stays dead — the same event as the deck's inside-lighting and the dome's own flash wash.
+Uniform, not directional: a bank lit from inside has no single direction, and the
+envelope is already amplitude-capped at the source.
+
 **Both of those terms are ABSORPTION.** The scattering half — a fog bank taking the edge
 off what is inside it, rather than only paling it — is a post-processing effect
 (`core/postprocessing/effects/fogScatter.ts`), because it blurs the composed frame and
