@@ -10,11 +10,14 @@
 import {
 	BufferTarget,
 	CanvasSource,
+	MediaStreamAudioTrackSource,
 	Mp4OutputFormat,
 	Output,
 	Quality,
 	WebMOutputFormat,
+	getFirstEncodableAudioCodec,
 	getFirstEncodableVideoCodec,
+	type AudioCodec,
 	type VideoCodec
 } from 'mediabunny';
 import type { CaptureContainer } from './types';
@@ -29,6 +32,15 @@ const CODECS: Record<CaptureContainer, VideoCodec[]> = {
 	mp4: ['avc', 'hevc', 'av1']
 };
 
+/** Same probing shape, for the optional audio track — see "Audio: a best-effort live tap" in CLAUDE.md. */
+const AUDIO_CODECS: Record<CaptureContainer, AudioCodec[]> = {
+	webm: ['opus', 'vorbis'],
+	mp4: ['aac', 'opus']
+};
+
+/** Fixed rather than exposed in the panel — the video bitrate slider is the one dial that matters. */
+const AUDIO_BITRATE = 160_000;
+
 /**
  * How many frames may be in flight before the caller has to hold one. Safe to queue since
  * `CanvasSource.add()` snapshots synchronously; ~50MB of NV12 at 4K is the real ceiling.
@@ -37,6 +49,8 @@ const MAX_QUEUE = 4;
 
 export interface OfflineTake {
 	readonly codec: VideoCodec;
+	/** Whether an audio track was actually attached — false if no track was given, or no encodable codec was found. */
+	readonly hasAudio: boolean;
 	readonly extension: CaptureContainer;
 	readonly width: number;
 	readonly height: number;
@@ -61,10 +75,16 @@ export const createOfflineTake = async (options: {
 	container: CaptureContainer;
 	fps: number;
 	bitrateMbps: number;
+	/**
+	 * A live tap of the master audio bus (see capture/CLAUDE.md, "Audio: a best-effort live
+	 * tap"). Optional — no AudioListener mounted, or no encodable codec, just means a
+	 * silent video; never fails the take over it.
+	 */
+	audioTrack?: MediaStreamAudioTrack | null;
 	/** Called when the encoder is ready for the next frame — the caller re-arms the loop here. */
 	onReady: () => void;
 }): Promise<OfflineTake> => {
-	const { canvas, container, fps, bitrateMbps, onReady } = options;
+	const { canvas, container, fps, bitrateMbps, audioTrack, onReady } = options;
 	const { width, height } = canvas;
 
 	const quality = new Quality({ bitrate: Math.round(bitrateMbps * 1_000_000) });
@@ -73,6 +93,12 @@ export const createOfflineTake = async (options: {
 	if (!codec) {
 		throw new Error(`no encodable ${container} video codec at ${width}×${height}`);
 	}
+
+	// Real-time audio, riding alongside a frame-stepped video timeline — probed the same way
+	// as the video codec, but never fatal: a take is still worth having silent.
+	const audioCodec = audioTrack
+		? await getFirstEncodableAudioCodec(AUDIO_CODECS[container])
+		: null;
 
 	const output = new Output({
 		// fastStart puts the mp4 index at the front so the file is seekable immediately;
@@ -97,6 +123,17 @@ export const createOfflineTake = async (options: {
 	});
 
 	output.addVideoTrack(source, { frameRate: fps });
+
+	if (audioTrack && audioCodec) {
+		// Pulls from the MediaStreamTrack in real time on its own, from `output.start()`
+		// until finalize — nothing here pushes samples, unlike the video's per-frame add().
+		const audioSource = new MediaStreamAudioTrackSource(audioTrack, {
+			codec: audioCodec,
+			quality: new Quality({ bitrate: AUDIO_BITRATE })
+		});
+		output.addAudioTrack(audioSource);
+	}
+
 	await output.start();
 
 	let frameCount = 0;
@@ -110,6 +147,7 @@ export const createOfflineTake = async (options: {
 
 	const take: OfflineTake = {
 		codec,
+		hasAudio: audioTrack !== null && audioTrack !== undefined && audioCodec !== null,
 		extension: container,
 		width,
 		height,

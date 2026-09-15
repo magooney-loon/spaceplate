@@ -3,7 +3,8 @@
 	// Mount position, task ordering vs. the Gizmo, and what ends up in the output: capture/CLAUDE.md.
 
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
-	import { PerspectiveCamera, Vector2 } from 'three/webgpu';
+	import { useAudioListener } from '@threlte/extras';
+	import { PerspectiveCamera, Vector2, type AudioListener as ThreeAudioListener } from 'three/webgpu';
 	import { setFixedStepSource } from '$core';
 	import { sceneState } from '$extensions/scene';
 	import { logEngine } from '$extensions/logger';
@@ -17,6 +18,42 @@
 	import { createOfflineTake, type OfflineTake } from './encoder';
 
 	const { renderer, camera, invalidate, autoRenderTask } = useThrelte();
+
+	// --- audio: a best-effort live tap ----------------------------------------------
+	// Real-time only — riding the master bus in wall-clock time alongside a video track
+	// that is frame-stepped and NOT wall-clock. Stays in sync when the machine renders
+	// near the take's target fps; drifts on slow/heavy takes. See capture/CLAUDE.md.
+
+	// Camera.svelte's <AudioListener/> mounts synchronously, well before this dynamically
+	// imported component's script runs (App.svelte awaits the import), so the listener is
+	// already registered by the time this call resolves. Still guarded: no listener just
+	// means a silent recording, never a broken one.
+	// Typed explicitly rather than via `ReturnType<typeof useAudioListener>` — that hook is
+	// overloaded, and `ReturnType` of an overloaded function resolves to the LAST signature
+	// (the generic callback form), not the no-arg one actually being called here.
+	let audioTap: { listener: ThreeAudioListener; context: AudioContext } | null = null;
+	try {
+		audioTap = useAudioListener();
+	} catch (error) {
+		logEngine.warn('Capture: no AudioListener mounted — recordings will have no audio', error);
+	}
+
+	let audioDestination: MediaStreamAudioDestinationNode | null = null;
+
+	/** Additive fan-out off the master bus — the listener's own connection to speakers is untouched. */
+	const attachAudioTap = (): MediaStreamAudioTrack | null => {
+		if (!audioTap) return null;
+		audioDestination = audioTap.context.createMediaStreamDestination();
+		audioTap.listener.gain.connect(audioDestination);
+		return audioDestination.stream.getAudioTracks()[0] ?? null;
+	};
+
+	const releaseAudioTap = () => {
+		if (!audioDestination || !audioTap) return;
+		audioTap.listener.gain.disconnect(audioDestination);
+		for (const track of audioDestination.stream.getAudioTracks()) track.stop();
+		audioDestination = null;
+	};
 
 	// --- shared helpers ------------------------------------------------------------
 
@@ -231,6 +268,7 @@
 		// Covers the normal stop, the async encoder-creation failure and the mid-take encoder
 		// failure alike — all three come through here.
 		releaseResolution();
+		releaseAudioTap();
 		offlineTake = null;
 		offlinePending = false;
 		takeFrames = 0;
@@ -271,6 +309,7 @@
 			container: captureState.container,
 			fps: captureState.fps,
 			bitrateMbps: captureState.bitrateMbps,
+			audioTrack: attachAudioTap(),
 			onReady: onEncoderReady
 		}).then(
 			(take) => {
@@ -278,6 +317,7 @@
 				// starting a take nobody asked for any more.
 				if (!offlinePending) {
 					void take.cancel();
+					releaseAudioTap();
 					return;
 				}
 				offlineTake = take;
@@ -286,7 +326,8 @@
 				captureState.status = 'Rendering offline…';
 				logEngine.info(
 					`Capture: offline take ${take.width}×${take.height} @ ${captureState.fps}fps, ` +
-						`${take.codec}/${take.extension}, cap ${captureState.maxDurationSec}s`
+						`${take.codec}/${take.extension}${take.hasAudio ? ' + audio' : ' (no audio)'}, ` +
+						`cap ${captureState.maxDurationSec}s`
 				);
 				invalidate();
 			},
@@ -318,9 +359,10 @@
 				}
 				download(blob, take.extension);
 				const size = (blob.size / 1024 / 1024).toFixed(2);
-				captureState.status = `Saved ${seconds}s ${take.extension} (${size} MB)`;
+				const audioNote = take.hasAudio ? '' : ', no audio';
+				captureState.status = `Saved ${seconds}s ${take.extension} (${size} MB${audioNote})`;
 				logEngine.info(
-					`Capture: offline video ${seconds}s ${take.codec}/${take.extension}, ${size} MB`
+					`Capture: offline video ${seconds}s ${take.codec}/${take.extension}, ${size} MB${audioNote}`
 				);
 			},
 			(error: unknown) => {

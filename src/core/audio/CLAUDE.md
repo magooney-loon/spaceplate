@@ -32,4 +32,9 @@ environment mode, and a looping bed must not. Thunder arrival is delayed ~3 s/km
 `strikeDistance` — that gap is most of what makes a storm feel sized.
 
 The one sanctioned `performance.now()` use in the repo lives here (blend scheduling) —
-audio is never captured, so wall-clock time is correct by design.
+this schedules real playback on the live `AudioContext`, and `capture/`'s offline-render
+audio track is a **live tap of that same real-time output** (see capture/CLAUDE.md,
+"Audio: a best-effort live tap"), not a re-derivation from scene time. So wall-clock
+scheduling here is still correct by design even though a take can end up capturing it —
+what plays is what gets recorded, regardless of how the video track's frame-stepped
+timeline maps to wall-clock time.
