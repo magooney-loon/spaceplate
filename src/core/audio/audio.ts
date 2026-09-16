@@ -1,11 +1,12 @@
 // THE FACADE — `defineSounds()` and `audio`. The only door into the audio layer.
 //
-// "Only door" is a contract, not a style preference: step 5's offline render reproduces
-// a take by replaying what this module was TOLD, so anything that reaches a THREE.Audio
-// around the side is silently missing from a recording. See DOCS/AUDIO.md.
+// "Only door" is a contract, not a style preference: the offline render (render.ts)
+// reproduces a take by replaying what this module was TOLD, so anything that reaches a
+// THREE.Audio around the side is silently missing from a recording. See DOCS/AUDIO.md.
 
-import { registerSound, unregisterSounds } from './registry';
-import { playOneShot, startLoop, stopAllVoices } from './voices';
+import { audioContext, registerSound, unregisterSounds } from './registry';
+import { renderTake } from './render';
+import { armRecording, disarmRecording, playOneShot, startLoop, stopAllVoices } from './voices';
 import type { AudioScope, PlayOptions, SoundDef, SoundRef, VoiceHandle } from './types';
 
 const makeRef = (soundId: string): SoundRef => ({
@@ -61,5 +62,28 @@ export const audio = {
 	stopAll: (soundId?: string): void => stopAllVoices(soundId),
 	scope: createScope,
 	/** Drop a scene's declarations once its voices are gone. */
-	undefineSounds: (soundIds: readonly string[]): void => unregisterSounds(soundIds)
+	undefineSounds: (soundIds: readonly string[]): void => unregisterSounds(soundIds),
+
+	/**
+	 * Deterministic take recording, for `capture/`.
+	 *
+	 * `arm()` at the scene time the take claims the engine clock; `render()` with the
+	 * take's SCENE length (`frameCount / fps`) once it stops. The result is an AudioBuffer
+	 * exactly that long, so it cannot drift against the video however slowly the take
+	 * rendered — see core/audio/timeline.ts.
+	 */
+	recording: {
+		arm: (sceneTime: number): void => armRecording(sceneTime),
+		/** Null if nothing was armed, the take was empty, or there is no AudioContext. */
+		async render(durationScene: number): Promise<AudioBuffer | null> {
+			const take = disarmRecording();
+			const context = audioContext();
+			if (!take || !context || take.voices.length === 0) return null;
+			return renderTake(take, durationScene, context.sampleRate);
+		},
+		/** Throw the recording away without rendering — a cancelled or failed take. */
+		discard: (): void => {
+			disarmRecording();
+		}
+	}
 };

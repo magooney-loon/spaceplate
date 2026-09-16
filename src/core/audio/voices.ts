@@ -11,12 +11,29 @@
 import {
 	Audio as ThreeAudio,
 	PositionalAudio as ThreePositionalAudio,
+	Quaternion,
+	Vector3,
 	type AudioListener as ThreeAudioListener
 } from 'three';
 import { logSound } from '$extensions/logger';
-import { routeToBus } from './mixer';
+import { busGain, busGraph, routeToBus } from './mixer';
 import { getDef, pickBuffer } from './registry';
 import { sceneNow, toContextTime } from './scheduler';
+import {
+	armTimeline,
+	disarmTimeline,
+	isRecordingAudio,
+	listenerCurves,
+	noteBus,
+	noteStart,
+	noteStop,
+	sampleVolume,
+	samplePosition,
+	sampleRate,
+	type Curve,
+	type RecordedTake,
+	type RecordedVoice
+} from './timeline';
 import type { BusId, PlayOptions, SoundDef, VoiceHandle } from './types';
 
 /**
@@ -72,6 +89,10 @@ type Voice = {
 	 * with nothing holding a reference to stop it.
 	 */
 	freeAt: number;
+	/** Cutoff this voice was configured with, kept so a take armed mid-flight can record it. */
+	lowpass: number | null;
+	/** This voice's entry in the take being recorded, or null when nothing is recording. */
+	rec: RecordedVoice | null;
 };
 
 let listener: ThreeAudioListener | null = null;
@@ -100,7 +121,7 @@ const createVoice = (soundId: string, positional: boolean): Voice | null => {
 	audio.userData.selectable = false;
 	routeToBus(audio, def.bus ?? 'sfx');
 
-	const voice: Voice = { soundId, audio, freeAt: 0 };
+	const voice: Voice = { soundId, audio, freeAt: 0, lowpass: null, rec: null };
 	live.add(voice);
 	return voice;
 };
@@ -131,6 +152,7 @@ const configure = (voice: Voice, options: PlayOptions, loop: boolean): boolean =
 	} else if (audio.filters.length > 0) {
 		audio.setFilters([]);
 	}
+	voice.lowpass = options.lowpass ?? null;
 
 	if (options.at) {
 		if (audio instanceof ThreePositionalAudio) options.at.add(audio);
@@ -157,10 +179,20 @@ const makeHandle = (voice: Voice): VoiceHandle => ({
 		return voice.audio.isPlaying;
 	},
 	pause() {
-		if (voice.audio.isPlaying) voice.audio.pause();
+		if (!voice.audio.isPlaying) return;
+		voice.audio.pause();
+		// Load-bearing during a take: the rain bed pauses and resumes as weather moves,
+		// and both engine beds do on a settings change. Without the pair of records the
+		// replay would run them straight through.
+		noteStop(voice.rec, sceneNow());
+		voice.rec = null;
 	},
 	resume() {
-		if (!voice.audio.isPlaying && voice.audio.buffer) voice.audio.play();
+		if (voice.audio.isPlaying || !voice.audio.buffer) return;
+		voice.audio.play();
+		// Resumes mid-buffer, so stamp the start back by the cursor and let render.ts
+		// seek: `play()` has just set `_startedAt`, leaving `bufferOffset` at `_progress`.
+		recordStart(voice, sceneNow() - bufferOffset(voice.audio));
 	},
 	stop() {
 		if (voice.audio.source) voice.audio.stop();
@@ -170,6 +202,9 @@ const makeHandle = (voice: Voice): VoiceHandle => ({
 });
 
 const release = (voice: Voice): void => {
+	// Every stop path funnels through here, so this is the one place a take needs.
+	noteStop(voice.rec, sceneNow());
+	voice.rec = null;
 	live.delete(voice);
 	voice.audio.removeFromParent();
 	const key = poolKey(voice.soundId, voice.audio instanceof ThreePositionalAudio);
@@ -212,8 +247,12 @@ export const playOneShot = (soundId: string, options: PlayOptions = {}): VoiceHa
 	// clocks. Three's `play()` wants an offset from `context.currentTime`, so the absolute
 	// context time comes back as a relative one. Clamped at 0 — the anchor can sit a
 	// fraction behind on the frame a take claims the clock.
-	const startedAt = toContextTime(sceneNow() + Math.max(0, options.delay ?? 0));
+	const startScene = sceneNow() + Math.max(0, options.delay ?? 0);
+	const startedAt = toContextTime(startScene);
 	voice.audio.play(Math.max(0, startedAt - now()));
+	// Stamped at the SCHEDULED scene time, not now: a thunder clap eight seconds out
+	// belongs eight seconds into the take, wherever the live monitor happened to put it.
+	recordStart(voice, startScene);
 
 	const natural = voice.audio.buffer ? voice.audio.buffer.duration / voice.audio.playbackRate : 0;
 	const span = options.duration !== undefined ? Math.min(options.duration, natural) : natural;
@@ -238,8 +277,9 @@ export const startLoop = (soundId: string, options: PlayOptions = {}): VoiceHand
 	}
 	voice.freeAt = Infinity;
 	if (!options.paused) {
-		const startedAt = toContextTime(sceneNow() + Math.max(0, options.delay ?? 0));
-		voice.audio.play(Math.max(0, startedAt - now()));
+		const startScene = sceneNow() + Math.max(0, options.delay ?? 0);
+		voice.audio.play(Math.max(0, toContextTime(startScene) - now()));
+		recordStart(voice, startScene);
 	}
 	return makeHandle(voice);
 };
@@ -277,6 +317,139 @@ export const unparkVoices = (): void => {
 		if (live.has(voice) && !voice.audio.isPlaying) voice.audio.play();
 	}
 	parked.length = 0;
+};
+
+// ── Take recording ──────────────────────────────────────────────────────────────
+//
+// The driving half of `timeline.ts`, here because this module owns the live voice set.
+// Everything below is inert unless a capture take has armed it.
+
+/**
+ * Three's playback cursor for a voice, in buffer seconds.
+ *
+ * Reaches into `_progress` / `_startedAt`, which are the same fields `Audio.pause()` uses
+ * to resume where it left off. Needed for ONE case, and it is not an edge case: the music
+ * and ambience beds have been looping since boot, so a take that arms mid-session has no
+ * `start` event for them and would render them from silence — or from sample 0, an
+ * audible jump — without this.
+ *
+ * Typed `Audio<AudioNode>` (the DOM global) because a voice may be a `PositionalAudio`,
+ * which is not an `Audio<GainNode>` to TypeScript (`getOutput()` overrides to a
+ * `PannerNode`) — the same trap `routeToBus` documents. Only base-class members are read.
+ */
+const bufferOffset = (audio: ThreeAudio<AudioNode>): number => {
+	const a = audio as unknown as { _progress?: number; _startedAt?: number };
+	const progress = a._progress ?? 0;
+	if (!audio.isPlaying || a._startedAt === undefined) return progress;
+	const elapsed = (audio.context.currentTime - a._startedAt) * audio.playbackRate;
+	const raw = progress + Math.max(0, elapsed);
+	const length = audio.buffer?.duration ?? 0;
+	return audio.loop && length > 0 ? raw % length : raw;
+};
+
+const positionalParamsOf = (audio: ThreeAudio<AudioNode>) =>
+	audio instanceof ThreePositionalAudio
+		? {
+				ref: audio.panner.refDistance,
+				rolloff: audio.panner.rolloffFactor,
+				max: audio.panner.maxDistance,
+				panningModel: audio.panner.panningModel,
+				distanceModel: audio.panner.distanceModel
+			}
+		: null;
+
+/**
+ * Enter a voice into the take. `startScene` is absolute scene time and may sit BEFORE the
+ * take armed, for a bed already in flight — `render.ts` clips that against the take window.
+ */
+const recordStart = (voice: Voice, startScene: number): void => {
+	if (!isRecordingAudio() || !voice.audio.buffer) return;
+	// A pooled voice can be STOLEN mid-take — close the previous entry before the new one
+	// takes the slot, or it would run to the end of the take with no stop.
+	if (voice.rec) noteStop(voice.rec, sceneNow());
+	voice.rec = noteStart({
+		soundId: voice.soundId,
+		bus: getDef(voice.soundId)?.bus ?? 'sfx',
+		buffer: voice.audio.buffer,
+		startScene,
+		loop: voice.audio.loop,
+		detune: voice.audio.detune,
+		lowpass: voice.lowpass,
+		positional: positionalParamsOf(voice.audio)
+	});
+};
+
+/** Per-bus gain curves, index-aligned with the take's bus list. */
+let busCurves: { id: BusId; curve: Curve }[] = [];
+
+const listenerPos = new Vector3();
+const listenerQuat = new Quaternion();
+const listenerScale = new Vector3();
+const listenerFwd = new Vector3();
+const listenerUp = new Vector3();
+
+/**
+ * Begin recording. Snapshots the bus graph and every voice already sounding, then the
+ * per-frame sampler takes over.
+ */
+export const armRecording = (sceneTime: number): void => {
+	armTimeline(sceneTime);
+	busCurves = [];
+	for (const bus of busGraph()) {
+		const curve = noteBus(bus.id, bus.parent);
+		if (curve) busCurves.push({ id: bus.id, curve });
+	}
+	for (const voice of live) {
+		if (!voice.audio.isPlaying) continue;
+		// Started before the take: stamp it at `now − offset` so the replay seeks into the
+		// buffer by exactly the amount that has already been heard.
+		recordStart(voice, sceneTime - bufferOffset(voice.audio));
+	}
+	tickRecording(sceneTime);
+};
+
+export const disarmRecording = (): RecordedTake | null => {
+	for (const voice of live) voice.rec = null;
+	busCurves = [];
+	return disarmTimeline();
+};
+
+/** Sample every automated parameter for this frame. Epsilon-gated inside `timeline.ts`. */
+export const tickRecording = (sceneTime: number): void => {
+	if (!isRecordingAudio()) return;
+
+	for (const { id, curve } of busCurves) sampleVolume(curve, sceneTime, busGain(id));
+
+	for (const voice of live) {
+		const rec = voice.rec;
+		if (!rec) continue;
+		sampleVolume(rec.volume, sceneTime, voice.audio.getVolume());
+		sampleRate(rec.rate, sceneTime, voice.audio.playbackRate);
+		if (rec.pos) {
+			voice.audio.getWorldPosition(listenerPos);
+			samplePosition(rec.pos.x, sceneTime, listenerPos.x);
+			samplePosition(rec.pos.y, sceneTime, listenerPos.y);
+			samplePosition(rec.pos.z, sceneTime, listenerPos.z);
+		}
+	}
+
+	const curves = listenerCurves();
+	if (curves && listener) {
+		listener.matrixWorld.decompose(listenerPos, listenerQuat, listenerScale);
+		// Same basis three's own AudioListener.updateMatrixWorld feeds the Web Audio
+		// listener: forward is -Z, up is the object's up, both in world space.
+		listenerFwd.set(0, 0, -1).applyQuaternion(listenerQuat);
+		listenerUp.copy(listener.up).applyQuaternion(listenerQuat);
+		samplePosition(curves.x, sceneTime, listenerPos.x);
+		samplePosition(curves.y, sceneTime, listenerPos.y);
+		samplePosition(curves.z, sceneTime, listenerPos.z);
+		sampleVolume(curves.fx, sceneTime, listenerFwd.x);
+		sampleVolume(curves.fy, sceneTime, listenerFwd.y);
+		sampleVolume(curves.fz, sceneTime, listenerFwd.z);
+		sampleVolume(curves.ux, sceneTime, listenerUp.x);
+		sampleVolume(curves.uy, sceneTime, listenerUp.y);
+		sampleVolume(curves.uz, sceneTime, listenerUp.z);
+	}
 };
 
 /** How many voices are live. */

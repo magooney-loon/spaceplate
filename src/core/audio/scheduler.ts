@@ -13,11 +13,11 @@
 //   - INTERVALS are preserved exactly, always. A `delay` of 2 scene-seconds is always
 //     scheduled 2 context-seconds out, in realtime and inside a take alike. So this
 //     conversion changes no observable behaviour in a normal session — it makes the
-//     UNIT explicit so step 5 can replay a take against it.
+//     UNIT explicit so the offline render (render.ts) can replay a take against it.
 //   - The ORIGIN is what moves. In realtime the anchor is re-glued every frame, so scene
 //     and context time stay locked together. When a fixed-step source takes the clock
 //     the anchor FREEZES, and from that moment the gap between the two is exactly the
-//     audio/video drift `capture/` documents — see `schedulerDrift()`.
+//     audio/video drift the live monitor exhibits — see `schedulerDrift()`.
 //
 // Why slope 1 rather than tracking the take's actual rate: a take's rate is whatever the
 // renderer manages that frame, it is not known in advance, and it changes constantly. The
@@ -70,7 +70,8 @@ export const tickScheduler = (): void => {
 export const toContextTime = (sceneTime: number): number =>
 	anchorContext + (sceneTime - anchorScene);
 
-/** AudioContext seconds → scene seconds. The inverse; step 5 stamps recorded events with it. */
+/** AudioContext seconds → scene seconds. The inverse; nothing needs it yet — `voices.ts`
+ * stamps takes with `sceneNow()` directly — but a round trip without it is a trap. */
 export const toSceneTime = (contextTime: number): number =>
 	anchorScene + (contextTime - anchorContext);
 
@@ -78,10 +79,11 @@ export const toSceneTime = (contextTime: number): number =>
  * How far the live audio clock has run ahead of scene time since a take claimed the
  * engine clock, in seconds. Zero in realtime.
  *
- * THIS IS THE CAPTURE DRIFT, measured rather than estimated: the video track is
- * `frameCount / fps` scene-seconds while the live tap records wall-seconds, so this is
- * exactly how far the finished file's sound would run ahead of its picture. Step 5
- * removes the drift by rendering the audio offline; until then it is at least visible.
+ * THIS IS THE DRIFT THE OFFLINE RENDER (render.ts) EXISTS TO BYPASS, measured rather than
+ * estimated: the video track is `frameCount / fps` scene-seconds while the live graph
+ * plays at wall pace, so this is exactly how far the MONITOR has run ahead of the picture
+ * mid-take. Finished takes no longer contain it; this remains the honest gauge of how far
+ * the renderer is behind while one runs.
  */
 export const schedulerDrift = (): number => {
 	const context = audioContext();

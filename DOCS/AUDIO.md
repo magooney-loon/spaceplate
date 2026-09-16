@@ -465,9 +465,19 @@ Each step leaves the app working.
    `useSound()` + `<PositionalAudio>` onto a scene-declared sound and an `audio.scope()` —
    the last hand-multiplied `sfxVolume` in the app, and the first real consumer of
    positional `at`. **Not yet runtime-verified by ear.**
-5. **Timeline + offline render.** `timeline.ts`, `render.ts`, and `capture/` swaps the live
-   tap for the rendered buffer. The "Audio: a best-effort live tap" section of
-   `capture/CLAUDE.md` is rewritten — that whole section becomes the history of a fixed bug.
+5. ~~**Timeline + offline render.**~~ **DONE.** `timeline.ts` (pure storage: events +
+   epsilon-gated automation, stamped in scene seconds) and `render.ts` (the
+   OfflineAudioContext replay → one AudioBuffer of exactly the take's scene length). The
+   driving half lives in `voices.ts`, which owns the live voice set: `armRecording`
+   snapshots the bus graph and every bed already sounding (cursor included), every
+   start/pause/resume/steal/release path stamps the take, and `AudioRuntime`'s task samples
+   automation LAST so it records what consumers just wrote. `audio.recording` is the door
+   (`arm` / `render` / `discard`). `capture/` arms at the same synchronous instant it
+   claims the engine clock, renders with `frameCount / fps` inside `isFinalizing`, and
+   mediabunny's `AudioBufferSource` replaced the `MediaStreamAudioTrackSource` tap —
+   `useAudioListener` and the hand-typed return left `Capture.svelte` with it. The live-tap
+   section of `capture/CLAUDE.md` is now "Audio: a deterministic offline render", the
+   history of a fixed bug. **Not yet runtime-verified by ear.**
 6. **Acceptance pass.** Walk the carAudio table above and confirm every row is expressible.
    Fix the API where it is not; do not port the scene.
 

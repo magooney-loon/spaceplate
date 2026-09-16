@@ -190,6 +190,25 @@ export const syncMixerFromSettings = (): void => {
 	setBusMuted('sfx', !a.sfxEnabled);
 };
 
+/**
+ * The bus tree's SHAPE and current gains — what `render.ts` rebuilds inside an
+ * OfflineAudioContext, and what `timeline.ts` attaches its gain curves to.
+ */
+export const busGraph = (): { id: BusId; parent: BusId | null; gain: number }[] => {
+	if (!buses) return [];
+	return [...buses.values()].map((b) => ({
+		id: b.id,
+		parent: b.parent?.id ?? null,
+		gain: gainOf(b)
+	}));
+};
+
+/** The live gain of one bus, for per-frame sampling. */
+export const busGain = (id: BusId): number => {
+	const bus = busOf(id);
+	return bus ? gainOf(bus) : 1;
+};
+
 /** Dev aid: what the graph currently holds. The Studio panel's voice inspector grows from this. */
 export const mixerSnapshot = (): { id: BusId; volume: number; muted: boolean; gain: number }[] => {
 	if (!buses) {

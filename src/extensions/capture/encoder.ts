@@ -8,9 +8,9 @@
 // each frame straight off the canvas, so there is no VideoFrame lifecycle to get wrong.
 
 import {
+	AudioBufferSource,
 	BufferTarget,
 	CanvasSource,
-	MediaStreamAudioTrackSource,
 	Mp4OutputFormat,
 	Output,
 	Quality,
@@ -32,7 +32,7 @@ const CODECS: Record<CaptureContainer, VideoCodec[]> = {
 	mp4: ['avc', 'hevc', 'av1']
 };
 
-/** Same probing shape, for the optional audio track — see "Audio: a best-effort live tap" in CLAUDE.md. */
+/** Same probing shape, for the optional audio track — see "Audio: a deterministic offline render" in CLAUDE.md. */
 const AUDIO_CODECS: Record<CaptureContainer, AudioCodec[]> = {
 	webm: ['opus', 'vorbis'],
 	mp4: ['aac', 'opus']
@@ -49,7 +49,7 @@ const MAX_QUEUE = 4;
 
 export interface OfflineTake {
 	readonly codec: VideoCodec;
-	/** Whether an audio track was actually attached — false if no track was given, or no encodable codec was found. */
+/** Whether an audio buffer was actually written — false if no encodable codec, or the take was silent. */
 	readonly hasAudio: boolean;
 	readonly extension: CaptureContainer;
 	readonly width: number;
@@ -64,8 +64,13 @@ export interface OfflineTake {
 	readonly failure: Error | null;
 	/** Encode the canvas exactly as it stands right now. */
 	push(): void;
-	/** Flush, finalize, and hand back the finished file. */
-	finish(): Promise<Blob>;
+	/**
+	 * Flush, finalize, and hand back the finished file.
+	 *
+	 * `audio` is the take's OFFLINE RENDER — one buffer, exactly as many scene seconds long
+	 * as the video, handed over whole rather than tapped in real time. Null renders silent.
+	 */
+	finish(audio: AudioBuffer | null): Promise<Blob>;
 	/** Tear down without producing a file. */
 	cancel(): Promise<void>;
 }
@@ -75,16 +80,10 @@ export const createOfflineTake = async (options: {
 	container: CaptureContainer;
 	fps: number;
 	bitrateMbps: number;
-	/**
-	 * A live tap of the master audio bus (see capture/CLAUDE.md, "Audio: a best-effort live
-	 * tap"). Optional — no AudioListener mounted, or no encodable codec, just means a
-	 * silent video; never fails the take over it.
-	 */
-	audioTrack?: MediaStreamAudioTrack | null;
 	/** Called when the encoder is ready for the next frame — the caller re-arms the loop here. */
 	onReady: () => void;
 }): Promise<OfflineTake> => {
-	const { canvas, container, fps, bitrateMbps, audioTrack, onReady } = options;
+	const { canvas, container, fps, bitrateMbps, onReady } = options;
 	const { width, height } = canvas;
 
 	const quality = new Quality({ bitrate: Math.round(bitrateMbps * 1_000_000) });
@@ -94,11 +93,11 @@ export const createOfflineTake = async (options: {
 		throw new Error(`no encodable ${container} video codec at ${width}×${height}`);
 	}
 
-	// Real-time audio, riding alongside a frame-stepped video timeline — probed the same way
-	// as the video codec, but never fatal: a take is still worth having silent.
-	const audioCodec = audioTrack
-		? await getFirstEncodableAudioCodec(AUDIO_CODECS[container])
-		: null;
+	// Probed the same way as the video codec, and never fatal: a take is still worth having
+	// silent. The TRACK has to be added before `output.start()`, long before the rendered
+	// buffer exists, so it is added whenever the machine can encode one — a take that turns
+	// out to have no voices simply never gets a buffer written to it.
+	const audioCodec = await getFirstEncodableAudioCodec(AUDIO_CODECS[container]);
 
 	const output = new Output({
 		// fastStart puts the mp4 index at the front so the file is seekable immediately;
@@ -124,19 +123,22 @@ export const createOfflineTake = async (options: {
 
 	output.addVideoTrack(source, { frameRate: fps });
 
-	if (audioTrack && audioCodec) {
-		// Pulls from the MediaStreamTrack in real time on its own, from `output.start()`
-		// until finalize — nothing here pushes samples, unlike the video's per-frame add().
-		const audioSource = new MediaStreamAudioTrackSource(audioTrack, {
-			codec: audioCodec,
-			quality: new Quality({ bitrate: AUDIO_BITRATE })
-		});
-		output.addAudioTrack(audioSource);
-	}
+	// A PUSH source, like the video's CanvasSource — the whole take arrives in one `add()`
+	// at finalize. That is the difference that fixes the drift: the old
+	// MediaStreamAudioTrackSource pulled in real time from `output.start()`, so it recorded
+	// wall-clock seconds against a frame-stepped video timeline.
+	const audioSource = audioCodec
+		? new AudioBufferSource({
+				codec: audioCodec,
+				quality: new Quality({ bitrate: AUDIO_BITRATE })
+			})
+		: null;
+	if (audioSource) output.addAudioTrack(audioSource);
 
 	await output.start();
 
 	let frameCount = 0;
+	let audioWritten = false;
 	let failure: Error | null = null;
 	let finished = false;
 	/**
@@ -147,7 +149,9 @@ export const createOfflineTake = async (options: {
 
 	const take: OfflineTake = {
 		codec,
-		hasAudio: audioTrack !== null && audioTrack !== undefined && audioCodec !== null,
+		get hasAudio() {
+			return audioWritten;
+		},
 		extension: container,
 		width,
 		height,
@@ -184,9 +188,19 @@ export const createOfflineTake = async (options: {
 			});
 		},
 
-		async finish() {
+		async finish(audio: AudioBuffer | null) {
 			finished = true;
 			await Promise.all([...inFlight]);
+			if (audioSource) {
+				// Added after every video frame rather than interleaved: the muxer buffers,
+				// and a 60 s stereo take at 48 kHz is ~23 MB — well inside what is already
+				// held in memory for the video.
+				if (audio) {
+					await audioSource.add(audio);
+					audioWritten = true;
+				}
+				audioSource.close();
+			}
 			await output.finalize();
 			const buffer = (output.target as BufferTarget).buffer;
 			if (!buffer) throw new Error('encoder produced no buffer');

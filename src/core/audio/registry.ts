@@ -4,9 +4,9 @@
 // declaration into a voice, and `voices.ts` owns the THREE.Audio objects.
 //
 // LOADING IS OURS, not Threlte's `<Audio src>` (`useLoader(AudioLoader)`), for two
-// reasons: it hands back the decoded `AudioBuffer` directly — which is what step 5's
-// OfflineAudioContext replay needs to reuse rather than decode twice — and it gives a
-// real per-sound status in place of the hand-maintained `AUDIO_TOTAL = 5 + …` counter
+// reasons: it hands back the decoded `AudioBuffer` directly — which is what the
+// `OfflineAudioContext` replay (render.ts) reuses rather than decoding twice — and it gives
+// a real per-sound status in place of the hand-maintained `AUDIO_TOTAL = 5 + …` counter
 // that used to live in GlobalAudio.svelte.
 
 import { BASE_URL } from '$extensions/settings';

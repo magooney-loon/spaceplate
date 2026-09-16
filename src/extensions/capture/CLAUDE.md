@@ -8,11 +8,11 @@ Screenshots and video recordings of the rendered scene.
 types.ts                 — extensionScope, CaptureImageFormat, CaptureContainer,
                            CAPTURE_RESOLUTIONS, CaptureState, CaptureActions, CaptureDriver
 capture.svelte.ts        — $state + captureActions + the driver slot + captureRuntime
-encoder.ts               — the take (WebCodecs): mediabunny Output + CanvasSource, and the
-                           optional MediaStreamAudioTrackSource for the audio tap
+encoder.ts               — the take (WebCodecs): mediabunny Output + CanvasSource for the
+                           video, AudioBufferSource for the offline-rendered audio
 Capture.svelte           — the driver: renders nothing, owns the grab task, the encode path,
-                           the engine clock's fixed-step source for a take, and the audio tap
-                           off Camera.svelte's AudioListener
+                           the engine clock's fixed-step source for a take, and arming/
+                           rendering the audio layer's take recorder (see the audio section)
 CaptureExtension.svelte  — Studio toolbar panel (UI only)
 index.ts                 — barrel
 ```
@@ -149,56 +149,56 @@ post-processing targets from the drawing buffer every frame, and the blits read
   `applyResolution`, the still path, the video sizing and the panel. Reviving it means making
   `captureResolutionSize` nullable again.
 
-## Audio: a best-effort live tap
+## Audio: a deterministic offline render
 
-Offline takes can carry sound, but it is fundamentally the odd one out in this file: every
-other guarantee here comes from the take owning the engine clock (`captureRuntime.frameStep`,
-a counter dressed up as time), and Web Audio has no equivalent — `AudioContext.currentTime`
-is wall-clock and cannot be substituted, so this is the one place a take genuinely runs on
-two clocks at once.
+Audio used to be the odd one out in this file: every other guarantee here comes from the
+take owning the engine clock, and Web Audio has no clock to own — `AudioContext.currentTime`
+is wall-clock and cannot be substituted. The old answer was a **live tap** — a
+`MediaStreamAudioDestinationNode` fanned off the master bus, encoded by mediabunny's
+pull-style `MediaStreamAudioTrackSource` — and it drifted, because the video track is
+`frameIndex / fps` scene-seconds no matter how long each frame took while the tap recorded
+whatever the `AudioContext` produced at that wall-clock moment. On a machine sustaining the
+target fps the two stayed close; on a heavy take — 4K, a demanding scene, a slow GPU — the
+finished file's sound ran ahead of its picture by exactly how far the renderer fell behind
+(`core/audio/scheduler.ts`, `schedulerDrift()`). No fix keeps a tap "live": the only correct
+answer is to render the audio offline through the same scene clock. That is what happens
+now, and the machinery lives in `core/audio/` (`timeline.ts` + `render.ts` — see that
+CLAUDE.md for the recorder's contract); this section covers capture/'s half of it.
 
-- **The tap sits on the master bus, not per-source.** `Capture.svelte` calls
-  `useAudioListener()` (`@threlte/extras`) to reach the same `THREE.AudioListener` instance
-  `Camera.svelte`'s `<AudioListener />` mounted (`getInput()` returns `listener.gain`, the
-  node every `<Audio>`/`<PositionalAudio>` connects into, itself wired to
-  `context.destination`). `attachAudioTap()` fans an **additional** connection out of
-  `listener.gain` into a fresh `MediaStreamAudioDestinationNode` at `startOfflineRecording()`
-  — additive, so the existing connection to speakers is untouched and a take never mutes or
-  duplicates live listening. `releaseAudioTap()` (called from `teardownOffline()`, so every
-  stop path — normal, encoder failure, async-creation-lost-the-race — hits it) disconnects
-  that one edge and stops the destination's track; it does not touch `listener.gain` itself.
-- **Typed by hand, not `ReturnType<typeof useAudioListener>`.** That hook is overloaded (a
-  no-arg form returning `{ listener, context }` and a generic callback form); `ReturnType` of
-  an overloaded function resolves to the **last** signature, not the one actually called, so
-  it collapses to `{}` and every field access fails to typecheck. `Capture.svelte` spells the
-  return type out instead.
-- **`MediaStreamAudioTrackSource` (mediabunny) pulls in real time, on its own** — no `.add()`
-  call, unlike the video's per-frame `CanvasSource`. It starts consuming from
-  `output.start()` and keeps going until `output.finalize()`, which is exactly why this is a
-  *live* tap: the samples it encodes are whatever the `AudioContext` actually produced at
-  that wall-clock moment, entirely independent of how many video frames the take has gotten
-  through.
-- **This is where the two clocks disagree.** A take's video timestamp is `frameIndex / fps`
-  — exactly `1/fps` per encoded frame regardless of how long the frame took to render (see
-  "One video path" above). The audio track has no such latch: it is real seconds of real
-  `AudioContext` output. On a machine that sustains close to the target fps the two drift by
-  at most a buffer or two. On a heavy take — 4K, a demanding scene, a low-end GPU — the video
-  can render far slower than wall clock while the audio keeps recording at wall clock, so the
-  finished file's sound runs ahead of the picture. There is no fix for this that keeps the
-  tap "live": true frame-accurate audio would mean rendering audio offline through the same
-  frame-stepped clock (`OfflineAudioContext`, sound triggers replayed deterministically
-  against scene time instead of fired at a live `AudioContext`) — a much larger change that
-  touches every trigger in `core/audio/`, not just `capture/`. Until that happens, this tap
-  is scoped to takes that render near real time.
-- **Never fatal.** No `<AudioListener>` mounted, or no encodable audio codec for the
-  container (probed via `getFirstEncodableAudioCodec`, same shape as the video codec probe:
-  webm tries opus then vorbis, mp4 tries aac then opus) — either way `createOfflineTake`
-  falls back to a silent video rather than failing the take. `OfflineTake.hasAudio` reports
+- **Armed at the same instant the clock is claimed.** `startOfflineRecording()` calls
+  `audio.recording.arm(sceneNow())` immediately before `setFixedStepSource(takeStep)` — both
+  synchronous in the same call — so the audio take's window and the video's first frame
+  start on the same scene second. Voices already sounding (the music/ambience beds,
+  typically looping since boot) are entered with their playback cursor, so the replay
+  seeks into the buffer by exactly what has already been heard.
+- **Rendered at stop, not tapped while running.** `stopOfflineRecording()` calls
+  `audio.recording.render(take.encodedSec)` — `frameCount / fps`, the same counter the
+  video timestamps come from — and hands the buffer to `finish()`. The buffer is exactly
+  that many seconds long, so sync is exact **by construction, at any render speed**: a 4K
+  take crawling at 8 fps produces the same audio as one running at 60. The offline render
+  is async and lands inside `isFinalizing`, which exists for exactly this window.
+- **A PUSH source, like the video's.** mediabunny's `AudioBufferSource` takes the whole
+  buffer in one `add()` at finalize — after every video frame, not interleaved; the muxer
+  buffers, and a 60 s stereo take at 48 kHz is ~23 MB, well inside what the video already
+  holds in memory. The track itself must be added before `output.start()`, long before the
+  buffer exists, so it is added whenever the machine can encode one; a take that turns out
+  to have no voices simply never writes to it.
+- **Every stop path disarms the recorder.** A normal stop renders; encoder-creation
+  failure, mid-take encoder failure and a stop that raced encoder creation `discard()`
+  instead — otherwise the layer keeps sampling automation for a take that will never
+  exist.
+- **The live graph during a take is a MONITOR.** Nothing in the output depends on it —
+  voices still play at wall pace (slope 1, `core/audio/scheduler.ts`), so on a slow take
+  the operator hears the take being made rather than the file being written. A clap may
+  sound misplaced live and still land exactly right in the file.
+- **Never fatal.** No encodable audio codec for the container (probed via
+  `getFirstEncodableAudioCodec`, same shape as the video codec probe: webm tries opus then
+  vorbis, mp4 tries aac then opus), an empty take, or a failed offline render — each falls
+  back to a silent video rather than failing the take. `OfflineTake.hasAudio` reports
   which happened; the panel status line and the console log both say `(no audio)` when it
   does.
 - Audio bitrate is a fixed 160 kbps, not a panel control — the video bitrate slider is the
-  one dial that matters for file size, and a live tap has no "resolution" setting to pair it
-  with.
+  one dial that matters for file size.
 
 ## What ends up in the output
 

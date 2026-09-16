@@ -63,8 +63,9 @@
 		const drift = schedulerDrift();
 		logSound.info('Buses:', mixerSnapshot());
 		logSound.info(`Voices (${voiceSnapshot().length}):`, voiceSnapshot());
-		// Non-zero only while a capture take owns the engine clock — this is how far the
-		// take's audio has run ahead of its picture (core/audio/CLAUDE.md, "Scene time").
+		// Non-zero only while a capture take owns the engine clock — how far the LIVE MONITOR
+		// has run ahead of the take's scene time, i.e. how far the renderer is behind. The
+		// take's output no longer depends on it (core/audio/render.ts replays scene stamps).
 		if (drift !== 0) logSound.warn(`Capture audio drift: ${drift.toFixed(3)}s ahead of scene time`);
 	};
 </script>

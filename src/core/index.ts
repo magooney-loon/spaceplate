@@ -12,9 +12,19 @@ export { default as Camera } from './Camera.svelte';
 export { default as AudioRuntime } from './audio/AudioRuntime.svelte';
 export { audio, defineSounds } from './audio/audio';
 export { engineSounds } from './audio/engineSounds';
+// Scene seconds since boot — the unit every public audio timestamp is in. Capture arms
+// the take recorder with it, at the same instant it claims the engine clock.
+export { sceneNow } from './audio/scheduler';
 export { busAudible, setBusMuted, setBusVolume } from './audio/mixer';
 export { soundsReady } from './audio/registry';
-export type { AudioScope, BusId, PlayOptions, SoundDef, SoundRef, VoiceHandle } from './audio/types';
+export type {
+	AudioScope,
+	BusId,
+	PlayOptions,
+	SoundDef,
+	SoundRef,
+	VoiceHandle
+} from './audio/types';
 
 // input/
 export { default as Keymapper } from './input/Keymapper.svelte';

@@ -2,23 +2,27 @@
 
 ```
 types.ts            — SoundDef, PlayOptions, VoiceHandle, AudioScope, BusId
-mixer.ts            — THE BUS GRAPH: real GainNodes, routeToBus(), busAudible()
+mixer.ts            — THE BUS GRAPH: real GainNodes, routeToBus(), busAudible(),
+                      busGraph()/busGain() for the take recorder
 registry.ts         — declarations + decoded buffers; fetch/decodeAudioData, variant sets
 scheduler.ts        — scene time ↔ AudioContext time; the take anchor; schedulerDrift()
-voices.ts           — the THREE.Audio objects: one-shot pools, loops, handles, parking
+voices.ts           — the THREE.Audio objects: one-shot pools, loops, handles, parking;
+                      also drives the take recorder (it owns the live voice set)
+timeline.ts         — the take recorder's STORAGE: events + epsilon-gated automation,
+                      stamped in scene seconds; imports nothing from voices.ts
+render.ts           — the OfflineAudioContext replay of a recorded take → one AudioBuffer
 audio.ts            — THE FACADE: defineSounds() + `audio`. The only door.
 engineSounds.ts     — the ENGINE's own manifest (click/swoosh/ost/ambience/rain/thunder)
 AudioRuntime.svelte — renders nothing: listener hookup, settings sync, the two beds,
-                      tab-hide parking, the weather tick
+                      tab-hide parking, the weather tick, the per-frame take sampling
 weatherAudio.ts     — rain bed + thunder claps; the sky's audio consumer
 index.ts            — barrel
 ```
 
-> **Being reworked — `DOCS/AUDIO.md` is the plan.** Steps 1–3 (the mixer, the registry,
-> the scene clock) have landed. The `extensions/audio` rename (step 4) and the
-> deterministic capture render (step 5) have not — `capture/`'s audio is still a
-> best-effort live tap, and the drift is now _measurable_ (`schedulerDrift()`) but not
-> yet _fixed_.
+> **Reworked per `DOCS/AUDIO.md`** — steps 1–5 have landed (the mixer, the registry +
+> voices, the scene clock, the panel rename, and the deterministic capture render that
+> replaced `capture/`'s live tap). What remains is step 6, the acceptance pass against
+> `TestGame/carAudio.ts`. **Not yet runtime-verified by ear.**
 
 ## The registry is the only door
 
@@ -42,9 +46,9 @@ bed.volume = 0.4;
 - **`poly` is one-shot depth**, oldest stolen on overflow. `poly: 1` is stop-and-restart.
   Loops ignore it: each `loop()` gets its own voice and its own handle.
 - **Loading is ours, not Threlte's `<Audio src>`.** `fetch` + `decodeAudioData` hands back
-  the `AudioBuffer` directly — which step 5's `OfflineAudioContext` reuses rather than
-  decoding twice — and gives a real per-sound status in place of the hand-maintained
-  `AUDIO_TOTAL = 5 + …` counter that used to sit in GlobalAudio.svelte.
+  the `AudioBuffer` directly — which the `OfflineAudioContext` replay (`render.ts`) reuses
+  rather than decoding twice — and gives a real per-sound status in place of the
+  hand-maintained `AUDIO_TOTAL = 5 + …` counter that used to sit in GlobalAudio.svelte.
 - **A voice is null until its buffer lands.** Callers that already poll (weatherAudio)
   retry each tick; callers that do not (the music/ambience beds) await `soundsReady()`.
 - **`freeAt`, not `isPlaying`, decides whether a pooled voice is free.** Three's
@@ -70,8 +74,9 @@ sources ──▶ music ────┐
 ```
 
 - **Three's listener stays the master.** Its own contract (`setMasterVolume`, the filter
-  slot) keeps working, and `capture/`'s tap fans off `listener.gain` — so it still sees
-  everything however many buses sit above it. Don't re-parent it.
+  slot) keeps working, and every bus ends at `listener.gain`, so nothing bypasses the graph
+  however many buses sit above it. Don't re-parent it. (A capture tap used to fan off this
+  node; the offline render replaced it — see "Deterministic takes" below.)
 - **`ui` is a child of `sfx`**, so click/swoosh ride the sfx fader exactly as they used to,
   with a place to trim UI separately later.
 - **A volume is a gain node, not a number call sites multiply in.** `settingsState.audio`
@@ -110,16 +115,17 @@ contextTime = anchorContext + (sceneTime − anchorScene)
 - **The map is affine with SLOPE 1, and that is the thing to understand.** Intervals carry
   over exactly — a `delay` of 2 scene-seconds is always scheduled 2 context-seconds out,
   in realtime and inside a take alike. So this changes no observable behaviour in a normal
-  session; it makes the UNIT explicit so step 5 can replay a take against it. Only the
-  ORIGIN moves.
+  session; it makes the UNIT explicit so the offline render can replay a take against it.
+  Only the ORIGIN moves.
 - **In realtime the anchor is re-glued every frame**, which also absorbs the small real
   drift between rAF time and the audio hardware clock that a once-at-boot anchor would
   accumulate. **When a fixed-step source claims the engine clock the anchor freezes**, and
   the gap that then opens IS the capture drift.
 - **`schedulerDrift()` measures that gap** — how far the live audio clock has run ahead of
-  scene time since a take began, in seconds. Zero in realtime. It is exactly how far a
-  captured file's sound runs ahead of its picture today. Step 5 removes the drift; until
-  then it is at least visible instead of theoretical.
+  scene time since a take began, in seconds. Zero in realtime. That gap is exactly how far
+  the old live tap's sound ran ahead of its picture; the offline render removed it from
+  takes, and this remains the honest gauge of how far the live monitor has fallen behind
+  mid-take.
 - **The live graph during a take is a MONITOR.** Slope 1 means it plays a take's audio at
   wall-clock pace regardless of how slowly the renderer is going, which is deliberately
   _not_ corrected: a take's rate is whatever the renderer manages that frame, it is not
@@ -130,6 +136,42 @@ contextTime = anchorContext + (sceneTime − anchorScene)
   is a plain main-stage task, so a scene's own audio tick could beat it on the frame a
   take starts and use the previous anchor — one frame of slop in a monitor, and the
   recorded stamps are unaffected.
+
+## Deterministic takes (`timeline.ts` + `render.ts`)
+
+A capture take's video is `frameCount / fps` scene-seconds however long each frame took to
+ draw, so a recording tapped off the live graph can never match it — the live clock runs at
+ wall pace (slope 1, above) and drifts by exactly how far the renderer fell behind. The fix
+is the registry itself: while a take is armed the layer RECORDS what it was told, stamped
+in scene seconds, and `render.ts` re-performs it into an `OfflineAudioContext`.
+
+- **Two kinds of record.** EVENTS are discrete and rare — a voice started (at its
+  SCHEDULED scene time, so a thunder clap delayed 8 s lands 8 s into the take) or stopped
+  (every stop path funnels through `release()`; pause/resume and pool steals close their
+  entries too). AUTOMATION is continuous — per-voice `volume` / `rate` / world position,
+  per-bus gain, and the listener pose (9 floats) — sampled once per frame by
+  `AudioRuntime`'s task, AFTER the consumers have written the frame's values.
+  EPSILON-GATED, so a steady bed costs one breakpoint and a moving one a float per frame
+  (same discipline as `skyMeta`'s mirror).
+- **A bed already sounding when the take arms is entered with its playback cursor**, so
+  the replay seeks into the buffer by exactly what has already been heard — the music and
+  ambience beds have been looping since boot, and without this the take would render them
+  from silence (or from sample 0, an audible jump).
+- **The replay rebuilds the graph, not the voices**: the bus tree from `busGraph()` with
+  its recorded gains; per voice a BufferSource over the SAME decoded `AudioBuffer` (buffers
+  are not context-bound — the reason loading is ours), a `BiquadFilterNode` and
+  `PannerNode` rebuilt from the recorded params, curves applied via `setValueAtTime` /
+  `linearRampToValueAtTime`, `start(t)` / `stop(t)` clipped to the take window. Where the
+  listener has no AudioParams (Firefox was late) it is pinned to its start-of-take pose
+  and a warning is logged.
+- **`audio.recording` is the door** — `arm(sceneTime)` / `render(durationScene)` /
+  `discard()`. `capture/` arms at the same synchronous instant it claims the engine clock
+  and renders with `frameCount / fps`; the buffer comes back exactly that long, so sync
+  with the video is exact by construction at any render speed.
+- **The cost, stated plainly:** anything that does not go through the registry is invisible
+  to the recorder and silently absent from the take. A scene mounting a raw `<Audio>`, or
+  calling `.setVolume()` on a `THREE.Audio` directly, gets no error and no sound in the
+  file. That is the price of determinism, and the reason the registry is the only door.
 
 ## Rules
 
@@ -165,6 +207,6 @@ of it. The flight time is a `delay` in SCENE seconds, converted by `scheduler.ts
 scheduled natively on the `AudioContext` clock.
 
 A clap fired inside a capture take is still voiced on the live monitor at wall-clock pace
-(slope 1, above), so it is not where a _slow_ take's picture is — but the delay is now
-expressed in the unit step 5's offline render replays against, which is what makes it
-fixable rather than merely wrong.
+(slope 1, above), so it will not be where a _slow_ take's picture is — but the take
+records it at its scene time and the offline render puts it back exactly there. The
+monitor is best-effort; the file is exact.

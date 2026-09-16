@@ -3,9 +3,8 @@
 	// Mount position, task ordering vs. the Gizmo, and what ends up in the output: capture/CLAUDE.md.
 
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
-	import { useAudioListener } from '@threlte/extras';
-	import { PerspectiveCamera, Vector2, type AudioListener as ThreeAudioListener } from 'three/webgpu';
-	import { setFixedStepSource } from '$core';
+	import { PerspectiveCamera, Vector2 } from 'three/webgpu';
+	import { audio as audioLayer, sceneNow, setFixedStepSource } from '$core';
 	import { sceneState } from '$extensions/scene';
 	import { logEngine } from '$extensions/logger';
 	import {
@@ -19,41 +18,11 @@
 
 	const { renderer, camera, invalidate, autoRenderTask } = useThrelte();
 
-	// --- audio: a best-effort live tap ----------------------------------------------
-	// Real-time only — riding the master bus in wall-clock time alongside a video track
-	// that is frame-stepped and NOT wall-clock. Stays in sync when the machine renders
-	// near the take's target fps; drifts on slow/heavy takes. See capture/CLAUDE.md.
-
-	// Camera.svelte's <AudioListener/> mounts synchronously, well before this dynamically
-	// imported component's script runs (App.svelte awaits the import), so the listener is
-	// already registered by the time this call resolves. Still guarded: no listener just
-	// means a silent recording, never a broken one.
-	// Typed explicitly rather than via `ReturnType<typeof useAudioListener>` — that hook is
-	// overloaded, and `ReturnType` of an overloaded function resolves to the LAST signature
-	// (the generic callback form), not the no-arg one actually being called here.
-	let audioTap: { listener: ThreeAudioListener; context: AudioContext } | null = null;
-	try {
-		audioTap = useAudioListener();
-	} catch (error) {
-		logEngine.warn('Capture: no AudioListener mounted — recordings will have no audio', error);
-	}
-
-	let audioDestination: MediaStreamAudioDestinationNode | null = null;
-
-	/** Additive fan-out off the master bus — the listener's own connection to speakers is untouched. */
-	const attachAudioTap = (): MediaStreamAudioTrack | null => {
-		if (!audioTap) return null;
-		audioDestination = audioTap.context.createMediaStreamDestination();
-		audioTap.listener.gain.connect(audioDestination);
-		return audioDestination.stream.getAudioTracks()[0] ?? null;
-	};
-
-	const releaseAudioTap = () => {
-		if (!audioDestination || !audioTap) return;
-		audioTap.listener.gain.disconnect(audioDestination);
-		for (const track of audioDestination.stream.getAudioTracks()) track.stop();
-		audioDestination = null;
-	};
+	// --- audio: a deterministic offline render ------------------------------------
+	// No live tap any more. The audio layer RECORDS what it was told, stamped in scene
+	// seconds, and replays it through an OfflineAudioContext at finalize — so the buffer is
+	// exactly as many scene seconds long as the video is, and the two cannot drift however
+	// slowly the take rendered. See capture/CLAUDE.md and core/audio/timeline.ts.
 
 	// --- shared helpers ------------------------------------------------------------
 
@@ -268,7 +237,6 @@
 		// Covers the normal stop, the async encoder-creation failure and the mid-take encoder
 		// failure alike — all three come through here.
 		releaseResolution();
-		releaseAudioTap();
 		offlineTake = null;
 		offlinePending = false;
 		takeFrames = 0;
@@ -300,6 +268,9 @@
 		captureRuntime.saturated = true;
 		captureRuntime.frameStep = 1 / captureState.fps;
 		captureState.status = 'Preparing encoder…';
+		// Armed at the same scene time the clock is claimed below, so the take's audio
+		// window and its video window start on the same instant.
+		audioLayer.recording.arm(sceneNow());
 		// Claim the clock now, not when the encoder lands: from here every frame is either
 		// part of the take or a deliberate hold.
 		setFixedStepSource(takeStep);
@@ -309,7 +280,6 @@
 			container: captureState.container,
 			fps: captureState.fps,
 			bitrateMbps: captureState.bitrateMbps,
-			audioTrack: attachAudioTap(),
 			onReady: onEncoderReady
 		}).then(
 			(take) => {
@@ -317,7 +287,7 @@
 				// starting a take nobody asked for any more.
 				if (!offlinePending) {
 					void take.cancel();
-					releaseAudioTap();
+					audioLayer.recording.discard();
 					return;
 				}
 				offlineTake = take;
@@ -326,13 +296,16 @@
 				captureState.status = 'Rendering offline…';
 				logEngine.info(
 					`Capture: offline take ${take.width}×${take.height} @ ${captureState.fps}fps, ` +
-						`${take.codec}/${take.extension}${take.hasAudio ? ' + audio' : ' (no audio)'}, ` +
+						`${take.codec}/${take.extension}, ` +
 						`cap ${captureState.maxDurationSec}s`
 				);
 				invalidate();
 			},
 			(error: unknown) => {
 				teardownOffline();
+				// The recorder was armed in the same call that claimed the clock; a take that
+				// dies here must hand it back or it samples automation forever (capture/CLAUDE.md).
+				audioLayer.recording.discard();
 				captureState.status = 'Offline recording failed — see console';
 				logEngine.error('Capture: could not start the offline encoder', error);
 			}
@@ -347,30 +320,46 @@
 		// Draining, muxing and building the Blob happen here — not instant at 4K. Gate the
 		// panel for the whole window (see isFinalizing in capture/CLAUDE.md).
 		captureState.isFinalizing = true;
-		captureState.status = 'Preparing video…';
-		void take.finish().then(
-			(blob) => {
-				captureState.isFinalizing = false;
-				const seconds = take.encodedSec.toFixed(1);
-				if (blob.size === 0) {
-					captureState.status = 'Recording produced no data';
-					logEngine.warn('Capture: offline take produced no data');
-					return;
+		captureState.status = 'Rendering audio…';
+		// The take's audio, rendered offline from the scene-time stamps the layer recorded —
+		// exactly `frameCount / fps` seconds, the same counter the video timestamps come
+		// from, so the two tracks cannot drift however slowly the take rendered. Null (and a
+		// silent file) when nothing was armed or no voice ever sounded.
+		void audioLayer.recording
+			.render(take.encodedSec)
+			.catch((error: unknown) => {
+				// Audio is never fatal (see capture/CLAUDE.md): a failed render still hands
+				// over a silent-but-correct video rather than losing the take.
+				logEngine.warn('Capture: offline audio render failed — saving silent', error);
+				return null;
+			})
+			.then((audio) => {
+				captureState.status = 'Preparing video…';
+				return take.finish(audio);
+			})
+			.then(
+				(blob) => {
+					captureState.isFinalizing = false;
+					const seconds = take.encodedSec.toFixed(1);
+					if (blob.size === 0) {
+						captureState.status = 'Recording produced no data';
+						logEngine.warn('Capture: offline take produced no data');
+						return;
+					}
+					download(blob, take.extension);
+					const size = (blob.size / 1024 / 1024).toFixed(2);
+					const audioNote = take.hasAudio ? '' : ', no audio';
+					captureState.status = `Saved ${seconds}s ${take.extension} (${size} MB${audioNote})`;
+					logEngine.info(
+						`Capture: offline video ${seconds}s ${take.codec}/${take.extension}, ${size} MB${audioNote}`
+					);
+				},
+				(error: unknown) => {
+					captureState.isFinalizing = false;
+					captureState.status = 'Finalizing failed — see console';
+					logEngine.error('Capture: could not finalize the offline take', error);
 				}
-				download(blob, take.extension);
-				const size = (blob.size / 1024 / 1024).toFixed(2);
-				const audioNote = take.hasAudio ? '' : ', no audio';
-				captureState.status = `Saved ${seconds}s ${take.extension} (${size} MB${audioNote})`;
-				logEngine.info(
-					`Capture: offline video ${seconds}s ${take.codec}/${take.extension}, ${size} MB${audioNote}`
-				);
-			},
-			(error: unknown) => {
-				captureState.isFinalizing = false;
-				captureState.status = 'Finalizing failed — see console';
-				logEngine.error('Capture: could not finalize the offline take', error);
-			}
-		);
+			);
 	};
 
 	// --- video: the driver contract -------------------------------------------------------
@@ -421,6 +410,7 @@
 			const { message } = take.failure;
 			logEngine.error('Capture: offline encoder failed mid-take', take.failure);
 			teardownOffline();
+			audioLayer.recording.discard();
 			void take.cancel();
 			captureState.status = `Encoder failed: ${message}`;
 			return;
