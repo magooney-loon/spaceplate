@@ -122,11 +122,13 @@ debug/                  — the debug TOOL, both halves: the 3D rig and its read
                          (complements the Studio-gated Rapier collider debug in
                          extensions/physics)
 audio/                  — the engine NOTE
-  CarEngineAudio.svelte — the car's positional engine bed, mounted inside the
-                         visual-scale group; all mixing lives in carAudio.ts
-  carAudio.ts           — rpm voice bands, rpm-driven loudness (never input), pop
-                         takes jittered per hit, chassis scrape (loop on grind,
-                         shriek on hull hits); layers/anchors/pitch from the spec
+  carSounds.ts          — the scene's SOUND MANIFEST, declared on the engine's registry
+                         (urls, gains, positional params, pool depth — data only)
+  CarEngineAudio.svelte — anchor groups + the scope + the tick task; voices are
+                         core/audio's, created at initCarAudio once buffers land
+  carAudio.ts           — all mixing: rpm voice bands, rpm-driven loudness (never
+                         input), pop takes jittered per hit, chassis scrape (loop on
+                         grind, shriek on hull hits); layers/anchors/pitch from the spec
                          (files are SHARED across cars) — ticked from carSim
                          (weatherAudio contract — never $effect)
 world/                  — THE MAP: everything map-shaped (one track so far — a
@@ -1149,20 +1151,26 @@ inherit the GR86's ride.
   silent). Take choice is a FUZZY crossover on the pop's energy (`exhaustpop1`
   mild below ~0.55, `exhaustpop2` aggressive above ~0.8, coin-flip between) and
   every hit is jittered — volume by energy × randomness, rate 0.88–1.12, a fresh
-  randomized lowpass per clone (thunder-clap contract: no two bangs alike). Pops
-  are CLONES parented at the dominant tip (model metres, same TIP_L/TIP_R space;
-  polyphonic, so double-bangs overlap), reaped in the tick when spent and stopped
-  by parkCarAudio on scene exit. NITROUS: three voices — `nitrosstart` on ENGAGE
+  randomized lowpass per hit (thunder-clap contract: no two bangs alike). Pops
+  are POOLED positional voices (`poly` on the declarations — the old clone lists)
+  placed at the dominant tip via a per-play `position` (model metres, same
+  TIP_L/TIP_R space; polyphonic, so double-bangs overlap), the pool stealing
+  oldest past its depth — and at the PANNER-DEFAULT distance curve
+  (ref 1/rolloff 1), which is what the old clones actually ran with:
+  `Audio.clone()` copies no panner param, so POP_GAIN was tuned against ~1/distance
+  attenuation (see carSounds.ts's HIT_POS). NITROUS: three voices — `nitrosstart` on ENGAGE
   (flow crosses up through ~0.02), its REVERSE `nitrosend.opus` (made offline via
   ffmpeg `areverse` — buffer sources can't play backwards) on RELEASE (the first
   frame the flow falls while on; pedal lift and bottle-dry are both releases),
   and the `nitrosdrain` LOOP while spraying, volume following `carSim.nitrous`
-  (the same flow the flames/camera/HUD read). One-shot semantics (clickAudio
-  pattern): a re-engage mid-play cuts and restarts. IGNITION: the `ignition` slot
+  (the same flow the flames/camera/HUD read). One-shot semantics (`poly: 1`
+  declarations — the registry's cut-and-restart): a re-engage mid-play just goes
+  again. IGNITION: the `ignition` slot
   voices the transitions (`turnon.opus` / `turnoff.opus`) and gates everything
   combustive — bed, pops, nitrous all stop when the switch is off. Switching on
   starts a realistic startup: the turnon sound cranks, RPM revs to ~2k then
-  settles, and only when the sound ends does `carIgnition.ready` flip true and the
+  settles, and only when the crank's sound ends does `carIgnition.ready` flip true
+  (the tick polls the handle — the old `onEnded` callback, at frame rate) and the
   idle bed fade in — throttle, brake and shifting are gated on `ready`. Switching
   off cuts instantly: bed silences under the turnoff shot, `ready` clears, the car
   coasts to a stop. Edge-triggered on the press, and the bed cuts instantly on
@@ -1172,7 +1180,7 @@ inherit the GR86's ride.
   substeps several times per audio tick — `hullHitSeq`'s own contract), Q/E
   taps, the automatic's own shifts and its stopped drop-to-1st all land on it
   since they all run through engage(). Edge-detected in the tick, one-shot
-  semantics, synced edge state on park/detach like the scrape hit, and not
+  semantics, synced edge state on detach like the scrape hit, and not
   separately gated on ignition — the controller already gates shifting on it.
   HANDBRAKE: `handbrake_pull.opus` / `handbrake_release.opus`, the ignition
   pair's own shape off `carSim.handbrake` — pull on the rising edge, release
@@ -1199,11 +1207,12 @@ inherit the GR86's ride.
   (`metal_scraping.opus`) as two voices — a LOOP under the sills whose level and
   rate ride the same grind the spark stream's rate does (`hullSlideMs` over
   CarImpacts' own 1.4–22 m/s thresholds, duplicated in carAudio and
-  ChaseCamera — keep them in step), and a hit SHRIEK on `hullHitSeq`'s rising edge: a clone at the CONTACT
-  point (`hullLocal` ÷UPM into the visual group's model metres — the pops'
-  TIP_L/R rule), volume/rate/lowpass jittered (thunder-clap contract),
-  DEADLINE-stopped at 0.22–0.72 s because the take is a 2.4 s scrape and a hit
-  is a fraction of one, and reaped in the tick like the pops. Not gated on
+  ChaseCamera — keep them in step), and a hit SHRIEK on `hullHitSeq`'s rising edge: a
+  pooled positional voice at the CONTACT point (a per-play `position`, `hullLocal`
+  ÷UPM into the body anchor's model metres — the pops' TIP_L/R rule),
+  volume/rate/lowpass jittered (thunder-clap contract), DEADLINE-stopped at
+  0.22–0.72 s via `{ duration }` because the take is a 2.4 s scrape and a hit
+  is a fraction of one. Not gated on
   ignition — metal on metal isn't combustive either. Edge state SYNCS (never
   resets) on park/detach, or re-entry would voice a hit that landed while
   parked. Frame-rate edge polling is safe because `HIT_COOLDOWN` (90 ms)
@@ -1224,23 +1233,24 @@ inherit the GR86's ride.
   replayed as a periodic character wobble each loop wrap — rpm2's head sat
   649 Hz below its settled centroid), and loudness-matched to one
   RMS (-8.4 dBFS) — a new take without that treatment will click on wrap,
-  wander, and pump; recover originals via git. Deliberately NOT core/audio:
-  the engine layer can express all of this now (it was reworked into a mixer +
-  sound registry — DOCS/AUDIO.md), but this stays scene-owned per this file's
-  own boundary, and serves as the ACCEPTANCE TEST for that API instead. It sits
-  outside the bus graph and multiplies `sfxVolume` in by hand; see carAudio.ts's
-  header for what migrating it would take.
-  The tick follows the weatherAudio contract: the component mounts
-  `<PositionalAudio>` inside the car (the listener rides the camera), the module
-  mixes from `carSim` in a task, never `$effect`. NO WebGPU compute audio: the
+  wander, and pump; recover originals via git. Scene-owned, on the ENGINE's
+  registry (DOCS/AUDIO.md step 6 — the acceptance pass): the sounds are declared
+  in audio/carSounds.ts and mixed in audio/carAudio.ts through the facade, with
+  registry handles (live volume/rate, per-play jitter + `position`, `poly` pools,
+  `{ duration }` deadlines, the sfx bus) and no raw THREE.Audio left — which is
+  also why capture takes now include the car (the offline render replays exactly
+  what the facade was told). The tick follows the weatherAudio contract:
+  CarEngineAudio.svelte mounts only anchor groups and calls
+  `initCarAudio(scope, anchors)` once buffers land, and the module mixes from
+  `carSim` in a task, never `$effect`. NO WebGPU compute audio: the
   three.js example is offline batch (process whole buffer → read back → play
   once); live rpm needs per-frame pitch, which three's `setPlaybackRate`
   (setTargetAtTime-smoothed resampling) already does on the audio thread with
-  zero readback latency. The tick lives only while the scene is mounted, the
-  unmount cleanup parks the loops (paused progress kept), and tab-hide parks
-  too (rAF stops, the AudioContext doesn't). `LAYER_RPM` anchors are guesses at
-  the wavs — tune by ear; if layers ever get compute-processed, `<PositionalAudio>`
-  `src` accepts a raw AudioBuffer at the mount site.
+  zero readback latency. The tick lives only while the scene is mounted; unmount
+  is the scope's `release()`, and tab-hide parking is the engine's (AudioRuntime
+  parks loops). `LAYER_RPM` anchors are guesses at the wavs — tune by ear; if
+  layers ever get compute-processed, the declaration is where a raw AudioBuffer
+  would slot in, not the mixer.
 - **`ChaseCamera.svelte` BORROWS the app camera** (`core/Camera.svelte` — the one
   holding the AudioListener) via `<CameraControls>` + `useFollow` from
   `@threlte/extras`, rather than mounting a second `makeDefault` camera. One

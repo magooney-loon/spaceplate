@@ -19,10 +19,10 @@ weatherAudio.ts     — rain bed + thunder claps; the sky's audio consumer
 index.ts            — barrel
 ```
 
-> **Reworked per `DOCS/AUDIO.md`** — steps 1–5 have landed (the mixer, the registry +
-> voices, the scene clock, the panel rename, and the deterministic capture render that
-> replaced `capture/`'s live tap). What remains is step 6, the acceptance pass against
-> `TestGame/carAudio.ts`. **Not yet runtime-verified by ear.**
+> **Reworked per `DOCS/AUDIO.md`** — all six steps have landed (the mixer, the registry
+> + voices, the scene clock, the panel rename, the deterministic capture render, and
+> the carAudio acceptance pass — TestGame declares its own manifest and mixes through
+> the facade, no raw THREE.Audio left in the repo). **Not yet runtime-verified by ear.**
 
 ## The registry is the only door
 
@@ -45,6 +45,15 @@ bed.volume = 0.4;
   picker, moved into the declaration; adding a take is one line.
 - **`poly` is one-shot depth**, oldest stolen on overflow. `poly: 1` is stop-and-restart.
   Loops ignore it: each `loop()` gets its own voice and its own handle.
+- **`at` places a voice, `position` offsets it inside the parent.** `at` parents a
+  positional voice to an Object3D; `position` is a local offset in that object's
+  space — the exhaust tip a pop speaks from, the hull point a scrape shriek lands
+  at. Pooled voices reset to the parent's origin when a play passes none, so a
+  slot never inherits the previous hit's spot — and the panner is landed on the
+  voice's WORLD position at configure time (`setValueAtTime`), because three only
+  pushes it while `isPlaying`, one rendered frame later: without the landing, a
+  fresh voice opens at the world origin and a pooled one at its previous play's
+  spot.
 - **Loading is ours, not Threlte's `<Audio src>`.** `fetch` + `decodeAudioData` hands back
   the `AudioBuffer` directly — which the `OfflineAudioContext` replay (`render.ts`) reuses
   rather than decoding twice — and gives a real per-sound status in place of the
@@ -93,8 +102,10 @@ sources ──▶ music ────┐
   `this.gain`. The registry routes every voice it creates, so engine code no longer clones;
   but **`Audio.clone()` is `new this.constructor(this.listener)`**, and that constructor
   wires `gain → listener.getInput()`, so any clone comes back wired **past the whole bus
-  graph, at full volume**. Scene code that still clones (TestGame's `carAudio`) must call
-  `routeToBus(clone, bus)` before `play()`.
+  graph, at full volume — and past the take recorder, which never sees it**. Nothing in
+  the repo clones any more (TestGame's carAudio was the last, moved to pooled registry
+  voices by the acceptance pass); the rule stands because the bypass is silent, not
+  because anything still needs the reminder.
 - **`busAudible(id)` is for TASK-driven consumers only.** Buses are plain objects, so a
   `$derived` over them would never re-run. Components derive audibility from
   `settingsState.audio` primitives instead (`AudioRuntime.svelte`) — which is also

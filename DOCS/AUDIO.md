@@ -478,8 +478,30 @@ Each step leaves the app working.
    `useAudioListener` and the hand-typed return left `Capture.svelte` with it. The live-tap
    section of `capture/CLAUDE.md` is now "Audio: a deterministic offline render", the
    history of a fixed bug. **Not yet runtime-verified by ear.**
-6. **Acceptance pass.** Walk the carAudio table above and confirm every row is expressible.
-   Fix the API where it is not; do not port the scene.
+6. ~~**Acceptance pass.**~~ **DONE.** Every row of the table above is expressed
+   through the registry — and the sounds stay in the GAME: TestGame declares its own
+   manifest (`audio/carSounds.ts` — urls, gains, positional params, pool depth),
+   `core/audio/` remains mechanism only. Bed = six `scope.loop` handles with live
+   `volume`/`rate` and pause/resume on crossfade weight, no per-voice `$effect`; pops
+   = two energy-split ids (a variant set draws at random — the crossover is
+   energy-driven) + `{ volume, rate, lowpass, at, position }` per play; overlap =
+   `poly` pools (the clone lists and their reaping are gone); squeal/scrape =
+   `busAudible` gating + slewed handle volume; the shriek deadline = `{ duration }`
+   — which the pass caught recording WRONG (duration one-shots never stamped their
+   stop, so takes replayed the whole 3 s buffer — fixed in voices.ts); lifecycle =
+   the scope + engine-owned parking (`parkCarAudio` deleted); the sfx bus replaces
+   both hand-multiplied `master` locals. The API grew `PlayOptions.position` and
+   `VoiceHandle.duration` (the crank-tail fade reads the latter). Two more deltas
+   the ears caught on first drive, both specific to the per-play-positioned pooled
+   one-shots: pool depth 4 chopped limiter-stutter strings and multi-hit grinds
+   (the old clone lists were unbounded — now 8), and a pooled positional voice
+   opened from its PREVIOUS play's panner spot (three pushes the panner only while
+   `isPlaying`, a frame late — the registry now lands it at play time, and seeds the
+   take's opening automation the same way). Third, the loud one: the old clones'
+   panners never saw the mounted ref 10/rolloff 1.4 (`Audio.clone()` copies no
+   panner param), so pops/hits ran at panner defaults ≈ 1/distance — the gains were
+   tuned against that, and the hit declarations now declare it (`HIT_POS`, ref 1 /
+   rolloff 1) instead of the car's CAR_POS. **Not yet runtime-verified by ear.**
 
 ```
 

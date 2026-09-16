@@ -1,26 +1,18 @@
-// Car engine audio — TestGame's own, and still NOT the engine's audio system, but the
-// reason has changed. It used to be that `core/audio` only spoke UI one-shots and
-// weather beds through a two-entry `soundTriggers` counter. That layer has since been
-// reworked into a mixer + sound registry (DOCS/AUDIO.md) that can express everything
-// below; this file is deliberately NOT migrated (TestGame/CLAUDE.md's boundary — nothing
-// here is engine architecture), and instead serves as the ACCEPTANCE TEST for that API.
+// Car engine audio — TestGame's own consumer of the engine's audio layer, and its
+// ACCEPTANCE TEST (DOCS/AUDIO.md's carAudio table): everything this module used to do
+// with raw <PositionalAudio> mounts, hand-multiplied gains and clones — the rpm bed,
+// the pops, the squeal, the deadline shrieks — is expressed through the registry here.
+// That is also what puts the car in a capture take: the offline render replays exactly
+// what this module asks the facade for (core/audio/timeline.ts).
 //
-// THIS FILE SITS ENTIRELY OUTSIDE THE BUS GRAPH, and that is currently correct rather
-// than broken: its <PositionalAudio> voices connect straight to `listener.gain` (the
-// master), and the two `master = sfxEnabled ? sfxVolume : 0` locals below multiply the
-// sfx setting in by hand — which is exactly the duplication the mixer deleted everywhere
-// else. It also means the new master fader already reaches these voices, for free.
-//
-// Migrating it is: route each voice to the `sfx` bus (`routeToBus` from
-// `$core/audio/mixer` — INCLUDING every `clone()`, which `Audio.clone()` wires back to
-// the listener behind your back) and delete both `master` locals.
-//
-// THE CONTRACT (weatherAudio.ts is the precedent): CarEngineAudio.svelte mounts the
-// six <PositionalAudio> loops, the tyre-squeal loop and the pop/nitrous one-shots
-// inside the car, hands
-// them over via the attach functions below, and its task calls `tickCarAudio(delta)` —
-// never an `$effect` (carSim is plain state; an effect would run once at mount
-// and never again).
+// THE CONTRACT (weatherAudio.ts is the precedent): CarEngineAudio.svelte mounts only
+// anchor groups, takes a scope, and once buffers are ready calls
+// `initCarAudio(scope, anchors)`; its task calls `tickCarAudio(delta)` — never an
+// `$effect` (carSim is plain state; an effect would run once at mount and never
+// again). Sound DATA lives in carSounds.ts; every mixing decision lives here. The old
+// lifecycle functions are gone with the mounts: unmount is the scope's `release()`
+// (the component's cleanup), and tab-hide parking is the engine's (AudioRuntime parks
+// loops) — only the edge-state sync remains in `detachCarAudio`.
 //
 // WHY NO WEBGPU COMPUTE (the three.js webgpu_compute_audio example): that example
 // processes a WHOLE buffer offline — compute → getArrayBufferAsync → play the
@@ -29,30 +21,60 @@
 // Audio already pitch-shifts live via `setPlaybackRate` (setTargetAtTime-smoothed
 // resampling — the same math the example's `element(index × pitch)` shader does),
 // on the audio thread, with zero round-trips. If a compute-processed layer is ever
-// wanted anyway, <PositionalAudio>'s src accepts a raw AudioBuffer — one such
-// buffer can be dropped in at the mount site without touching this module's shape.
+// wanted anyway, a per-sound declaration could hand the registry a raw AudioBuffer
+// without touching this module's shape.
 
-import type { PositionalAudio as ThreePositionalAudio } from 'three';
-import { settingsState } from '$extensions/settings';
+import type { Object3D } from 'three';
+import { busAudible, sceneNow, type AudioScope, type PlayOptions, type VoiceHandle } from '$core';
 import { currentCar } from '../cars';
 import { clamp, damp } from '../sim/carMath';
 import { carSim } from '../sim/carTelemetry.svelte';
 import { carIgnition } from '../sim/carSwitches.svelte';
 import { HULL_HIT_FULL_DV } from '../sim/hullContacts';
 import { UNITS_PER_METER } from '../units';
+import { BED_IDS, carSounds } from './carSounds';
 
-/**
- * The six loop files, lowest first: the parked tickover, then the rising rpm bed.
- * Order matters — indices line up 1:1 with `LAYER_RPM` below.
- */
-export const LAYER_FILES = [
-	'idle.opus',
-	'rpm1.opus',
-	'rpm2.opus',
-	'rpm3.opus',
-	'rpm4.opus',
-	'rpm5.opus'
-] as const;
+/** Where the car's voices sit — CarEngineAudio's anchor groups, handed over at init. */
+export type CarAnchors = {
+	/** The engine bay: the rpm bed, nitrous, ignition and shift voices. */
+	engineBay: Object3D;
+	/** The cabin: the handbrake pair. */
+	cabin: Object3D;
+	/** The car's origin, in model metres: pops at the exhaust tips, scrape hits at
+	 * the hull contact — per-play `position`s land in this space. */
+	body: Object3D;
+	/** Contact-patch height between the axles: the squeal loop. */
+	tyres: Object3D;
+	/** Under the sills: the scrape loop. */
+	sills: Object3D;
+};
+
+let scope: AudioScope | null = null;
+let anchors: CarAnchors | null = null;
+
+/** One-shot through the scope. `poly: 1` declarations give the cut-and-restart the
+ * old playOneShot had — a re-fire mid-play just goes again. */
+const shot = (id: string, options?: PlayOptions): void => {
+	scope?.play(id, options);
+};
+
+// ── The bed's loudness ──────────────────────────────────────────────────────
+//
+// Driven by the TACHO, never the pedals — the engine answers rpm and gears,
+// not input. A throttle term was here first and read as an echo of the key:
+// lift or downshift and the bed ducked to a mutter (0.22) in ~250 ms, which
+// just sounded like the car vanishing. Instead the level rises gently with
+// rpm: a downshift blip leans in, engine braking on a lift eases the level
+// down at exactly the rate the tacho falls, and the pedals change nothing.
+
+/** Bed level at idle rpm. */
+const BED_IDLE = 0.45;
+/** Bed level at the limiter. */
+const BED_REDLINE = 0.8;
+/** 1/s — level slew, so a shift's rpm jump can't click the gain. */
+const LEVEL_SLEW = 8;
+/** Below this weight a layer is silent — pause it rather than hiss at ~0. */
+const AUDIBLE_WEIGHT = 0.004;
 
 /**
  * The rpm each layer's recording sits at on THIS car's tacho — the
@@ -73,33 +95,12 @@ const HW = currentCar().hardware;
 const RATE_MIN = 0.7;
 const RATE_MAX = 1.5;
 
-// ── The bed's loudness ──────────────────────────────────────────────────────
-//
-// Driven by the TACHO, never the pedals — the engine answers rpm and gears,
-// not input. A throttle term was here first and read as an echo of the key:
-// lift or downshift and the bed ducked to a mutter (0.22) in ~250 ms, which
-// just sounded like the car vanishing. Instead the level rises gently with
-// rpm: a downshift blip leans in, engine braking on a lift eases the level
-// down at exactly the rate the tacho falls, and the pedals change nothing.
-
-/** Bed level at idle rpm. */
-const BED_IDLE = 0.45;
-/** Bed level at the limiter. */
-const BED_REDLINE = 0.8;
-/** 1/s — level slew, so a shift's rpm jump can't click the gain. */
-const LEVEL_SLEW = 8;
-/** Below this weight a layer is silent — pause it rather than hiss at ~0. */
-const AUDIBLE_WEIGHT = 0.004;
-
-/** The mounted loops, index-aligned with LAYER_FILES/LAYER_RPM. Set by the component. */
-const layers: (ThreePositionalAudio | undefined)[] = new Array(LAYER_FILES.length).fill(undefined);
+/** The bed's loop handles, index-aligned with BED_IDS/LAYER_RPM. Created paused at
+ * init; the tick owns volume, rate and audibility. */
+const bed: (VoiceHandle | null)[] = BED_IDS.map(() => null);
 
 /** Smoothed bed level — eases toward the rpm-implied loudness. */
 let bedLevel = BED_IDLE;
-
-export const attachEngineLayer = (index: number, audio: ThreePositionalAudio): void => {
-	layers[index] = audio;
-};
 
 // ── Exhaust pops ─────────────────────────────────────────────────────────────
 //
@@ -108,28 +109,42 @@ export const attachEngineLayer = (index: number, audio: ThreePositionalAudio): v
 // (aggressive) — take choice follows the pop's energy through a FUZZY crossover
 // (never a hard threshold), and every hit is jittered in volume, rate and filter
 // cutoff so no two bangs sound alike (the thunder-clap contract, weatherAudio).
-// Polyphonic via clones parented at the pipe that fired: a double-bang overlaps
-// instead of restarting, and the sound comes from the dominant tip. The wavs
-// are PEAK-NORMALIZED to -3 dBFS offline (+6.03/+8.05 dB, pure gain, RMS now
-// matched at ~-22) — a bang is a transient: it must SLAM past the bed's
-// continuous RMS (-8.4 raw, ~-14 effective) or it simply doesn't exist — and
-// POP_GAIN adds the last stretch on top.
+// Polyphony is the registry's pool (`poly` on the declarations — the old clone
+// list): a double-bang overlaps instead of restarting, and the sound comes from
+// the dominant tip via a per-play `position`. The wavs are PEAK-NORMALIZED to
+// -3 dBFS offline (+6.03/+8.05 dB, pure gain, RMS now matched at ~-22) — a bang
+// is a transient: it must SLAM past the bed's continuous RMS (-8.4 raw, ~-14
+// effective) or it simply doesn't exist — and the declaration's `volume` adds
+// the last stretch on top.
 
-/** Overall pop gain relative to the bed. 6.75 ≈ 5× the 1.35 that read as
- * silent — the files peak at -3 dBFS, so hits above ~1 clip the mixer; that is
- * the point (a bang that clips reads as a SLAM), but dial back toward ~3 if it
- * turns to crunch. */
-const POP_GAIN = 14;
-/** Per-take trim — the takes are loudness-matched at the file level now, so no
- * trim; kept as a knob in case one take should still read hotter. */
-const POP_TAKE_GAIN = [1.0, 1.0];
-/** The two mounted one-shot takes. Set by the component. */
-const popTakes: (ThreePositionalAudio | undefined)[] = new Array(2).fill(undefined);
-/** Live pop clones — pruned in the tick once spent. Rarely over 2–3. */
-const livePops: ThreePositionalAudio[] = [];
-
-export const attachPopAudio = (take: number, audio: ThreePositionalAudio): void => {
-	popTakes[take] = audio;
+/**
+ * Voice one pop. `energy` 0..1 sizes it (downshift bursts big, limiter stutters
+ * small), `right` picks the pipe it speaks from (the visual pop's dominant tip).
+ * Called from CarExhaustFlames' physics task.
+ */
+export const triggerExhaustPop = (energy: number, right: boolean): void => {
+	// No combustion, no bang — ignition off gates the pops too (the flames still
+	// pop visually; gating them is a flames-side change for another day). The bus
+	// mute covers the player's settings; this gate is a cost decision, like every
+	// `busAudible` read.
+	if (!busAudible('sfx') || !carIgnition.on || !anchors) return;
+	// Fuzzy crossover: mild below, aggressive above, a coin-flip zone between —
+	// never the same take for the same pop twice in a row.
+	const aggressive = energy > 0.55 + 0.25 * Math.random();
+	// Same model-metre space the flames' tips live in (the body anchor is at the
+	// car's origin, inside the visual scale group) — the tip comes from the car's
+	// spec, the flames' own TIP_L/TIP_R twin.
+	const [tipX, tipY, tipZ] = currentCar().geometry.exhaustTips[right ? 1 : 0];
+	shot((aggressive ? carSounds.popLoud : carSounds.popMild).soundId, {
+		at: anchors.body,
+		position: [tipX, tipY, tipZ],
+		// Energy sizes it, jitter keeps no two alike; rate and filter jitter live
+		// here too. Floor 1.8 kHz on the lowpass: the jitter must vary BRIGHTNESS,
+		// never muffle the crack.
+		volume: (0.55 + 0.45 * energy) * (0.85 + 0.3 * Math.random()),
+		rate: 0.88 + 0.24 * Math.random(),
+		lowpass: 1800 * 2 ** (Math.random() * 3)
+	});
 };
 
 // ── Nitrous ─────────────────────────────────────────────────────────────────
@@ -140,8 +155,7 @@ export const attachPopAudio = (take: number, audio: ThreePositionalAudio): void 
 // (carSim.nitrous — the same smoothed 0..1 the flames/camera/HUD read). Edges
 // are read off that flow: engage = crossing up through ~0.02, release = the
 // first frame the flow clearly FALLS from on (a drop >3%/frame only happens
-// when the pedal lifts or the bottle runs dry — both are releases). The files
-// peak near 0 dBFS as delivered, so these gains are pure mixes.
+// when the pedal lifts or the bottle runs dry — both are releases).
 // The PURGE (carSim.nitrousPurge) shares the drain loop, blended UNDER the
 // spray — a quieter hiss of the same character from the same engine-bay mount
 // the line and solenoids live under — so the standstill vent needs no fourth
@@ -149,82 +163,42 @@ export const attachPopAudio = (take: number, audio: ThreePositionalAudio): void 
 
 /** Drain-loop level at full flow — a hiss under the engine, not over it. */
 const NITRO_GAIN = 0.5;
-/** Engage/release one-shot level. */
-const NITRO_SHOT_GAIN = 0.9;
 /** Flow above this = system on (the ~0.13 s attack crosses it in a frame or two). */
 const NITRO_ON_FLOW = 0.02;
 /** Purge blend into the drain voice — the vent is a smaller hole than the
  *  nozzle: the same hiss at less than half the spray's presence. */
 const NITRO_PURGE_MIX = 0.45;
 
-/** The mounted nitrous voices. Set by the component. */
-let nitroDrain: ThreePositionalAudio | undefined;
-let nitroStart: ThreePositionalAudio | undefined;
-let nitroEnd: ThreePositionalAudio | undefined;
+/** The drain loop's handle. Created paused at init. */
+let nitroDrain: VoiceHandle | null = null;
 /** Previous tick's flow + the release latch (fire once per spray). */
 let nitroPrev = 0;
 let nitroOn = false;
 let nitroReleased = false;
 
-export const attachNitroDrain = (audio: ThreePositionalAudio): void => {
-	nitroDrain = audio;
-};
-export const attachNitroStart = (audio: ThreePositionalAudio): void => {
-	nitroStart = audio;
-};
-export const attachNitroEnd = (audio: ThreePositionalAudio): void => {
-	nitroEnd = audio;
-};
-
-/** One-shot semantics (clickAudio pattern): a re-fire mid-play cuts and
- * restarts — that read is correct, the system just went again. */
-const playOneShot = (
-	audio: ThreePositionalAudio | undefined,
-	gain: number,
-	master: number
-): void => {
-	if (!audio?.buffer) return;
-	if (audio.isPlaying) audio.stop();
-	audio.setVolume(gain * master);
-	audio.play();
-};
-
 // ── Ignition ─────────────────────────────────────────────────────────────────
 //
 // The `ignition` slot toggles it (carSwitches.svelte.ts latches it). The bed, pops
-// and nitrous all gate
-// on `carIgnition.ready` — no combustion, no noise — and the one-shots voice
-// the transitions. M starts a realistic startup: the turnon sound cranks, the
-// physics task ramps RPM to ~2k then settles, and the idle bed fades in under
-// the crank recording's tail (last STARTUP_BLEND seconds), so the two blend
-// instead of hard-cutting when `ready` flips on the sound's end. N cuts instantly: bed silences
-// under the turnoff shot, `ready` clears, the car coasts to a stop.
+// and nitrous all gate on `carIgnition.ready` — no combustion, no noise — and the
+// one-shots voice the transitions. M starts a realistic startup: the turnon sound
+// cranks, the physics task ramps RPM to ~2k then settles, and the idle bed fades
+// in under the crank recording's tail (last STARTUP_BLEND seconds), so the two blend
+// instead of hard-cutting when `ready` flips on the sound's end. N cuts instantly: bed
+// silences under the turnoff shot, `ready` clears, the car coasts to a stop.
 
-/** Turn-on/off one-shot level. Files peak near 0 dBFS as delivered. */
-const IGNITION_GAIN = 0.9;
-
-let turnOnSound: ThreePositionalAudio | undefined;
-let turnOffSound: ThreePositionalAudio | undefined;
-/** Previous tick's ignition — edge detect for the one-shots. */
-let ignPrev = carIgnition.on;
-/** AudioContext time the crank recording started — drives the bed's
- * fade-in under the recording's tail (see tick). */
-let turnOnStart = 0;
 /** Seconds of the bed fading in under the crank tail before `ready` flips. */
 const STARTUP_BLEND = 0.9;
 
-export const attachTurnOnSound = (audio: ThreePositionalAudio): void => {
-	turnOnSound = audio;
-	// When the crank recording ends, the startup sequence is done — the bed
-	// can fade in and the player can drive. Wired here (not in tick) because
-	// this runs once at mount, and the callback must not stack.
-	audio.onEnded = () => {
-		carIgnition.ready = true;
-	};
-};
-export const attachTurnOffSound = (audio: ThreePositionalAudio): void => {
-	turnOffSound = audio;
-};
+/** The crank's handle — kept (one-shots usually aren't) because the startup blend
+ * and the `ready` flip both read it. */
+let turnOn: VoiceHandle | null = null;
+/** Previous tick's ignition — edge detect for the one-shots. */
+let ignPrev = carIgnition.on;
+/** Scene time the crank started — drives the bed's fade-in under the tail. */
+let turnOnSceneStart = 0;
+/** True from the crank's first frame until it ends — what stops a mid-startup N
+ * press (a `stop()`, not a natural end) from counting as "the recording ended". */
+let cranking = false;
 
 // ── Gear shift ───────────────────────────────────────────────────────────────
 //
@@ -237,19 +211,9 @@ export const attachTurnOffSound = (audio: ThreePositionalAudio): void => {
 // its own: the controller gates shifting on ignition already, so a seq tick
 // implies the key was on.
 
-/** Shift bark level — the mechanical clunk sits under the ignition shots;
- * dial by ear against IGNITION_GAIN. */
-const SHIFT_GAIN = 0.7;
-
-/** The mounted one-shot. Set by the component. */
-let shiftSound: ThreePositionalAudio | undefined;
 /** The last shift this module has voiced — `shiftSeq`'s own edge state,
- * synced (not reset) on park/detach so re-entry can't voice a phantom. */
+ * synced (not reset) on detach so re-entry can't voice a phantom. */
 let shiftSeq = carSim.shiftSeq;
-
-export const attachGearShift = (audio: ThreePositionalAudio): void => {
-	shiftSound = audio;
-};
 
 // ── Handbrake ─────────────────────────────────────────────────────────────
 //
@@ -263,22 +227,8 @@ export const attachGearShift = (audio: ThreePositionalAudio): void => {
 // off. The tyres it locks already have their own voice: the squeal's handbrake
 // term.
 
-/** Handbrake one-shot level — cabin mechanicals, under the bed like the
- * shift bark; dial by ear. */
-const HANDBRAKE_GAIN = 0.7;
-
-/** The mounted pair. Set by the component. */
-let handbrakePull: ThreePositionalAudio | undefined;
-let handbrakeRelease: ThreePositionalAudio | undefined;
 /** Previous tick's handbrake — edge detect for the pair. */
 let handbrakePrev = carSim.handbrake;
-
-export const attachHandbrakePull = (audio: ThreePositionalAudio): void => {
-	handbrakePull = audio;
-};
-export const attachHandbrakeRelease = (audio: ThreePositionalAudio): void => {
-	handbrakeRelease = audio;
-};
 
 // ── Tyres ────────────────────────────────────────────────────────────────────
 //
@@ -322,39 +272,36 @@ const SQUEAL_DRIFT_FULL = (25 * Math.PI) / 180;
 /** Cornering-load floor — the share of the lateral budget a tyre sings from. */
 const SQUEAL_LAT_ON = 0.75;
 /** Cornering squeal weight — deliberately a bit under a slide: the tyres are
- * holding ON the limit, not letting go of it. */
+ *  holding ON the limit, not letting go of it. */
 const SQUEAL_LAT = 0.65;
 /** Hard-brake weight — under a full slide; the fronts working, not a lockup. */
 const SQUEAL_BRAKE = 0.7;
 /** m/s — brake squeal fades out below this, so a stop doesn't end in a squeak. */
 const SQUEAL_BRAKE_SPEED = 6;
 /** Launch-chirp weight — the rev-match drop, scaled by the launch's own
- * quality-and-remaining signal. */
+ *  quality-and-remaining signal. */
 const SQUEAL_LAUNCH = 0.6;
 
-/** The mounted squeal loop. Set by the component. */
-let tireSqueal: ThreePositionalAudio | undefined;
+/** The squeal loop's handle. Created paused at init. */
+let squealLoop: VoiceHandle | null = null;
 /** Smoothed squeal level — asymmetric slew. */
 let squealLevel = 0;
-
-export const attachTireSqueal = (audio: ThreePositionalAudio): void => {
-	tireSqueal = audio;
-};
 
 // ── Chassis scrape ──────────────────────────────────────────────────────────
 //
 // The hull-contact half of what fx/CarImpacts.svelte draws, voiced: pressed
 // and sliding = the metal_scraping LOOP (level rides the same grind the spark
 // stream's rate does), and the ARRIVAL — `hullHitSeq`'s rising edge, the same
-// one-shot CarImpacts bursts on — = a short loud SHRIEK cloned at the contact
-// point and cut off on a DEADLINE, because the recording is a 3 s scrape and a
-// hit is over in a fraction of one. NOT gated on ignition — metal on metal is
-// not combustive (the tyres' own rule); a wall scrape with the engine off
-// still screams. The take is mono 48 kHz Opus peak-held at -3 dBFS (the pops'
-// own convention) — downmixed with an explicit `pan` BEFORE the gain, because
-// a plain `-ac 1` after `-af volume` sums the already-boosted channels and
-// clips — and trimmed where its trailing silence began, so the loop doesn't
-// pump.
+// one-shot CarImpacts bursts on — = a short loud SHRIEK at the contact point
+// (a pooled positional voice with a per-play `position`, the pops' own rule)
+// and cut off on a DEADLINE via `{ duration }`, because the recording is a 3 s
+// scrape and a hit is over in a fraction of one. NOT gated on ignition — metal
+// on metal is not combustive (the tyres' own rule); a wall scrape with the
+// engine off still screams. The take is mono 48 kHz Opus peak-held at -3 dBFS
+// (the pops' own convention) — downmixed with an explicit `pan` BEFORE the
+// gain, because a plain `-ac 1` after `-af volume` sums the already-boosted
+// channels and clips — and trimmed where its trailing silence began, so the
+// loop doesn't pump.
 
 /** Scrape loop level at full grind — a shade over the squeal: bare metal on
  *  concrete is the harshest thing this car does. Dial by ear. */
@@ -368,213 +315,111 @@ const SCRAPE_RELEASE = 8;
  *  two in step or the sparks and the sound disagree about what grinds. */
 const SCRAPE_MIN = 1.4;
 const SCRAPE_FULL = 22;
-/** Hit-shriek gain — the take runs ~5 dB hotter RMS than the pops' files, so
- *  this is POP_GAIN scaled down to land proportionally under the bangs. */
-const SCRAPE_HIT_GAIN = 4.5;
 /** s — hit-shriek length, floor + severity-sized range: a glancing tap is a
  *  chirp, a big arrival grinds half a second. */
 const SCRAPE_HIT_MIN = 0.22;
 const SCRAPE_HIT_RANGE = 0.5;
 
-/** The mounted scrape loop. Set by the component. */
-let scrapeLoop: ThreePositionalAudio | undefined;
-/** The hit-shriek TEMPLATE — never played itself; every hit is a clone at the
- *  contact point (the pops' own contract). */
-let scrapeHit: ThreePositionalAudio | undefined;
+/** The scrape loop's handle. Created paused at init. */
+let scrapeLoopVoice: VoiceHandle | null = null;
 /** Smoothed scrape level — asymmetric slew. */
 let scrapeLevel = 0;
 /** The last hit this module has voiced — `hullHitSeq`'s own edge state,
- *  synced (not reset) on park/detach so re-entry can't voice a phantom. */
+ * synced (not reset) on detach so re-entry can't voice a phantom. */
 let scrapeSeq = carSim.hullHitSeq;
-/** Live hit clones — deadline-stopped and pruned in the tick, like the pops. */
-const liveScraps: ThreePositionalAudio[] = [];
 
-export const attachScrapeLoop = (audio: ThreePositionalAudio): void => {
-	scrapeLoop = audio;
-};
-
-export const attachScrapeHit = (audio: ThreePositionalAudio): void => {
-	scrapeHit = audio;
-};
-
-/** Voice one arrival: a clone of the scrape take AT the contact point (the
- *  hull-local reading is world-unit body space; the template's group lives in
- *  the visual model-metre group, so ÷UPM — the pops' TIP_L/R rule), pitched
- *  and lowpass-jittered so no two hits speak alike (the thunder-clap
- *  contract), stopped on a severity-sized deadline. */
-function triggerScrapeHit(severity: number, master: number): void {
-	if (master <= 0) return;
-	const src = scrapeHit;
-	if (!src?.buffer || !src.parent) return;
-	const hit = src.clone() as ThreePositionalAudio;
-	hit.position.set(
-		carSim.hullLocalX / UNITS_PER_METER,
-		carSim.hullLocalY / UNITS_PER_METER,
-		carSim.hullLocalZ / UNITS_PER_METER
-	);
-	hit.userData.hideInTree = true;
-	hit.userData.selectable = false;
-	src.parent.add(hit);
-	hit.setVolume(SCRAPE_HIT_GAIN * (0.55 + 0.45 * severity) * (0.85 + 0.3 * Math.random()) * master);
-	// A hit is a SHARPER scrape than the loop's grind: base rate over 1, jitter
-	// and severity on top — the same clamps the bed lives under.
-	hit.setPlaybackRate(0.88 + 0.35 * severity + 0.3 * Math.random());
-	// Brightness jitter, floored so it never muffles the shriek (the pops' rule).
-	const filter = hit.context.createBiquadFilter();
-	filter.type = 'lowpass';
-	filter.frequency.value = 2400 * 2 ** (Math.random() * 2.5);
-	hit.setFilters([filter]);
-	// The deadline — the buffer is a 3 s scrape, the hit is a fraction of one.
-	hit.userData.deadline = hit.context.currentTime + SCRAPE_HIT_MIN + SCRAPE_HIT_RANGE * severity;
-	hit.play();
-	liveScraps.push(hit);
+/** Voice one arrival: a pooled scrape voice AT the contact point (the hull-local
+ *  reading is world-unit body space; the body anchor lives in the visual
+ *  model-metre group, so ÷UPM — the pops' TIP_L/R rule), pitched and
+ *  lowpass-jittered so no two hits speak alike (the thunder-clap contract),
+ *  stopped on a severity-sized deadline. */
+function triggerScrapeHit(severity: number): void {
+	if (!anchors) return;
+	shot(carSounds.scrapeHit.soundId, {
+		at: anchors.body,
+		position: [
+			carSim.hullLocalX / UNITS_PER_METER,
+			carSim.hullLocalY / UNITS_PER_METER,
+			carSim.hullLocalZ / UNITS_PER_METER
+		],
+		volume: (0.55 + 0.45 * severity) * (0.85 + 0.3 * Math.random()),
+		// A hit is a SHARPER scrape than the loop's grind: base rate over 1, jitter
+		// and severity on top — the same clamps the bed lives under.
+		rate: 0.88 + 0.35 * severity + 0.3 * Math.random(),
+		// Brightness jitter, floored so it never muffles the shriek (the pops' rule).
+		lowpass: 2400 * 2 ** (Math.random() * 2.5),
+		// The deadline — the buffer is a 3 s scrape, the hit is a fraction of one.
+		duration: SCRAPE_HIT_MIN + SCRAPE_HIT_RANGE * severity
+	});
 }
 
+// ── Lifecycle ────────────────────────────────────────────────────────────────
+
 /**
- * Voice one pop. `energy` 0..1 sizes it (downshift bursts big, limiter stutters
- * small), `right` picks the pipe it speaks from (the visual pop's dominant tip).
- * Called from CarExhaustFlames' physics task.
+ * Create the car's voices — CarEngineAudio's mount step, called once buffers are
+ * ready. Every loop starts PAUSED: the tick owns when anything is heard (autoplay
+ * policy + the sfx bus), exactly like the old `autoplay={false}` mounts.
  */
-export const triggerExhaustPop = (energy: number, right: boolean): void => {
-	const master = settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0;
-	if (master <= 0) return;
-	// No combustion, no bang — ignition off gates the pops too (the flames still
-	// pop visually; gating them is a flames-side change for another day).
-	if (!carIgnition.on) return;
-	// Fuzzy crossover: mild below, aggressive above, a coin-flip zone between —
-	// never the same take for the same pop twice in a row.
-	const aggressive = energy > 0.55 + 0.25 * Math.random();
-	const take = aggressive ? 1 : 0;
-	const src = popTakes[take];
-	if (!src?.buffer || !src.parent) return;
-
-	const pop = src.clone() as ThreePositionalAudio;
-	// Same model-metre space the flames' tips live in (the group is at the car's
-	// origin, inside the visual scale group) — the tip comes from the car's spec,
-	// the flames' own TIP_L/TIP_R twin.
-	const [tipX, tipY, tipZ] = currentCar().geometry.exhaustTips[right ? 1 : 0];
-	pop.position.set(tipX, tipY, tipZ);
-	pop.userData.hideInTree = true;
-	pop.userData.selectable = false;
-	src.parent.add(pop);
-
-	pop.setVolume(
-		POP_GAIN * POP_TAKE_GAIN[take] * (0.55 + 0.45 * energy) * (0.85 + 0.3 * Math.random()) * master
-	);
-	pop.setPlaybackRate(0.88 + 0.24 * Math.random());
-	// Filter jitter — a fresh BiquadFilterNode per clone (clone() shares the
-	// template's filter array by reference; weatherAudio's modulateClap note).
-	// Floor 1.8 kHz: the jitter must vary BRIGHTNESS, never muffle the crack.
-	const filter = pop.context.createBiquadFilter();
-	filter.type = 'lowpass';
-	filter.frequency.value = 1800 * 2 ** (Math.random() * 3);
-	pop.setFilters([filter]);
-	pop.play();
-	livePops.push(pop);
+export const initCarAudio = (carScope: AudioScope, at: CarAnchors): void => {
+	scope = carScope;
+	anchors = at;
+	for (let i = 0; i < BED_IDS.length; i++) {
+		bed[i] = scope.loop(carSounds[BED_IDS[i]].soundId, { at: at.engineBay, paused: true });
+	}
+	nitroDrain = scope.loop(carSounds.nitroDrain.soundId, { at: at.engineBay, paused: true });
+	squealLoop = scope.loop(carSounds.squeal.soundId, { at: at.tyres, paused: true });
+	scrapeLoopVoice = scope.loop(carSounds.scrapeLoop.soundId, { at: at.sills, paused: true });
 };
 
-/** Drop every held instance — CarEngineAudio's teardown, so the module never
- * points at dead objects (this runs on real unmount). */
+/**
+ * Drop every held handle and sync the edge states — CarEngineAudio's teardown, after
+ * the scope has released the voices. Sync, not reset, everywhere: ignition is a latched
+ * switch and must survive remounts, and syncing is what stops a phantom shot at
+ * re-entry.
+ */
 export const detachCarAudio = (): void => {
-	layers.fill(undefined);
-	popTakes.fill(undefined);
-	livePops.length = 0;
-	nitroDrain = undefined;
-	nitroStart = undefined;
-	nitroEnd = undefined;
+	scope = null;
+	anchors = null;
+	bed.fill(null);
+	nitroDrain = null;
+	squealLoop = null;
+	scrapeLoopVoice = null;
+	turnOn = null;
+	cranking = false;
 	nitroPrev = 0;
 	nitroOn = false;
 	nitroReleased = false;
-	turnOnSound = undefined;
-	turnOffSound = undefined;
-	shiftSound = undefined;
-	shiftSeq = carSim.shiftSeq;
-	handbrakePull = undefined;
-	handbrakeRelease = undefined;
-	handbrakePrev = carSim.handbrake;
-	tireSqueal = undefined;
-	squealLevel = 0;
-	scrapeLoop = undefined;
-	scrapeHit = undefined;
-	scrapeLevel = 0;
-	scrapeSeq = carSim.hullHitSeq;
-	liveScraps.length = 0;
-	// Sync, not reset — ignition is a latched switch and must survive remounts;
-	// syncing (not zeroing) is what stops a phantom turn-on shot at re-entry.
 	ignPrev = carIgnition.on;
+	shiftSeq = carSim.shiftSeq;
+	handbrakePrev = carSim.handbrake;
+	squealLevel = 0;
+	scrapeLevel = 0;
+	bedLevel = BED_IDLE;
+	scrapeSeq = carSim.hullHitSeq;
 };
 
-/**
- * Park the engine: loops paused (progress kept — re-entry resumes mid-cycle, no
- * seam), state zeroed. Called on scene exit and on tab hide — rAF stops but the
- * AudioContext doesn't, and an engine droning at its last pitch behind a hidden
- * tab is a bug.
- */
-export const parkCarAudio = (): void => {
-	bedLevel = BED_IDLE;
-	for (const audio of layers) {
-		if (audio?.isPlaying) audio.pause();
-	}
-	// A bang must not outlive its scene — clones are raw graph children, nothing
-	// else would stop them (the mounted takes unmount with the component).
-	for (const pop of livePops) {
-		pop.stop();
-		pop.parent?.remove(pop);
-	}
-	livePops.length = 0;
-	// Nitrous too — the loop pauses (progress kept), the one-shots stop, and the
-	// edge state resets so re-entry starts clean.
-	nitroPrev = 0;
-	nitroOn = false;
-	nitroReleased = false;
-	if (nitroDrain?.isPlaying) nitroDrain.pause();
-	if (nitroStart?.isPlaying) nitroStart.stop();
-	if (nitroEnd?.isPlaying) nitroEnd.stop();
-	// Ignition one-shots stop too, and the edge state syncs (not resets — the
-	// switch is latched, a phantom turn-on at re-entry would be a bug). Ready
-	// syncs too — if ignition was off at exit, stay off; if on, the bed comes back.
-	ignPrev = carIgnition.on;
-	if (turnOnSound?.isPlaying) turnOnSound.stop();
-	if (turnOffSound?.isPlaying) turnOffSound.stop();
-	// The shift bark too — one-shots stop dead, and the edge state syncs (the
-	// seq contract) so re-entry doesn't voice a shift that landed while parked.
-	shiftSeq = carSim.shiftSeq;
-	if (shiftSound?.isPlaying) shiftSound.stop();
-	// The handbrake pair too — and its edge state syncs (ignPrev's own rule:
-	// sync, don't reset, or re-entry voices a phantom release).
-	handbrakePrev = carSim.handbrake;
-	if (handbrakePull?.isPlaying) handbrakePull.stop();
-	if (handbrakeRelease?.isPlaying) handbrakeRelease.stop();
-	// Tyres too — the loop pauses (progress kept), the level resets so re-entry
-	// doesn't fade in a squeal the car isn't making.
-	squealLevel = 0;
-	if (tireSqueal?.isPlaying) tireSqueal.pause();
-	// The scrape too — same three moves: loop pauses (progress kept), shrieks
-	// stop dead (a hit must not drone behind a hidden tab), and the edge state
-	// SYNCS so re-entry doesn't voice a hit that landed while parked.
-	scrapeLevel = 0;
-	scrapeSeq = carSim.hullHitSeq;
-	if (scrapeLoop?.isPlaying) scrapeLoop.pause();
-	for (const scrap of liveScraps) {
-		if (scrap.isPlaying) scrap.stop();
-		scrap.parent?.remove(scrap);
-	}
-	liveScraps.length = 0;
-};
+// ── The tick ─────────────────────────────────────────────────────────────────
 
 export const tickCarAudio = (delta: number): void => {
-	const master = settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0;
-	// Ignition gates everything combustive — bed, pops, nitrous. The one-shots
-	// below still play through this (they ARE the transitions), so they take
-	// `master` directly, not `audible`. The bed fades in under the crank
-	// recording's tail (startupBlend 0→1 over its last STARTUP_BLEND seconds)
-	// instead of cutting in when the recording ends — ready still flips onEnded
-	// and still gates driving, just not the bed's fade.
-	const audible = master > 0 && carIgnition.ready;
+	// Before init (buffers still loading) or after detach — nothing to drive. The
+	// tick itself stays mounted with the component, but voices don't exist yet/any
+	// more, and all the edge states are synced at init/detach boundaries.
+	if (!scope || !anchors) return;
+
+	// The sfx bus carries the player's settings (the old hand-multiplied `master`).
+	// `busAudible` is only ever a COST decision: the gain node has already made a
+	// muted bus silent, but a loop nobody can hear should not be decoding. Ignition
+	// gates everything combustive — bed, pops, nitrous. The one-shots below still
+	// play through this (they ARE the transitions), so they fire regardless of
+	// `audible`. The bed fades in under the crank recording's tail (startupBlend
+	// 0→1 over its last STARTUP_BLEND seconds) instead of cutting in when the
+	// recording ends — `ready` still flips at the crank's end and still gates
+	// driving, just not the bed's fade.
+	const audible = busAudible('sfx') && carIgnition.ready;
 	let startupBlend = carIgnition.ready ? 1 : 0;
-	if (carIgnition.on && !carIgnition.ready && turnOnSound?.buffer && turnOnSound.isPlaying) {
-		const elapsed = turnOnSound.context.currentTime - turnOnStart;
-		const remaining = turnOnSound.buffer.duration - elapsed;
+	if (carIgnition.on && !carIgnition.ready && turnOn?.playing) {
+		const elapsed = sceneNow() - turnOnSceneStart;
+		const remaining = turnOn.duration - elapsed;
 		startupBlend = clamp(1 - remaining / STARTUP_BLEND, 0, 1);
 	}
 	const bedAudible = audible || startupBlend > 0;
@@ -582,33 +427,44 @@ export const tickCarAudio = (delta: number): void => {
 	// ── Ignition edges: voice the transitions, bed handles the rest. ──────────
 	if (carIgnition.on !== ignPrev) {
 		ignPrev = carIgnition.on;
-		playOneShot(carIgnition.on ? turnOnSound : turnOffSound, IGNITION_GAIN, master);
 		if (carIgnition.on) {
-			turnOnStart = turnOnSound?.context.currentTime ?? 0;
-		}
-		if (!carIgnition.on) {
+			turnOn = scope.play(carSounds.turnOn.soundId, { at: anchors.engineBay });
+			turnOnSceneStart = sceneNow();
+			cranking = true;
+		} else {
+			shot(carSounds.turnOff.soundId, { at: anchors.engineBay });
 			// Engine dies NOW, not after the shot — the turnoff recording expects a
 			// silent bed under it. Also clear ready so the cluster dims instantly.
-			// Kill the turnon sound if it's still cranking — a mid-startup N press
-			// must not leave the onended callback dangling.
+			// Stop the crank if it's still going — a mid-startup N press must not
+			// leave it droning, or count as a natural end (cranking clears).
 			carIgnition.ready = false;
-			if (turnOnSound?.isPlaying) turnOnSound.stop();
-			for (const audio of layers) {
-				if (audio?.isPlaying) audio.pause();
-			}
+			cranking = false;
+			turnOn?.stop();
+			turnOn = null;
+			for (const layer of bed) layer?.pause();
 		}
+	}
+	// The crank's natural end flips `ready` — the old `onEnded` callback, polled
+	// here at frame rate (ears cannot tell). `cranking` is the guard: only a
+	// PLAYING crank that fell silent on its own counts.
+	if (cranking && turnOn && !turnOn.playing) {
+		cranking = false;
+		turnOn = null;
+		carIgnition.ready = true;
 	}
 
 	// ── Gear shifts: edge on the seq, one bark per engagement. ─────────────
 	if (carSim.shiftSeq !== shiftSeq) {
 		shiftSeq = carSim.shiftSeq;
-		playOneShot(shiftSound, SHIFT_GAIN, master);
+		shot(carSounds.shift.soundId, { at: anchors.engineBay });
 	}
 
 	// ── Handbrake edges: pull on the rise, release on the fall. ─────────────
 	if (carSim.handbrake !== handbrakePrev) {
 		handbrakePrev = carSim.handbrake;
-		playOneShot(carSim.handbrake ? handbrakePull : handbrakeRelease, HANDBRAKE_GAIN, master);
+		shot((carSim.handbrake ? carSounds.handbrakePull : carSounds.handbrakeRelease).soundId, {
+			at: anchors.cabin
+		});
 	}
 
 	// Level from the TACHO: idle → limiter maps BED_IDLE → BED_REDLINE, one-pole
@@ -627,21 +483,20 @@ export const tickCarAudio = (delta: number): void => {
 	// Smoothstep crossfade — equal-power-ish, so the band centre doesn't dip.
 	const s = f * f * (3 - 2 * f);
 
-	for (let j = 0; j < layers.length; j++) {
-		const audio = layers[j];
-		// The buffer guard is real: `src` fetches asynchronously, so there are
-		// frames where the PositionalAudio exists with no buffer — play() then
-		// starts a silent source that refuses the real one (weatherAudio).
-		if (!audio?.buffer) continue;
+	for (let j = 0; j < bed.length; j++) {
+		const layer = bed[j];
+		if (!layer) continue;
 		const weight = j === band ? 1 - s : j === band + 1 ? s : 0;
 		if (weight > AUDIBLE_WEIGHT && bedAudible) {
-			// Volume and rate first, then play — otherwise a layer entering the
+			// Volume and rate first, then resume — otherwise a layer entering the
 			// crossfade gets a buffer's worth at whatever level was left over.
-			audio.setVolume(weight * level * startupBlend * master);
-			audio.setPlaybackRate(clamp((rpm / LAYER_RPM[j]) * PITCH_SCALE, RATE_MIN, RATE_MAX));
-			if (!audio.isPlaying) audio.play();
-		} else if (audio.isPlaying) {
-			audio.pause();
+			// (resume/pause no-op on the wrong state, which is the old
+			// isPlaying check inlined.)
+			layer.volume = weight * level * startupBlend;
+			layer.rate = clamp((rpm / LAYER_RPM[j]) * PITCH_SCALE, RATE_MIN, RATE_MAX);
+			layer.resume();
+		} else {
+			layer.pause();
 		}
 	}
 
@@ -652,12 +507,12 @@ export const tickCarAudio = (delta: number): void => {
 	if (!nitroOn && flow > NITRO_ON_FLOW) {
 		nitroOn = true;
 		nitroReleased = false;
-		playOneShot(nitroStart, NITRO_SHOT_GAIN, master);
+		shot(carSounds.nitroStart.soundId, { at: anchors.engineBay });
 	} else if (nitroOn && !nitroReleased && nitroPrev > NITRO_ON_FLOW && flow < nitroPrev * 0.97) {
 		// The flow only falls while ON at the moment the pedal lifts or the bottle
 		// runs dry — one frame later than the physics knows it, close enough for ears.
 		nitroReleased = true;
-		playOneShot(nitroEnd, NITRO_SHOT_GAIN, master);
+		shot(carSounds.nitroEnd.soundId, { at: anchors.engineBay });
 	}
 	if (nitroOn && flow <= NITRO_ON_FLOW) {
 		nitroOn = false;
@@ -665,14 +520,11 @@ export const tickCarAudio = (delta: number): void => {
 	}
 	nitroPrev = flow;
 
-	if (nitroDrain?.buffer) {
-		// Same contract as the bed: volume first, then play/pause on audibility.
-		nitroDrain.setVolume(flow * NITRO_GAIN * master);
-		if (flow > 0.01 && audible) {
-			if (!nitroDrain.isPlaying) nitroDrain.play();
-		} else if (nitroDrain.isPlaying) {
-			nitroDrain.pause();
-		}
+	if (nitroDrain) {
+		// Same contract as the bed: volume first, then resume/pause on audibility.
+		nitroDrain.volume = flow * NITRO_GAIN;
+		if (flow > 0.01 && audible) nitroDrain.resume();
+		else nitroDrain.pause();
 	}
 
 	// ── Tyres: the loosest source wins, eased, then the loop rides it. ─────────
@@ -695,16 +547,14 @@ export const tickCarAudio = (delta: number): void => {
 	// for the rest of the session after the first slide.
 	if (squeal === 0 && squealLevel < 0.01) squealLevel = 0;
 
-	if (tireSqueal?.buffer) {
-		// The bed's contract: volume and rate first, then play/pause. Rate rides
-		// the level — the harder the slide, the more frantic the squeal.
-		tireSqueal.setVolume(squealLevel * SQUEAL_GAIN * master);
-		tireSqueal.setPlaybackRate(0.85 + 0.4 * squealLevel);
-		if (squealLevel > AUDIBLE_WEIGHT && master > 0) {
-			if (!tireSqueal.isPlaying) tireSqueal.play();
-		} else if (tireSqueal.isPlaying) {
-			tireSqueal.pause();
-		}
+	if (squealLoop) {
+		// The bed's contract: volume and rate first, then resume/pause. Rate rides
+		// the level — the harder the slide, the more frantic the squeal. busAudible,
+		// not `audible`: tyres are not combustive (the module's own rule).
+		squealLoop.volume = squealLevel * SQUEAL_GAIN;
+		squealLoop.rate = 0.85 + 0.4 * squealLevel;
+		if (squealLevel > AUDIBLE_WEIGHT && busAudible('sfx')) squealLoop.resume();
+		else squealLoop.pause();
 	}
 
 	// ── Chassis scrape: the loop rides the grind, hits shriek on the edge. ──────
@@ -721,42 +571,22 @@ export const tickCarAudio = (delta: number): void => {
 	// after the first scrape (the squeal's own rule).
 	if (grind === 0 && scrapeLevel < 0.01) scrapeLevel = 0;
 
-	if (scrapeLoop?.buffer) {
-		// Volume and rate first, then play/pause. Rate rides the grind — the
-		// faster the slide, the more frantic the metal.
-		scrapeLoop.setVolume(scrapeLevel * SCRAPE_GAIN * master);
-		scrapeLoop.setPlaybackRate(0.8 + 0.5 * scrapeLevel);
-		if (scrapeLevel > AUDIBLE_WEIGHT && master > 0) {
-			if (!scrapeLoop.isPlaying) scrapeLoop.play();
-		} else if (scrapeLoop.isPlaying) {
-			scrapeLoop.pause();
-		}
+	if (scrapeLoopVoice) {
+		// Volume and rate first, then resume/pause. Rate rides the grind — the
+		// faster the slide, the more frantic the metal. busAudible: metal on metal
+		// is not combustive either.
+		scrapeLoopVoice.volume = scrapeLevel * SCRAPE_GAIN;
+		scrapeLoopVoice.rate = 0.8 + 0.5 * scrapeLevel;
+		if (scrapeLevel > AUDIBLE_WEIGHT && busAudible('sfx')) scrapeLoopVoice.resume();
+		else scrapeLoopVoice.pause();
 	}
 
 	if (carSim.hullHitSeq !== scrapeSeq) {
 		scrapeSeq = carSim.hullHitSeq;
-		triggerScrapeHit(clamp(carSim.hullHitDv / HULL_HIT_FULL_DV, 0, 1), master);
+		triggerScrapeHit(clamp(carSim.hullHitDv / HULL_HIT_FULL_DV, 0, 1));
 	}
 
-	// Reap spent pop clones — they are raw graph children (not components), so
-	// this is the only cleanup path. A pop lives <1 s; the list stays tiny.
-	for (let i = livePops.length - 1; i >= 0; i--) {
-		const pop = livePops[i];
-		if (!pop.isPlaying) {
-			pop.parent?.remove(pop);
-			livePops.splice(i, 1);
-		}
-	}
-	// Reap scrape shrieks — DEADLINE-stopped as well as spent: the buffer
-	// outlives the hit by seconds, so waiting for `isPlaying` to clear would
-	// let a tap drone on. Same raw-children rule as the pops.
-	for (let i = liveScraps.length - 1; i >= 0; i--) {
-		const scrap = liveScraps[i];
-		const due = scrap.context.currentTime >= (scrap.userData.deadline as number);
-		if (!scrap.isPlaying || due) {
-			if (scrap.isPlaying) scrap.stop();
-			scrap.parent?.remove(scrap);
-			liveScraps.splice(i, 1);
-		}
-	}
+	// (No reaping: the pops and shrieks are POOLED — `poly` on the declarations —
+	// and the registry owns stealing and reuse. The old livePops/liveScraps lists
+	// and their deadline checks were exactly the machinery the pool replaced.)
 };

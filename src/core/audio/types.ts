@@ -60,6 +60,13 @@ export type PlayOptions = {
 	duration?: number;
 	/** Place the voice in the world: a `PositionalAudio` parented to this object. */
 	at?: Object3D;
+	/**
+	 * A local offset inside `at`, in that object's own space — the exhaust tip a pop
+	 * speaks from, the hull point a scrape shriek lands at. Reset to the parent's origin
+	 * when absent, so a pooled voice cannot inherit the previous play's spot. Only
+	 * meaningful with `at`.
+	 */
+	position?: [number, number, number];
 	/** Create the voice without starting it. Loops only — a handle you drive yourself. */
 	paused?: boolean;
 };
@@ -72,6 +79,8 @@ export type VoiceHandle = {
 	rate: number;
 	/** False once the buffer has run out, the deadline passed, or `stop()` was called. */
 	readonly playing: boolean;
+	/** The decoded buffer's length in seconds — for fades timed against a take's own tail. */
+	readonly duration: number;
 	/** Keeps position, unlike `stop()`. What tab-hide parking and the bed toggles use. */
 	pause(): void;
 	resume(): void;

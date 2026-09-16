@@ -109,6 +109,9 @@ const now = (): number => listener?.context.currentTime ?? 0;
 
 const isBusy = (voice: Voice): boolean => voice.audio.isPlaying || now() < voice.freeAt;
 
+/** Scratch for placing a positional voice's panner at configure time. */
+const worldPos = new Vector3();
+
 const createVoice = (soundId: string, positional: boolean): Voice | null => {
 	if (!listener) return null;
 	const def = getDef(soundId);
@@ -155,8 +158,29 @@ const configure = (voice: Voice, options: PlayOptions, loop: boolean): boolean =
 	voice.lowpass = options.lowpass ?? null;
 
 	if (options.at) {
-		if (audio instanceof ThreePositionalAudio) options.at.add(audio);
-		else logSound.warn(`Audio: "${voice.soundId}" was placed with \`at\` but is not positional`);
+		if (audio instanceof ThreePositionalAudio) {
+			options.at.add(audio);
+			// A per-play offset inside the parent (an exhaust tip, a hull contact). Reset
+			// when absent — a pooled voice must not inherit the previous play's spot.
+			if (options.position) audio.position.set(...options.position);
+			else audio.position.set(0, 0, 0);
+			// Land the panner on the world position NOW, as a real event the next
+			// updateMatrixWorld ramp anchors to. Three only pushes a positional voice's
+			// panner while `isPlaying` — one rendered frame LATER — so without this a fresh
+			// voice speaks its first frame from the WORLD ORIGIN (the old clone artifact)
+			// and, worse, a POOLED one from wherever its previous play left the params:
+			// full presence from the wrong tip.
+			const panner = audio.panner;
+			if (panner.positionX) {
+				audio.getWorldPosition(worldPos);
+				const at = audio.context.currentTime;
+				panner.positionX.setValueAtTime(worldPos.x, at);
+				panner.positionY.setValueAtTime(worldPos.y, at);
+				panner.positionZ.setValueAtTime(worldPos.z, at);
+			}
+		} else {
+			logSound.warn(`Audio: "${voice.soundId}" was placed with \`at\` but is not positional`);
+		}
 	}
 	return true;
 };
@@ -177,6 +201,9 @@ const makeHandle = (voice: Voice): VoiceHandle => ({
 	},
 	get playing() {
 		return voice.audio.isPlaying;
+	},
+	get duration() {
+		return voice.audio.buffer?.duration ?? 0;
 	},
 	pause() {
 		if (!voice.audio.isPlaying) return;
@@ -263,6 +290,13 @@ export const playOneShot = (soundId: string, options: PlayOptions = {}): VoiceHa
 		(voice.audio.source as AudioBufferSourceNode).stop(startedAt + span);
 	}
 	voice.freeAt = startedAt + span;
+	// A `duration` one-shot's deadline is knowable at START, so stamp it on the take
+	// record now: nothing reaps a pooled voice when freeAt passes, so a later noteStop
+	// would never land and the replay would run the buffer to its natural end — a 3 s
+	// scrape droning under a 0.3 s hit (found by the carAudio acceptance pass).
+	if (options.duration !== undefined && voice.rec && voice.rec.stopScene === null) {
+		voice.rec.stopScene = startScene + span;
+	}
 
 	return makeHandle(voice);
 };
@@ -377,6 +411,20 @@ const recordStart = (voice: Voice, startScene: number): void => {
 		lowpass: voice.lowpass,
 		positional: positionalParamsOf(voice.audio)
 	});
+	// Seed the automation AT THE START, not at the next frame's sample: render.ts's
+	// applyCurve falls back to gain 1 / rate 1 / the origin for an empty curve, and a
+	// short one-shot (a pop) must not open its take segment there. The epsilon gate
+	// keeps the next per-frame sample from duplicating these.
+	if (voice.rec) {
+		sampleVolume(voice.rec.volume, startScene, voice.audio.getVolume());
+		sampleRate(voice.rec.rate, startScene, voice.audio.playbackRate);
+		if (voice.rec.pos) {
+			voice.audio.getWorldPosition(worldPos);
+			samplePosition(voice.rec.pos.x, startScene, worldPos.x);
+			samplePosition(voice.rec.pos.y, startScene, worldPos.y);
+			samplePosition(voice.rec.pos.z, startScene, worldPos.z);
+		}
+	}
 };
 
 /** Per-bus gain curves, index-aligned with the take's bus list. */
