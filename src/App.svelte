@@ -10,7 +10,7 @@
 		InputRuntime,
 		Camera,
 		Skybox,
-		GlobalAudio,
+		AudioRuntime,
 		Telemetry,
 		Warmup,
 		TransitionDriver,
@@ -95,7 +95,7 @@
 		     the composite lives in the effect chain like any other effect. -->
 		<TransitionDriver />
 		<Camera />
-		<GlobalAudio />
+		<AudioRuntime />
 		<Skybox />
 		<!-- `<World>` with Rapier's synchronization stage pinned ahead of the main
 		     stage, so main-stage tasks read THIS frame's interpolated body poses

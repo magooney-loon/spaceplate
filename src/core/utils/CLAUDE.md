@@ -50,8 +50,11 @@ step for the frame's real delta upstream of every stage, task and Rapier accumul
 the app. It also pins TSL `time`, which the scheduler cannot reach.
 
 - **Do not read `performance.now()` / `Date.now()` to animate anything** — it bypasses
-  the clock and drifts slow in a below-realtime take. (`core/audio/weatherAudio.ts`
-  does, deliberately — audio is never captured.)
+  the clock and drifts slow in a below-realtime take. No exceptions remain:
+  `core/audio/weatherAudio.ts` was the one sanctioned use and no longer needs it (its
+  thunder delay is scheduled on the `AudioContext` clock). Audio is still the one part of
+  the app not yet on scene time — `PlayOptions.delay` is wall-clock seconds until step 3
+  of `DOCS/AUDIO.md`.
 - **A `delta` of 0 is legal** — a held frame. No divisions by it.
 - `engineClock.elapsed` / `.delta` / `.fixed` are readable from outside a task.
 - **A per-frame quantity that is not a delta still has to be normalised by one.** three's

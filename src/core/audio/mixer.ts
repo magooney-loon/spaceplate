@@ -19,12 +19,21 @@
 // and must keep doing so, but a game that wants UI trimmed separately now has a
 // place to do it.
 
-import type { Audio as ThreeAudio, AudioListener as ThreeAudioListener } from 'three';
+import type { AudioListener as ThreeAudioListener } from 'three';
 import { settingsState } from '$extensions/settings';
 import { logSound } from '$extensions/logger';
+import type { BusId } from './types';
 
-/** The engine's buses. Games nest their own under these — see DOCS/AUDIO.md. */
-export type BusId = 'master' | 'music' | 'ambience' | 'sfx' | 'ui';
+export type { BusId };
+
+/**
+ * What the mixer needs of a voice: its output gain, and nothing else.
+ *
+ * Structural rather than `Audio` because `PositionalAudio` is NOT an `Audio<GainNode>`
+ * to TypeScript — it overrides `getOutput()` to return a `PannerNode`. Both still end in
+ * `this.gain` (the panner is upstream of it), which is the only node routing touches.
+ */
+type Routable = { gain: GainNode };
 
 type Bus = {
 	readonly id: BusId;
@@ -49,7 +58,7 @@ let listener: ThreeAudioListener | null = null;
 let buses: Map<BusId, Bus> | null = null;
 
 /** Which bus each voice is currently on — a fresh `Audio` is wired to the listener by its constructor. */
-const routing = new WeakMap<ThreeAudio, Bus>();
+const routing = new WeakMap<Routable, Bus>();
 
 const gainOf = (bus: Bus): number => (bus.muted ? 0 : bus.volume);
 
@@ -117,7 +126,7 @@ const busOf = (id: BusId): Bus | null => buses?.get(id) ?? null;
  * wires `gain → listener.getInput()` — so a clone comes back wired PAST the whole
  * bus graph, at full volume, however its template was routed.
  */
-export const routeToBus = (audio: ThreeAudio, id: BusId): void => {
+export const routeToBus = (audio: Routable, id: BusId): void => {
 	const bus = busOf(id);
 	if (!bus || !listener) return;
 

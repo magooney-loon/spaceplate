@@ -1225,8 +1225,12 @@ inherit the GR86's ride.
   649 Hz below its settled centroid), and loudness-matched to one
   RMS (-8.4 dBFS) — a new take without that treatment will click on wrap,
   wander, and pump; recover originals via git. Deliberately NOT core/audio:
-  GlobalAudio/soundTriggers are for UI one-shots and weather beds, not a
-  scene-local engine following the car's pose. The tick follows the weatherAudio contract: the component mounts
+  the engine layer can express all of this now (it was reworked into a mixer +
+  sound registry — DOCS/AUDIO.md), but this stays scene-owned per this file's
+  own boundary, and serves as the ACCEPTANCE TEST for that API instead. It sits
+  outside the bus graph and multiplies `sfxVolume` in by hand; see carAudio.ts's
+  header for what migrating it would take.
+  The tick follows the weatherAudio contract: the component mounts
   `<PositionalAudio>` inside the car (the listener rides the camera), the module
   mixes from `carSim` in a task, never `$effect`. NO WebGPU compute audio: the
   three.js example is offline batch (process whole buffer → read back → play

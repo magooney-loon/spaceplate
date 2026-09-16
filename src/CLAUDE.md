@@ -41,7 +41,7 @@ Every extension has an `index.ts` barrel — import via `$extensions/<name>`, no
 ```ts
 import { settingsState } from '$extensions/settings';
 import { logEngine } from '$extensions/logger';
-import { soundActions, MouseLook } from '$core';
+import { audio, engineSounds, MouseLook } from '$core';
 ```
 
 Exceptions that stay path imports (documented in each barrel): `*Extension.svelte` Studio panels,

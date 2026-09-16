@@ -6,7 +6,7 @@ Engine parts shared by every scene/extension. Import from `'$core'` (barrel in
 
 ```
 Camera.svelte   — PerspectiveCamera + AudioListener; orbits origin in demoScene via mouse look
-audio/          — GlobalAudio + sound triggers/actions + weather audio  → audio/CLAUDE.md
+audio/          — mixer buses + sound registry + voices + weather audio → audio/CLAUDE.md
 input/          — Keymapper, mouse-look rig + pointer-lock lifecycle    → input/CLAUDE.md
 skybox/         — everything sky / time / weather / environment         → skybox/CLAUDE.md
 postprocessing/ — effect registry + pipeline builder                    → postprocessing/CLAUDE.md

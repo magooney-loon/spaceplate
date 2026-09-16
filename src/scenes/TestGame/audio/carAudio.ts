@@ -1,9 +1,19 @@
-// Car engine audio — TestGame's own, deliberately NOT the engine's audio system
-// (core/audio + extensions/sound): that path routes every sound through GlobalAudio
-// and soundTriggers, which is built for UI one-shots and weather beds, not for a
-// scene-local engine that must follow the car's POSE (positional) and the
-// drivetrain's STATE (per-frame pitch). Same call as carSwitches.svelte.ts vs the
-// shared keymapper: scene-owned until the audio layer grows per-scene needs.
+// Car engine audio — TestGame's own, and still NOT the engine's audio system, but the
+// reason has changed. It used to be that `core/audio` only spoke UI one-shots and
+// weather beds through a two-entry `soundTriggers` counter. That layer has since been
+// reworked into a mixer + sound registry (DOCS/AUDIO.md) that can express everything
+// below; this file is deliberately NOT migrated (TestGame/CLAUDE.md's boundary — nothing
+// here is engine architecture), and instead serves as the ACCEPTANCE TEST for that API.
+//
+// THIS FILE SITS ENTIRELY OUTSIDE THE BUS GRAPH, and that is currently correct rather
+// than broken: its <PositionalAudio> voices connect straight to `listener.gain` (the
+// master), and the two `master = sfxEnabled ? sfxVolume : 0` locals below multiply the
+// sfx setting in by hand — which is exactly the duplication the mixer deleted everywhere
+// else. It also means the new master fader already reaches these voices, for free.
+//
+// Migrating it is: route each voice to the `sfx` bus (`routeToBus` from
+// `$core/audio/mixer` — INCLUDING every `clone()`, which `Audio.clone()` wires back to
+// the listener behind your back) and delete both `master` locals.
 //
 // THE CONTRACT (weatherAudio.ts is the precedent): CarEngineAudio.svelte mounts the
 // six <PositionalAudio> loops, the tyre-squeal loop and the pop/nitrous one-shots

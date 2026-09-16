@@ -7,7 +7,7 @@
 		FPS_CAPS,
 		type QualityLevel
 	} from '$extensions/settings';
-	import { soundActions, capabilityState, telemetryState, WEBGPU_REPORT_URL } from '$core';
+	import { engineSounds, capabilityState, telemetryState, WEBGPU_REPORT_URL } from '$core';
 	import {
 		inputState,
 		inputActions,
@@ -95,7 +95,7 @@
 	});
 
 	function startBind(mapId: string, slotId: string, dir: AxisDir = 1) {
-		soundActions.playClick();
+		engineSounds.click.play();
 		inputActions.startCapture(mapId, slotId, dir);
 	}
 
@@ -104,22 +104,22 @@
 	}
 
 	function resetSlot(mapId: string, slotId: string) {
-		soundActions.playClick();
+		engineSounds.click.play();
 		inputActions.resetSlot(mapId, slotId);
 	}
 
 	function resetAllControls() {
-		soundActions.playClick();
+		engineSounds.click.play();
 		inputActions.resetAll();
 	}
 
 	function cancelCapture() {
-		soundActions.playClick();
+		engineSounds.click.play();
 		inputActions.cancelCapture();
 	}
 
 	function switchTab(tab: Tab) {
-		soundActions.playClick();
+		engineSounds.click.play();
 		if (isCapturing) inputActions.cancelCapture();
 		activeTab = tab;
 	}
@@ -145,7 +145,7 @@
 						{#each ['low', 'high'] as level (level)}
 							<button
 								onclick={() => {
-									soundActions.playClick();
+									engineSounds.click.play();
 									graphicsActions.setQuality(level as QualityLevel);
 								}}
 								class="quality-button"
@@ -190,7 +190,7 @@
 						{#each FPS_CAPS as cap (cap)}
 							<button
 								onclick={() => {
-									soundActions.playClick();
+									engineSounds.click.play();
 									graphicsActions.setMaxFps(cap);
 								}}
 								class="quality-button"
@@ -260,7 +260,6 @@
 					</div>
 					<p class="section-note">Reserved engine shortcuts. Not rebindable.</p>
 				</div>
-
 			{:else if activeTab === 'audio'}
 				<div class="audio-section">
 					<!-- Master is the bus every other channel hangs off (core/audio/mixer.ts),
@@ -455,7 +454,6 @@
 				</div>
 
 				<button onclick={resetAllControls} class="reset-all"> Reset All Controls </button>
-
 			{:else if activeTab === 'system'}
 				<div class="system">
 					<div>
@@ -612,7 +610,7 @@
 
 			<button
 				onclick={() => {
-					soundActions.playClick();
+					engineSounds.click.play();
 					if (isCapturing) inputActions.cancelCapture();
 					onBack();
 				}}

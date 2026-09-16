@@ -1,9 +1,11 @@
 # Audio — the mixer, the registry and the scene clock
 
-> **Status: ACTIVE PLAN — step 1 (the mixer) is built, steps 2–6 are not.** The bus graph
-> lives in `src/core/audio/mixer.ts` and its contracts have moved into
-> `src/core/audio/CLAUDE.md`; read those for how it works. Everything below about the
-> registry, scene time and the offline render is still a plan.
+> **Status: ACTIVE PLAN — steps 1–2 (the mixer, the registry) are built; steps 3–6 are
+> not.** The layer lives in `src/core/audio/` and its contracts have moved into
+> `src/core/audio/CLAUDE.md`; read that for how it works. Still a plan: scene-time
+> scheduling (`PlayOptions.delay` is **wall-clock** seconds today), the
+> `extensions/sound` → `extensions/audio` rename, and the offline render — `capture/`'s
+> audio is still the best-effort live tap.
 >
 > This is the full rework of `src/core/audio/` +
 > `src/extensions/sound/` into one general-purpose engine audio layer, and the fix for
@@ -436,9 +438,12 @@ Each step leaves the app working.
    tags; six per-voice volume effects became one sync effect, and the hand-multiplied
    volumes and `if (…Enabled)` guards came out of `GlobalAudio` and `weatherAudio`. The
    stale-click bug fell out with the sfx guard. **Not yet runtime-verified by ear.**
-2. **Registry + voices.** `defineSounds`, loading, the pool, handles, scopes,
-   `AudioRuntime.svelte`. `GlobalAudio.svelte` and `soundTriggers` delete; the six call sites
-   move to `audio.play(…)`. `weatherAudio` becomes a consumer.
+2. ~~**Registry + voices.**~~ **DONE.** `types.ts` / `registry.ts` / `voices.ts` /
+   `audio.ts` / `engineSounds.ts` / `AudioRuntime.svelte` / `index.ts`.
+   `GlobalAudio.svelte` and `globalAudio.svelte.ts` deleted; the six call sites are
+   `engineSounds.click.play()` / `.swoosh.play()`. `weatherAudio` is a pure consumer —
+   no THREE.Audio, no take picker, no clones, and `pendingThunder` + `performance.now()`
+   are gone (the flight time is a scheduled `delay`). **Not yet runtime-verified by ear.**
 3. **Scene clock.** The scheduler, `delay` in scene seconds, `performance.now()` leaves
    `weatherAudio` — and the "one sanctioned `performance.now()`" note in
    `core/audio/CLAUDE.md` and `core/utils/CLAUDE.md` goes with it.

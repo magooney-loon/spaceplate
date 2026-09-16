@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { sceneActions } from '$extensions/scene';
-	import { soundActions } from '$core';
+	import { engineSounds } from '$core';
 	import CarCluster from './CarCluster.svelte';
 	import DebugHud from './debug/DebugHud.svelte';
 	import { requestCarRestart } from './sim/carSwitches.svelte';
@@ -18,7 +18,7 @@
 	<div class="buttons">
 		<button
 			onclick={() => {
-				soundActions.playClick();
+				engineSounds.click.play();
 				sceneActions.goToMainMenu();
 			}}
 		>
@@ -26,7 +26,7 @@
 		</button>
 		<button
 			onclick={() => {
-				soundActions.playClick();
+				engineSounds.click.play();
 				requestCarRestart();
 			}}
 		>

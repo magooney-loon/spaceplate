@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { sceneActions } from '$extensions/scene';
-	import { soundActions } from '$core';
+	import { engineSounds } from '$core';
 	import { physicsState } from '$extensions/physics';
 
 	const framerateLabel = $derived(
@@ -11,7 +11,7 @@
 <div class="hud">
 	<button
 		onclick={() => {
-			soundActions.playClick();
+			engineSounds.click.play();
 			sceneActions.goToMainMenu();
 		}}
 		class="back-button"

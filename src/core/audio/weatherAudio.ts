@@ -1,12 +1,18 @@
 // Weather audio: the rain bed and the thunder claps, driven from the sky. See
 // audio/CLAUDE.md for the contract (never an `$effect` here).
+//
+// A CONSUMER of the audio layer now, not an owner of THREE.Audio objects: the takes,
+// the random draw, the clone-per-clap and the reaping are the registry's
+// (`thunder` is a variant set in engineSounds.ts), and the flight time is a scheduled
+// `delay` instead of a polled queue.
 
-import type { Audio as ThreeAudio } from 'three';
-import { busAudible, routeToBus } from './mixer';
+import { busAudible } from './mixer';
+import { engineSounds } from './engineSounds';
+import type { VoiceHandle } from './types';
 import { descriptor, rainAmount, snowAmount } from '$core/skybox/model';
 import { flashState } from '$core/skybox/layers/lightning/flashState';
 
-/** Rain is an ambience bed, so it rides the ambience settings, not sfx. */
+/** Rain is an ambience bed, so it rides the ambience bus, not sfx. */
 let rainLevel = 0;
 /** Seconds for the rain bed to fade in and out. Slow: weather does not switch on. */
 const RAIN_FADE = 1.6;
@@ -21,36 +27,21 @@ const THUNDER_RANGE = 4200;
 const BOLT_THUNDER_CHANCE = 0.75;
 
 let lastStrikeId = flashState.strikeId;
-/** Thunder claps waiting on their travel time. Small and short-lived; rarely over 3. */
-const pendingThunder: { atMs: number; volume: number; distance: number }[] = [];
 
-let rainAudio: ThreeAudio | undefined;
-/** The mounted thunder takes, drawn from per clap. Registered by GlobalAudio. */
-const thunderTakes: ThreeAudio[] = [];
-
-/** Hand the mounted, looping rain bed to this module. Called once from GlobalAudio. */
-export const attachRainAudio = (audio: ThreeAudio): void => {
-	rainAudio = audio;
-};
-
-/** Hand a mounted thunder one-shot take to this module. Called once per take from GlobalAudio. */
-export const attachThunderAudio = (audio: ThreeAudio): void => {
-	thunderTakes.push(audio);
-};
+/** The looping bed. Created on the first tick after its buffer lands; never restarted. */
+let rainBed: VoiceHandle | null = null;
 
 /**
  * Vary each clap by the strike's distance: playback rate (near = sharp and short, far =
  * deep and long) and lowpass cutoff (air scatters highs over distance; nearness squared
- * so only close strikes crack). Both jittered so no two claps match. A new filter node
- * per clap -- `clone()` shares the template's filter array by reference.
+ * so only close strikes crack). Both jittered so no two claps match.
  */
-const modulateClap = (clap: ThreeAudio, distance: number): void => {
+const clapVoicing = (distance: number): { rate: number; lowpass: number } => {
 	const nearness = Math.max(0, 1 - distance / THUNDER_RANGE);
-	clap.setPlaybackRate((0.86 + 0.22 * nearness) * (0.96 + Math.random() * 0.08));
-	const filter = clap.context.createBiquadFilter();
-	filter.type = 'lowpass';
-	filter.frequency.value = 400 * 40 ** (nearness * nearness) * (0.7 + Math.random() * 0.7);
-	clap.setFilters([filter]);
+	return {
+		rate: (0.86 + 0.22 * nearness) * (0.96 + Math.random() * 0.08),
+		lowpass: 400 * 40 ** (nearness * nearness) * (0.7 + Math.random() * 0.7)
+	};
 };
 
 export const tickWeatherAudio = (delta: number): void => {
@@ -64,18 +55,20 @@ export const tickWeatherAudio = (delta: number): void => {
 	// and would make a 20 s weather blend arrive instantly in the audio.
 	rainLevel += (target - rainLevel) * (1 - Math.exp(-delta / RAIN_FADE));
 
-	// The buffer guard is real: `src` fetches asynchronously, so there are frames
-	// where the Audio exists with no buffer -- play() then starts a silent source
-	// that refuses the real one.
-	if (rainAudio?.buffer) {
-		// The setting is the BUS's now (core/audio/mixer.ts) -- this level is the weather's
+	// Lazily created rather than awaited: this module already polls every frame, so
+	// retrying is free, and `loop()` returns null until the buffer has decoded --
+	// the same guard the old `rainAudio?.buffer` check was.
+	rainBed ??= engineSounds.rain.loop({ paused: true, volume: 0 });
+
+	if (rainBed) {
+		// The setting is the BUS's (core/audio/mixer.ts) -- this level is the weather's
 		// own, and the two multiply in the graph instead of here.
 		const audible = rainLevel > 0.004 && busAudible('ambience');
 		// Volume first, then play -- otherwise the frame a shower starts on gets one
 		// buffer's worth of rain at whatever level was left over.
-		rainAudio.setVolume(rainLevel);
-		if (audible && !rainAudio.isPlaying) rainAudio.play();
-		else if (!audible && rainAudio.isPlaying) rainAudio.pause();
+		rainBed.volume = rainLevel;
+		if (audible && !rainBed.playing) rainBed.resume();
+		else if (!audible && rainBed.playing) rainBed.pause();
 	}
 
 	// A new strike: schedule its thunder for when the sound would arrive. Bolts only
@@ -90,37 +83,20 @@ export const tickWeatherAudio = (delta: number): void => {
 			distance < THUNDER_RANGE &&
 			busAudible('sfx')
 		) {
-			pendingThunder.push({
-				atMs: performance.now() + (distance / SPEED_OF_SOUND) * 1000,
+			const { rate, lowpass } = clapVoicing(distance);
+			// The flight time is a SCHEDULED delay on the audio clock now, not a queue
+			// drained by this tick -- which also makes the arrival sample-accurate
+			// instead of landing on the next frame boundary. The take is drawn by the
+			// registry: the takes are varieties of weather, not near/far markers
+			// (distance is already spoken for by volume, rate and filter).
+			engineSounds.thunder.play({
+				delay: distance / SPEED_OF_SOUND,
 				// Inverse falloff, not inverse-square: squared attenuation makes thunder
 				// past a few hundred metres inaudible.
 				volume: Math.max(0.08, 1 - distance / THUNDER_RANGE),
-				distance
+				rate,
+				lowpass
 			});
-		}
-	}
-
-	if (pendingThunder.length > 0) {
-		const now = performance.now();
-		for (let i = pendingThunder.length - 1; i >= 0; i--) {
-			if (pendingThunder[i].atMs > now) continue;
-			const { volume, distance } = pendingThunder[i];
-			pendingThunder.splice(i, 1);
-			// Polyphonic: a storm can put a second strike in the air before the first
-			// finishes rolling. The take is drawn uniformly at random -- the takes are
-			// varieties of weather, not near/far markers (distance is already spoken for
-			// by volume, rate and filter). A still-loading take is out of the draw; a
-			// clap never waits on a fetch.
-			const loaded = thunderTakes.filter((t) => t.buffer);
-			if (busAudible('sfx') && loaded.length > 0) {
-				const clone = loaded[Math.floor(Math.random() * loaded.length)].clone() as ThreeAudio;
-				// A clone is `new Audio(listener)` -- it arrives wired past every bus, so it
-				// must be routed before it plays or a muted sfx bus would not silence it.
-				routeToBus(clone, 'sfx');
-				clone.setVolume(volume);
-				modulateClap(clone, distance);
-				clone.play();
-			}
 		}
 	}
 };

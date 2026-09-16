@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { sceneActions } from '$extensions/scene';
-	import { soundActions } from '$core';
+	import { engineSounds } from '$core';
 	import { overlayState, BASE_URL } from '$extensions/settings';
 </script>
 
@@ -14,7 +14,7 @@
 	<div class="menu-buttons">
 		<button
 			onclick={() => {
-				soundActions.playClick();
+				engineSounds.click.play();
 				sceneActions.goToTestGame();
 			}}
 			class="menu-button"
@@ -24,7 +24,7 @@
 
 		<button
 			onclick={() => {
-				soundActions.playClick();
+				engineSounds.click.play();
 				sceneActions.goToDemoScene();
 			}}
 			class="menu-button"
@@ -34,7 +34,7 @@
 
 		<button
 			onclick={() => {
-				soundActions.playClick();
+				engineSounds.click.play();
 				overlayState.settingsOpen = true;
 			}}
 			class="menu-button"

@@ -2,7 +2,7 @@ import { logEngine } from '$extensions/logger';
 // Direct path on purpose (not the '$core' barrel): Loader.svelte imports this module
 // for the scene-transition veil, and the barrel exports Loader — a module cycle.
 // globalAudio is a leaf, so importing it directly breaks the ring.
-import { soundActions } from '$core/audio/globalAudio.svelte';
+import { engineSounds } from '$core/audio/engineSounds';
 // Same reason for the direct paths: both gates are leaves (loading manager / renderer
 // info + logger), so importing them cannot close the ring back through Loader.
 import { waitForAssetsIdle } from '$core/utils/assetGate';
@@ -43,7 +43,7 @@ export const sceneActions: ExtensionActions = {
 		if (sceneState.currentScene === scene) return;
 
 		logEngine.info(`Scene: ${sceneState.currentScene} → ${scene}`);
-		soundActions.playSwoosh();
+		engineSounds.swoosh.play();
 
 		sceneState.previousScene = sceneState.currentScene;
 		sceneState.currentScene = scene;

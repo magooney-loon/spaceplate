@@ -7,9 +7,13 @@
 
 export { default as Camera } from './Camera.svelte';
 
-// audio/
-export { default as GlobalAudio } from './audio/GlobalAudio.svelte';
-export { soundTriggers, soundActions } from './audio/globalAudio.svelte';
+// audio/ — the mixer, the registry and the voices. `engineSounds` is the ENGINE's own
+// manifest (data, deletable by a game); `audio.play('id')` is the dynamic-id door.
+export { default as AudioRuntime } from './audio/AudioRuntime.svelte';
+export { audio, defineSounds } from './audio/audio';
+export { engineSounds } from './audio/engineSounds';
+export { busAudible, setBusMuted, setBusVolume } from './audio/mixer';
+export type { AudioScope, BusId, PlayOptions, SoundDef, SoundRef, VoiceHandle } from './audio/types';
 
 // input/
 export { default as Keymapper } from './input/Keymapper.svelte';

@@ -24,6 +24,6 @@ Two sections:
 ## Key behavior
 
 - `useSound()` is a Studio-aware hook with fallback: tries `useStudio().useExtension(extensionScope)`, falls back to `{ state: soundState }`. Not through barrel (path import).
-- The actual sound playback lives in `core/audio/` (GlobalAudio.svelte, globalAudio.svelte.ts).
+- The actual sound playback lives in `core/audio/` (the mixer + registry — see its CLAUDE.md).
 - Volume/enable toggles are in `settingsState.audio`. This extension is primarily for positional-audio tuning.
 - No localStorage persistence — positional audio defaults reset on page load.
