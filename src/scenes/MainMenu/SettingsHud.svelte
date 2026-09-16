@@ -263,6 +263,23 @@
 
 			{:else if activeTab === 'audio'}
 				<div class="audio-section">
+					<!-- Master is the bus every other channel hangs off (core/audio/mixer.ts),
+					     so it gets no enable toggle of its own: the three below already gate
+					     everything, and a master mute defaulting to off would fight the
+					     autoplay unlock in Loader.svelte. -->
+					<div class="channel">
+						<span class="channel-label channel-label-static">Master</span>
+						<input
+							type="range"
+							min="0"
+							max="1"
+							step="0.01"
+							aria-label="Master volume"
+							value={settingsState.audio.masterVolume}
+							oninput={(e) => audioActions.setMasterVolume(+(e.target as HTMLInputElement).value)}
+							class="volume"
+						/>
+					</div>
 					{#each [{ key: 'sfx', label: 'Sound Effects', enabled: settingsState.audio.sfxEnabled, volume: settingsState.audio.sfxVolume, toggle: audioActions.toggleSfx, setVol: audioActions.setSfxVolume }, { key: 'music', label: 'Music', enabled: settingsState.audio.musicEnabled, volume: settingsState.audio.musicVolume, toggle: audioActions.toggleMusic, setVol: audioActions.setMusicVolume }, { key: 'ambience', label: 'Ambient', enabled: settingsState.audio.ambienceEnabled, volume: settingsState.audio.ambienceVolume, toggle: audioActions.toggleAmbience, setVol: audioActions.setAmbienceVolume }] as ch (ch.key)}
 						<div class="channel">
 							<label class="channel-label">
@@ -782,6 +799,11 @@
 	.channel-checkbox {
 		width: 1rem;
 		height: 1rem;
+	}
+
+	/* Master has no checkbox, so it must not read as a clickable label. */
+	.channel-label-static {
+		cursor: default;
 	}
 
 	.volume {

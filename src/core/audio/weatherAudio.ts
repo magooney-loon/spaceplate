@@ -2,7 +2,7 @@
 // audio/CLAUDE.md for the contract (never an `$effect` here).
 
 import type { Audio as ThreeAudio } from 'three';
-import { settingsState } from '$extensions/settings';
+import { busAudible, routeToBus } from './mixer';
 import { descriptor, rainAmount, snowAmount } from '$core/skybox/model';
 import { flashState } from '$core/skybox/layers/lightning/flashState';
 
@@ -68,10 +68,12 @@ export const tickWeatherAudio = (delta: number): void => {
 	// where the Audio exists with no buffer -- play() then starts a silent source
 	// that refuses the real one.
 	if (rainAudio?.buffer) {
-		const audible = rainLevel > 0.004 && settingsState.audio.ambienceEnabled;
+		// The setting is the BUS's now (core/audio/mixer.ts) -- this level is the weather's
+		// own, and the two multiply in the graph instead of here.
+		const audible = rainLevel > 0.004 && busAudible('ambience');
 		// Volume first, then play -- otherwise the frame a shower starts on gets one
 		// buffer's worth of rain at whatever level was left over.
-		rainAudio.setVolume(rainLevel * settingsState.audio.ambienceVolume);
+		rainAudio.setVolume(rainLevel);
 		if (audible && !rainAudio.isPlaying) rainAudio.play();
 		else if (!audible && rainAudio.isPlaying) rainAudio.pause();
 	}
@@ -86,7 +88,7 @@ export const tickWeatherAudio = (delta: number): void => {
 			flashState.strikeKind === 'bolt' &&
 			Math.random() < BOLT_THUNDER_CHANCE &&
 			distance < THUNDER_RANGE &&
-			settingsState.audio.sfxEnabled
+			busAudible('sfx')
 		) {
 			pendingThunder.push({
 				atMs: performance.now() + (distance / SPEED_OF_SOUND) * 1000,
@@ -110,9 +112,12 @@ export const tickWeatherAudio = (delta: number): void => {
 			// by volume, rate and filter). A still-loading take is out of the draw; a
 			// clap never waits on a fetch.
 			const loaded = thunderTakes.filter((t) => t.buffer);
-			if (settingsState.audio.sfxEnabled && loaded.length > 0) {
+			if (busAudible('sfx') && loaded.length > 0) {
 				const clone = loaded[Math.floor(Math.random() * loaded.length)].clone() as ThreeAudio;
-				clone.setVolume(volume * settingsState.audio.sfxVolume);
+				// A clone is `new Audio(listener)` -- it arrives wired past every bus, so it
+				// must be routed before it plays or a muted sfx bus would not silence it.
+				routeToBus(clone, 'sfx');
+				clone.setVolume(volume);
 				modulateClap(clone, distance);
 				clone.play();
 			}

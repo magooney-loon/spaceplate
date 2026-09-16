@@ -20,6 +20,7 @@ const MAX_FPS_KEY = 'max-fps';
 const UI_VISIBLE_KEY = 'ui-visible';
 const MOUSE_SENSITIVITY_KEY = 'mouse-sensitivity';
 const AIM_SENSITIVITY_KEY = 'aim-sensitivity';
+const MASTER_VOLUME_KEY = 'master-volume';
 const MUSIC_VOLUME_KEY = 'music-volume';
 const MUSIC_ENABLED_KEY = 'music-enabled';
 const AMBIENCE_VOLUME_KEY = 'ambience-volume';
@@ -82,6 +83,7 @@ const loadMaxFps = (): number => {
 
 export const settingsState = $state<ExtensionState>({
 	audio: {
+		masterVolume: loadVolume(MASTER_VOLUME_KEY, 1),
 		musicVolume: loadVolume(MUSIC_VOLUME_KEY, 0.7),
 		musicEnabled: false,
 		ambienceVolume: loadVolume(AMBIENCE_VOLUME_KEY, 0.5),
@@ -107,6 +109,11 @@ export const settingsState = $state<ExtensionState>({
 export const overlayState = $state({ settingsOpen: false });
 
 export const audioActions: AudioActions = {
+	setMasterVolume(v: number) {
+		settingsState.audio.masterVolume = v;
+		toStorage(MASTER_VOLUME_KEY, String(v));
+		logSound.info('Master volume:', v);
+	},
 	toggleMusic() {
 		settingsState.audio.musicEnabled = !settingsState.audio.musicEnabled;
 		toStorage(MUSIC_ENABLED_KEY, String(settingsState.audio.musicEnabled));

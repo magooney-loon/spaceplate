@@ -9,6 +9,7 @@ export type ExtensionState = {
 };
 
 export type ExtensionActions = {
+	setMasterVolume: (v: number) => void;
 	setSfxVolume: (v: number) => void;
 	toggleSfx: () => void;
 	setMusicVolume: (v: number) => void;

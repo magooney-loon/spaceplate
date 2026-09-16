@@ -4,12 +4,38 @@
 
 <script lang="ts">
 	import { useTask } from '@threlte/core/webgpu';
-	import { Audio } from '@threlte/extras';
-	import { Audio as ThreeAudio } from 'three';
+	import { Audio, useAudioListener } from '@threlte/extras';
+	import { Audio as ThreeAudio, type AudioListener as ThreeAudioListener } from 'three';
 	import { settingsState, BASE_URL } from '$extensions/settings';
 	import { logSound } from '$extensions/logger';
 	import { soundTriggers } from './globalAudio.svelte';
+	import {
+		installMixer,
+		routeToBus,
+		syncMixerFromSettings,
+		uninstallMixer,
+		type BusId
+	} from './mixer';
 	import { attachRainAudio, attachThunderAudio, tickWeatherAudio } from './weatherAudio';
+
+	// The bus graph hangs off Camera.svelte's <AudioListener/>, which mounts one line
+	// earlier in App.svelte — so the listener is already registered when this script runs.
+	// Typed by hand rather than via `ReturnType<typeof useAudioListener>`: that hook is
+	// overloaded and `ReturnType` resolves to the LAST signature, not the no-arg one
+	// (the same trap Capture.svelte documents).
+	let audioContext: { listener: ThreeAudioListener; context: AudioContext } | null = null;
+	try {
+		audioContext = useAudioListener();
+	} catch (error) {
+		logSound.error('GlobalAudio: no AudioListener — audio will be unrouted', error);
+	}
+	if (audioContext) installMixer(audioContext.listener);
+
+	/** Every voice goes to a bus on creation. Clones too — see routeToBus's header. */
+	const onVoice = (bus: BusId, then?: (a: ThreeAudio) => void) => (a: ThreeAudio) => {
+		routeToBus(a, bus);
+		then?.(a);
+	};
 
 	const OST_URL = `${BASE_URL}sounds/ost.mp3`;
 	// Stereo 48 kbps Opus, loudness-matched to the previous bed (-21.5 LUFS integrated).
@@ -64,51 +90,64 @@
 		audio.play();
 	};
 
-	const playPolyphonic = (audio: ThreeAudio | undefined) => {
+	const playPolyphonic = (audio: ThreeAudio | undefined, bus: BusId) => {
 		if (!audio?.buffer) return;
 		const clone = audio.clone() as ThreeAudio;
+		// Before play(): a clone is built by `new Audio(listener)`, so it arrives wired
+		// straight to the master, past every bus. Volume is the voice's own now — the
+		// bus carries the setting.
+		routeToBus(clone, bus);
 		clone.setVolume(audio.getVolume());
 		clone.play();
 	};
 
+	// THE ONE PLACE SETTINGS MEET THE GRAPH, replacing six per-voice volume effects.
+	// `syncMixerFromSettings()` reads `settingsState.audio` synchronously, and Svelte 5
+	// tracks reads at any call depth, so this is reactive without naming the fields here.
+	// It only ever writes gain nodes, so there is no read-and-write-one-object loop.
+	$effect(() => {
+		syncMixerFromSettings();
+	});
+
+	// Audibility for the two loops is derived from SETTINGS, not from `busAudible()`:
+	// the mixer's buses are plain objects (a bus changes on a settings write, not per
+	// frame), so a `$derived` over them would never re-run — and even as state it would
+	// race the sync effect above. `busAudible()` is for the task-driven consumers
+	// (weatherAudio), which run after the graph is already in step.
+	const masterAudible = $derived(settingsState.audio.masterVolume > 0);
+	const musicAudible = $derived(
+		masterAudible && settingsState.audio.musicEnabled && settingsState.audio.musicVolume > 0
+	);
+	const ambienceAudible = $derived(
+		masterAudible && settingsState.audio.ambienceEnabled && settingsState.audio.ambienceVolume > 0
+	);
+
+	// Loops still gate on audibility, and that is a COST decision, not a correctness one
+	// — the bus has already silenced them. A bed nobody can hear should not be decoding.
 	$effect(() => {
 		if (!ostAudio) return;
-		if (settingsState.audio.musicEnabled) ostAudio.play();
+		if (musicAudible) ostAudio.play();
 		else ostAudio.pause();
 	});
 
 	$effect(() => {
-		if (ostAudio) ostAudio.setVolume(settingsState.audio.musicVolume);
-	});
-
-	$effect(() => {
 		if (!ambienceAudio) return;
-		if (settingsState.audio.ambienceEnabled) ambienceAudio.play();
+		if (ambienceAudible) ambienceAudio.play();
 		else ambienceAudio.pause();
 	});
 
+	// No `enabled` guard: a muted bus is silent anyway, and guarding here is what left
+	// the counter above zero so an enable replayed a click from minutes ago.
 	$effect(() => {
-		if (ambienceAudio) ambienceAudio.setVolume(settingsState.audio.ambienceVolume);
-	});
-
-	$effect(() => {
-		if (clickAudio) clickAudio.setVolume(settingsState.audio.sfxVolume);
-	});
-
-	$effect(() => {
-		if (swooshAudio) swooshAudio.setVolume(settingsState.audio.sfxVolume);
-	});
-
-	$effect(() => {
-		if (soundTriggers.click > 0 && settingsState.audio.sfxEnabled) {
+		if (soundTriggers.click > 0) {
 			playOneShot(clickAudio);
 			soundTriggers.click = 0;
 		}
 	});
 
 	$effect(() => {
-		if (soundTriggers.swoosh > 0 && settingsState.audio.sfxEnabled) {
-			playPolyphonic(swooshAudio);
+		if (soundTriggers.swoosh > 0) {
+			playPolyphonic(swooshAudio, 'ui');
 			soundTriggers.swoosh = 0;
 		}
 	});
@@ -120,14 +159,18 @@
 		},
 		{ autoInvalidate: false }
 	);
+
+	// This component never unmounts in practice; the teardown is for HMR, which would
+	// otherwise stack a second bus graph on the same listener.
+	$effect(() => () => uninstallMixer());
 </script>
 
 <Audio
 	src={OST_URL}
 	loop
-	oncreate={(a: ThreeAudio) => {
+	oncreate={onVoice('music', (a) => {
 		ostAudio = a;
-	}}
+	})}
 	onload={() => trackAudioLoad()}
 	onerror={() => trackAudioError('OST')}
 	userData={{ hideInTree: true, selectable: false }}
@@ -136,9 +179,9 @@
 <Audio
 	src={AMBIENCE_URL}
 	loop
-	oncreate={(a: ThreeAudio) => {
+	oncreate={onVoice('ambience', (a) => {
 		ambienceAudio = a;
-	}}
+	})}
 	onload={() => trackAudioLoad()}
 	onerror={() => trackAudioError('Ambience')}
 	userData={{ hideInTree: true, selectable: false }}
@@ -146,9 +189,9 @@
 
 <Audio
 	src={CLICK_URL}
-	oncreate={(a: ThreeAudio) => {
+	oncreate={onVoice('ui', (a) => {
 		clickAudio = a;
-	}}
+	})}
 	onload={() => trackAudioLoad()}
 	onerror={() => trackAudioError('Click')}
 	userData={{ hideInTree: true, selectable: false }}
@@ -156,9 +199,9 @@
 
 <Audio
 	src={SWOOSH_URL}
-	oncreate={(a: ThreeAudio) => {
+	oncreate={onVoice('ui', (a) => {
 		swooshAudio = a;
-	}}
+	})}
 	onload={() => trackAudioLoad()}
 	onerror={() => trackAudioError('Swoosh')}
 	userData={{ hideInTree: true, selectable: false }}
@@ -170,9 +213,7 @@
 	loop
 	autoplay={false}
 	volume={0}
-	oncreate={(a: ThreeAudio) => {
-		attachRainAudio(a);
-	}}
+	oncreate={onVoice('ambience', attachRainAudio)}
 	onload={() => trackAudioLoad()}
 	onerror={() => trackAudioError('Rain')}
 	userData={{ hideInTree: true, selectable: false }}
@@ -182,9 +223,7 @@
 	<Audio
 		src={url}
 		autoplay={false}
-		oncreate={(a: ThreeAudio) => {
-			attachThunderAudio(a);
-		}}
+		oncreate={onVoice('sfx', attachThunderAudio)}
 		onload={() => trackAudioLoad()}
 		onerror={() => trackAudioError(`Thunder take ${i + 1}`)}
 		userData={{ hideInTree: true, selectable: false }}

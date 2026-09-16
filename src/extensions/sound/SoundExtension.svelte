@@ -23,6 +23,9 @@
 			listenerEnabled: true
 		}),
 		actions: {
+			setMasterVolume(_state, v) {
+				settingsState.audio.masterVolume = v;
+			},
 			setSfxVolume(_state, v) {
 				settingsState.audio.sfxVolume = v;
 			},
@@ -73,6 +76,15 @@
 <ToolbarItem position="right">
 	<DropDownPane icon="mdiVolumeHigh" title="Sound">
 		<Folder title="Buses" expanded={true}>
+			<Slider
+				label="Master"
+				value={settingsState.audio.masterVolume}
+				min={0}
+				max={1}
+				step={0.01}
+				on:change={(e) => ext.setMasterVolume(e.detail.value)}
+			/>
+
 			<Folder title="SFX" expanded={true}>
 				<Checkbox label="Enabled" bind:value={settingsState.audio.sfxEnabled} />
 				<Slider

@@ -3,6 +3,13 @@ export const extensionScope = 'settings';
 export type QualityLevel = 'low' | 'high';
 
 export type AudioSettings = {
+	/**
+	 * The master fader, 0–1. Drives three's own `AudioListener` gain, which the whole
+	 * bus graph hangs off (`core/audio/mixer.ts`). No `masterEnabled` to pair with it:
+	 * the three bus toggles below already gate everything, and a master mute defaulting
+	 * to `false` would fight the autoplay unlock in `Loader.svelte`.
+	 */
+	masterVolume: number;
 	musicVolume: number;
 	musicEnabled: boolean;
 	ambienceVolume: number;
@@ -48,6 +55,7 @@ export type SettingsState = {
 export type ExtensionState = SettingsState;
 
 export type AudioActions = {
+	setMasterVolume: (v: number) => void;
 	toggleMusic: () => void;
 	toggleAmbience: () => void;
 	toggleSfx: () => void;
