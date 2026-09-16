@@ -1,22 +1,26 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
-	import { PositionalAudio } from '@threlte/extras';
 	import { RigidBody, Collider, usePhysicsTask, useRapier } from '@threlte/rapier';
 	import type { RigidBody as RapierRigidBody } from '@dimforge/rapier3d-compat';
 	import * as THREE from 'three/webgpu';
 	import { CubeCamera, CubeRenderTarget } from 'three/webgpu';
 	import { FlakesTexture } from 'three/addons/textures/FlakesTexture.js';
 	import { logPhysics } from '$extensions/logger';
-	import { useSound } from '$extensions/sound/useSound';
+	import { audio, defineSounds, soundsReady } from '$core';
 	import { settingsState, BASE_URL } from '$extensions/settings';
 	import { withoutReflection } from './mirrorFloor';
 	import { DEMO_QUALITY } from './demoQuality';
 
-	const { state: soundState } = useSound();
+	// The orbiting mirror sphere's hum. Declared by the scene, not the engine — the
+	// positional params are this sphere's, so they belong on the declaration rather than
+	// being threaded through as props from a global tuning object.
+	const demoSounds = defineSounds({
+		demoOrbit: { url: 'positional.mp3', bus: 'sfx' }
+	});
+
 	const { world } = useRapier();
 	const { scene, renderer, invalidate, autoRenderTask } = useThrelte();
-	const POS_URL = `${BASE_URL}sounds/positional.mp3`;
 	const mountId = crypto.randomUUID().slice(0, 8);
 
 	// Quality preset — see demoQuality.ts for what each knob costs.
@@ -324,6 +328,32 @@
 		logPhysics.info(`DemoPhysicsBodies mount [${mountId}]`, snapshotWorld());
 	});
 
+	// The sphere's hum: a positional loop parented to the mesh, so it pans around the
+	// listener as the sphere sweeps the floor. A SCOPE rather than a component — one
+	// `release()` stops and disposes it on unmount, and the sfx bus carries the player's
+	// setting, so nothing here reads `settingsState.audio`.
+	//
+	// Created once the mesh exists AND the buffer has decoded: `loop()` returns null
+	// until then, so the effect re-runs on `mirrorMesh` and gives up quietly if the
+	// sound is not ready — the scene outlives one missed attempt.
+	const orbitScope = audio.scope();
+
+	$effect(() => {
+		const mesh = mirrorMesh;
+		if (!mesh) return;
+		let cancelled = false;
+		void soundsReady().then(() => {
+			// Through the SCOPE, not `demoSounds.demoOrbit.loop()` — the typed ref plays
+			// untracked, and it is the scope that stops this on unmount.
+			if (!cancelled) orbitScope.loop(demoSounds.demoOrbit.soundId, { at: mesh });
+		});
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	onDestroy(() => orbitScope.release());
+
 	onDestroy(() => {
 		logPhysics.info(`DemoPhysicsBodies destroy [${mountId}]`, {
 			...snapshotWorld(),
@@ -428,17 +458,6 @@
 		<Collider shape="ball" args={[0.5]} />
 		<T.Mesh castShadow bind:ref={mirrorMesh} material={mirrorMaterial}>
 			<T.SphereGeometry args={[0.5, 32, 32]} />
-
-			<PositionalAudio
-				src={POS_URL}
-				volume={settingsState.audio.sfxEnabled ? settingsState.audio.sfxVolume : 0}
-				refDistance={soundState.refDistance}
-				maxDistance={soundState.maxDistance}
-				rolloffFactor={soundState.rolloffFactor}
-				panningModel={soundState.panningModel}
-				loop
-				autoplay={settingsState.audio.sfxEnabled}
-			/>
 		</T.Mesh>
 	</RigidBody>
 </T.Group>

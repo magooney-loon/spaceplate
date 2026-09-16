@@ -1,11 +1,10 @@
 # Audio — the mixer, the registry and the scene clock
 
-> **Status: ACTIVE PLAN — steps 1–3 (the mixer, the registry, the scene clock) are built;
-> steps 4–6 are not.** The layer lives in `src/core/audio/` and its contracts have moved
-> into `src/core/audio/CLAUDE.md`; read that for how it works. Still a plan: the
-> `extensions/sound` → `extensions/audio` rename, and the offline render — `capture/`'s
-> audio is still the best-effort live tap, though the drift it causes is now measurable
-> via `schedulerDrift()`.
+> **Status: ACTIVE PLAN — steps 1–4 are built; steps 5–6 are not.** The layer lives in
+> `src/core/audio/` (+ the panel in `src/extensions/audio/`) and its contracts have moved
+> into those two `CLAUDE.md` files; read them for how it works. Still a plan: the
+> **offline render** — `capture/`'s audio is the best-effort live tap, though the drift it
+> causes is now measurable via `schedulerDrift()` — and the carAudio acceptance pass.
 >
 > This is the full rework of `src/core/audio/` +
 > `src/extensions/sound/` into one general-purpose engine audio layer, and the fix for
@@ -456,8 +455,16 @@ Each step leaves the app working.
    has slope 1, so intervals carry over exactly and only the origin moves. What this buys
    is the explicit unit step 5 replays against, plus the drift measurement.
 
-4. **Rename + panel.** `extensions/sound/` → `extensions/audio/`, panel-only, bus faders and
-   the voice inspector. Inventory row in `extensions/CLAUDE.md` updated.
+4. ~~**Rename + panel.**~~ **DONE.** `extensions/sound/` → `extensions/audio/`, panel-only
+   (`types.ts` + `AudioExtension.svelte`, no barrel — the `extensions/skybox/` shape).
+   Master fader + bus faders through `audioActions` (`on:change`, not the `bind:` the old
+   panel used), positional fallbacks with a live `refreshPositional()`, and an inspector
+   button that logs buses, voices and `schedulerDrift()`. `soundState.svelte.ts`,
+   `useSound.ts` and `index.ts` deleted, along with `listenerEnabled` and
+   `defaultSoundState()`, which nothing ever read. `DemoPhysicsBodies.svelte` moved off
+   `useSound()` + `<PositionalAudio>` onto a scene-declared sound and an `audio.scope()` —
+   the last hand-multiplied `sfxVolume` in the app, and the first real consumer of
+   positional `at`. **Not yet runtime-verified by ear.**
 5. **Timeline + offline render.** `timeline.ts`, `render.ts`, and `capture/` swaps the live
    tap for the rendered buffer. The "Audio: a best-effort live tap" section of
    `capture/CLAUDE.md` is rewritten — that whole section becomes the history of a fixed bug.

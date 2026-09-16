@@ -17,18 +17,45 @@ import { logSound } from '$extensions/logger';
 import { routeToBus } from './mixer';
 import { getDef, pickBuffer } from './registry';
 import { sceneNow, toContextTime } from './scheduler';
-import type { PlayOptions, VoiceHandle } from './types';
+import type { BusId, PlayOptions, SoundDef, VoiceHandle } from './types';
 
 /**
  * Engine-wide positional fallbacks, used for any field a declaration omits. These moved
  * here from `extensions/sound/soundState.svelte.ts` — they are engine config that the
  * runtime consumes in every build, so the Studio panel is just another caller.
+ *
+ * DELIBERATELY PLAIN, not `$state`: it is read inside `createVoice()`, which runs from
+ * whatever called `play()` — sometimes an `$effect`. Reactive state read there would make
+ * every sound-playing effect depend on the tuning knobs. The only writer is the Studio
+ * panel, which drives the widgets' own state and calls `refreshPositional()` itself.
  */
 export const positionalDefaults = {
 	ref: 5,
 	rolloff: 1.5,
 	max: 80,
 	panningModel: 'HRTF' as PanningModelType
+};
+
+const applyPositional = (audio: ThreePositionalAudio, def: SoundDef): void => {
+	audio.setRefDistance(def.ref ?? positionalDefaults.ref);
+	audio.setRolloffFactor(def.rolloff ?? positionalDefaults.rolloff);
+	audio.setMaxDistance(def.max ?? positionalDefaults.max);
+	audio.panner.panningModel = def.panningModel ?? positionalDefaults.panningModel;
+};
+
+/**
+ * Re-apply the positional params to every live voice. The Studio panel calls this after
+ * moving a fallback — a tuning slider you cannot hear is not a tuning slider.
+ *
+ * Reading through `def ?? positionalDefaults` again is what keeps per-sound overrides
+ * winning: a declaration that set its own `ref` is unaffected by the fallback moving.
+ */
+export const refreshPositional = (): void => {
+	for (const voice of live) {
+		if (!(voice.audio instanceof ThreePositionalAudio)) continue;
+		const def = getDef(voice.soundId);
+		if (def) applyPositional(voice.audio, def);
+	}
 };
 
 type Voice = {
@@ -67,12 +94,7 @@ const createVoice = (soundId: string, positional: boolean): Voice | null => {
 	if (!def) return null;
 
 	const audio = positional ? new ThreePositionalAudio(listener) : new ThreeAudio(listener);
-	if (audio instanceof ThreePositionalAudio) {
-		audio.setRefDistance(def.ref ?? positionalDefaults.ref);
-		audio.setRolloffFactor(def.rolloff ?? positionalDefaults.rolloff);
-		audio.setMaxDistance(def.max ?? positionalDefaults.max);
-		audio.panner.panningModel = def.panningModel ?? positionalDefaults.panningModel;
-	}
+	if (audio instanceof ThreePositionalAudio) applyPositional(audio, def);
 	// Keep the editor tree clean — these are engine objects, not scene content.
 	audio.userData.hideInTree = true;
 	audio.userData.selectable = false;
@@ -257,5 +279,29 @@ export const unparkVoices = (): void => {
 	parked.length = 0;
 };
 
-/** How many voices are live. The Studio panel's inspector grows from this. */
+/** How many voices are live. */
 export const voiceCount = (): number => live.size;
+
+/**
+ * What is playing, on which bus, at what gain — the Studio panel's inspector.
+ *
+ * A SNAPSHOT taken on demand rather than a `$state` mirror updated per frame: a reactive
+ * write nobody is looking at is still an invalidation, and this would be one per voice
+ * per frame to drive a readout that is only ever glanced at.
+ */
+export const voiceSnapshot = (): {
+	soundId: string;
+	bus: BusId;
+	volume: number;
+	rate: number;
+	playing: boolean;
+	positional: boolean;
+}[] =>
+	[...live].map((voice) => ({
+		soundId: voice.soundId,
+		bus: getDef(voice.soundId)?.bus ?? 'sfx',
+		volume: voice.audio.getVolume(),
+		rate: voice.audio.playbackRate,
+		playing: voice.audio.isPlaying,
+		positional: voice.audio instanceof ThreePositionalAudio
+	}));

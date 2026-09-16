@@ -13,6 +13,7 @@ export { default as AudioRuntime } from './audio/AudioRuntime.svelte';
 export { audio, defineSounds } from './audio/audio';
 export { engineSounds } from './audio/engineSounds';
 export { busAudible, setBusMuted, setBusVolume } from './audio/mixer';
+export { soundsReady } from './audio/registry';
 export type { AudioScope, BusId, PlayOptions, SoundDef, SoundRef, VoiceHandle } from './audio/types';
 
 // input/
