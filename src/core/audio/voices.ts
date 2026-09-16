@@ -16,6 +16,7 @@ import {
 import { logSound } from '$extensions/logger';
 import { routeToBus } from './mixer';
 import { getDef, pickBuffer } from './registry';
+import { sceneNow, toContextTime } from './scheduler';
 import type { PlayOptions, VoiceHandle } from './types';
 
 /**
@@ -185,15 +186,19 @@ export const playOneShot = (soundId: string, options: PlayOptions = {}): VoiceHa
 	}
 	if (!configure(voice, options, false)) return null;
 
-	const delay = Math.max(0, options.delay ?? 0);
-	voice.audio.play(delay);
+	// `delay` is SCENE seconds: converted here, in the one place that knows about both
+	// clocks. Three's `play()` wants an offset from `context.currentTime`, so the absolute
+	// context time comes back as a relative one. Clamped at 0 — the anchor can sit a
+	// fraction behind on the frame a take claims the clock.
+	const startedAt = toContextTime(sceneNow() + Math.max(0, options.delay ?? 0));
+	voice.audio.play(Math.max(0, startedAt - now()));
 
-	const startedAt = now() + delay;
 	const natural = voice.audio.buffer ? voice.audio.buffer.duration / voice.audio.playbackRate : 0;
 	const span = options.duration !== undefined ? Math.min(options.duration, natural) : natural;
 	if (options.duration !== undefined && voice.audio.source) {
 		// `Audio.source` is typed as the base AudioNode; it is always a BufferSource for
-		// a buffer-backed voice, which is the only kind the registry makes.
+		// a buffer-backed voice, which is the only kind the registry makes. `span` needs no
+		// conversion: the scene↔context map has slope 1, so intervals carry over unchanged.
 		(voice.audio.source as AudioBufferSourceNode).stop(startedAt + span);
 	}
 	voice.freeAt = startedAt + span;
@@ -210,7 +215,10 @@ export const startLoop = (soundId: string, options: PlayOptions = {}): VoiceHand
 		return null;
 	}
 	voice.freeAt = Infinity;
-	if (!options.paused) voice.audio.play(Math.max(0, options.delay ?? 0));
+	if (!options.paused) {
+		const startedAt = toContextTime(sceneNow() + Math.max(0, options.delay ?? 0));
+		voice.audio.play(Math.max(0, startedAt - now()));
+	}
 	return makeHandle(voice);
 };
 

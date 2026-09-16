@@ -1,11 +1,11 @@
 # Audio — the mixer, the registry and the scene clock
 
-> **Status: ACTIVE PLAN — steps 1–2 (the mixer, the registry) are built; steps 3–6 are
-> not.** The layer lives in `src/core/audio/` and its contracts have moved into
-> `src/core/audio/CLAUDE.md`; read that for how it works. Still a plan: scene-time
-> scheduling (`PlayOptions.delay` is **wall-clock** seconds today), the
+> **Status: ACTIVE PLAN — steps 1–3 (the mixer, the registry, the scene clock) are built;
+> steps 4–6 are not.** The layer lives in `src/core/audio/` and its contracts have moved
+> into `src/core/audio/CLAUDE.md`; read that for how it works. Still a plan: the
 > `extensions/sound` → `extensions/audio` rename, and the offline render — `capture/`'s
-> audio is still the best-effort live tap.
+> audio is still the best-effort live tap, though the drift it causes is now measurable
+> via `schedulerDrift()`.
 >
 > This is the full rework of `src/core/audio/` +
 > `src/extensions/sound/` into one general-purpose engine audio layer, and the fix for
@@ -27,7 +27,9 @@ numbers and booleans, and every voice multiplies them in by hand at the moment i
 ```ts
 rainAudio.setVolume(rainLevel * settingsState.audio.ambienceVolume); // weatherAudio.ts:74
 clone.setVolume(volume * settingsState.audio.sfxVolume); // weatherAudio.ts:115
-$effect(() => { if (ostAudio) ostAudio.setVolume(settingsState.audio.musicVolume); }); // GlobalAudio.svelte:80
+$effect(() => {
+	if (ostAudio) ostAudio.setVolume(settingsState.audio.musicVolume);
+}); // GlobalAudio.svelte:80
 ```
 
 `enabled` is then enforced by `if (settingsState.audio.sfxEnabled)` guards scattered across
@@ -83,7 +85,7 @@ clap lands at the wrong scene moment.
 pools with per-hit jitter, edge-triggered voices, park/detach lifecycle and loudest-source-wins
 mixing — written from scratch, with a header explaining that the engine's path "is built for
 UI one-shots and weather beds, not for a scene-local engine". That file is not migrating (see
-*carAudio is the spec, not the migration* below), but everything it had to invent is the
+_carAudio is the spec, not the migration_ below), but everything it had to invent is the
 requirements list for this rework.
 
 ## The model
@@ -106,9 +108,9 @@ Four pieces, each replacing something that is currently duplicated:
 
 - **Bus** — a `GainNode` with an id. Sources connect to a bus, never to the listener directly.
   Settings drive bus gain; nothing multiplies a volume by hand again.
-- **Sound** — a *declaration*: id, url(s), bus, loop/poly/positional defaults. Data, not markup.
+- **Sound** — a _declaration_: id, url(s), bus, loop/poly/positional defaults. Data, not markup.
 - **Voice** — one playing instance. Pooled, reaped, and addressable through a handle.
-- **Timeline** — what the layer was *told* to do, stamped in scene seconds. The thing that
+- **Timeline** — what the layer was _told_ to do, stamped in scene seconds. The thing that
   makes a take reproducible.
 
 ## The mixer
@@ -129,7 +131,7 @@ Keeping `listener.gain` as master is deliberate and load-bearing in two places: 
 everything regardless of how many buses exist above it.
 
 Routing is one function, and it is uniform for `Audio` and `PositionalAudio` alike — both end
-in `this.gain`, because `PositionalAudio` puts its panner *upstream* (`panner.connect(this.gain)`,
+in `this.gain`, because `PositionalAudio` puts its panner _upstream_ (`panner.connect(this.gain)`,
 `PositionalAudio.js:60`) and only overrides `getOutput()`:
 
 ```ts
@@ -150,7 +152,7 @@ defineBuses({ engine: { parent: 'sfx' }, tires: { parent: 'sfx' } });
 ```
 
 **`enabled` becomes `muted` on the bus.** Every scattered `if (…Enabled)` guard deletes. The
-one thing that still reads the flag is a *cost* decision, not a correctness one — a looping
+one thing that still reads the flag is a _cost_ decision, not a correctness one — a looping
 source that is inaudible should not be decoding — so a handle exposes `audible` (its bus chain
 is unmuted and above epsilon) and loops gate playback on it. That is what `weatherAudio.ts:71`
 already does by hand for rain.
@@ -178,7 +180,7 @@ defineSounds({
 - `url` is resolved through `BASE_URL`, as every static asset already is.
 - Loading is the registry's: `fetch` → `context.decodeAudioData`, giving an `AudioBuffer`
   directly. That replaces the hand-maintained `AUDIO_TOTAL` counter with a real per-sound
-  status, and is what lets the offline render reuse the *same* decoded buffers.
+  status, and is what lets the offline render reuse the _same_ decoded buffers.
 - **Definitions are additive and scoped.** The engine's own manifest
   (`core/audio/engineSounds.ts`) is data a game can delete; a scene declares its own on mount.
 
@@ -200,7 +202,7 @@ Three things this collapses:
 - **`delay` is in SCENE seconds**, scheduled by the engine's scheduler. `weatherAudio`'s
   `pendingThunder` array, its `performance.now()` arithmetic and its per-frame drain loop all
   become `audio.play('thunder', { delay: distance / SPEED_OF_SOUND, … })` — and the clap lands
-  at the right *scene* moment inside a take, which it does not today.
+  at the right _scene_ moment inside a take, which it does not today.
 - **`lowpass` and `rate` jitter are first-class**, because the thunder-clap contract ("no two
   hits alike") is reinvented verbatim in `carAudio`'s pops and its scrape shriek. A fresh
   `BiquadFilterNode` per voice is the engine's job — `clone()` sharing the template's filter
@@ -235,7 +237,7 @@ Two lifecycle rules move from scene code into the engine, because both are engin
 This is the load-bearing new piece, and the prerequisite for everything in the next section.
 
 Every timestamp in the layer is `engineClock.elapsed` — scene seconds — not
-`context.currentTime`. In realtime the two run at the same *rate* with different origins, so
+`context.currentTime`. In realtime the two run at the same _rate_ with different origins, so
 the scheduler keeps an anchor and converts:
 
 ```
@@ -249,11 +251,11 @@ before the capture argument.
 
 **Under a take the conversion stops being an offset and starts diverging** — scene time
 advances `1/fps` per rendered frame while wall time advances however long the frame took.
-That divergence *is* the drift. So the scheduler has two modes, and the recording one does not
+That divergence _is_ the drift. So the scheduler has two modes, and the recording one does not
 try to fix the live graph:
 
 - **realtime** — convert and schedule on the live graph. What ships in production.
-- **recording** — schedule on the live graph *and* append to the timeline. The live graph is
+- **recording** — schedule on the live graph _and_ append to the timeline. The live graph is
   a best-effort monitor so the operator hears the take being made; **nothing in the output
   depends on it.**
 
@@ -309,7 +311,7 @@ called out in `core/audio/CLAUDE.md` in the same tone as the descriptor contract
 The registry creates the `THREE.PositionalAudio` and adds it to the target object; games never
 write `<Audio>` / `<PositionalAudio>` markup or `oncreate` attach functions again. That deletes
 `GlobalAudio.svelte` outright — a 192-line component whose entire job is mounting nine tags —
-and it deletes the *pattern* of `attachRainAudio` / `attachThunderAudio` /
+and it deletes the _pattern_ of `attachRainAudio` / `attachThunderAudio` /
 `attachEngineLayer` / the other ten, which exist only to hand a mounted instance back to the
 module that mixes it.
 
@@ -342,16 +344,16 @@ boundary holds — `carAudio.ts` is not being ported. It is being used as the **
 test**: the new API is not general-purpose until each of these is expressible without dropping
 to raw `THREE.Audio`.
 
-| carAudio does | The layer must offer |
-| --- | --- |
-| six rpm loops, two crossfaded by tacho, each pitched `rpm/anchor` | handles with live `volume` + `rate`, no per-voice `$effect` |
-| pops: fuzzy take choice, per-hit volume/rate/lowpass jitter, clones at the firing tip | variant sets + `{ volume, rate, lowpass, at }` on `play()` |
-| `livePops[]` reaped in the tick | central pooling via `poly` |
-| squeal/scrape loops on loudest-source-wins levels | `audible` gating + smoothed `volume` |
-| scrape shriek deadline-stopped at 0.22–0.72 s | `play(…, { duration })` |
-| `parkCarAudio()` on tab hide, `detachCarAudio()` on unmount | engine-owned visibility parking + `scope.release()` |
-| 12 attach functions + 20 mounted components | `scope.loop(id, { at })` |
-| every voice multiplying `settingsState.audio.sfxVolume` | a bus |
+| carAudio does                                                                         | The layer must offer                                        |
+| ------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| six rpm loops, two crossfaded by tacho, each pitched `rpm/anchor`                     | handles with live `volume` + `rate`, no per-voice `$effect` |
+| pops: fuzzy take choice, per-hit volume/rate/lowpass jitter, clones at the firing tip | variant sets + `{ volume, rate, lowpass, at }` on `play()`  |
+| `livePops[]` reaped in the tick                                                       | central pooling via `poly`                                  |
+| squeal/scrape loops on loudest-source-wins levels                                     | `audible` gating + smoothed `volume`                        |
+| scrape shriek deadline-stopped at 0.22–0.72 s                                         | `play(…, { duration })`                                     |
+| `parkCarAudio()` on tab hide, `detachCarAudio()` on unmount                           | engine-owned visibility parking + `scope.release()`         |
+| 12 attach functions + 20 mounted components                                           | `scope.loop(id, { at })`                                    |
+| every voice multiplying `settingsState.audio.sfxVolume`                               | a bus                                                       |
 
 If a row cannot be done cleanly, the API is wrong — not the scene.
 
@@ -390,14 +392,14 @@ plus `extensions/scene/scene.svelte.ts:46`'s `playSwoosh()`; `core/index.ts:12`'
 
 - **Realtime-locked takes** (pace the take to wall clock, pad with duplicate frames when the
   render falls behind). Sync is exact and it is far less work — but it throws away the whole
-  point of the offline path, which is that a heavy scene renders a *clean* file on a machine
+  point of the offline path, which is that a heavy scene renders a _clean_ file on a machine
   that cannot draw it at speed. It makes the video worse to make the audio right.
 - **Resampling the wall-clock tap to fit the video's duration.** Time-compressing `W` wall
   seconds into `N/fps` scene seconds pitch-shifts everything — a click becomes a tick an
   octave up. Seductive because it is a two-line fix; wrong for any sound with a fixed
   character.
 - **Suspending the `AudioContext` on held frames** to make the live graph follow the take's
-  clock. `suspend()`/`resume()` is coarse, clicks, and would still not make a *rendered* frame
+  clock. `suspend()`/`resume()` is coarse, clicks, and would still not make a _rendered_ frame
   cost exactly `1/fps` of audio.
 - **An AudioWorklet mixer.** Reimplements on the main thread's behalf what `GainNode` /
   `PannerNode` / `BiquadFilterNode` already do natively on the audio thread.
@@ -444,9 +446,16 @@ Each step leaves the app working.
    `engineSounds.click.play()` / `.swoosh.play()`. `weatherAudio` is a pure consumer —
    no THREE.Audio, no take picker, no clones, and `pendingThunder` + `performance.now()`
    are gone (the flight time is a scheduled `delay`). **Not yet runtime-verified by ear.**
-3. **Scene clock.** The scheduler, `delay` in scene seconds, `performance.now()` leaves
-   `weatherAudio` — and the "one sanctioned `performance.now()`" note in
-   `core/audio/CLAUDE.md` and `core/utils/CLAUDE.md` goes with it.
+3. ~~**Scene clock.**~~ **DONE.** `scheduler.ts`: scene ↔ context conversion, the anchor
+   (re-glued per frame in realtime, frozen on the handover into a take), and
+   `schedulerDrift()`. `PlayOptions.delay` / `duration` are scene seconds.
+   `performance.now()` left `weatherAudio` in step 2 and its "one sanctioned use" note is
+   gone from `core/utils/CLAUDE.md`.
+
+   **Behaviour in a normal session is unchanged, by construction** — the scene↔context map
+   has slope 1, so intervals carry over exactly and only the origin moves. What this buys
+   is the explicit unit step 5 replays against, plus the drift measurement.
+
 4. **Rename + panel.** `extensions/sound/` → `extensions/audio/`, panel-only, bus faders and
    the voice inspector. Inventory row in `extensions/CLAUDE.md` updated.
 5. **Timeline + offline render.** `timeline.ts`, `render.ts`, and `capture/` swaps the live
@@ -454,4 +463,7 @@ Each step leaves the app working.
    `capture/CLAUDE.md` is rewritten — that whole section becomes the history of a fixed bug.
 6. **Acceptance pass.** Walk the carAudio table above and confirm every row is expressible.
    Fix the API where it is not; do not port the scene.
+
+```
+
 ```

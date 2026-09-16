@@ -47,13 +47,16 @@ export type PlayOptions = {
 	 */
 	lowpass?: number;
 	/**
-	 * Seconds to wait before the voice sounds. Scheduled on the audio clock, so it is
-	 * sample-accurate rather than polled.
+	 * SCENE seconds to wait before the voice sounds (`core/audio/scheduler.ts`), converted
+	 * to the AudioContext clock and scheduled natively — sample-accurate, not polled on a
+	 * frame boundary.
 	 *
-	 * **STILL WALL-CLOCK SECONDS** — step 3 of DOCS/AUDIO.md makes this scene seconds.
+	 * Scene and context time run at the same rate except while a capture take owns the
+	 * engine clock, and the conversion preserves intervals exactly, so in a normal session
+	 * this is simply "seconds from now".
 	 */
 	delay?: number;
-	/** Stop this many seconds after it starts, rather than at the end of the buffer. */
+	/** Stop this many SCENE seconds after it starts, rather than at the end of the buffer. */
 	duration?: number;
 	/** Place the voice in the world: a `PositionalAudio` parented to this object. */
 	at?: Object3D;

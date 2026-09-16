@@ -4,6 +4,7 @@
 types.ts            — SoundDef, PlayOptions, VoiceHandle, AudioScope, BusId
 mixer.ts            — THE BUS GRAPH: real GainNodes, routeToBus(), busAudible()
 registry.ts         — declarations + decoded buffers; fetch/decodeAudioData, variant sets
+scheduler.ts        — scene time ↔ AudioContext time; the take anchor; schedulerDrift()
 voices.ts           — the THREE.Audio objects: one-shot pools, loops, handles, parking
 audio.ts            — THE FACADE: defineSounds() + `audio`. The only door.
 engineSounds.ts     — the ENGINE's own manifest (click/swoosh/ost/ambience/rain/thunder)
@@ -13,10 +14,11 @@ weatherAudio.ts     — rain bed + thunder claps; the sky's audio consumer
 index.ts            — barrel
 ```
 
-> **Being reworked — `DOCS/AUDIO.md` is the plan.** Steps 1–2 (the mixer, the registry)
-> have landed. Scene-time scheduling (step 3), the `extensions/audio` rename (step 4) and
-> the deterministic capture render (step 5) have not — `PlayOptions.delay` is still
-> **wall-clock** seconds, and `capture/`'s audio is still a best-effort live tap.
+> **Being reworked — `DOCS/AUDIO.md` is the plan.** Steps 1–3 (the mixer, the registry,
+> the scene clock) have landed. The `extensions/audio` rename (step 4) and the
+> deterministic capture render (step 5) have not — `capture/`'s audio is still a
+> best-effort live tap, and the drift is now _measurable_ (`schedulerDrift()`) but not
+> yet _fixed_.
 
 ## The registry is the only door
 
@@ -95,6 +97,40 @@ sources ──▶ music ────┐
   ever a **cost** decision: the gain node has already made a muted bus silent, but a bed
   nobody can hear should not be decoding.
 
+## Scene time (`scheduler.ts`)
+
+Every timestamp the layer accepts is **scene** seconds (`engineClock.elapsed`), never
+`context.currentTime`. Web Audio can only be scheduled in context seconds, so one module
+owns the conversion:
+
+```
+contextTime = anchorContext + (sceneTime − anchorScene)
+```
+
+- **The map is affine with SLOPE 1, and that is the thing to understand.** Intervals carry
+  over exactly — a `delay` of 2 scene-seconds is always scheduled 2 context-seconds out,
+  in realtime and inside a take alike. So this changes no observable behaviour in a normal
+  session; it makes the UNIT explicit so step 5 can replay a take against it. Only the
+  ORIGIN moves.
+- **In realtime the anchor is re-glued every frame**, which also absorbs the small real
+  drift between rAF time and the audio hardware clock that a once-at-boot anchor would
+  accumulate. **When a fixed-step source claims the engine clock the anchor freezes**, and
+  the gap that then opens IS the capture drift.
+- **`schedulerDrift()` measures that gap** — how far the live audio clock has run ahead of
+  scene time since a take began, in seconds. Zero in realtime. It is exactly how far a
+  captured file's sound runs ahead of its picture today. Step 5 removes the drift; until
+  then it is at least visible instead of theoretical.
+- **The live graph during a take is a MONITOR.** Slope 1 means it plays a take's audio at
+  wall-clock pace regardless of how slowly the renderer is going, which is deliberately
+  _not_ corrected: a take's rate is whatever the renderer manages that frame, it is not
+  known in advance, and nothing in a recording may depend on the live context. Correctness
+  comes from replaying scene-time stamps offline.
+- **`tickScheduler()` must run before anything that schedules a voice**, which is why
+  `AudioRuntime`'s task calls it first rather than letting `weatherAudio` own a task. It
+  is a plain main-stage task, so a scene's own audio tick could beat it on the frame a
+  take starts and use the previous anchor — one frame of slop in a monitor, and the
+  recorded stamps are unaffected.
+
 ## Rules
 
 - **Import the facade, not a component** — `import { audio, engineSounds } from '$core'`.
@@ -125,7 +161,10 @@ scheduled `delay` rather than a `pendingThunder` queue this tick drained — whi
 makes each arrival sample-accurate instead of landing on the next frame boundary.
 
 **`performance.now()` is gone from this file**, and with it the repo's one sanctioned use
-of it. The delay is scheduled on the `AudioContext` clock via three's `play(delay)`.
-That is still WALL-CLOCK time, so a clap inside a capture take still lands at the wrong
-_scene_ moment — step 3 of `DOCS/AUDIO.md` converts `PlayOptions.delay` to scene seconds,
-and step 5 makes the recording itself deterministic.
+of it. The flight time is a `delay` in SCENE seconds, converted by `scheduler.ts` and
+scheduled natively on the `AudioContext` clock.
+
+A clap fired inside a capture take is still voiced on the live monitor at wall-clock pace
+(slope 1, above), so it is not where a _slow_ take's picture is — but the delay is now
+expressed in the unit step 5's offline render replays against, which is what makes it
+fixable rather than merely wrong.

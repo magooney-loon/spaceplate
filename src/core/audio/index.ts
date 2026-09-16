@@ -7,4 +7,5 @@ export { engineSounds } from './engineSounds';
 export { busAudible, setBusMuted, setBusVolume, mixerSnapshot } from './mixer';
 export { positionalDefaults, voiceCount } from './voices';
 export { soundsReady } from './registry';
+export { sceneNow, schedulerDrift, toContextTime, toSceneTime } from './scheduler';
 export type { AudioScope, BusId, PlayOptions, SoundDef, SoundRef, VoiceHandle } from './types';

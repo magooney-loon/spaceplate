@@ -13,6 +13,7 @@
 	import { installMixer, syncMixerFromSettings, uninstallMixer } from './mixer';
 	import { attachAudioContext, soundsReady } from './registry';
 	import { attachListener, parkVoices, stopAllVoices, unparkVoices } from './voices';
+	import { tickScheduler } from './scheduler';
 	import { engineSounds } from './engineSounds';
 	import type { VoiceHandle } from './types';
 	import { tickWeatherAudio } from './weatherAudio';
@@ -81,9 +82,12 @@
 		else ambienceBed?.pause();
 	});
 
-	// Weather: the rain bed + thunder claps live in ./weatherAudio.ts; this just ticks it.
+	// The scheduler re-anchors scene time against the AudioContext clock, and must run
+	// before anything that schedules a voice this frame — hence first in this task, and
+	// hence this task existing at all rather than weatherAudio owning its own.
 	useTask(
 		(delta) => {
+			tickScheduler();
 			tickWeatherAudio(delta);
 		},
 		{ autoInvalidate: false }
