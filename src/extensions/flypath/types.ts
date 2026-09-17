@@ -38,6 +38,13 @@ export type FlyPathState = {
 
 	// --- driver-written, read-only from the panel's point of view ---
 	isPlaying: boolean;
+	/**
+	 * A 🎬 take is in flight — from the moment it is pressed until the take is torn down,
+	 * PRE-ROLL INCLUDED. Distinct from `captureState.isRecording`, which is still false
+	 * through the pre-roll sweep, and from `isPlaying`, which a plain ▶ preview also sets.
+	 * The panel needs it to keep Play/Pause/Scrub out of a take's way.
+	 */
+	takeInFlight: boolean;
 	/** 0..1 along the whole path. Also the scrub position. */
 	progress: number;
 	status: string;

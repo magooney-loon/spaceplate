@@ -37,26 +37,60 @@
 	 */
 	const editorCameraExtension = () =>
 		studio?.useExtension<
-			{ enabled: boolean; controlsSuspended: boolean },
-			{ setEnabled: (enabled: boolean) => void; setControlsSuspended: (v: boolean) => void }
+			{
+				enabled: boolean;
+				controlsSuspended: boolean;
+				defaultCamera: { enabled: boolean };
+			},
+			{
+				setEnabled: (enabled: boolean) => void;
+				setControlsSuspended: (v: boolean) => void;
+				setDefaultCameraEnabled: (enabled: boolean) => void;
+			}
 		>('editor-camera');
 
 	/** True once `camera.current` really is the editor camera — `setEnabled` is async. */
 	const editorCameraReady = () => editorCameraExtension()?.state.enabled === true;
 
 	/**
+	 * What the path found the editor camera in, so it can be put back. Taken on the FIRST
+	 * claim and held until release: play → scrub → record all re-claim, and the state worth
+	 * restoring is the one from before the path first took over, not from the last hop.
+	 */
+	let restorePoint: { enabled: boolean; pip: boolean } | null = null;
+
+	/**
 	 * Switch the editor camera on and take its controls off it. Returns false when there is
 	 * no Studio to ask, which is the one case the path cannot run in.
+	 *
+	 * `suppressPip` is for a take only — see `releaseEditorCamera`.
 	 */
-	const claimEditorCamera = (): boolean => {
+	const claimEditorCamera = (suppressPip: boolean): boolean => {
 		const editorCamera = editorCameraExtension();
 		if (!editorCamera) {
 			logEngine.warn('FlyPath: no Studio editor camera to drive — is Studio toggled off?');
 			flyPathState.status = 'Needs Studio’s editor camera';
 			return false;
 		}
+		// `useExtension` hands back `Partial<State>`, so both of these have to tolerate an
+		// absent field rather than assert it away — `defaultCamera.enabled` is
+		// `persist(true)` upstream, so treat "not there" as on and put it back that way.
+		restorePoint ??= {
+			enabled: editorCamera.state.enabled === true,
+			pip: editorCamera.state.defaultCamera?.enabled !== false
+		};
 		if (!editorCamera.state.enabled) editorCamera.setEnabled(true);
 		editorCamera.setControlsSuspended(true);
+		// THE PiP IS A SECOND FULL SCENE RENDER, and it is on by default. Studio's
+		// "Default Camera" pane runs `renderer.render(scene, defaultCamera)` from a task
+		// registered `{ before: autoRenderTask }` (DefaultCamera.svelte), so every frame of
+		// a take pays an extra scene traversal and draw-call submission for a picture that
+		// cannot reach the output — it is blitted into a tweakpane pane, an HTML sibling of
+		// the canvas, and the main pipeline pass overwrites its viewport region before
+		// capture's grab runs anyway. Pure cost per encoded frame, so a take turns it off.
+		// (It does NOT re-render shadow maps: SkyLight sets `shadow.autoUpdate = false` and
+		// Renderer.svelte arms `needsUpdate` in a later stage.)
+		if (suppressPip) editorCamera.setDefaultCameraEnabled(false);
 		return true;
 	};
 
@@ -68,18 +102,37 @@
 	let editorFov: number | null = null;
 
 	/**
-	 * Un-suspending IS the restore for the transform (CameraControls kept its own state the
-	 * whole time). `enabled` stays ON — you asked to fly a camera path, so ending up on that
-	 * camera is expected, and it keeps `camera.current` stable across claim/release.
+	 * Hand the camera back. Un-suspending IS the restore for the transform — CameraControls
+	 * kept its own state the whole time, so it snaps back to wherever the user last flew it.
+	 *
+	 * `restoreEnabled` additionally puts the `enabled` flag back to what the path found:
+	 * a finished TAKE does this, so a flythrough recorded from a game-camera session lands
+	 * you back on the game camera instead of parked on the editor camera at the end of the
+	 * path. ▶ Play and Scrub pass false — they hold at the end of the path on purpose, so
+	 * the last shot stays inspectable, and ⏹ Stop is what hands the camera back.
+	 *
+	 * Switching `enabled` off swaps `camera.current`, which rebuilds the whole
+	 * post-processing pipeline (`Renderer.svelte` tracks `$camera` structurally). That is
+	 * why only a take does it, and only once the take's frames are all pushed.
 	 */
-	const releaseEditorCamera = () => {
+	const releaseEditorCamera = (restoreEnabled: boolean) => {
 		const cam = activeCamera();
+		// Before any `setEnabled(false)` below: `camera.current` is still the editor camera
+		// at this point, which is the one whose lens the path moved.
 		if (cam && editorFov !== null && cam.isPerspectiveCamera) {
 			cam.fov = editorFov;
 			cam.updateProjectionMatrix();
 		}
 		editorFov = null;
-		editorCameraExtension()?.setControlsSuspended(false);
+
+		const editorCamera = editorCameraExtension();
+		const previous = restorePoint;
+		restorePoint = null;
+		editorCamera?.setControlsSuspended(false);
+		if (previous) {
+			editorCamera?.setDefaultCameraEnabled(previous.pip);
+			if (restoreEnabled && !previous.enabled) editorCamera?.setEnabled(false);
+		}
 		invalidate();
 	};
 
@@ -367,11 +420,50 @@
 		return [position.x, position.y, position.z];
 	};
 
+	const idleStatus = () =>
+		flyPathState.waypoints.length < 2
+			? 'Need at least 2 waypoints'
+			: `${flyPathState.waypoints.length} waypoints · ${totalDuration(flyPathState).toFixed(1)}s`;
+
+	/**
+	 * A take is over. ONE exit for all four ways that happens — reaching the end of the
+	 * path, the capture duration cap, the recorder dying mid-take, and `armTake()` failing
+	 * to start one at all — because each of them has to do exactly the same teardown, and
+	 * the one that used to skip it (a failed arm) left the editor camera frozen with its
+	 * controls suspended and no hint that ⏹ Stop was the only way out.
+	 *
+	 * Hands the `enabled` flag back too: a recording is a finished job, so it cleans up
+	 * after itself rather than leaving the viewport parked on the editor camera.
+	 */
+	const finishTake = (status: string) => {
+		const live = recording;
+		recording = false;
+		finishing = false;
+		prerollFrame = -1;
+		pendingScrub = null;
+		flyPathState.isPlaying = false;
+		flyPathState.takeInFlight = false;
+		if (live) captureActions.stopRecording();
+		if (engaged) {
+			engaged = false;
+			releaseEditorCamera(true);
+		}
+		elapsed = 0;
+		flyPathState.progress = 0;
+		flyPathState.status = status;
+	};
+
 	const play = () => {
 		if (segmentCount(flyPathState) === 0) return;
+		// Would clear `finishing` out from under a take, which then never tears down and
+		// runs to the capture cap. `scrub()` has always refused; this did not.
+		if (takeInFlight()) {
+			logEngine.warn('FlyPath: already recording a flythrough — press Stop first');
+			return;
+		}
 		// Playing from a scrub: the queued pose is stale the moment `elapsed` starts moving.
 		pendingScrub = null;
-		if (!claimEditorCamera()) return;
+		if (!claimEditorCamera(false)) return;
 		engaged = true;
 		finishing = false;
 		if (flyPathState.progress >= 0.999) elapsed = 0;
@@ -382,30 +474,37 @@
 
 	const pause = () => {
 		if (!engaged) return;
+		// A TAKE CANNOT BE PAUSED. Clearing `isPlaying` stops the camera but not the
+		// encoder, so the take would run to the capture cap recording a frozen frame — and
+		// with the authoring overlay back in shot, since the tube, the direction arrows and
+		// every waypoint marker are gated on `!isPlaying`. Stop is the way out of a take.
+		if (takeInFlight()) {
+			logEngine.warn('FlyPath: a recording cannot be paused — press Stop to end the take');
+			return;
+		}
 		flyPathState.isPlaying = false;
 		flyPathState.status = 'Paused';
 	};
 
 	const stop = () => {
+		if (takeInFlight()) {
+			finishTake(idleStatus());
+			return;
+		}
 		flyPathState.isPlaying = false;
+		flyPathState.takeInFlight = false;
 		finishing = false;
-		prerollFrame = -1;
 		// A scrub queued for the task must not survive the thing that hands the camera back.
 		pendingScrub = null;
 		elapsed = 0;
 		flyPathState.progress = 0;
-		if (recording) {
-			recording = false;
-			captureActions.stopRecording();
-		}
 		if (engaged) {
 			engaged = false;
-			releaseEditorCamera();
+			// The button says "Restore Camera", so an explicit Stop restores everything the
+			// path touched, `enabled` included.
+			releaseEditorCamera(true);
 		}
-		flyPathState.status =
-			flyPathState.waypoints.length < 2
-				? 'Need at least 2 waypoints'
-				: `${flyPathState.waypoints.length} waypoints · ${totalDuration(flyPathState).toFixed(1)}s`;
+		flyPathState.status = idleStatus();
 	};
 
 	const scrub = (progress: number) => {
@@ -416,7 +515,7 @@
 			logEngine.warn('FlyPath: scrub ignored while recording — press Stop first');
 			return;
 		}
-		if (!claimEditorCamera()) return;
+		if (!claimEditorCamera(false)) return;
 		engaged = true;
 		flyPathState.isPlaying = false;
 		elapsed = progress * totalDuration(flyPathState);
@@ -451,7 +550,8 @@
 		}
 
 		pendingScrub = null;
-		if (!claimEditorCamera()) return;
+		// `true` suppresses Studio's Default Camera PiP for the take — see claimEditorCamera.
+		if (!claimEditorCamera(true)) return;
 		engaged = true;
 		finishing = false;
 		elapsed = 0;
@@ -460,6 +560,7 @@
 		// overlay, and tearing down the tube plus every marker mesh is itself a frame of
 		// work. Better spent during the pre-roll than on frame 0 of the take.
 		flyPathState.isPlaying = true;
+		flyPathState.takeInFlight = true;
 		prerollFrame = 0;
 		flyPathState.status = 'Warming up…';
 		applyPose(0);
@@ -479,8 +580,10 @@
 
 		captureActions.startRecording();
 		if (!captureState.isRecording) {
-			flyPathState.isPlaying = false;
-			flyPathState.status = 'Recording failed — see the Capture panel';
+			// The camera is claimed and its controls suspended by now, so this MUST go
+			// through the full teardown — it used to clear `isPlaying` and nothing else,
+			// leaving the editor camera frozen with Stop as the only undocumented way out.
+			finishTake('Recording failed — see the Capture panel');
 			return;
 		}
 		recording = true;
@@ -606,19 +709,16 @@
 			// blitted, if recording), so it is safe to tear the take down now.
 			if (finishing) {
 				finishing = false;
-				flyPathState.isPlaying = false;
 				if (recording) {
-					recording = false;
-					captureActions.stopRecording();
-					releaseEditorCamera();
-					engaged = false;
 					// Not "recorded": stopRecording only starts the write. Worded so it stays
 					// true through finalizing and after, since nothing updates it again — the
 					// Capture panel owns the authoritative status.
-					flyPathState.status = 'Flythrough done — see the Capture panel';
+					finishTake('Flythrough done — see the Capture panel');
 				} else {
-					// Held at the end of the path on purpose, so the last shot can be looked
-					// at; Stop hands the editor camera back to its controls.
+					// A PREVIEW is held at the end of the path on purpose, so the last shot
+					// can be looked at; Stop hands the editor camera back to its controls.
+					// Only a take restores itself (flypath/CLAUDE.md).
+					flyPathState.isPlaying = false;
 					flyPathState.status = 'Finished — Stop to hand the camera back';
 				}
 				return;
@@ -629,11 +729,7 @@
 				// offline take can fail asynchronously while building its encoder. Neutral
 				// wording covers both — the Capture panel's status says which it was.
 				if (recording && !captureState.isRecording) {
-					recording = false;
-					flyPathState.isPlaying = false;
-					flyPathState.status = 'Recording stopped — see the Capture panel';
-					releaseEditorCamera();
-					engaged = false;
+					finishTake('Recording stopped — see the Capture panel');
 					return;
 				}
 

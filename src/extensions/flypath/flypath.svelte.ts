@@ -33,6 +33,7 @@ const DEFAULTS: FlyPathState = {
 	loop: false,
 	showPath: true,
 	isPlaying: false,
+	takeInFlight: false,
 	progress: 0,
 	status: 'No waypoints'
 };

@@ -27,11 +27,14 @@
 	];
 
 	const runnable = $derived(segmentCount(flyPathState) > 0);
-	/**
-	 * The previous take's file is still being written — arming another would resize the
-	 * shared recording canvas out from under it.
-	 */
+	/** The previous take's file is still being written — arming another is refused. */
 	const finalizing = $derived(captureState.isFinalizing);
+	/**
+	 * A 🎬 take is running, PRE-ROLL INCLUDED — which is why this reads the driver's flag
+	 * rather than `captureState.isRecording` (still false through the pre-roll sweep) or
+	 * `flyPathState.isPlaying` (a plain ▶ preview sets that too).
+	 */
+	const recordingTake = $derived(flyPathState.takeInFlight);
 	const duration = $derived(totalDuration(flyPathState));
 
 	// tweakpane fires `change` for programmatic writes too (origin: 'external') — the driver
@@ -170,10 +173,15 @@
 				min={0}
 				max={1}
 				step={0.001}
-				disabled={!runnable}
+				disabled={!runnable || recordingTake}
 				on:change={onScrub}
 			/>
-			{#if flyPathState.isPlaying}
+			<!-- Play/Pause are both refused during a take (the driver warns either way):
+			     pausing one would keep the encoder running on a frozen frame with the
+			     authoring overlay back in shot. Stop is the way out. -->
+			{#if recordingTake}
+				<Button title="⏺ Recording — Stop to end" disabled={true} on:click={() => {}} />
+			{:else if flyPathState.isPlaying}
 				<Button title="⏸ Pause" on:click={() => flyPathActions.pause()} />
 			{:else}
 				<Button title="▶ Play" on:click={() => flyPathActions.play()} />
@@ -182,7 +190,7 @@
 			<Separator />
 			<Button
 				title={finalizing ? '⏳ Preparing video…' : '🎬 Record Flythrough'}
-				disabled={!runnable || finalizing}
+				disabled={!runnable || finalizing || recordingTake}
 				on:click={() => flyPathActions.recordFlythrough()}
 			/>
 		</Folder>
