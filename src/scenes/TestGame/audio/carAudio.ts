@@ -540,7 +540,10 @@ export const tickCarAudio = (delta: number): void => {
 	const hard = carSim.brake * SQUEAL_BRAKE * clamp(speed / SQUEAL_BRAKE_SPEED, 0, 1);
 	const lat = SQUEAL_LAT * clamp((carSim.latLoad - SQUEAL_LAT_ON) / (1 - SQUEAL_LAT_ON), 0, 1);
 	const launchSq = carSim.launch * SQUEAL_LAUNCH;
-	const squeal = Math.max(spin, slide, hand, hard, lat, launchSq);
+	// × ground contact (the better-planted axle) — tyres in the air don't squeal.
+	const squeal =
+		Math.max(spin, slide, hand, hard, lat, launchSq) *
+		Math.max(carSim.contactFront, carSim.contactRear);
 	squealLevel +=
 		(squeal - squealLevel) * damp(squeal > squealLevel ? SQUEAL_ATTACK : SQUEAL_RELEASE, delta);
 	// The release asymptote never lands on 0 — snap it, or the loop hisses at ~0

@@ -15,6 +15,7 @@ import type {
 } from '@dimforge/rapier3d-compat';
 import * as THREE from 'three/webgpu';
 import type { CarSpec } from '../cars/types';
+import { drivenAxles } from '../cars/spec';
 import { G, UNITS_PER_METER } from '../units';
 import { latMu } from './handling';
 import { createDrivetrain } from './drivetrain';
@@ -37,6 +38,10 @@ const YAW_MIN_SPEED = 1.5;
  *  in the steering. */
 const DRIFT_GATE_SPEED = 1;
 const DRIFT_GATE_RAMP = 2;
+/** 1/s — how fast the per-axle ground contact follows the rays. A ramp, not a
+ *  step: one wheel dropping off a kerb must not kick a quarter of the grip out
+ *  inside one physics step. */
+const CONTACT_RATE = 30;
 
 // Nitrous: Shift sprays with the throttle open in a forward gear, purges
 // (vents at the hood) with that gate shut. Kit hardware is the spec's
@@ -62,16 +67,29 @@ export function createCarController(spec: CarSpec, world: World) {
 	// the VISUAL half and hands the instance to the wheel/rig consumers.
 	const suspension = createSuspension(spec);
 	const hw = spec.hardware;
+	const [frontDriven, rearDriven] = drivenAxles(spec);
+
+	/** 0..1 per axle — how much of it is on the ground, smoothed (CONTACT_RATE).
+	 *  Everything the TYRES do is scaled by these: drive, brakes, yaw, grip. */
+	let contactFront = 1;
+	let contactRear = 1;
 
 	/**
 	 * Clear Rapier's force accumulator and immediately re-apply what holds the
 	 * car up (the suspension's rays — see CLAUDE.md's colliders section). Every
 	 * early return below goes through here. `wake` is passed through: the idle
 	 * branch must not wake a sleeping body just to hold up one already resting.
+	 * The rays just ran, so this is also where the ground contact is refreshed.
 	 */
-	function resetForces(body: RapierRigidBody, wake: boolean): void {
+	function resetForces(body: RapierRigidBody, wake: boolean, delta: number): void {
 		body.resetForces(wake);
 		suspension.step(body, world);
+		const g = suspension.grounded;
+		const k = damp(CONTACT_RATE, delta);
+		contactFront += (((g[0] ? 1 : 0) + (g[1] ? 1 : 0)) / 2 - contactFront) * k;
+		contactRear += (((g[2] ? 1 : 0) + (g[3] ? 1 : 0)) / 2 - contactRear) * k;
+		carSim.contactFront = contactFront;
+		carSim.contactRear = contactRear;
 	}
 
 	// Nitrous + startup state — the scene used to own these locals.
@@ -196,7 +214,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		// ~2000 (a realistic crank-and-fire) then settles back to idle. No drive
 		// force, no shifting — the car stays put until `ready`.
 		if (carIgnition.on && !carIgnition.ready) {
-			resetForces(body, false);
+			resetForces(body, false, delta);
 			// Rev to 2000 over ~0.4 s, then decay back to idle over ~0.8 s.
 			// Using a simple timer that counts up from 0; the turnon sound is ~1.2 s.
 			startupTimer += delta;
@@ -248,7 +266,7 @@ export function createCarController(spec: CarSpec, world: World) {
 			!carControls.pressed('shiftUp') &&
 			!carControls.pressed('shiftDown');
 		if (idle && _vel.lengthSq() < 0.25) {
-			resetForces(body, false);
+			resetForces(body, false, delta);
 			if (ignOn) {
 				drivetrain.idle(delta);
 				carSim.rpm = drivetrain.state.rpm;
@@ -301,9 +319,20 @@ export function createCarController(spec: CarSpec, world: World) {
 			tune
 		);
 
+		resetForces(body, true, delta);
+		// How much tyre is on the road: drive through the driven axle(s), brakes +
+		// rolling resistance through all four, the cornering model below likewise.
+		const contact = (contactFront + contactRear) / 2;
+		const drivenContact =
+			frontDriven && rearDriven ? contact : frontDriven ? contactFront : contactRear;
+		// Aero drag is the one resistance that is not the tyres' — it keeps working
+		// in the air. (resistForce's stopping clamp only binds near a standstill,
+		// where drag is ~0, so the split is honest.)
+		const aero = -Math.sign(speedMs) * hw.dragK * speedMs * speedMs;
+		const forceSi = out.driveForce * drivenContact + aero + (out.resistForce - aero) * contact;
+
 		// Longitudinal — one force along the nose. Newtons → world (a_world = a_si·UPM).
-		const longitudinal = (out.driveForce + out.resistForce) * UNITS_PER_METER;
-		resetForces(body, true);
+		const longitudinal = forceSi * UNITS_PER_METER;
 		body.addForce(
 			{
 				x: _forward.x * longitudinal,
@@ -347,8 +376,10 @@ export function createCarController(spec: CarSpec, world: World) {
 		const align = handbrake ? tune.handbrakeAlign : tune.driftAlign * (1 - loose);
 		const targetYaw = clamp(yawDemand, -yawCap, yawCap) - align * beta;
 
+		// Scaled by contact: airborne, nothing steers the body and it keeps the yaw
+		// rate it left the ground with.
 		const ang = body.angvel(_ang);
-		ang.y += (targetYaw - ang.y) * damp(tune.yawResponse, delta);
+		ang.y += (targetYaw - ang.y) * damp(tune.yawResponse, delta) * contact;
 		body.setAngvel(ang, true);
 
 		// Bleed the sideways velocity, capped at what the tyres could actually pull
@@ -358,10 +389,11 @@ export function createCarController(spec: CarSpec, world: World) {
 		const muLat =
 			tune.handbrakeMuLat + (latGrip - tune.handbrakeMuLat) * clamp(out.gripFactor, 0, 1);
 		const settle = vLateral * damp(hw.gripRate, delta);
-		const bleedLimit = muLat * G * UNITS_PER_METER * delta; // m/s² → world units/s this step
+		// m/s² → world units/s this step, and only as much as is on the ground.
+		const bleedLimit = muLat * G * UNITS_PER_METER * delta * contact;
 		/** Share of the lateral budget this corner demands, 0..1 — pins at 1
 		 *  exactly at max banking; the squeal (carAudio) reads it. */
-		const latLoad = clamp(Math.abs(settle) / bleedLimit, 0, 1);
+		const latLoad = bleedLimit > 0 ? clamp(Math.abs(settle) / bleedLimit, 0, 1) : 0;
 		const bleed = clamp(settle, -bleedLimit, bleedLimit);
 		_vel.addScaledVector(_right, -bleed);
 		body.setLinvel({ x: _vel.x, y: _vel.y, z: _vel.z }, true);
@@ -370,7 +402,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		// difference of the pose (CLAUDE.md's suspension section). `-bleed`
 		// because the bleed is applied along `-_right` and the reaction points
 		// the other way, so this is positive in a left-hand corner (body +X).
-		carSim.accelFwd = (out.driveForce + out.resistForce) / hw.mass;
+		carSim.accelFwd = forceSi / hw.mass;
 		carSim.accelLat = -bleed / delta / UNITS_PER_METER;
 
 		// Instruments — plain object at the physics rate, $state mirror at 30 (carTelemetry).
@@ -466,6 +498,8 @@ export function createCarController(spec: CarSpec, world: World) {
 		nitrousFlow = 0;
 		nitrousPurge = 0;
 		startupTimer = 0;
+		contactFront = 1;
+		contactRear = 1;
 	}
 
 	return { step, restart, park, drivetrain, suspension };

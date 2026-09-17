@@ -88,12 +88,21 @@ export function createSuspension(spec: CarSpec) {
 		maxToi: MAX_TOI,
 		/** World units — the tyre radius the hub rides above whatever the ray found. */
 		wheelRadius: R,
+		/** World units, body space — where the road sits under a wheel at rest
+		 *  (`HUB_Y − R`). The tyre fx measure their tuned heights from this line
+		 *  and add `groundY(i) − restGroundY`, so the look on flat ground is the
+		 *  tuned one and the ground under each wheel moves the fx off it. */
+		restGroundY: HUB_Y - R,
 
 		// ── Written by the PHYSICS half ──────────────────────────────────────────
 		/** Ray distance per corner, world units. `MAX_TOI` when airborne. */
 		hitDist: [MAX_TOI, MAX_TOI, MAX_TOI, MAX_TOI],
 		/** Is that corner's ray finding ground at all? */
 		grounded: [false, false, false, false],
+		/** WORLD-space ground normal under each corner, xyz × 4 (corner i at
+		 *  `3i`). Straight up while airborne — the last thing a consumer should
+		 *  do with a missing surface is tilt something onto it. */
+		normal: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]),
 		/** Physical spring compression per corner, world units, ≥ 0. */
 		load: [0, 0, 0, 0],
 		/** Total upward force handed to Rapier last step (world force units). */
@@ -126,7 +135,8 @@ export function createSuspension(spec: CarSpec) {
 		update,
 		reset,
 		compressionRatio,
-		loadRatio
+		loadRatio,
+		groundY
 	};
 
 	// ── Physics half ────────────────────────────────────────────────────────────
@@ -168,11 +178,30 @@ export function createSuspension(spec: CarSpec) {
 			// `solid: true` so a ray that does start inside something reports 0 rather
 			// than punching through to the far side; the body itself is excluded, or
 			// every ray would hit the undertray it starts inside of.
-			const hit = world.castRay(_ray, MAX_TOI, true, undefined, undefined, undefined, body);
+			// WITH the normal — same cast, and the tyre fx lay onto the surface it found.
+			const hit = world.castRayAndGetNormal(
+				_ray,
+				MAX_TOI,
+				true,
+				undefined,
+				undefined,
+				undefined,
+				body
+			);
 			const grounded = hit !== null;
 			const dist = grounded ? hit.timeOfImpact : MAX_TOI;
 			suspension.grounded[i] = grounded;
 			suspension.hitDist[i] = dist;
+			const n = suspension.normal;
+			if (grounded) {
+				n[i * 3] = hit.normal.x;
+				n[i * 3 + 1] = hit.normal.y;
+				n[i * 3 + 2] = hit.normal.z;
+			} else {
+				n[i * 3] = 0;
+				n[i * 3 + 1] = 1;
+				n[i * 3 + 2] = 0;
+			}
 
 			const load = clamp(REST_DIST - dist, 0, MAX_COMP);
 			suspension.load[i] = load;
@@ -195,6 +224,9 @@ export function createSuspension(spec: CarSpec) {
 			suspension.hitDist[i] = UNSPRUNG_DIST;
 			suspension.grounded[i] = false;
 			suspension.load[i] = 0;
+			suspension.normal[i * 3] = 0;
+			suspension.normal[i * 3 + 1] = 1;
+			suspension.normal[i * 3 + 2] = 0;
 		}
 		suspension.force = 0;
 	}
@@ -328,6 +360,15 @@ export function createSuspension(spec: CarSpec) {
 	 */
 	function loadRatio(i: number): number {
 		return clamp(suspension.load[i] / MAX_COMP, 0, 1);
+	}
+
+	/**
+	 * Body-space height of the ground under corner `i`, world units — where its
+	 * ray hit. Body-down IS world-down (pitch and roll are locked), so this is
+	 * exact under the rendered body pose too. Meaningful only while `grounded[i]`.
+	 */
+	function groundY(i: number): number {
+		return RAY_ORIGIN_Y - suspension.hitDist[i];
 	}
 
 	/** Park everything — scene exit and Restart, so the next mount starts level. */

@@ -7,6 +7,7 @@
 	import { UNITS_PER_METER } from '../units';
 	import { clamp as numClamp } from '../sim/carMath';
 	import { carSim } from '../sim/carTelemetry.svelte';
+	import type { Suspension } from '../sim/suspension';
 	import { createPuffPool } from './puffPool';
 
 	// Tyre smoke — the squeal made visible. Where the exhaust puffs (in
@@ -36,7 +37,7 @@
 	// allocation in the task body, autoInvalidate OFF with invalidate() only
 	// while puffs are alive.
 
-	let { target }: { target?: THREE.Object3D } = $props();
+	let { target, suspension }: { target?: THREE.Object3D; suspension: Suspension } = $props();
 
 	// ── Layout (body space — the shared wheelPatches twin of SkidMarks) ──────
 	const WHEELS = wheelPatches(currentCar());
@@ -55,7 +56,9 @@
 	// RATE — overlapping alpha-blended quads — which is why it is 64 and not 200,
 	// and why `alphaPeak` came down as the overlap went up.
 	const POOL = 64;
-	const SMOKE_LIFT = 0.2; // above the road plane — same reason as SkidMarks' LIFT
+	// Above the road plane — same reason as SkidMarks' LAY_Y. Like it, this is the
+	// height on flat ground at rest; each wheel adds its ray's ground offset.
+	const SMOKE_LIFT = 0.2;
 	const DRAG = 1.5; // 1/s — how fast a puff's lateral drift bleeds off
 
 	const { invalidate, camera, autoRenderTask } = useThrelte();
@@ -98,8 +101,11 @@
 			const hand = carSim.handbrake ? 0.8 * numClamp(speed / 10, 0, 1) : 0;
 			const hard = carSim.brake * numClamp(speed / 6, 0, 1);
 			const lat = numClamp(carSim.latLoad, 0, 1);
-			const rearI = Math.max(spin, slide, hand, carSim.launch * 0.8, hard * 0.9, lat * 0.8);
-			const frontI = Math.max(slide * 0.8, hard, lat * 0.9);
+			// × ground contact — a tyre in the air has nothing to smoke against.
+			const rearI =
+				Math.max(spin, slide, hand, carSim.launch * 0.8, hard * 0.9, lat * 0.8) *
+				carSim.contactRear;
+			const frontI = Math.max(slide * 0.8, hard, lat * 0.9) * carSim.contactFront;
 
 			// ── Spawn: rate scales with intensity; a wisp is one puff, a burnout
 			// is a stream. Velocity = lazy rise + the lagged car motion (smoke
@@ -112,7 +118,8 @@
 				const carV = carSim.speedMs * UNITS_PER_METER * 0.45;
 
 				for (let w = 0; w < 4; w++) {
-					const intensity = w >= 2 ? rearI : frontI;
+					// Per wheel: a tyre whose ray found nothing smokes nothing.
+					const intensity = suspension.grounded[w] ? (w >= 2 ? rearI : frontI) : 0;
 					if (intensity < SMOKE_ON) {
 						spawnT[w] = 0;
 						continue;
@@ -121,7 +128,8 @@
 					if (spawnT[w] < 1) continue;
 					spawnT[w] -= 1;
 
-					_v.set(WHEELS[w][0], 0.1 + SMOKE_LIFT, WHEELS[w][1]);
+					const ground = suspension.groundY(w) - suspension.restGroundY;
+					_v.set(WHEELS[w][0], 0.1 + SMOKE_LIFT + ground, WHEELS[w][1]);
 					body.localToWorld(_v);
 					const roll = w >= 2 ? 0.8 + 0.8 * Math.random() : 0.3;
 					pool.spawn(

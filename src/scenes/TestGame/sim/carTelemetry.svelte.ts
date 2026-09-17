@@ -51,6 +51,11 @@ export const carSim = {
 	 *  planted limit cornering lights no drift angle and no TC lamp — the load
 	 *  itself is the only honest squeal signal. */
 	latLoad: 0,
+	/** 0..1 per axle — how much of it is on the ground (the suspension rays,
+	 *  smoothed in sim/controller.ts). The tyres' grip scales by it, and so do
+	 *  the tyre fx and the squeal: nothing smokes or screams in the air. */
+	contactFront: 1,
+	contactRear: 1,
 	throttle: 0,
 	brake: 0,
 	handbrake: false,
@@ -396,6 +401,8 @@ export function resetCarTelemetry(): void {
 	carSim.steerAngle = 0;
 	carSim.drift = 0;
 	carSim.latLoad = 0;
+	carSim.contactFront = 1;
+	carSim.contactRear = 1;
 	carSim.throttle = 0;
 	carSim.brake = 0;
 	carSim.handbrake = false;

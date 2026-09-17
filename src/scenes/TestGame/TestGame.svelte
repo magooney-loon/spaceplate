@@ -440,12 +440,12 @@
 	<!-- Skid marks — world-anchored ring buffer of rubber quads laid at the tyre
 	     patches while the car slides (same anchor: its parent is the body, the space
 	     the wheel offsets live in). See fx/SkidMarks.svelte. -->
-	<SkidMarks target={chaseAnchor} />
+	<SkidMarks target={chaseAnchor} {suspension} />
 
 	<!-- Tyre smoke — continuous puffs at the contact patches while a wheel
 	     slides (burnout / drift / hard brake / max cornering). World-anchored
 	     like the marks; same anchor trick. See fx/TireSmoke.svelte. -->
-	<TireSmoke target={chaseAnchor} />
+	<TireSmoke target={chaseAnchor} {suspension} />
 
 	<!-- Impact & scrape sparks — reads the hull-contact signal `sim/hullContacts.ts`
 	     already publishes onto `carSim` each physics step: a HIT is a rising edge

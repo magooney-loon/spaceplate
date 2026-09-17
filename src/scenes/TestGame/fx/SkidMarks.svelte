@@ -8,6 +8,7 @@
 	import { wheelPatches } from '../cars/spec';
 	import { UNITS_PER_METER } from '../units';
 	import { carSim } from '../sim/carTelemetry.svelte';
+	import type { Suspension } from '../sim/suspension';
 
 	// Skid marks — the road's memory of the squeal. One world-anchored mesh whose
 	// geometry is a ring buffer of quads laid at the tyre contact patches while
@@ -25,7 +26,7 @@
 	// OFF with invalidate() only while laying or inside the fade window, and the
 	// material is a NodeMaterial + TSL — never ShaderMaterial (blank on WebGPU).
 
-	let { target }: { target?: THREE.Object3D } = $props();
+	let { target, suspension }: { target?: THREE.Object3D; suspension: Suspension } = $props();
 
 	// ── Layout (body space, world units) ────────────────────────────────────
 	// From the car's spec (geometry.axleZ / halfTrack) via the shared wheelPatches
@@ -35,7 +36,12 @@
 	// derived from the wheel-contact colliders (hubY − wheelRadius + epsilon)
 	// checked out against rapier in isolation but rendered UNDER the surface
 	// in-browser. Don't re-derive without explaining that first.
+	// It is now the height ON FLAT GROUND AT REST: each wheel adds how far its
+	// suspension ray found the ground off the rest line (`groundY − restGroundY`),
+	// so marks follow slopes, crests and kerbs and look identical on the flat.
 	const LAY_Y = 0.8;
+	/** Below this ground-normal y the surface is a wall, not a road — lay flat. */
+	const MIN_NORMAL_Y = 0.2;
 
 	// ── Tuning ──────────────────────────────────────────────────────────────
 	const HALF_WIDTH = currentCar().geometry.tyreHalfWidth * UNITS_PER_METER;
@@ -59,8 +65,9 @@
 	const TOTAL_SEGS = SEGS_PER_WHEEL * 4;
 	const VERTS = TOTAL_SEGS * 4;
 	const positions = new Float32Array(VERTS * 3); // all-zero = degenerate = free
-	// Normals are written ONCE: every mark lies on the ground plane, face up —
-	// the lighting below needs them, the laying never changes them.
+	// Normals are the GROUND's, written per segment from the wheel's ray — the
+	// lighting needs them, and a mark on a banked corner must light like the bank.
+	// Initialised face-up for the quads that were never laid.
 	const normals = new Float32Array(VERTS * 3);
 	for (let i = 0; i < VERTS; i++) normals[i * 3 + 1] = 1;
 	// [birth, intensity, edge, grain] per vertex — edge is the cross-width
@@ -82,8 +89,9 @@
 	const geometry = new THREE.BufferGeometry();
 	const posAttr = new THREE.BufferAttribute(positions, 3);
 	const markAttr = new THREE.BufferAttribute(marks, 4);
+	const normAttr = new THREE.BufferAttribute(normals, 3);
 	geometry.setAttribute('position', posAttr);
-	geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+	geometry.setAttribute('normal', normAttr);
 	geometry.setAttribute('aMark', markAttr);
 	geometry.setIndex(new THREE.BufferAttribute(indices, 1));
 
@@ -192,7 +200,10 @@
 		aInt: number,
 		bInt: number,
 		aGrain: number,
-		bGrain: number
+		bGrain: number,
+		nx: number,
+		ny: number,
+		nz: number
 	): void => {
 		// Perpendicular to the segment in XZ, half a tyre width out — jittered per
 		// segment, a hair either side of true; the soft rim masks the steps.
@@ -202,6 +213,10 @@
 		const hw = HALF_WIDTH * (0.88 + 0.24 * Math.random());
 		px = (px / len) * hw;
 		pz = (pz / len) * hw;
+		// …then tilted into the ground plane, so a mark across a camber or a bank
+		// lies ON it instead of one edge floating and the other buried. (Not
+		// renormalised: the XZ half-width is what the rim was tuned against.)
+		const py = -(nx * px + nz * pz) / ny;
 
 		const pOff = head * 12;
 		const mOff = head * 16;
@@ -209,17 +224,23 @@
 		// Written straight into the ring buffer: no temp arrays in the task body.
 		const p = positions;
 		p[pOff] = ax - px;
-		p[pOff + 1] = ay;
+		p[pOff + 1] = ay - py;
 		p[pOff + 2] = az - pz;
 		p[pOff + 3] = ax + px;
-		p[pOff + 4] = ay;
+		p[pOff + 4] = ay + py;
 		p[pOff + 5] = az + pz;
 		p[pOff + 6] = bx - px;
-		p[pOff + 7] = by;
+		p[pOff + 7] = by - py;
 		p[pOff + 8] = bz - pz;
 		p[pOff + 9] = bx + px;
-		p[pOff + 10] = by;
+		p[pOff + 10] = by + py;
 		p[pOff + 11] = bz + pz;
+		// One ground normal for the whole segment — the one under the wheel now.
+		for (let v = 0; v < 12; v += 3) {
+			normals[pOff + v] = nx;
+			normals[pOff + v + 1] = ny;
+			normals[pOff + v + 2] = nz;
+		}
 		// aMark per vertex [birth, intensity, edge, grain]: the a-end carries the
 		// LAST segment's intensity/grain so both interpolate down the strip; a
 		// tail-off segment passes bInt 0 and tapers out.
@@ -241,6 +262,7 @@
 		m[mOff + 11] = bGrain;
 		m[mOff + 15] = bGrain;
 		posAttr.addUpdateRange(pOff, 12);
+		normAttr.addUpdateRange(pOff, 12);
 		markAttr.addUpdateRange(mOff, 16);
 		head = (head + 1) % TOTAL_SEGS;
 		if (everLaid < TOTAL_SEGS) {
@@ -267,8 +289,10 @@
 				Math.min(Math.max(speed / 4, 0), 1);
 			const hand = carSim.handbrake ? 0.8 * Math.min(Math.max(speed / 10, 0), 1) : 0;
 			const hard = carSim.brake * Math.min(Math.max(speed / 6, 0), 1);
-			const rearI = Math.max(spin, slide, hand, carSim.launch * 0.8, hard * 0.9);
-			const frontI = Math.max(slide * 0.8, hard);
+			// × ground contact — no rubber laid mid-jump.
+			const rearI =
+				Math.max(spin, slide, hand, carSim.launch * 0.8, hard * 0.9) * carSim.contactRear;
+			const frontI = Math.max(slide * 0.8, hard) * carSim.contactFront;
 
 			body.updateWorldMatrix(true, false);
 			const e = body.matrixWorld.elements;
@@ -277,9 +301,21 @@
 
 			let laid = false;
 			for (let w = 0; w < 4; w++) {
-				const intensity = w >= 2 ? rearI : frontI;
-				_v.set(WHEELS[w][0], LAY_Y, WHEELS[w][1]);
+				// A wheel whose ray found nothing lays nothing — per WHEEL, on top of
+				// the per-axle contact above, so one tyre over a crest stops alone.
+				const grounded = suspension.grounded[w];
+				const intensity = grounded ? (w >= 2 ? rearI : frontI) : 0;
+				const lift = grounded ? suspension.groundY(w) - suspension.restGroundY : 0;
+				_v.set(WHEELS[w][0], LAY_Y + lift, WHEELS[w][1]);
 				body.localToWorld(_v);
+				let nx = suspension.normal[w * 3];
+				let ny = suspension.normal[w * 3 + 1];
+				let nz = suspension.normal[w * 3 + 2];
+				if (ny < MIN_NORMAL_Y) {
+					nx = 0;
+					ny = 1;
+					nz = 0;
+				}
 
 				// Hysteresis: enter at MARK_ON, leave at MARK_EXIT — a slide
 				// hovering at the threshold must not chatter starts/tails.
@@ -289,7 +325,8 @@
 					const tdx = _v.x - last[w * 2];
 					const tdz = _v.z - last[w * 2 + 1];
 					const td = Math.hypot(tdx, tdz);
-					if (active[w] && td > 0.12) {
+					// Airborne: no tail — _v is not on anything to taper onto.
+					if (active[w] && grounded && td > 0.12) {
 						const k = td > TAIL_MAX ? TAIL_MAX / td : 1;
 						lay(
 							last[w * 2],
@@ -301,7 +338,10 @@
 							prevI[w],
 							0,
 							prevG[w],
-							Math.random()
+							Math.random(),
+							nx,
+							ny,
+							nz
 						);
 						laid = true;
 					}
@@ -333,7 +373,7 @@
 				}
 				if (Math.hypot(dx, dz) >= SEG_MIN) {
 					const g = Math.random();
-					lay(lx, lastY[w], lz, _v.x, _v.y, _v.z, prevI[w], intensity, prevG[w], g);
+					lay(lx, lastY[w], lz, _v.x, _v.y, _v.z, prevI[w], intensity, prevG[w], g, nx, ny, nz);
 					laid = true;
 					prevI[w] = intensity;
 					prevG[w] = g;
@@ -345,6 +385,7 @@
 
 			if (laid) {
 				posAttr.needsUpdate = true;
+				normAttr.needsUpdate = true;
 				markAttr.needsUpdate = true;
 				lastLay = now;
 			}

@@ -784,15 +784,22 @@ inherit the GR86's ride.
   overlapping quads darken — depthWrite off). Wheel offsets come from GR86
   geometry ×2.5 (track half 0.775 m is the real car's — the GLB's measured
   pivots stay in CarWheels); the mark height is the EMPIRICALLY TUNED body-space
-  `LAY_Y = 0.9` — a road line derived from the wheel-contact colliders
+  `LAY_Y = 0.8` — a road line derived from the wheel-contact colliders
   (hubY − wheelRadius + epsilon) was tried, checked out against rapier in
   isolation, and rendered UNDER the surface in-browser; don't re-derive without
-  explaining that. The material also carries polygonOffset (−2/−2), belt and
+  explaining that. **`LAY_Y` is the height on FLAT GROUND AT REST**: each wheel
+  adds its suspension ray's offset off the rest road line
+  (`suspension.groundY(i) − suspension.restGroundY`), the strip's width vector
+  is tilted into the ground plane, and each segment carries the ray's ground
+  NORMAL (`suspension.normal`) — so marks follow slopes, cambers and kerbs and
+  look identical on the flat. A wheel whose ray found nothing lays nothing (no
+  tail either). TireSmoke's `SMOKE_LIFT` follows the same rule. The material also carries polygonOffset (−2/−2), belt and
   braces against the near-plane-0.001 depth precision at chase distance.
   On-demand: invalidate only while laying or within the 15 s fade window. One
   draw call, DoubleSide. THE MATERIAL IS LIT,
-  NOT UNLIT — MeshStandardNodeMaterial, albedo ~0.05, normals pinned up once
-  at init: a fixed unlit gray lifted by the night exposure is LIGHTER than
+  NOT UNLIT — MeshStandardNodeMaterial, albedo ~0.05, normals written
+  per segment from the wheel's ray (they were pinned face-up once, before the
+  ground-following): a fixed unlit gray lifted by the night exposure is LIGHTER than
   night asphalt, so marks read whitish-gray after dark; lit, they darken with
   the environment (and take fog) like the road — darker than asphalt by day,
   near-black at night. THE QUADS ARE INDEXED, NOT 6-VERT — four verts per
@@ -852,7 +859,8 @@ inherit the GR86's ride.
     reading from the `compressionRatio` the struts show. The rays ARE the car's
     ground contact and were the one part of the model with no picture at all; an
     airborne wheel used to look exactly like a loaded one. `suspension` exposes
-    `rayOriginY` / `maxToi` / `wheelRadius` / `loadRatio` for this and nothing else.
+    `rayOriginY` / `maxToi` / `wheelRadius` / `loadRatio` for this; the tyre fx
+    read `groundY(i)` / `restGroundY` / `normal` (the same cast, with its normal).
   - **At the CENTRE OF MASS** (`centerOfMass(spec)` — the same point cars/hull.ts
     hands Rapier; one lever rule, two consumers): heading, velocity and combined
     acceleration arrows, the slip-angle WEDGE between heading and velocity (a
