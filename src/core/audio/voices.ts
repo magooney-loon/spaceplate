@@ -130,6 +130,13 @@ type Voice = {
 	lowpass: number | null;
 	/** This voice's entry in the take being recorded, or null when nothing is recording. */
 	rec: RecordedVoice | null;
+	/**
+	 * The ONE handle for this voice, made on first play and reused after. A handle
+	 * addresses the voice, not the play, so a fresh object per play buys nothing — and a
+	 * scope holds every handle it is given until release: a pooled pop firing ~10/s would
+	 * grow that set without bound. One per voice keeps it at pool depth.
+	 */
+	handle: VoiceHandle | null;
 };
 
 let listener: ThreeAudioListener | null = null;
@@ -158,7 +165,7 @@ const createVoice = (soundId: string, positional: boolean): Voice | null => {
 	audio.userData.selectable = false;
 	routeToBus(audio, def.bus ?? 'sfx');
 
-	const voice: Voice = { soundId, audio, freeAt: 0, lowpass: null, rec: null };
+	const voice: Voice = { soundId, audio, freeAt: 0, lowpass: null, rec: null, handle: null };
 	live.add(voice);
 	return voice;
 };
@@ -320,7 +327,7 @@ export const playOneShot = (soundId: string, options: PlayOptions = {}): VoiceHa
 		voice.rec.stopScene = startScene + span;
 	}
 
-	return makeHandle(voice);
+	return (voice.handle ??= makeHandle(voice));
 };
 
 /** A loop: its own voice, alive until the handle (or its scope) stops it. */
@@ -337,7 +344,7 @@ export const startLoop = (soundId: string, options: PlayOptions = {}): VoiceHand
 		voice.audio.play(Math.max(0, toContextTime(startScene) - now()));
 		recordStart(voice, startScene);
 	}
-	return makeHandle(voice);
+	return (voice.handle ??= makeHandle(voice));
 };
 
 /** Stop everything, or everything of one sound. */
