@@ -88,6 +88,13 @@ export interface HandlingTune {
 	 */
 	driftAlign: number;
 	/**
+	 * 1/s — the auto-catch WHILE the handbrake is held. `driftAlign` is scaled
+	 * by `1 - loose` and the handbrake is loose 1, so without this nothing pulls
+	 * the nose back and a handbrake stop swaps ends and skates. Steering still
+	 * wins a held handbrake turn; a tap-and-hold stop comes to rest near straight.
+	 */
+	handbrakeAlign: number;
+	/**
 	 * rad — the slip angle `powerYawBoost` has fully faded out at, so past
 	 * it only the aligning moment is left and the car recovers instead of
 	 * spinning. The steady-state drift angle lands a little under this.

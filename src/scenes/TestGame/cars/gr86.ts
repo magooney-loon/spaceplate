@@ -364,6 +364,8 @@ export const gr86 = {
 			// 1 and 0 — Grip is the original kinematic model, untouched.
 			powerYawBoost: 1,
 			driftAlign: 0,
+			// 0 — Grip's handbrake is untouched.
+			handbrakeAlign: 0,
 			maxDriftAngle: 0.75
 		},
 		drift: {
@@ -382,10 +384,11 @@ export const gr86 = {
 			// service, so Drift corners exactly like Grip until something provokes it.
 			// That contrast IS the feel — running this lower just made everything vague.
 			latGripGain: 1.6,
-			// A third of Grip's. This is the μ a fully committed slide bleeds at — at 0.42
-			// the handbrake shed 4.1 m/s² sideways and the car was straight again in a
-			// tenth of a second, which is why it read as a turn-tighter button.
-			handbrakeMuLat: 0.15,
+			// Up from 0.15, which let a handbrake stop SKATE: a tap from 60 km/h slid
+			// 60 m on and 11 m sideways, swapping ends. 0.5 (with `handbrakeAlign`
+			// below) stops it in ~30 m, ~4 m sideways, ending near straight. It
+			// also caps how far a throttle slide can bleed down, so drifts barely notice.
+			handbrakeMuLat: 0.5,
 			// Wheelspin nearly wipes the lateral tyre, so power deepens a slide sharply.
 			slipGripLoss: 0.69,
 			// OFF. Nothing trims the surplus torque, so the rears spin up for real: 1st is
@@ -442,6 +445,10 @@ export const gr86 = {
 			// so ~95% of this lands (~0.33) — that's the "opposite lock catches it" moment,
 			// and 0.22 wasn't landing hard enough there either.
 			driftAlign: 0.35,
+			// The catch while the handbrake is held (`driftAlign` is zero there, since
+			// loose is 1) — what stops a handbrake stop from spinning round. A held
+			// full-lock handbrake turn still turns.
+			handbrakeAlign: 3,
 			// Up from 0.9: the drift can hold a bigger angle before the catch fully takes
 			// over, for a more dramatic slide before it settles. The handbrake held at full
 			// lock still spins the car out to fully sideways, which is what that input

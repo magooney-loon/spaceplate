@@ -343,7 +343,8 @@ export function createCarController(spec: CarSpec, world: World) {
 		const yawCap = (latGrip * boost * G) / Math.max(absSpeed, YAW_MIN_SPEED);
 		// The auto-catch, scaled by how much rear grip is left — a spinning tyre
 		// aligns nothing (CLAUDE.md's `driftAlign` bullet). Zero in Grip.
-		const align = tune.driftAlign * (1 - loose);
+		// On the handbrake `loose` is 1, so it has its own catch (`handbrakeAlign`).
+		const align = handbrake ? tune.handbrakeAlign : tune.driftAlign * (1 - loose);
 		const targetYaw = clamp(yawDemand, -yawCap, yawCap) - align * beta;
 
 		const ang = body.angvel(_ang);
