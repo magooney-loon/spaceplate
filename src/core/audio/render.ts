@@ -163,9 +163,18 @@ const buildVoice = (
 		panner.refDistance = voice.positional.ref;
 		panner.rolloffFactor = voice.positional.rolloff;
 		panner.maxDistance = voice.positional.max;
+		panner.coneInnerAngle = voice.positional.cone.inner;
+		panner.coneOuterAngle = voice.positional.cone.outer;
+		panner.coneOuterGain = voice.positional.cone.outerGain;
 		applyCurve(panner.positionX, voice.pos.x, t0, duration, 0);
 		applyCurve(panner.positionY, voice.pos.y, t0, duration, 0);
 		applyCurve(panner.positionZ, voice.pos.z, t0, duration, 0);
+		// Fallback is three's rest facing, local +Z (PositionalAudio.updateMatrixWorld).
+		if (voice.orient) {
+			applyCurve(panner.orientationX, voice.orient.x, t0, duration, 0);
+			applyCurve(panner.orientationY, voice.orient.y, t0, duration, 0);
+			applyCurve(panner.orientationZ, voice.orient.z, t0, duration, 1);
+		}
 		head.connect(panner);
 		head = panner;
 	}

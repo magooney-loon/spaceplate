@@ -32,6 +32,13 @@ export type SoundDef = {
 	readonly rolloff?: number;
 	readonly max?: number;
 	readonly panningModel?: PanningModelType;
+	/** Web Audio's distance curve. Defaults to `'inverse'`, the PannerNode's own default. */
+	readonly distanceModel?: DistanceModelType;
+	/**
+	 * A directional source: full level inside `inner` degrees, `outerGain` beyond `outer`,
+	 * aimed down the voice's local +Z (three's convention). Omitted = omnidirectional.
+	 */
+	readonly cone?: { readonly inner: number; readonly outer: number; readonly outerGain: number };
 };
 
 export type PlayOptions = {

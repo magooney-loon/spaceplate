@@ -58,6 +58,43 @@ const applyPositional = (audio: ThreePositionalAudio, def: SoundDef): void => {
 	audio.setRolloffFactor(def.rolloff ?? positionalDefaults.rolloff);
 	audio.setMaxDistance(def.max ?? positionalDefaults.max);
 	audio.panner.panningModel = def.panningModel ?? positionalDefaults.panningModel;
+	audio.setDistanceModel(def.distanceModel ?? 'inverse');
+	// Reset explicitly when undeclared, to the PannerNode's own omnidirectional defaults.
+	const cone = def.cone ?? { inner: 360, outer: 360, outerGain: 0 };
+	audio.setDirectionalCone(cone.inner, cone.outer, cone.outerGain);
+};
+
+/** Scratch for placing a positional voice's panner at configure time. */
+const worldPos = new Vector3();
+const worldQuat = new Quaternion();
+const worldScale = new Vector3();
+const worldFwd = new Vector3();
+
+/**
+ * Land a positional voice's panner on its CURRENT world pose, as a real event the next
+ * updateMatrixWorld ramp anchors to.
+ *
+ * Three only pushes a positional voice's panner while `isPlaying` — and one rendered frame
+ * LATER — so every path that STARTS a voice needs this: a fresh voice would otherwise speak
+ * its first frame from the WORLD ORIGIN, a pooled one from wherever its previous play left
+ * the params, and a resumed loop from where it was PAUSED (the car's crossfaded bed layers
+ * pause for seconds while the car drives on).
+ */
+const landPanner = (audio: ThreeAudio<AudioNode>): void => {
+	if (!(audio instanceof ThreePositionalAudio)) return;
+	const panner = audio.panner;
+	if (!panner.positionX) return;
+	audio.updateWorldMatrix(true, false);
+	audio.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+	// Three's rest facing is local +Z (PositionalAudio.updateMatrixWorld).
+	worldFwd.set(0, 0, 1).applyQuaternion(worldQuat);
+	const at = audio.context.currentTime;
+	panner.positionX.setValueAtTime(worldPos.x, at);
+	panner.positionY.setValueAtTime(worldPos.y, at);
+	panner.positionZ.setValueAtTime(worldPos.z, at);
+	panner.orientationX.setValueAtTime(worldFwd.x, at);
+	panner.orientationY.setValueAtTime(worldFwd.y, at);
+	panner.orientationZ.setValueAtTime(worldFwd.z, at);
 };
 
 /**
@@ -108,9 +145,6 @@ export const attachListener = (audioListener: ThreeAudioListener): void => {
 const now = (): number => listener?.context.currentTime ?? 0;
 
 const isBusy = (voice: Voice): boolean => voice.audio.isPlaying || now() < voice.freeAt;
-
-/** Scratch for placing a positional voice's panner at configure time. */
-const worldPos = new Vector3();
 
 const createVoice = (soundId: string, positional: boolean): Voice | null => {
 	if (!listener) return null;
@@ -164,20 +198,7 @@ const configure = (voice: Voice, options: PlayOptions, loop: boolean): boolean =
 			// when absent — a pooled voice must not inherit the previous play's spot.
 			if (options.position) audio.position.set(...options.position);
 			else audio.position.set(0, 0, 0);
-			// Land the panner on the world position NOW, as a real event the next
-			// updateMatrixWorld ramp anchors to. Three only pushes a positional voice's
-			// panner while `isPlaying` — one rendered frame LATER — so without this a fresh
-			// voice speaks its first frame from the WORLD ORIGIN (the old clone artifact)
-			// and, worse, a POOLED one from wherever its previous play left the params:
-			// full presence from the wrong tip.
-			const panner = audio.panner;
-			if (panner.positionX) {
-				audio.getWorldPosition(worldPos);
-				const at = audio.context.currentTime;
-				panner.positionX.setValueAtTime(worldPos.x, at);
-				panner.positionY.setValueAtTime(worldPos.y, at);
-				panner.positionZ.setValueAtTime(worldPos.z, at);
-			}
+			landPanner(audio);
 		} else {
 			logSound.warn(`Audio: "${voice.soundId}" was placed with \`at\` but is not positional`);
 		}
@@ -216,6 +237,7 @@ const makeHandle = (voice: Voice): VoiceHandle => ({
 	},
 	resume() {
 		if (voice.audio.isPlaying || !voice.audio.buffer) return;
+		landPanner(voice.audio);
 		voice.audio.play();
 		// Resumes mid-buffer, so stamp the start back by the cursor and let render.ts
 		// seek: `play()` has just set `_startedAt`, leaving `bufferOffset` at `_progress`.
@@ -348,9 +370,28 @@ export const parkVoices = (): void => {
 
 export const unparkVoices = (): void => {
 	for (const voice of parked) {
-		if (live.has(voice) && !voice.audio.isPlaying) voice.audio.play();
+		if (live.has(voice) && !voice.audio.isPlaying) {
+			landPanner(voice.audio);
+			voice.audio.play();
+		}
 	}
 	parked.length = 0;
+};
+
+/**
+ * Detach finished pooled positional one-shots from their `at` parent. Called per frame by
+ * `AudioRuntime`'s task.
+ *
+ * A pooled voice outlives its play: without this it stays parented to the last object it
+ * sounded at until the slot is reused — and if that object's scene unmounts first, the
+ * voice pins a dead subtree. Loops are not pooled; their handle or scope detaches them.
+ */
+export const reapVoices = (): void => {
+	for (const pool of pools.values()) {
+		for (const voice of pool) {
+			if (voice.audio.parent && !isBusy(voice)) voice.audio.removeFromParent();
+		}
+	}
 };
 
 // ── Take recording ──────────────────────────────────────────────────────────────
@@ -388,9 +429,31 @@ const positionalParamsOf = (audio: ThreeAudio<AudioNode>) =>
 				rolloff: audio.panner.rolloffFactor,
 				max: audio.panner.maxDistance,
 				panningModel: audio.panner.panningModel,
-				distanceModel: audio.panner.distanceModel
+				distanceModel: audio.panner.distanceModel,
+				cone: {
+					inner: audio.panner.coneInnerAngle,
+					outer: audio.panner.coneOuterAngle,
+					outerGain: audio.panner.coneOuterGain
+				}
 			}
 		: null;
+
+/** Sample a positional voice's world pose into its take record — position, plus facing if directional. */
+const samplePose = (voice: Voice, rec: RecordedVoice, sceneTime: number): void => {
+	if (!rec.pos) return;
+	voice.audio.updateWorldMatrix(true, false);
+	voice.audio.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+	samplePosition(rec.pos.x, sceneTime, worldPos.x);
+	samplePosition(rec.pos.y, sceneTime, worldPos.y);
+	samplePosition(rec.pos.z, sceneTime, worldPos.z);
+	if (rec.orient) {
+		worldFwd.set(0, 0, 1).applyQuaternion(worldQuat);
+		// A unit vector, so the volume epsilon (1e-3) is the right grain, not the position one.
+		sampleVolume(rec.orient.x, sceneTime, worldFwd.x);
+		sampleVolume(rec.orient.y, sceneTime, worldFwd.y);
+		sampleVolume(rec.orient.z, sceneTime, worldFwd.z);
+	}
+};
 
 /**
  * Enter a voice into the take. `startScene` is absolute scene time and may sit BEFORE the
@@ -418,12 +481,7 @@ const recordStart = (voice: Voice, startScene: number): void => {
 	if (voice.rec) {
 		sampleVolume(voice.rec.volume, startScene, voice.audio.getVolume());
 		sampleRate(voice.rec.rate, startScene, voice.audio.playbackRate);
-		if (voice.rec.pos) {
-			voice.audio.getWorldPosition(worldPos);
-			samplePosition(voice.rec.pos.x, startScene, worldPos.x);
-			samplePosition(voice.rec.pos.y, startScene, worldPos.y);
-			samplePosition(voice.rec.pos.z, startScene, worldPos.z);
-		}
+		samplePose(voice, voice.rec, startScene);
 	}
 };
 
@@ -473,12 +531,7 @@ export const tickRecording = (sceneTime: number): void => {
 		if (!rec) continue;
 		sampleVolume(rec.volume, sceneTime, voice.audio.getVolume());
 		sampleRate(rec.rate, sceneTime, voice.audio.playbackRate);
-		if (rec.pos) {
-			voice.audio.getWorldPosition(listenerPos);
-			samplePosition(rec.pos.x, sceneTime, listenerPos.x);
-			samplePosition(rec.pos.y, sceneTime, listenerPos.y);
-			samplePosition(rec.pos.z, sceneTime, listenerPos.z);
-		}
+		samplePose(voice, rec, sceneTime);
 	}
 
 	const curves = listenerCurves();

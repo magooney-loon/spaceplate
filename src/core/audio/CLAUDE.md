@@ -53,7 +53,23 @@ bed.volume = 0.4;
   voice's WORLD position at configure time (`setValueAtTime`), because three only
   pushes it while `isPlaying`, one rendered frame later: without the landing, a
   fresh voice opens at the world origin and a pooled one at its previous play's
-  spot.
+  spot. **Every start path lands it** (`landPanner()`): configure, `resume()` and
+  tab-hide unparking — a resumed loop would otherwise open where it was PAUSED, which
+  for the car's crossfaded bed layers is wherever the car was seconds ago.
+- **Finished pooled positional one-shots are detached** by `reapVoices()` in
+  `AudioRuntime`'s task, so a pool slot never keeps the last `at` object (or an
+  unmounted scene's subtree) parented to it.
+- **Positional fields on a declaration**: `ref` / `rolloff` / `max` / `panningModel`
+  (fallbacks in `positionalDefaults`, the Studio panel's sliders), plus `distanceModel`
+  (default `'inverse'`) and `cone: { inner, outer, outerGain }` in degrees, aimed down the
+  voice's local +Z. A directional voice's world facing is recorded into a take; an
+  omnidirectional one's is not, since the panner ignores it.
+- **Why not Threlte's `<PositionalAudio>`**: it is a thin wrapper — `new PositionalAudio`
+  + `useLoader(AudioLoader)` + one `$effect` per prop — that wires straight to the
+  listener (past the buses), loads through a path that doesn't hand back the buffers the
+  offline render reuses, can't pool, and is invisible to the take recorder. Every setting
+  it exposes is a `SoundDef` field here. Only `<AudioListener>` / `useAudioListener()`
+  are used from `@threlte/extras`.
 - **Loading is ours, not Threlte's `<Audio src>`.** `fetch` + `decodeAudioData` hands back
   the `AudioBuffer` directly — which the `OfflineAudioContext` replay (`render.ts`) reuses
   rather than decoding twice — and gives a real per-sound status in place of the

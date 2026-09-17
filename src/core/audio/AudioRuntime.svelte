@@ -12,7 +12,14 @@
 	import { logSound } from '$extensions/logger';
 	import { installMixer, syncMixerFromSettings, uninstallMixer } from './mixer';
 	import { attachAudioContext, soundsReady } from './registry';
-	import { attachListener, parkVoices, stopAllVoices, tickRecording, unparkVoices } from './voices';
+	import {
+		attachListener,
+		parkVoices,
+		reapVoices,
+		stopAllVoices,
+		tickRecording,
+		unparkVoices
+	} from './voices';
 	import { sceneNow, tickScheduler } from './scheduler';
 	import { engineSounds } from './engineSounds';
 	import type { VoiceHandle } from './types';
@@ -89,6 +96,7 @@
 		(delta) => {
 			tickScheduler();
 			tickWeatherAudio(delta);
+			reapVoices();
 			// LAST: samples the frame's automation for a capture take, so it records the
 			// values consumers have just written rather than the previous frame's. Inert
 			// unless a take is armed.

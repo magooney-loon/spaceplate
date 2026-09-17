@@ -29,7 +29,11 @@ export type PositionalParams = {
 	max: number;
 	panningModel: PanningModelType;
 	distanceModel: DistanceModelType;
+	cone: { inner: number; outer: number; outerGain: number };
 };
+
+/** Only a cone narrower than a full circle makes a voice's facing audible. */
+export const isDirectional = (params: PositionalParams): boolean => params.cone.outer < 360;
 
 export type RecordedVoice = {
 	readonly id: number;
@@ -53,6 +57,11 @@ export type RecordedVoice = {
 	rate: Curve;
 	/** Only for positional voices. */
 	pos: { x: Curve; y: Curve; z: Curve } | null;
+	/**
+	 * World-space facing, only for DIRECTIONAL positional voices — an omnidirectional
+	 * panner ignores orientation, so recording it would be a curve per frame for nothing.
+	 */
+	orient: { x: Curve; y: Curve; z: Curve } | null;
 };
 
 export type RecordedTake = {
@@ -140,7 +149,7 @@ export const noteBus = (id: BusId, parent: BusId | null): Curve | null => {
 
 export const listenerCurves = (): RecordedTake['listener'] | null => take?.listener ?? null;
 
-type StartInfo = Omit<RecordedVoice, 'id' | 'volume' | 'rate' | 'pos' | 'stopScene'>;
+type StartInfo = Omit<RecordedVoice, 'id' | 'volume' | 'rate' | 'pos' | 'orient' | 'stopScene'>;
 
 /** A voice began (or was already playing when the take armed). Returns its record. */
 export const noteStart = (info: StartInfo): RecordedVoice | null => {
@@ -151,7 +160,11 @@ export const noteStart = (info: StartInfo): RecordedVoice | null => {
 		stopScene: null,
 		volume: emptyCurve(),
 		rate: emptyCurve(),
-		pos: info.positional ? { x: emptyCurve(), y: emptyCurve(), z: emptyCurve() } : null
+		pos: info.positional ? { x: emptyCurve(), y: emptyCurve(), z: emptyCurve() } : null,
+		orient:
+			info.positional && isDirectional(info.positional)
+				? { x: emptyCurve(), y: emptyCurve(), z: emptyCurve() }
+				: null
 	};
 	take.voices.push(voice);
 	return voice;
