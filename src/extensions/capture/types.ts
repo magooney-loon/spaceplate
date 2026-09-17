@@ -21,13 +21,20 @@ export const CAPTURE_RESOLUTIONS = [
 
 export type CaptureResolution = (typeof CAPTURE_RESOLUTIONS)[number]['value'];
 
+/**
+ * The preset an unknown value falls back to, found by VALUE rather than by index —
+ * reordering or inserting an entry above must not silently move the fallback.
+ */
+const FALLBACK_RESOLUTION =
+	CAPTURE_RESOLUTIONS.find((option) => option.value === '1080p') ?? CAPTURE_RESOLUTIONS[0];
+
 /** The pixel size of a preset. Falls back to 1080p rather than returning nothing. */
 export const captureResolutionSize = (
 	resolution: CaptureResolution
 ): { width: number; height: number } => {
-	const entry =
-		CAPTURE_RESOLUTIONS.find((option) => option.value === resolution) ?? CAPTURE_RESOLUTIONS[1];
-	return { width: entry.width, height: entry.height };
+	const { width, height } =
+		CAPTURE_RESOLUTIONS.find((option) => option.value === resolution) ?? FALLBACK_RESOLUTION;
+	return { width, height };
 };
 
 export type CaptureState = {

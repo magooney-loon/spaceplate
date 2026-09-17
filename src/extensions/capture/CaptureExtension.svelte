@@ -25,15 +25,17 @@
 		{ value: 'webp', text: 'WebP' }
 	];
 
+	// No codec in the label: it is PROBED per machine (encoder.ts), so a webm take may come
+	// back vp9, av1 or vp8. The status line reports what actually won.
 	const containerOptions = [
-		{ value: 'webm', text: 'WebM (VP9)' },
-		{ value: 'mp4', text: 'MP4 (H.264)' }
+		{ value: 'webm', text: 'WebM' },
+		{ value: 'mp4', text: 'MP4' }
 	];
 
 	const resolutionOptions = CAPTURE_RESOLUTIONS.map(({ value, text }) => ({ value, text }));
 
 	/** Recording, or still writing the file out — either way the settings are locked in. */
-	const busy = $derived(captureState.isRecording || captureState.isFinalizing);
+	const busy = $derived(captureActions.isBusy());
 
 	const recordTitle = $derived(
 		captureState.isFinalizing
@@ -97,12 +99,15 @@
 				disabled={busy}
 				on:change={(e) => captureActions.setContainer(e.detail.value as CaptureContainer)}
 			/>
+			<!-- Disabled while busy: the encoder captured both at creation, so a drag here
+			     mid-take would move the slider and change nothing. -->
 			<Slider
 				label="FPS"
 				value={captureState.fps}
 				min={12}
 				max={60}
 				step={1}
+				disabled={busy}
 				on:change={(e) => captureActions.setFps(e.detail.value)}
 			/>
 			<Slider
@@ -111,8 +116,11 @@
 				min={2}
 				max={64}
 				step={1}
+				disabled={busy}
 				on:change={(e) => captureActions.setBitrateMbps(e.detail.value)}
 			/>
+			<!-- Live on purpose: the cap is re-read every frame, so lowering it stops a
+			     running take early. -->
 			<Slider
 				label="Max Length s"
 				value={captureState.maxDurationSec}

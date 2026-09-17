@@ -294,7 +294,7 @@ both derived from the same counter. A 4K take rendering at 8 fps on a laptop pro
 same file as one rendering at 60.
 
 Encoding needs no new mechanism: mediabunny already ships `AudioBufferSource`
-(`add(audioBuffer)`, push-style like the video's `CanvasSource`), so `encoder.ts` swaps
+(`add(audioBuffer)`, push-style like the video's `VideoSampleSource`), so `encoder.ts` swaps
 `MediaStreamAudioTrackSource` for it and `Capture.svelte` deletes `attachAudioTap` /
 `releaseAudioTap` and the hand-typed `useAudioListener` return type with them. The offline
 render is async and lands inside `isFinalizing`, which exists for exactly this window.

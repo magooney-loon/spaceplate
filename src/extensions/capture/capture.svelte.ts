@@ -92,12 +92,19 @@ export const captureActions: CaptureActions = {
 		if (this.isBusy()) return;
 		captureState.container = container;
 	},
+	// Refused mid-take too, and not because it would break anything: the encoder captured
+	// both at creation and `frameStep` was latched at start, so a change here during a take
+	// is silently INERT. Refusing keeps the panel honest about that.
 	setFps(fps) {
+		if (this.isBusy()) return;
 		captureState.fps = fps;
 	},
 	setBitrateMbps(bitrate) {
+		if (this.isBusy()) return;
 		captureState.bitrateMbps = bitrate;
 	},
+	// NOT refused mid-take — the cap is re-read every frame, so lowering it stops the
+	// running take early, which is a useful thing to be able to do.
 	setMaxDurationSec(seconds) {
 		captureState.maxDurationSec = seconds;
 	},
