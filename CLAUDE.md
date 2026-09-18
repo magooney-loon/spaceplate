@@ -14,7 +14,9 @@ spacetimedb/       — SpacetimeDB module (server): tables, reducers, views
                      → see spacetimedb/CLI.md   (spacetime CLI reference)
 src/module_bindings/ — Generated client bindings — DO NOT EDIT, regenerate instead
 public/            — Static assets (sounds, models, textures)
-patches/           — pnpm patches for @threlte/extras and @threlte/studio
+patches/           — pnpm patches for three, @threlte/extras and @threlte/studio
+                     (three.patch: GodraysNode SunLight/cascade support + RetroPassNode
+                      cube env maps — see src/core/postprocessing/CLAUDE.md)
 DOCS/              — webgpu-notes.md (WebGPU/Studio gotchas — read before debugging
                      anything renderer-shaped), RAPIER.md (Rapier physics notes),
                      best-practices.md (performance reference: what the engine already

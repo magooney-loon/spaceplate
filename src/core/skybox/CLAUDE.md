@@ -12,6 +12,7 @@ SkyLight.svelte   — the descriptor-driven key light (sun→moon crossover), a 
 keyShadow.ts      — who arms the one shadow render per frame, and from which camera
 SkyFog.svelte     — scene.fog from the day curve + fog channel
 fogScatter.svelte.ts — the uniforms SkyFog feeds the `fogScatter` post effect
+godrays.svelte.ts — the key light + uniforms SkyLight feeds the `godrays` post effect
 model/            — the pure model + the sky façade (descriptor, skyActions, skyMeta)
 layers/           — every renderer that draws on/around the dome
 environment/      — env-mode state (procedural | HDR | cube) + texture lists
@@ -104,6 +105,35 @@ dry weather. It is gated on the weather channel and never on the day curve's own
 the sky lies past the band's far edge, so it always takes the maximum blur, which is
 right in a fog bank and wrong on a clear evening.
 
+## Godrays are driven from `SkyLight`, not from a sibling driver
+
+Crepuscular rays are a post effect (`core/postprocessing/effects/godrays.ts`, which has
+the full story including the `three` patch it needs). The CPU half lives in
+`SkyLight.svelte`'s existing task rather than in its own component, and that is
+deliberate: the effect **raymarches the key light's shadow cascades**, so it needs that
+`SunLight` INSTANCE at pipeline-build time. `SkyLight` is where the light is, and it
+already registers the same light's shadow with `keyShadow.ts` from the same `oncreate`.
+
+It writes three things into `godrays.svelte.ts`: the key colour (so the sun→moon crossover
+comes free, exactly as it does for `SkyFog`'s inscatter), a 0..1 haze weight, and the
+activity latch.
+
+- **The weight is haze × key elevation.** Haze is `descriptor.sky.fogDensity`, which the
+  mixer has already folded cloud and fog into — shafts are light scattered on its way to
+  the camera, so a clear noon must produce none of them. The elevation fade exists because
+  a key raking along the horizon is the one position where the cascades' far edge fills the
+  screen, and without it a dawn flickers as the light crosses `KEY_MIN_ELEVATION`.
+- **There is no on-screen term**, and that is the whole reason this can carry a latch where
+  the abandoned screen-space version could not: a raymarch integrates along the view ray,
+  so the shafts exist with the sun behind you. The latch therefore only ever watches signals
+  that move on weather-blend and day-curve timescales, and the hysteresis band actually
+  works on them.
+- **It is one of the few sky consumers that is NOT procedural-mode-only.** `SkyLight`
+  mounts in every environment mode, so an HDR or cube environment still gets godrays — an
+  environment texture still has a sun, and a raymarch through its shadow volume is still
+  correct. Contrast `SkyFog`/`fogScatter`, which are procedural-only because an HDR
+  environment brings its own horizon.
+
 ## The shadow frustum is fitted to the CAMERA (`SkyLight.svelte`)
 
 The key light is three r186's **`SunLight`**, whose `SunLightShadow` fits **two
@@ -168,7 +198,9 @@ invalidates, no effect can loop.
 - **Skybox.svelte's driver task** invalidates when the model actually moved (compares
   `meta.t` + the weather channels — everything else derives from those numbers). It
   covers `Sky`, `SkyFog`, `SkyLight`, `Moon`, which are pure descriptor consumers and
-  **must not call `invalidate()` themselves**.
+  **must not call `invalidate()` themselves**. `SkyLight` stays in this group even though
+  it now also drives the `godrays` post effect: those uniforms are pure functions of the
+  descriptor too, with no camera term and nothing self-animated in them.
 - **Layers animated by the TSL `time` node** (`Stars`, `Nebula`, `Meteors`, `CloudDeck`,
   `Rain`, `Snow`) keep their own `invalidate()`, gated on being visible, and set
   `mesh.visible` so an invisible layer costs no draw call either. **`Birds`** is the

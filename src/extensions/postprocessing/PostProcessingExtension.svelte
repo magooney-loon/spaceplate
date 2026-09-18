@@ -41,7 +41,7 @@
 	 * it rains, and mixed in among bloom and vignette they read as controls that do
 	 * nothing. Grouping them says which knobs answer to the sky.
 	 */
-	const WEATHER_IDS = new Set(['fogScatter', 'rainLens', 'snowLens']);
+	const WEATHER_IDS = new Set(['fogScatter', 'godrays', 'rainLens', 'snowLens']);
 
 	interface Section {
 		title: string;

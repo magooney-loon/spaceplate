@@ -7,9 +7,10 @@
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import type { HemisphereLight } from 'three/webgpu';
 	import { SunLight } from 'three/addons/lights/SunLight.js';
-	import { descriptor } from './model';
+	import { clamp01, descriptor } from './model';
 	import { SKY_LAYER_USERDATA } from './layers/skyLayer';
 	import { setKeyShadow } from './keyShadow';
+	import { godrayActivity, setGodrayLight, uGodrayColor, uGodrayWeight } from './godrays.svelte';
 
 	interface Props {
 		/**
@@ -55,6 +56,23 @@
 		 * level; how much a scene wants is game-specific, like the shadow config.
 		 */
 		fillScale?: number;
+		/**
+		 * `descriptor.sky.fogDensity` mapped to the godrays' haze weight, 0..1 — the CPU half
+		 * of the `godrays` post effect (see `godrays.svelte.ts`). Shafts are light scattered
+		 * by the air on its way to the camera, so with nothing in the air there is nothing to
+		 * see and a clear noon must produce none of them. The density is already the combined
+		 * day-curve + weather number (the mixer folds cloud and fog into it), so one range
+		 * covers both a dusty sunset and an actual fog bank.
+		 */
+		godrayHazeRange?: [number, number];
+		/**
+		 * Key elevation (degrees) over which the shafts reach full strength, faded in from
+		 * the horizon. It gates on the KEY, not the sun, so the moon shafts on the same terms
+		 * once it takes over — but a key raking along the horizon is the one position where
+		 * the cascades' far edge is most of the screen, so the fade keeps a dawn from
+		 * flickering as the light crosses `KEY_MIN_ELEVATION`.
+		 */
+		godrayElevationFade?: [number, number];
 	}
 
 	let {
@@ -63,8 +81,18 @@
 		shadowMapSize = 2048,
 		castShadow = true,
 		normalBiasTexels = 1.5,
-		fillScale = 1
+		fillScale = 1,
+		godrayHazeRange = [0.015, 0.07],
+		godrayElevationFade = [0, 12]
 	}: Props = $props();
+
+	// The godrays' activity latch, with hysteresis so a weather blend crossing the threshold
+	// cannot rebuild the post pipeline repeatedly. Same shape and the same reason as
+	// `SkyFog`'s `SCATTER_ON`/`SCATTER_OFF` pair — and legitimate here for the reason spelled
+	// out in `godrays.svelte.ts`: this weight is haze and elevation, both slow, with no
+	// camera term in it at all.
+	const GODRAY_ON = 0.05;
+	const GODRAY_OFF = 0.015;
 
 	// ── Why this is a SunLight and not a DirectionalLight ────────────────────────
 	//
@@ -153,6 +181,35 @@
 				fill.intensity = ambient * fillScale;
 			}
 
+			// ── The CPU half of the `godrays` post effect (godrays.svelte.ts) ─────────
+			// It lives here rather than in its own driver component because this is where the
+			// key light already is, and the effect raymarches THAT light's shadow cascades —
+			// the same reason `keyShadow.ts` is registered from this component and not from a
+			// sibling. It also means the shafts survive an HDR or cube environment, which
+			// unmounts every sky layer but not this: an environment texture still has a sun,
+			// and a raymarch through its shadow volume is still correct.
+			uGodrayColor.value.setRGB(color[0], color[1], color[2]);
+
+			// How much air there is to scatter in, faded out as the key drops to the horizon.
+			// `direction.y` is the sine of the key's elevation (the model builds it that way),
+			// so this needs no trig beyond one asin.
+			const elevation = (Math.asin(Math.max(-1, Math.min(1, direction.y))) * 180) / Math.PI;
+			const [hazeLow, hazeHigh] = godrayHazeRange;
+			const [fadeLow, fadeHigh] = godrayElevationFade;
+
+			const haze = clamp01(
+				(descriptor.sky.fogDensity - hazeLow) / Math.max(1e-4, hazeHigh - hazeLow)
+			);
+			const risen = clamp01((elevation - fadeLow) / Math.max(1e-4, fadeHigh - fadeLow));
+			const weight = haze * risen;
+
+			uGodrayWeight.value = weight;
+
+			// The latch. Hysteresis, because every flip is a pipeline rebuild — see the
+			// GODRAY_ON/GODRAY_OFF pair above.
+			const raying = godrayActivity.active ? weight > GODRAY_OFF : weight > GODRAY_ON;
+			if (raying !== godrayActivity.active) godrayActivity.active = raying;
+
 			// No invalidate(): the light is a pure function of the descriptor, so
 			// Skybox.svelte's driver task covers it. See the note there on Threlte's
 			// 'on-demand' renderMode.
@@ -174,7 +231,14 @@
 		ref.shadow.camera.far = shadowDistance;
 		ref.shadow.mapSize.setScalar(shadowMapSize);
 		setKeyShadow(ref.shadow);
-		return () => setKeyShadow(null);
+		// The godrays raymarch this light's cascades, so they need the INSTANCE at pipeline
+		// build time, not a uniform. Registering it here rather than from the task means the
+		// effect's structural tag flips once per mount instead of being polled every frame.
+		setGodrayLight(ref);
+		return () => {
+			setKeyShadow(null);
+			setGodrayLight(null);
+		};
 	}}
 	userData={SKY_LAYER_USERDATA}
 />

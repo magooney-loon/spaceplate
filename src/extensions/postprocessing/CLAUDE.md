@@ -14,9 +14,9 @@ index.ts                    — barrel re-exports
 
 `Effects` is the right-hand column; `Base Pass`, `Weather`, `Grade` and `Anti-Aliasing`
 stack in the left one. **`Weather` is a panel grouping, not a role** — `fogScatter`,
-`rainLens` and `snowLens` are ordinary chain effects to the builder, but their `enabled`
-flag means "let the weather decide" and their params shape something invisible until it
-rains, so among bloom and vignette they read as dead controls.
+`godrays`, `rainLens` and `snowLens` are ordinary chain effects to the builder, but their
+`enabled` flag means "let the sky decide" and their params shape something invisible until
+it rains (or hazes over), so among bloom and vignette they read as dead controls.
 
 The columns are a CSS grid over the pane's blade container, not markup, and that is
 forced rather than chosen: a `Folder` or `Slider` attaches itself to the pane through
@@ -41,8 +41,8 @@ pipeline itself never imports from here except the state (via Renderer.svelte).
 ## Effects (registry-driven)
 
 Base passes (mutually exclusive): `ssaa`, `retro` — else the default `pass()`. Chain:
-`ao`, `dof`, `fogScatter`, `motionBlur`, `rainLens`, `snowLens`, `bloom`, `afterimage`,
-`vignette`, `sceneTransition`. Grade (**not** exclusive): `lut`. Anti-aliasing (mutually
+`ao`, `dof`, `fogScatter`, `godrays`, `motionBlur`, `rainLens`, `snowLens`, `bloom`,
+`afterimage`, `vignette`, `sceneTransition`. Grade (**not** exclusive): `lut`. AA (mutually
 exclusive): `smaa`, `fxaa`.
 
 `pixelation`, `ssgi`, `ssr` and `traa` were **removed** — files deleted, not
@@ -96,6 +96,13 @@ model is lit from the inside by the whole sky. Off by default — read its secti
   (`$core/skybox/fogScatter.svelte.ts`) that keeps it out of the graph below a low
   threshold, hysteresis and all. "Enabled" here means "let the weather decide"; the
   params only shape what it does once the weather has.
+- `godrays` is the same bargain and the most expensive effect in the registry — a
+  half-res raymarch of the sun's shadow cascades, a bilateral blur and an edge-aware
+  composite. `SkyLight`'s task drives it from the haze and the key's elevation and owns the
+  same kind of latch, so it is out of the graph entirely in clear air and at night.
+  `Density` and `Max Density` are CEILINGS the sky spends against, not the values
+  themselves; `Resolution Scale` is the cost lever. It needs a patched `three` — see
+  `$core/postprocessing/CLAUDE.md`.
 - `sceneTransition` is the scene switch's cover, and it is DEFAULT-ENABLED at mix 0 for
   the afterimage's reason (a latch would rebuild the graph exactly when a transition
   starts). Its params are the LOOK of every scene switch in the app. Shape: pattern

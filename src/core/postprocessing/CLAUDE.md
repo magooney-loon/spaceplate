@@ -15,9 +15,10 @@ luts.svelte.ts — LUT catalogue + async load cache (three's nine example LUTs, 
 transitionState.svelte.ts — the scene transition's shared state: the mix uniform, the
                  snapshot registration, and the cover/reveal API the scene switch awaits
 TransitionDriver.svelte — its one writer: capture, hold, dissolve. Mount inside <Canvas>
-effects/*.ts   — 15 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, motionBlur,
-                 rainLens, snowLens, bloom (+lensflare sub-toggle), afterimage,
-                 vignette, sceneTransition (chain) · lut (grade) · smaa, fxaa (AA)
+effects/*.ts   — 16 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, godrays,
+                 motionBlur, rainLens, snowLens, bloom (+lensflare sub-toggle),
+                 afterimage, vignette, sceneTransition (chain) · lut (grade) ·
+                 smaa, fxaa (AA)
 effects/mipSource.ts — NOT an effect: the blurred-copy-of-the-frame helper fogScatter,
                  rainLens and snowLens share, holding the clamp-what-you-sample and
                  configure-uvNode/levelNode-in-place rules in one place
@@ -31,9 +32,9 @@ Four `PassRole`s exist because a flat enable-grid cannot express the relationshi
   (`extends PassNode`). None enabled → the default `pass(scene, camera)`. The builder
   asks `basePass.getMRT()` instead of assuming the default — a base pass may provision
   attachments the registry never asked for (pixelationPass did exactly that).
-- **chain** (in fold order: `ao` 10, `dof` 30, `fogScatter` 32, `motionBlur` 35,
-  `rainLens` 36, `snowLens` 37, `bloom` 40, `afterimage` 45, `vignette` 50,
-  `sceneTransition` 60) — plain
+- **chain** (in fold order: `ao` 10, `dof` 30, `fogScatter` 32, `godrays` 33,
+  `motionBlur` 35, `rainLens` 36, `snowLens` 37, `bloom` 40, `afterimage` 45,
+  `vignette` 50, `sceneTransition` 60) — plain
   colour-in/colour-out, folded in `order` threading `ctx.color`. The progression is
   scene → air → shutter → lens → eye, and the numbers are the only thing enforcing it:
   **two effects sharing an `order` are separated by nothing but their position in
@@ -101,6 +102,17 @@ schedules the task again to decay them.
   folds at 32, i.e. BEFORE both lenses: fog is a property of the air and the lenses model
   the glass in front of the camera, so the droplets refract an already-fogged frame
   rather than the fog blurring the droplets.
+- **`godrays`** — the key light, its colour and a haze weight, written by
+  `SkyLight.svelte`'s task into `$core/skybox/godrays.svelte.ts`. Same shape as the
+  lenses, with one thing no other driver has: the module carries a **three object**, the
+  `SunLight` itself, because `godrays( depth, camera, light )` consumes the instance at
+  BUILD time rather than a uniform at draw time. So the structural tag is
+  `light.id` + the latch + whether `light.shadow.map` exists yet (the node reads that
+  texture while building, and it does not exist until the first shadow render). Driven
+  from `SkyLight` rather than a sibling driver because that is where the key light
+  already is — the same reason `keyShadow.ts` is registered from there — which also means
+  the shafts survive an HDR or cube environment, where every sky layer unmounts but the
+  key light does not.
 - **`sceneTransition`** — the scene switch itself, via `TransitionDriver.svelte`. Same
   contract, one extra wrinkle: the driver also owns a RESOURCE (the snapshot `rtt()`),
   which the effect hands over on every build and `Renderer.svelte` clears to `null`
@@ -258,6 +270,77 @@ picked for. **Any future velocity consumer (a revived `traa`, `ssgi`) has to do 
 
 Deliberately not a per-effect param: it is not a look, it is the unit `velocity` is
 missing.
+
+## `godrays` — the one effect that needs a patched three
+
+True raymarched crepuscular rays: the view ray is stepped through the key light's shadow
+volume and every unoccluded step adds light, so the beams are cast by real geometry, they
+sit correctly behind walls, and **they do not care whether the sun is on screen**. Three
+passes, composed as three's own `webgpu_postprocessing_godrays` example composes them —
+`godrays(depth, camera, light)` → `bilateralBlur` (the march is dithered, and the blur is
+what turns dither back into a smooth shaft) → `depthAwareBlend` (an eight-tap poisson
+search that pushes the sample off a depth discontinuity, so rays do not halo across
+silhouettes).
+
+**It does not work on stock three, and the reason is structural.** `GodraysNode` branches
+on `isPointLight` / `isDirectionalLight` in both `_updateLightParams()` and `inShadow()`.
+Our key is `SunLight` (`extends Light`, sets `isSunLight`) — neither branch runs, and a
+TSL build failure is silent (one `THREE.TSL:` log, then a blank material), so it reads as
+a shading bug. Deeper: `SunLightShadow` is **two cascades in one atlas**, where the node
+assumes one map, one matrix, one `shadow.camera`.
+
+`patches/three.patch` adds the `isSunLight` branch. Two parts, and the second is the
+interesting one:
+
+- **`inShadow()` picks the cascade per raymarch sample**, from that sample's own view
+  depth, using `shadow.getMatrix(i)` and `shadow._cascadeData[i]` — the pattern copied
+  from `SunShadowNode._setupCascades`. `getMatrix(i)` is already the whole world→atlas-UV
+  transform (`LightShadow._updateMatrix` folds in both the 0.5 remap and the viewport
+  tile), so nothing extra is needed to hit the right half of the atlas. Walked **back to
+  front** like the material path, because the cascade ranges deliberately overlap and the
+  nearer cascade should win in the band. No fade blend, unlike the material path: this is
+  one sample of a march that averages tens of them, so the seam averages out and a
+  `smoothstep` per cascade per step is real cost in the hottest loop we own.
+- **The march bounds are the VIEW frustum truncated at `shadow.camera.far`**, not a
+  light-space box. That is forced by the same fact that makes `SunLightShadow` worth
+  having: the cascades are fitted to the **camera** (`core/skybox/CLAUDE.md`), so the
+  region with shadow information in it is the camera's own frustum, and taking the light's
+  ortho box would march huge tracts of space the atlas says nothing about. Implemented by
+  replacing the frustum's far plane (index 4 of `Frustum.setFromProjectionMatrix`) with
+  one at the shadow distance.
+
+**The `.d.ts` cannot be patched** — the bundled declarations are generated, not shipped as
+source — so the effect casts the light at the call site. That cast is the type system
+being wrong, not us.
+
+**It carries a structural latch, and unlike the abandoned screen-space attempt it is
+entitled to one.** Nothing about its cost is skippable from inside the shader: the targets
+are allocated and both the march and the blur run from `updateBefore`, outside it, so a
+uniform branch (the `afterimage`/`sunShafts` bargain) would save nothing. And its gate —
+haze × key elevation — is a **slow** signal that crosses once and stays across, with no
+camera term in it at all, which is exactly the property the screen-space version could not
+have (see below). `resolutionScale` (0.5) is the cost lever; it is a shadow-atlas tap per
+step per pixel and the result is dithered and then blurred, so it loses very little at
+half size.
+
+### The screen-space version, and why it was dropped
+
+An earlier attempt (`sunShafts`) faked this: a radial smear of the bright sky away from
+the sun's projected position, masked to sky pixels so geometry punched the holes that
+separate the beams. It was finished and it worked, and it was still wrong in three ways
+that are worth keeping, because they are properties of the technique and not bugs:
+
+- **It popped and swung with the camera.** A smear from an on-screen point cannot survive
+  that point leaving the frame, so the effect had to fade out at the frame edge — i.e.
+  exactly when driving turns the car. The raymarch has no such term.
+- **Its natural gate included the camera's heading**, which is a fast signal, so latching
+  on it recompiled the post pipeline about twice a lap — **with the log showing an
+  identical effects list each time**, because the tag is in `structuralKeyOf` and not in
+  the printed list. That is what the symptom looks like, and it is the general rule: **a
+  latch may only watch a signal that crosses once and stays across.**
+- **It read as washed out**, because a broad additive glow added on top of bloom is a
+  brightness, not a shape. `depthAwareBlend` mixes toward the light colour instead, and the
+  occlusion is real, so the shafts have edges.
 
 ## LUTs (`luts.svelte.ts`)
 

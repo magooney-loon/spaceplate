@@ -10,6 +10,7 @@ import { bloomEffect } from './effects/bloom';
 import { dofEffect } from './effects/dof';
 import { fogScatterEffect } from './effects/fogScatter';
 import { fxaaEffect } from './effects/fxaa';
+import { godraysEffect } from './effects/godrays';
 import { lutEffect } from './effects/lut';
 import { motionBlurEffect } from './effects/motionblur';
 import { rainLensEffect } from './effects/rainLens';
@@ -36,6 +37,7 @@ export const EFFECT_REGISTRY = {
 	ao: aoEffect,
 	dof: dofEffect,
 	fogScatter: fogScatterEffect,
+	godrays: godraysEffect,
 	motionBlur: motionBlurEffect,
 	rainLens: rainLensEffect,
 	snowLens: snowLensEffect,
