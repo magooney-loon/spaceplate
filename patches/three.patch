@@ -163,7 +163,7 @@ index b76c4d7383497c4b3499c34bf3ae20d1ae9b94a0..7bbeeb64697977815e4bb78f9488fe72
  		}
  
  	}
-@@ -432,6 +557,62 @@ class GodraysNode extends TempNode {
+@@ -432,6 +557,68 @@ class GodraysNode extends TempNode {
  
  				return output;
  
@@ -180,7 +180,13 @@ index b76c4d7383497c4b3499c34bf3ae20d1ae9b94a0..7bbeeb64697977815e4bb78f9488fe72
 +				// raymarch that averages tens of them, so the seam averages out, and a
 +				// `smoothstep` per cascade per step is real cost in the hottest loop we own.
 +
-+				const worldPosition = vec4( worldPos, 1.0 ).toConst();
++				// `.xyz` is load-bearing: `worldPos` arrives as a VEC4, not a vec3 — the
++				// march's `mix( startPosition /*vec3*/, worldPosition /*mat4.mul → vec4*/, t )`
++				// promotes to the greater length, and TSL's padding already gives it w=1.
++				// Joining the full vec4 with another `1.0` is 5 components, which trips
++				// JoinNode's "Length of parameters exceeds maximum length" (the extra is
++				// dropped, so it rendered correctly anyway — but it errored on every build).
++				const worldPosition = vec4( worldPos.xyz, 1.0 ).toConst();
 +
 +				const viewDepth = this._cameraMatrixWorldInverse.mul( worldPosition ).z.negate().toConst();
 +
