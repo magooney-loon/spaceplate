@@ -76,7 +76,7 @@
 	/** Cutoff radius, WORLD units (see above) — keeps the wash on the road behind
 	 *  the car instead of tinting the whole track. */
 	const TAIL_THROW_DISTANCE = 30;
-	const TAIL_THROW_DECAY = 2;
+	const TAIL_THROW_DECAY = 1;
 
 	const makeTailLight = (side: 'L' | 'R') => {
 		const light = new THREE.PointLight(TAIL_LAMP_COLOR, 0, TAIL_THROW_DISTANCE, TAIL_THROW_DECAY);
