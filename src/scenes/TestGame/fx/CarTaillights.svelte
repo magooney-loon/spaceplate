@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { useThrelte } from '@threlte/core/webgpu';
+	import { T, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import { mix, positionLocal, step, texture, uniform, vec3 } from 'three/tsl';
 	import { logGltf } from '$extensions/logger';
 	import { carLights, carIgnition } from '../sim/carSwitches.svelte';
 	import { carHud } from '../sim/carTelemetry.svelte';
+	import { currentCar } from '../cars';
 
 	// Tail glow + brake flare, driven through the GLB's OWN lamp material rather
 	// than additive cards. The model's `Light_Bucket` mesh — the housings behind
@@ -22,6 +23,10 @@
 	//     it per end: the head follows the ignition, the tail is the lamp logic;
 	//   - the TAIL gain is ×1 with the lights on, ×2 on the brake pedal, and 0
 	//     with the car off — same colours, no substituted red;
+	//   - and the tail also THROWS: two red PointLights at the spec's tailLamp
+	//     anchors light the road behind the car, their intensity running the
+	//     same lamp logic as the gain (the emissive is what the lamps LOOK like;
+	//     the points are what they LIGHT);
 	//   - the interior's other emissives (cluster screens, accent strips) are
 	//     dimmed to zero with the ignition too: a dead parked car has no lit
 	//     screens either.
@@ -49,6 +54,39 @@
 	const BRAKE_EPSILON = 0.02;
 	/** Interior emissives that die with the ignition — GLB material names. */
 	const INTERIOR_EMISSIVES = new Set(['Screen', 'Screen_2', 'Interior_Accents']);
+
+	// ── The throw ──────────────────────────────────────────────────────────────
+	//
+	// The rig above is the LOOK; this is the light the lamps actually put on the
+	// road. Two red PointLights at the spec's tailLamp anchors (mirrored on x),
+	// following the exhaust pop light's rules (fx/CarExhaustFlames.svelte,
+	// POP_LIGHT_*): mounted permanently and driven through `intensity` — the
+	// lights array is hashed into every lit material's cache key, so a `visible`
+	// toggle recompiles the whole scene — no shadows (a shadowed PointLight is
+	// six shadow renders), and `distance` in WORLD units: three compares it
+	// against a view-space length, so the car's ×2.5 group does not scale it.
+	const { x: TAIL_LAMP_X, y: TAIL_LAMP_Y, z: TAIL_LAMP_Z } = currentCar().geometry.tailLamp;
+	/** Deep red as working-space components — the pop light's ctor gotcha: a hex
+	 *  would round-trip through 8-bit sRGB for nothing. */
+	const TAIL_LAMP_COLOR = new THREE.Color(1, 0.05, 0.02);
+	/** Candela. Tuned by eye against the night exposure; the 1:3 ratio mirrors
+	 *  TAIL_ON:TAIL_BRAKE so the lamps' look and their throw scale together. */
+	const TAIL_THROW_ON = 2;
+	const TAIL_THROW_BRAKE = 4;
+	/** Cutoff radius, WORLD units (see above) — keeps the wash on the road behind
+	 *  the car instead of tinting the whole track. */
+	const TAIL_THROW_DISTANCE = 30;
+	const TAIL_THROW_DECAY = 2;
+
+	const makeTailLight = (side: 'L' | 'R') => {
+		const light = new THREE.PointLight(TAIL_LAMP_COLOR, 0, TAIL_THROW_DISTANCE, TAIL_THROW_DECAY);
+		light.name = `TaillightLamp${side}`;
+		light.position.set(side === 'L' ? -TAIL_LAMP_X : TAIL_LAMP_X, TAIL_LAMP_Y, TAIL_LAMP_Z);
+		light.castShadow = false; // six shadow renders, and castShadow is a cache-key input
+		return light;
+	};
+	const tailLightL = makeTailLight('L');
+	const tailLightR = makeTailLight('R');
 
 	// The mode-dependent half. Uniforms, not material rebuilds, so braking and
 	// toggling write numbers (the graph is shared by both lamp clusters and both
@@ -134,17 +172,25 @@
 
 	// ── The state ─────────────────────────────────────────────────────────────
 	//
-	// One effect, three reactive inputs, uniform/scalar writes only. The tail is
-	// a real car's logic: position lamps follow the LIGHTS switch, the brake
-	// flare overrides them and needs only the ignition (the pedal itself is
-	// already dead with the engine off), and a car that is off is dark at both
-	// ends and inside.
+	// One effect, three reactive inputs, uniform/scalar/intensity writes only.
+	// The tail is a real car's logic: position lamps follow the LIGHTS switch,
+	// the brake flare overrides them and needs only the ignition (the pedal
+	// itself is already dead with the engine off), and a car that is off is dark
+	// at both ends and inside.
 	$effect(() => {
 		const ign = carIgnition.on;
 		const braking = carHud.brake > BRAKE_EPSILON;
 
 		uHeadGain.value = ign ? 1 : 0;
 		uTailGain.value = !ign ? 0 : braking ? TAIL_BRAKE : carLights.on ? TAIL_ON : 0;
+
+		// The throw follows the look — same lamp logic, candela instead of gain,
+		// written in the same frame so the two never disagree. The snap is the
+		// point: a brake pedal is a mechanism, not a filament (CarHeadlights ramps
+		// its own master switch; the flare there is instant too).
+		const tailThrow = !ign ? 0 : braking ? TAIL_THROW_BRAKE : carLights.on ? TAIL_THROW_ON : 0;
+		tailLightL.intensity = tailThrow;
+		tailLightR.intensity = tailThrow;
 
 		for (const { material, heat } of interior) material.emissiveIntensity = ign ? heat : 0;
 
@@ -161,5 +207,14 @@
 		// Hand the exported mesh back exactly as it was.
 		if (origMesh) origMesh.visible = true;
 		for (const { material, heat } of interior) material.emissiveIntensity = heat;
+		tailLightL.dispose();
+		tailLightR.dispose();
 	});
 </script>
+
+<!-- The real lights, ALWAYS mounted — never behind an {#if} or `visible` toggle
+     (the POP_LIGHT rule in fx/CarExhaustFlames.svelte): off is intensity 0,
+     written by the effect above. Positions are the spec's tailLamp anchors in
+     car-local model metres; the `distance` they were built with is world units. -->
+<T is={tailLightL} />
+<T is={tailLightR} />

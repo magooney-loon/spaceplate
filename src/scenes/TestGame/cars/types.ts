@@ -284,6 +284,15 @@ export type CarSpec = {
 			pitch: number;
 			color: readonly [number, number, number];
 		};
+		/** Tail lamp anchors, model metres — where fx/CarTaillights.svelte mounts
+		 *  the real point lights (red, no colour field: every car's taillight is
+		 *  red). The GLB's own Light_Bucket emissive is what the lamps look like;
+		 *  this is what makes them THROW light onto the road behind the car. */
+		tailLamp: {
+			x: number;
+			y: number;
+			z: number;
+		};
 		// NO chassis-collider block any more: the collider is ONE rounded convex
 		// hull computed from the GLB at load (cars/hull.ts) — every mesh except
 		// the wheels, plus a 5 cm edge fillet whose belly is clamped to the old

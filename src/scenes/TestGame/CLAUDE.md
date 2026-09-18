@@ -96,6 +96,12 @@ fx/                     — the car's visual effects
                          continuous pattern; the drain hiss rides the nitrous
                          voices in carAudio, blended under the spray)
   CarHeadlights.svelte  — car-local lights (nose is -Z); lamp anchors from the spec
+  CarTaillights.svelte  — tail glow + brake flare on the GLB's own Light_Bucket
+                         emissive (a TSL re-materialise of the baked bucket,
+                         per-vertex front/rear split on the baked z) + the two red
+                         PointLights at the spec's tailLamp anchors that THROW the
+                         lamps' light on the road behind (POP_LIGHT rules:
+                         permanent mount, intensity-driven, world-unit distance)
   CarImpacts.svelte     — hit/scrape sparks off the chassis hull's contact point:
                          a rising edge = burst + dust cough, pressed-and-sliding =
                          continuous spark stream. Pure CONSUMER of the signal
@@ -1096,12 +1102,13 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   The task runs at
   `{ before: autoRenderTask }` (render time) for the CarWheels reason — a
   physics-task integration pulses against the interpolated body. 'rig' view
-  hides the car's MESHES and only meshes: the headlight projectors and exhaust
-  pop PointLight live in the same subtree, and toggling a LIGHT's visibility
-  changes the lights array hashed into every lit material's cache key → full
-  scene recompile (the POP_LIGHT rule). Only meshes VISIBLE at hide time are
-  recorded and restored — a blanket hide-all/restore-all re-shows the GLB's
-  merged wheel meshes that CarWheels keeps hidden after baking, and since
+  hides the car's MESHES and only meshes: the headlight projectors and the
+  exhaust pop / tail PointLights live in the same subtree, and toggling a
+  LIGHT's visibility changes the lights array hashed into every lit material's
+  cache key → full scene recompile (the POP_LIGHT rule). Only meshes VISIBLE at
+  hide time are recorded and restored — a blanket hide-all/restore-all re-shows
+  the GLB's merged wheel meshes that CarWheels keeps hidden after baking, and
+  since
   CarWheels mutates the SHARED material those ghosts roll with it: duplicate
   spinning wheels in 'model' and 'both' after a rig visit. The Rapier collider debug
   (extensions/physics panel, Studio-gated) draws world colliders; this draws
@@ -1173,7 +1180,8 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
     the lights array is part of every material's cache key. Per-pop toggling
     would be a full recompile several times a second. `CarHeadlights` already
     follows this (`light.intensity = on ? m.intensity : 0`); now both do.
-  - **It is the FIFTH light** (sky key + sky fill + two headlight projectors),
+  - **It was the FIFTH light when mounted** (sky key + sky fill + two headlight
+    projectors; `CarTaillights`' tail pair has since taken the scene to seven),
     i.e. deliberately over `DOCS/best-practices.md` §4's three-light guideline.
     The standing cost is one more light evaluated per fragment of every lit
     material, always, even at intensity 0 — there is no way to have it

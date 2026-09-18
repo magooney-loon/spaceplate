@@ -132,9 +132,10 @@
 	//
 	// The standing cost is one more light evaluated per fragment of every lit
 	// material, always, even at intensity 0 — there is no way to have the light
-	// available and not pay for it. This is the FIFTH light in the scene (sky key +
-	// sky fill + two headlight projectors), so it is over the three-light guideline
-	// in DOCS/best-practices.md §4; the budget that bought it is §1.1 of
+	// available and not pay for it. This was the FIFTH light in the scene (sky
+	// key + sky fill + two headlight projectors; CarTaillights' tail pair has
+	// since taken it to seven), so it is over the three-light guideline in
+	// DOCS/best-practices.md §4; the budget that bought it is §1.1 of
 	// DOCS/testperf.md, which took 313 725 triangles out of the shadow pass. No
 	// shadow on this one — a shadow-casting PointLight is SIX shadow renders.
 	//

@@ -469,12 +469,14 @@ readings.
 
 ## 3b. The scene's light budget, and the trap under it
 
-TestGame mounts **five** lights: the sky's key `DirectionalLight` and hemisphere
-fill, the two headlight `ProjectorLight`s, and the exhaust pop's `PointLight`.
-That is over `best-practices.md` §4's three-light guideline, knowingly — §1.1
-freed the budget by taking the whole track out of the shadow pass. None of them
-casts a shadow except the sky key; a shadow-casting `PointLight` is **six**
-shadow renders.
+TestGame mounts **seven** lights: the sky's key `DirectionalLight` and hemisphere
+fill, the two headlight `ProjectorLight`s, the exhaust pop's `PointLight`, and
+the two tail `PointLight`s (`CarTaillights` — the tail pair is the same bargain:
+permanently mounted, `intensity`-driven, no shadows). That is over
+`best-practices.md` §4's three-light guideline, knowingly — §1.1 freed the
+budget by taking the whole track out of the shadow pass. None of them casts a
+shadow except the sky key; a shadow-casting `PointLight` is **six** shadow
+renders.
 
 **The trap, verified in three 0.185's source:** the set of lights in the scene is
 part of every lit material's shader cache key.
@@ -497,8 +499,8 @@ second — the §1.2 disease, but scene-wide and on a repeating trigger.
 The rule: **mount lights permanently and modulate `intensity`.** A light at
 intensity 0 still costs a per-fragment evaluation in every lit material and there
 is no way around that; accept the standing cost or do not mount the light.
-`CarHeadlights` (`light.intensity = on ? m.intensity : 0`) and the exhaust pop
-light both follow it.
+`CarHeadlights` (`light.intensity = on ? m.intensity : 0`), the exhaust pop
+light and `CarTaillights`' tail pair all follow it.
 
 ---
 

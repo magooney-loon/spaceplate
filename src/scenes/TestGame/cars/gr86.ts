@@ -301,6 +301,15 @@ export const gr86 = {
 			pitch: -0.045,
 			/** A real 2023 GR86 runs LED projectors — cool white. */
 			color: [0.88, 0.93, 1.0]
+		},
+		/** Hand-placed at the rear quarter-panel corners (trunk height, same
+		 *  spirit as purgeVents above) rather than measured off the GLB — the tail
+		 *  cluster's own housing isn't a distinct mesh to cluster vertices from.
+		 *  Re-measure if it ever reads off the bodywork. */
+		tailLamp: {
+			x: 0.7,
+			y: 0.82,
+			z: 1.85
 		}
 		// No collider numbers: the chassis is ONE rounded convex hull built from
 		// the GLB itself at load (cars/hull.ts) — the measured silhouette (body x
