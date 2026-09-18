@@ -20,7 +20,7 @@
 	import { Debug } from '@threlte/rapier';
 	import { physicsState } from '$extensions/physics';
 	import PhysicsWorldLogger from '$extensions/physics/PhysicsWorldLogger.svelte';
-	import { WebGPURenderer } from 'three/webgpu';
+	import { PCFShadowMap, WebGPURenderer } from 'three/webgpu';
 	import { SunLight } from 'three/addons/lights/SunLight.js';
 	import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
 	import { HTML } from '@threlte/extras';
@@ -75,9 +75,14 @@
 
 <!-- autoRender is OFF: the RenderPipeline in core/utils/Renderer.svelte drives
      rendering via its own task ({ after: autoRenderTask }, webgpu-notes.md §2). A
-     Canvas option on purpose — toggling it from an $effect self-invalidates (§3.1). -->
+     Canvas option on purpose — toggling it from an $effect self-invalidates (§3.1).
+     `shadows` is set to PCFShadowMap because Threlte's DEFAULT is PCFSoftShadowMap,
+     which three's WebGPURenderer has REMOVED — the first render of a frame would
+     warn and self-heal back to PCFShadowMap (the stack lands in HeightField's pass,
+     the frame's first renderer.render). A number keeps shadowMap.enabled true; this
+     is the exact value the fallback picks, so nothing visual moves. -->
 {#if capabilityState.tier !== 'none'}
-	<Canvas {createRenderer} {dpr} autoRender={false}>
+	<Canvas {createRenderer} {dpr} autoRender={false} shadows={PCFShadowMap}>
 		<!-- The engine clock + frame-rate cap (core/utils/engineClock.ts) — wraps
 		     scheduler.run and, when a cap is set, the animation-loop callback too;
 		     registers no task, so the render-task order below is undisturbed. -->
