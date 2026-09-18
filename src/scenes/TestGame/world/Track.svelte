@@ -11,6 +11,8 @@
 	import { BASE_URL } from '$extensions/settings';
 	import { logGltf } from '$extensions/logger';
 	import { buildTrackColliders } from './trackColliders';
+	import { buildTrackMap } from './trackMap';
+	import { clearTrackMap, setTrackMap } from './trackMapState.svelte';
 
 	// The WORLD's one map so far: the test track. Everything map-shaped lives in
 	// world/ — the GLB load, the scene pose (scale ×1.5, −60° yaw), the static
@@ -43,6 +45,35 @@
 	// which stops ghost bumps at internal triangle seams on the flat roads)
 	// can only be passed through explicit args. See trackColliders.ts.
 	const trackColliders = $derived($track?.scene ? buildTrackColliders($track.scene) : []);
+
+	// ── The map's POSE, hoisted out of the markup ─────────────────────────────
+	// The track group's scale and yaw used to be literals on the <T.Group> below.
+	// They are named now because the MINIMAP needs them as a matrix: the outline
+	// has to come out in the same world frame `carSim.bodyX/bodyZ` is published
+	// in, or the car marker drives across a map rotated 60° off its own
+	// coordinates. Reading them off `$track.scene.matrixWorld` instead would make
+	// that correctness depend on whether the child <T is={...}> has attached by
+	// the time the effect below runs — a mount-ordering question with a silent
+	// wrong answer. See trackMap.ts's `toWorld` note.
+	const TRACK_SCALE = 1.5;
+	const TRACK_YAW = -1.0472; // −60°
+
+	const trackToWorld = new THREE.Matrix4().compose(
+		new THREE.Vector3(0, 0, 0),
+		new THREE.Quaternion().setFromEuler(new THREE.Euler(0, TRACK_YAW, 0)),
+		new THREE.Vector3(TRACK_SCALE, TRACK_SCALE, TRACK_SCALE)
+	);
+
+	// The HUD minimap's outline — the Asphalt meshes rasterized and contoured
+	// ONCE, when the GLB lands (trackMap.ts). Published to a module because the
+	// HUD is an HTML sibling outside the Canvas, and dropped on unmount so a
+	// re-entry rebuilds from its own load rather than showing the last track.
+	$effect(() => {
+		const root = $track?.scene;
+		if (!root) return;
+		setTrackMap(buildTrackMap(root, trackToWorld));
+		return clearTrackMap;
+	});
 
 	// ── Shadow casting is a POLICY, not a blanket flag — the track's half ──────
 	//
@@ -106,7 +137,7 @@
 </script>
 
 {#if $track}
-	<T.Group name="Track" scale={1.5} position={[0, 0, 0]} rotation={[0, -1.0472, 0]}>
+	<T.Group name="Track" scale={TRACK_SCALE} position={[0, 0, 0]} rotation={[0, TRACK_YAW, 0]}>
 		<!-- The track GLB: Asphalt and Metal barriers get trimesh colliders
 		     (transforms baked); the Ground dirt plane becomes an analytical
 		     cuboid FLOOR — two 460 m triangles were a contact-manifold jitter

@@ -152,11 +152,11 @@
 	/* Bottom-left, growing UPWARD: the corner the scene leaves free (the cluster
 	   owns bottom-right, the controls hint bottom-centre, the launch flash the
 	   upper middle) — and anchoring the bottom keeps the sections that move most
-	   nearest the eye instead of shuffling the whole panel when one grows. */
+	   nearest the eye instead of shuffling the whole panel when one grows.
+	   The ANCHORING itself is TestGameHud's `.corner` now, not this panel's: the
+	   track map shares the corner, and two absolutely-positioned siblings at the
+	   same offset would simply overlap. This is a flow item in that column. */
 	.debug {
-		position: absolute;
-		bottom: 1rem;
-		left: 1rem;
 		width: 15rem;
 		padding: 0.5rem 0.6rem 0.6rem;
 		background: rgba(6, 10, 14, 0.78);

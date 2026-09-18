@@ -12,7 +12,10 @@ TestGame.svelte         — the scene: world + car composition + the physics-tas
                          shell; the driving model itself is sim/controller.ts,
                          the map is world/Track.svelte
 TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart) + the
-                         upper-middle launch flash (STREET / JUICY / PERFECT)
+                         upper-middle launch flash (STREET / JUICY / PERFECT) +
+                         the bottom-left `.corner` column, which is what ANCHORS
+                         the minimap and the debug readout (neither positions
+                         itself — they share that corner)
 cars/                   — THE GARAGE: everything car-specific is data here
   types.ts              — CarSpec: the contract (hardware/suspension/geometry/
                          model/audio/cluster/tunes + layout 'rwd'|'fwd'|'awd')
@@ -139,9 +142,22 @@ world/                  — THE MAP: everything map-shaped (one track so far —
                          in TestGame.svelte)
   Track.svelte          — the test track: GLB load (decoders via PROPS — the
                          scene shares ONE DRACO/KTX2/Meshopt instance with the
-                         car's load), scene pose (×1.5, −60° yaw), the static
-                         colliders and the track's half of the shadow policy
+                         car's load), scene pose (×1.5, −60° yaw — NAMED
+                         constants now, the minimap needs them as a matrix),
+                         the static colliders, the minimap build and the
+                         track's half of the shadow policy
   trackColliders.ts     — hand-rolled static colliders for the track GLB
+  trackMap.ts           — the MINIMAP'S OUTLINE, built once from the same GLB:
+                         Asphalt rasterized into a 512² occupancy grid →
+                         marching squares → RDP, out as one SVG path of closed
+                         rings (outer + holes, filled `evenodd`)
+  trackMapState.svelte.ts — the outline's handoff to the HUD (scene is inside
+                         <Canvas>, HUD is outside it); written twice a visit,
+                         not per frame
+TrackMinimap.svelte     — bottom-left track map: the outline above, plus the car
+                         from `carHud.mapX/mapZ/mapYaw`. CarCluster's palette and
+                         drawn-glow rules, and its NO PANEL CHROME call too — the
+                         map floats, with a drawn shadow pass for contrast
 ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + the
                          nitrous FOV kick, the launch dolly kick and the shift jolt
 RearViewMirror.svelte   — NFS-style rear-view strip: a backward camera on the car
@@ -825,6 +841,60 @@ all of them are no-ops on flat ground, which is what protects the tune.
   speed. "Nothing is asking the car to move" is measured off the DRIVE FORCE, not
   the throttle key, because the clutch creeps an idling car in gear and a rest
   friction that ignored that would quietly delete creep.
+
+## The minimap — the road, not a drawing of the road
+
+`world/trackMap.ts` + `world/trackMapState.svelte.ts` + `TrackMinimap.svelte`.
+The outline is the track GLB's `Asphalt` meshes, rasterized and contoured ONCE
+when the GLB lands, so there is no second asset to keep in step and a track
+re-export moves the map for free. The rejected alternative is the obvious one:
+a top-down orthographic camera rendered into a texture is a **second full scene
+render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
+
+- **The pipeline is rasterize → marching squares → RDP**, all one-time (~35 ms
+  measured on this track's 19 488 asphalt triangles, behind the loading veil).
+  Rasterization fills cell CENTRES by a point-in-triangle test **and** stamps
+  each triangle's three EDGES with a DDA line, and both halves are load-bearing:
+  centres alone drop anything thinner than a cell, edges alone leave a long
+  straight (two big triangles) hollow. **`GRID` is RELATIVE, not absolute** —
+  the grid is fitted to the circuit's own bounds, so what it buys is
+  cells-per-road-width. This track's asphalt spans 557 world units, which at 512
+  is ~1.1 units a cell; a circuit several times the size wants it raised.
+- **RDP is what makes it read as drawn rather than pixelated**, and it is also
+  the size: it collapses the staircase a grid contour is made of, taking this
+  track from tens of thousands of points to 540 (a 6.3 kB path, 4 closed rings).
+- **Holes come out free, and that is why the contours must be closed.** The
+  ambiguous marching-squares saddles (cases 5 and 10) are resolved the same way
+  every time — which resolution is arbitrary, consistency is not, because a
+  mixed one opens a contour and an open contour cannot be filled. The component
+  fills the lot `evenodd`, so the infield punches through with no winding
+  bookkeeping anywhere.
+- **The track group's pose is passed to the builder as a MATRIX, not read off
+  `root.matrixWorld`** (`Track.svelte`'s `TRACK_SCALE` / `TRACK_YAW`, hoisted out
+  of the markup for exactly this). The GLB's scene object is attached to that
+  group by a child component, so whether its world matrix is live when the
+  effect runs is a mount-ordering question — and the wrong answer is silent: a
+  map rotated 60° off the coordinates the car marker is plotted in. Transforms
+  INSIDE the GLB are read relatively (`rootInv × mesh.matrixWorld`), the same
+  order-independent trick `trackColliders.ts` bakes with.
+- **The car comes from `carHud`, never `carSim`** — `mapX`/`mapZ` in half-unit
+  buckets (~0.2 m, a fifth of a pixel on this instrument) and `mapYaw` in whole
+  degrees, so a parked car writes nothing. Yaw is exact from two quaternion
+  components because pitch and roll are LOCKED axes. The telemetry publishes the
+  BODY's yaw; turning that into an SVG rotation (negated — svg's y axis points
+  down) is the picture's job, and lives in the component.
+- **The marker is CLAMPED inside the plate.** The map is fitted to the asphalt
+  and the car can leave it (the dirt plane runs 460 m past the circuit), so an
+  unclamped marker walks off the instrument. Riding the edge, dimmed, is the
+  honest reading: "off the map, that way".
+- **NO PANEL CHROME — it floats, exactly as the cluster's gauges do.** It had a
+  bezelled plate for a while, and the plate was the mistake: a gauge carries a
+  dark face because a NEEDLE needs a dial behind it, and a map does not. What
+  replaces it as the thing keeping the outline legible is a SHADOW pass — a wide
+  dark copy of the same path under the halo, plus `paint-order: stroke fill` on
+  the labels — so the map holds against pale asphalt and a bright sky without
+  boxing the corner off. Same rule as the glows either way: drawn, never
+  filtered.
 
 ## Telemetry, wheels, camera
 

@@ -2,6 +2,7 @@
 	import { sceneActions } from '$extensions/scene';
 	import { engineSounds } from '$core';
 	import CarCluster from './CarCluster.svelte';
+	import TrackMinimap from './TrackMinimap.svelte';
 	import DebugHud from './debug/DebugHud.svelte';
 	import { requestCarRestart } from './sim/carSwitches.svelte';
 	import { carHud } from './sim/carTelemetry.svelte';
@@ -57,10 +58,17 @@
 		<div class="launch-flash">{LAUNCH_LABELS[carHud.launchTier] ?? 'PERFECT LAUNCH'}</div>
 	{/if}
 
-	<!-- Debug telemetry — the numbers behind the rig's geometry (debug/DebugHud).
-	     Mounted unconditionally: it self-gates on the same `carView.mode` B switch
-	     the rig is on, so this shell does not need to know about the debug view. -->
-	<DebugHud />
+	<!-- Bottom-left, stacked bottom-up: the track map, and above it the debug
+	     telemetry (debug/DebugHud — the numbers behind the rig's geometry).
+	     DebugHud is mounted unconditionally and self-gates on the same
+	     `carView.mode` B switch the rig is on, so this shell still does not know
+	     about the debug view; the column just collapses to the map alone when the
+	     panel renders nothing. The corner is anchored at the BOTTOM so the map
+	     holds its place and the panel grows upward into the free screen. -->
+	<div class="corner">
+		<DebugHud />
+		<TrackMinimap />
+	</div>
 </div>
 
 <style>
@@ -88,6 +96,19 @@
 
 	.buttons button:hover {
 		background: rgba(0, 0, 0, 0.6);
+	}
+
+	/* The bottom-left corner, shared. Column, bottom-anchored, laid out so the
+	   map keeps one position and the debug panel grows upward off it. */
+	.corner {
+		position: absolute;
+		bottom: 1rem;
+		left: 1rem;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.5rem;
+		pointer-events: none;
 	}
 
 	.info {

@@ -223,7 +223,16 @@ export const carHud = $state({
 	perfectLaunch: false,
 	/** The flash's tier label index — STREET / JUICY / PERFECT (TestGameHud
 	 *  owns the strings; the flash is the centre-screen one). */
-	launchTier: 0
+	launchTier: 0,
+	/** THE MINIMAP'S FEED — the body's world XZ and its yaw in whole degrees.
+	 *  The HUD cannot read `carSim.body*` (one invalidation per field per
+	 *  physics step), and on a map the size of a coaster the 0.5-unit buckets
+	 *  below are a fifth of a pixel. Yaw is the BODY's, in world degrees about
+	 *  +Y; turning it into an SVG rotation is the marker's job, not the
+	 *  telemetry's. */
+	mapX: 0,
+	mapZ: 0,
+	mapYaw: 0
 });
 
 /**
@@ -317,6 +326,17 @@ export function publishCarHud(dt: number, suspension?: Suspension): void {
 	const launch = carSim.perfectLaunch > 0;
 	if (carHud.perfectLaunch !== launch) carHud.perfectLaunch = launch;
 	if (carHud.launchTier !== carSim.launchTier) carHud.launchTier = carSim.launchTier;
+
+	// The minimap's pose. Half-unit position buckets (~0.2 m) and whole-degree
+	// yaw, so a parked car writes nothing at all. The body's pitch and roll are
+	// LOCKED (`enabledRotations` leaves only yaw), which is what makes the yaw
+	// exact from two quaternion components instead of a matrix decomposition.
+	const mapX = Math.round(carSim.bodyX * 2) / 2;
+	const mapZ = Math.round(carSim.bodyZ * 2) / 2;
+	const mapYaw = Math.round(2 * Math.atan2(carSim.bodyQuatY, carSim.bodyQuatW) * (180 / Math.PI));
+	if (carHud.mapX !== mapX) carHud.mapX = mapX;
+	if (carHud.mapZ !== mapZ) carHud.mapZ = mapZ;
+	if (carHud.mapYaw !== mapYaw) carHud.mapYaw = mapYaw;
 }
 
 /** Round to `places` decimals — the debug panel's quantiser. Coarser than the
