@@ -106,9 +106,12 @@ fx/                     — the car's visual effects
   CarTaillights.svelte  — tail glow + brake flare on the GLB's own Light_Bucket
                          emissive (a TSL re-materialise of the baked bucket,
                          per-vertex front/rear split on the baked z) + the two red
-                         PointLights at the spec's tailLamp anchors that THROW the
+                         SpotLights at the spec's tailLamp anchors that THROW the
                          lamps' light on the road behind (POP_LIGHT rules:
-                         permanent mount, intensity-driven, world-unit distance)
+                         permanent mount, intensity-driven, world-unit distance).
+                         SPOTS because three has no per-object light mask and no
+                         occlusion for an unshadowed lamp: omni ones lit the cabin
+                         and the mirrors through the bodywork from inside the shell
   CarImpacts.svelte     — hit/scrape sparks off the chassis hull's contact point:
                          a rising edge = burst + dust cough, pressed-and-sliding =
                          continuous spark stream. Pure CONSUMER of the signal
@@ -1122,7 +1125,7 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   `{ before: autoRenderTask }` (render time) for the CarWheels reason — a
   physics-task integration pulses against the interpolated body. 'rig' view
   hides the car's MESHES and only meshes: the headlight projectors and the
-  exhaust pop / tail PointLights live in the same subtree, and toggling a
+  exhaust pop light / tail spots live in the same subtree, and toggling a
   LIGHT's visibility changes the lights array hashed into every lit material's
   cache key → full scene recompile (the POP_LIGHT rule). Only meshes VISIBLE at
   hide time are recorded and restored — a blanket hide-all/restore-all re-shows

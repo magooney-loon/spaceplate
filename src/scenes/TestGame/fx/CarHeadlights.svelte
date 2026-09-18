@@ -126,7 +126,7 @@
 	// its edges, so an oversized card throws light onto the fender either side of the
 	// lamp. Keep it square and tight, and size the lit slot in metres on top of it —
 	// the two used to be coupled, which is why widening the card smeared the glow.
-	const CARD_SIZE = 0.3; // square quad, car-local metres
+	const CARD_SIZE = 0.2; // square quad, car-local metres
 	const LENS_W = 0.1; // lit slot, metres — matches the model's projector element
 	const LENS_H = 0.055;
 	const LENS_HALF_U = LENS_W / CARD_SIZE; // …and the same slot in card UV (-1..1)
@@ -144,9 +144,9 @@
 	// than the lamp — it overlays the fender the way flare would — and gated by
 	// `facing`, so it opens as the camera swings in front of the car and is gone from
 	// the side. Rides `uEmitterGain`, so mode switching and the power ramp scale it.
-	const STREAK_W = 0.9; // blade reach, car-local metres (± half this, per side)
-	const STREAK_H = 0.07; // blade thickness before the profile shaping
-	const STREAK_HEAT = 0.45; // centre heat — subtle; the lens card carries the source
+	const STREAK_W = 0.6; // blade reach, car-local metres (± half this, per side)
+	const STREAK_H = 0.045; // blade thickness before the profile shaping
+	const STREAK_HEAT = 0.25; // centre heat — subtle; the lens card carries the source
 	const STREAK_COLOR = color(0.55, 0.72, 1.0); // cooler than the glow: diffraction blue
 
 	// ------------------------------------------------------------ the TSL parts
@@ -307,6 +307,16 @@
 			LIGHT_DECAY
 		) as PatternLight;
 		light.name = `HeadlightLamp${side}`;
+		// SpotLight's ctor — ProjectorLight extends it — puts the light at
+		// Object3D.DEFAULT_UP, not at the origin. Mounted on the anchor groups below
+		// with no position of its own, that is a free MODEL METRE of lift: the lamp
+		// sat at y 1.66 (above the 1.31 roofline) instead of the spec's 0.66, which
+		// steepened every aim in this file. Every number below is authored for a
+		// lamp AT the group's origin — DIPPED's 1.62 over AIM_DISTANCE 8 plus
+		// BEAM_PITCH is the 0.245 rad its comment claims, and 0.66/tan(0.245+0.46)
+		// is the 0.8 m off the bumper the pool is documented to start at. Both only
+		// hold from here.
+		light.position.set(0, 0, 0);
 		light.aspect = LIGHT_ASPECT;
 		light.colorNode = beamPattern;
 		light.castShadow = LIGHT_CAST_SHADOW;
