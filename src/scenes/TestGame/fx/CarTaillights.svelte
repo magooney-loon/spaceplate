@@ -21,12 +21,12 @@
 	//   - the EXPORTED textured emissive is kept as-is at both ends (the GLB
 	//     already paints head white and tail red) — all this rig does is SCALE
 	//     it per end: the head follows the ignition, the tail is the lamp logic;
-	//   - the TAIL gain is ×1 with the lights on, ×2 on the brake pedal, and 0
+	//   - the TAIL gain is ×0.5 with the lights on, ×1.5 on the brake pedal, and 0
 	//     with the car off — same colours, no substituted red;
-	//   - and the tail also THROWS: two red PointLights at the spec's tailLamp
+	//   - and the tail also THROWS: two red SpotLights at the spec's tailLamp
 	//     anchors light the road behind the car, their intensity running the
 	//     same lamp logic as the gain (the emissive is what the lamps LOOK like;
-	//     the points are what they LIGHT);
+	//     the spots are what they LIGHT);
 	//   - the interior's other emissives (cluster screens, accent strips) are
 	//     dimmed to zero with the ignition too: a dead parked car has no lit
 	//     screens either.
@@ -45,8 +45,8 @@
 	/** Car-local metres: everything aft of this is the tail cluster (the front
 	 * cluster ends ≈ −1.5, the rear starts ≈ +1.6, between them is cabin). */
 	const TAIL_Z = 1.0;
-	/** Tail gains on the exported emissive: ×1 as exported with the lights on,
-	 * ×2 on the brake (bright enough to feed Bloom through the night exposure,
+	/** Tail gains on the exported emissive: half strength with the lights on,
+	 * ×3 that on the brake (bright enough to feed Bloom through the night exposure,
 	 * same hue — no colour substitution). */
 	const TAIL_ON = 0.5;
 	const TAIL_BRAKE = 1.5;
@@ -58,35 +58,84 @@
 	// ── The throw ──────────────────────────────────────────────────────────────
 	//
 	// The rig above is the LOOK; this is the light the lamps actually put on the
-	// road. Two red PointLights at the spec's tailLamp anchors (mirrored on x),
-	// following the exhaust pop light's rules (fx/CarExhaustFlames.svelte,
+	// road. Two red SpotLights at the spec's tailLamp anchors (mirrored on x),
+	// aimed aft and down.
+	//
+	// SPOTS, NOT POINTS, and the reason is what three can NOT do. The anchors sit
+	// INSIDE the tail shell, so an omni lamp lit the car from the inside out: a
+	// red-washed cabin, and a red blob on each `Mirror` — whose only specular
+	// source is lights, the scene having no environment map (TestGame.svelte's
+	// paint note). Nothing in the pipeline could occlude it. A shadow map is the
+	// only occlusion three has for a point light, and six shadow renders per lamp
+	// is not a price worth paying for a bumper wash; there is no per-object light
+	// mask to reach for either — `Renderer._projectObject` pushes every light into
+	// ONE list and `light.layers` is tested against the CAMERA, never against the
+	// object, so every lit material in the pass sees every lamp. A cone excludes
+	// the entire forward hemisphere for free, which is also what a real reflector
+	// housing does.
+	//
+	// The exhaust pop light's rules otherwise still hold (fx/CarExhaustFlames.svelte,
 	// POP_LIGHT_*): mounted permanently and driven through `intensity` — the
 	// lights array is hashed into every lit material's cache key, so a `visible`
-	// toggle recompiles the whole scene — no shadows (a shadowed PointLight is
-	// six shadow renders), and `distance` in WORLD units: three compares it
-	// against a view-space length, so the car's ×2.5 group does not scale it.
+	// toggle recompiles the whole scene — no shadows, and `distance` in WORLD
+	// units: three compares it against a view-space length, so the car's ×2.5
+	// group does not scale it. The anchors and the aim offset below ARE scaled by
+	// that group, which only the anchors care about: a target is read as a
+	// direction.
 	const { x: TAIL_LAMP_X, y: TAIL_LAMP_Y, z: TAIL_LAMP_Z } = currentCar().geometry.tailLamp;
 	/** Deep red as working-space components — the pop light's ctor gotcha: a hex
 	 *  would round-trip through 8-bit sRGB for nothing. */
 	const TAIL_LAMP_COLOR = new THREE.Color(1, 0.05, 0.02);
-	/** Candela. Tuned by eye against the night exposure; the 1:3 ratio mirrors
-	 *  TAIL_ON:TAIL_BRAKE so the lamps' look and their throw scale together. */
-	const TAIL_THROW_ON = 2;
-	const TAIL_THROW_BRAKE = 4;
+	/** Candela AT DECAY 2 (below): the old decay-1 pair doubled, which leaves the
+	 *  road directly under the lamp reading as before and everything further out
+	 *  reading darker — the point of the change. Ratio 1:2 by eye; the emissive
+	 *  gains run 1:3, but the flare already carries the brake's pop and the throw
+	 *  does not need to shout over it. */
+	const TAIL_THROW_ON = 4;
+	const TAIL_THROW_BRAKE = 8;
 	/** Cutoff radius, WORLD units (see above) — keeps the wash on the road behind
 	 *  the car instead of tinting the whole track. */
-	const TAIL_THROW_DISTANCE = 30;
-	const TAIL_THROW_DECAY = 1;
+	const TAIL_THROW_DISTANCE = 50;
+	/** Physical inverse-square. The old 1 was ≈1/d: the wash carried 12 model
+	 *  metres, and a point source's specular lobe — view-dependent by definition —
+	 *  swung across the wet asphalt as the camera orbited. Steeper falloff keeps
+	 *  the pool where the lamp is. */
+	const TAIL_THROW_DECAY = 1.5;
+	/** Cone HALF-angle (rad — three's convention, capped at π/2) and edge
+	 *  softness. Wide and soft: the cone is here to have a BACK, not an edge. A
+	 *  tail lamp is a broad wash, not a beam. */
+	const TAIL_THROW_ANGLE = 0.8;
+	const TAIL_THROW_PENUMBRA = 0.8;
+	/** Where the cone points, in car-local model metres FROM the lamp: aft (+z is
+	 *  the tail; the nose is −z) and down onto the road, ~22° below horizontal. */
+	const TAIL_AIM_Y = -0.9;
+	const TAIL_AIM_Z = 2.2;
 
 	const makeTailLight = (side: 'L' | 'R') => {
-		const light = new THREE.PointLight(TAIL_LAMP_COLOR, 0, TAIL_THROW_DISTANCE, TAIL_THROW_DECAY);
+		const light = new THREE.SpotLight(
+			TAIL_LAMP_COLOR,
+			0,
+			TAIL_THROW_DISTANCE,
+			TAIL_THROW_ANGLE,
+			TAIL_THROW_PENUMBRA,
+			TAIL_THROW_DECAY
+		);
 		light.name = `TaillightLamp${side}`;
-		light.position.set(side === 'L' ? -TAIL_LAMP_X : TAIL_LAMP_X, TAIL_LAMP_Y, TAIL_LAMP_Z);
-		light.castShadow = false; // six shadow renders, and castShadow is a cache-key input
-		return light;
+		// SpotLight's ctor puts itself at DEFAULT_UP, not the origin — one model
+		// metre of free lift if you mount it on a group and pass no position.
+		light.position.set(0, 0, 0);
+		light.castShadow = false; // a shadow render, and castShadow is a cache-key input
+		// A spot aims at its target's WORLD matrix, and the default target is an
+		// Object3D at the origin that is not in the graph — so each lamp needs a
+		// mounted one (the CarHeadlights pattern: light at a group's origin with
+		// its target alongside, both riding the group).
+		const target = new THREE.Object3D();
+		target.name = `TaillightAim${side}`;
+		light.target = target;
+		return { light, target };
 	};
-	const tailLightL = makeTailLight('L');
-	const tailLightR = makeTailLight('R');
+	const tailLampL = makeTailLight('L');
+	const tailLampR = makeTailLight('R');
 
 	// The mode-dependent half. Uniforms, not material rebuilds, so braking and
 	// toggling write numbers (the graph is shared by both lamp clusters and both
@@ -189,8 +238,8 @@
 		// point: a brake pedal is a mechanism, not a filament (CarHeadlights ramps
 		// its own master switch; the flare there is instant too).
 		const tailThrow = !ign ? 0 : braking ? TAIL_THROW_BRAKE : carLights.on ? TAIL_THROW_ON : 0;
-		tailLightL.intensity = tailThrow;
-		tailLightR.intensity = tailThrow;
+		tailLampL.light.intensity = tailThrow;
+		tailLampR.light.intensity = tailThrow;
 
 		for (const { material, heat } of interior) material.emissiveIntensity = ign ? heat : 0;
 
@@ -207,14 +256,26 @@
 		// Hand the exported mesh back exactly as it was.
 		if (origMesh) origMesh.visible = true;
 		for (const { material, heat } of interior) material.emissiveIntensity = heat;
-		tailLightL.dispose();
-		tailLightR.dispose();
+		tailLampL.light.dispose();
+		tailLampR.light.dispose();
 	});
 </script>
 
 <!-- The real lights, ALWAYS mounted — never behind an {#if} or `visible` toggle
      (the POP_LIGHT rule in fx/CarExhaustFlames.svelte): off is intensity 0,
-     written by the effect above. Positions are the spec's tailLamp anchors in
-     car-local model metres; the `distance` they were built with is world units. -->
-<T is={tailLightL} />
-<T is={tailLightR} />
+     written by the effect above. The groups are the spec's tailLamp anchors in
+     car-local model metres (mirrored on x); the `distance` the lamps were built
+     with is world units. Lamp at the group's origin, aim target alongside it, so
+     the cone rides the car with no per-frame work. -->
+{#snippet lamp({ light, target }: { light: THREE.SpotLight; target: THREE.Object3D })}
+	<T is={light} />
+	<T is={target} position={[0, TAIL_AIM_Y, TAIL_AIM_Z]} />
+{/snippet}
+
+<T.Group name="TaillightL" position={[-TAIL_LAMP_X, TAIL_LAMP_Y, TAIL_LAMP_Z]}>
+	{@render lamp(tailLampL)}
+</T.Group>
+
+<T.Group name="TaillightR" position={[TAIL_LAMP_X, TAIL_LAMP_Y, TAIL_LAMP_Z]}>
+	{@render lamp(tailLampR)}
+</T.Group>
