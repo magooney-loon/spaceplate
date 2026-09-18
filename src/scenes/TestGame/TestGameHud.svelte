@@ -2,9 +2,11 @@
 	import { sceneActions } from '$extensions/scene';
 	import { engineSounds } from '$core';
 	import CarCluster from './CarCluster.svelte';
+	import PaintShop from './PaintShop.svelte';
 	import TrackMinimap from './TrackMinimap.svelte';
 	import DebugHud from './debug/DebugHud.svelte';
 	import { requestCarRestart } from './sim/carSwitches.svelte';
+	import { togglePaintShop } from './sim/carPaint.svelte';
 	import { carHud } from './sim/carTelemetry.svelte';
 
 	// The launch flash's tier names — latched at the catch (carSim.launchTier),
@@ -32,6 +34,14 @@
 			}}
 		>
 			↻ Restart
+		</button>
+		<button
+			onclick={() => {
+				engineSounds.click.play();
+				togglePaintShop();
+			}}
+		>
+			◈ Paint Shop
 		</button>
 	</div>
 
@@ -69,6 +79,12 @@
 		<DebugHud />
 		<TrackMinimap />
 	</div>
+
+	<!-- The paint shop — self-gates on paintShop.open (sim/carPaint.svelte).
+	     Here rather than the scene because it is pure UI: it touches no object,
+	     it writes the latched paint id/finish the scene's material effect reads.
+	     A top bar with no backdrop — it never covers the car it re-colours. -->
+	<PaintShop />
 </div>
 
 <style>

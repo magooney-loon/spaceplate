@@ -332,7 +332,36 @@ export const gr86 = {
 		/** The GLB's wheel materials are `WheelFLMtl` etc — prefix match. */
 		wheelMaterialPrefix: 'wheel',
 		/** m — measured wheel radius if the runtime bounding-box pass fails. */
-		wheelRadiusFallback: 0.33
+		wheelRadiusFallback: 0.33,
+		/** The GLB's shared body-panel material. */
+		paintMaterial: 'Paint',
+		/** The 2023+ GR86 order sheet (approximate hexes — a paint code is a
+		 *  mixing recipe, not a screen colour). First entry is the default, and
+		 *  it is Track bRED: that is what the GLB shipped painted in. */
+		paints: [
+			{ id: 'trackbred', label: 'Track bRED', code: 'DCK', hex: '#d5001c', finish: 'solid' },
+			{ id: 'halo', label: 'Halo White', code: 'K1X', hex: '#f0f2f2', finish: 'solid' },
+			{ id: 'raven', label: 'Raven Black', code: 'D4S', hex: '#0b0d10', finish: 'solid' },
+			{ id: 'steel', label: 'Steel Metallic', code: 'G1U', hex: '#c6cbcf', finish: 'metallic' },
+			{
+				id: 'pavement',
+				label: 'Pavement Metallic',
+				code: 'P8Y',
+				finish: 'metallic',
+				hex: '#4a4e53'
+			},
+			{ id: 'neptune', label: 'Neptune Blue', code: 'DAR', hex: '#1c3fa8', finish: 'pearl' },
+			{ id: 'trueno', label: 'Trueno Blue', code: 'WCH', hex: '#3468ce', finish: 'metallic' },
+			{
+				id: 'solar',
+				label: 'Solar Shift',
+				code: 'WCL',
+				hex: '#6b55c9',
+				finish: 'shift'
+			},
+			{ id: 'ridge', label: 'Ridge Green', code: 'DMG', hex: '#2c4f41', finish: 'metallic' },
+			{ id: 'yuzu', label: 'Yuzu', code: 'C2Z', hex: '#f7ce0f', finish: 'solid' }
+		]
 	},
 
 	audio: {

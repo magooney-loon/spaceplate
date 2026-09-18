@@ -11,6 +11,10 @@ scene via `Scene.svelte` / `SceneHud.svelte`.
 TestGame.svelte         — the scene: world + car composition + the physics-task
                          shell; the driving model itself is sim/controller.ts,
                          the map is world/Track.svelte
+PaintShop.svelte        — the paint shop: a TOP BAR (no backdrop, world stays
+                         interactive) — order-sheet swatches + finish chips
+                         (solid/metallic/pearl/shift, factory finish resets on
+                         colour select), selection applies live
 TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart) + the
                          upper-middle launch flash (STREET / JUICY / PERFECT) +
                          the bottom-left `.corner` column, which is what ANCHORS
@@ -68,6 +72,9 @@ sim/                    — the driving model, car-agnostic
                          mirror, published only while the rig is up) /
                          publishCarPose (the chassis body's world pose each step,
                          for fx that test against the car's volume)
+  carPaint.svelte.ts    — the latched paint choice (id + finish override; the
+                         order sheet is car data: spec.model.paints) + the
+                         shop's open state
   carMath.ts            — `clamp` / `damp`, shared by the sim modules
 fx/                     — the car's visual effects
   puffPool.ts           — the smoke primitive: one mesh / one material / one draw
@@ -189,7 +196,12 @@ for every field and its contract), plus one entry in `CARS` (garage.svelte.ts).
 No component edits. The GLB contract a new model must match: wheel materials
 named `<wheelMaterialPrefix>*` with all four wheels merged per mesh (CarWheels
 splits them by bounding box — and the chassis hull EXCLUDES them, cars/hull.ts),
-nose −Z, ground plane at y=0; the measured anchors (axles, exhaust tips,
+nose −Z, ground plane at y=0; the body paint is one shared material named
+`model.paintMaterial`, swapped at load for a MeshPhysicalMaterial (same name)
+and re-coloured from the order sheet (`model.paints` — first entry the default)
+by the paint shop (HUD button — no key, it is pointer UI) — no re-export to
+re-spray; the measured anchors (axles,
+exhaust tips,
 lamps) go in the spec's geometry. The chassis collider needs no spec numbers —
 it IS the model (the hull is computed at load).
 Engine audio files are SHARED across cars — a new car voices them via
@@ -219,7 +231,14 @@ B view (model → debug rig → both). B is also the debug switch: the rig's
 skeleton and its bottom-left readout (`debug/DebugHud.svelte` — both halves of
 the tool live in `debug/`) come up together in `rig` and `both`, and
 the rig's analysis overlays (suspension rays, CG vectors, friction circle) only
-in `rig`.
+in `rig`. The paint shop opens from the HUD's Paint Shop button (no key: it is
+pointer UI, and every pad button the input map could spare is taken) — the
+GR86's order sheet as a top bar (Track bRED, Halo White, Raven Black,
+Steel/Pavement metallic, Neptune pearl, Trueno metallic, Solar Shift
+colour-flip, Ridge Green, Yuzu) with finish chips beside the title: selecting
+a colour applies its FACTORY finish, the chips override finish without
+touching colour, all applied live. No backdrop, no pause — the world stays
+interactive around the bar.
 Launching is a ritual: sit in N, rev into the 4–6k window (the shift lights
 turn green and fill as you go), tap E — a REV-MATCH LAUNCH drops the clutch
 clean, and the closer to 6k the harder it plants (≈1 g at the top; the cluster

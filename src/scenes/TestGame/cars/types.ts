@@ -24,6 +24,24 @@ export type CarLayout = 'rwd' | 'fwd' | 'awd';
 /** One point of the wide-open-throttle crank torque curve. */
 export type TorquePoint = readonly [rpm: number, nm: number];
 
+/** How a paint hits the light — mapped to material params (metalness /
+ *  roughness / clearcoat / iridescence) in TestGame.svelte, so a finish is
+ *  the same look on every car. */
+export type PaintFinish = 'solid' | 'metallic' | 'pearl' | 'shift';
+
+/** One factory paint on the order sheet. */
+export type PaintOption = {
+	id: string;
+	label: string;
+	/** The manufacturer paint code — display-only. */
+	code: string;
+	/** sRGB hex, an approximation of the code. */
+	hex: string;
+	/** The finish this code SHIPS as — the shop's default on select, and the
+	 *  chips there override it without touching the colour. */
+	finish: PaintFinish;
+};
+
 export type CarSpec = {
 	id: string;
 	/** Shown wherever the car is named (HUD, logs). */
@@ -320,6 +338,14 @@ export type CarSpec = {
 		wheelMaterialPrefix: string;
 		/** m — wheel radius fallback if runtime measurement fails. */
 		wheelRadiusFallback: number;
+		/** Body-paint material in the GLB (name, case-insensitive) — the scene
+		 *  swaps it for a MeshPhysicalMaterial (clearcoat/iridescence, same name
+		 *  so the shadow policy still reads it) and re-colours it from `paints`. */
+		paintMaterial: string;
+		/** The order sheet — this car's factory paints, first entry the default.
+		 *  Colours are approximations (a paint code is a mixing recipe, not a
+		 *  screen colour); the FINISH is what each code actually ships as. */
+		paints: readonly PaintOption[];
 	};
 
 	// ── Audio — the engine NOTE. Files are SHARED across cars (one recorded
