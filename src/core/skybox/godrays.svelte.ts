@@ -25,6 +25,26 @@ import type { SunLight } from 'three/addons/lights/SunLight.js';
 export const uGodrayColor = uniform(new Color(1, 1, 1));
 
 /**
+ * The key light's INTENSITY — `descriptor.light.intensity`, the same number `SkyLight`
+ * hands the `SunLight` itself.
+ *
+ * It exists because `uGodrayColor` is a hue and nothing else: every colour the day curve
+ * produces has a magnitude around 1 (`SUN_ZENITH` is `[1, 0.98, 0.95]`), while the scene
+ * it is composited over is HDR — a sunlit surface sits well above 1 and the dome higher
+ * still, because the light that made them carries `SUN_INTENSITY` 4.75. Shafts built from
+ * the bare colour are therefore DIMMER than most of the frame, and the composite that mixed
+ * toward them pulled every lit pixel DOWN toward 1.0 while pulling every shadowed pixel up
+ * — the whole frame flattened toward the sun's colour, which reads exactly like the rays
+ * fighting the shadow map. Multiplying the two puts the inscattered radiance in the scene's
+ * own units, where adding it is meaningful.
+ *
+ * Kept as a second uniform rather than folded into `uGodrayColor` so that field keeps the
+ * one meaning it shares with `SkyFog`'s inscatter and `SkyLight` itself: the key's colour,
+ * working space, no gain baked in.
+ */
+export const uGodrayRadiance = uniform(0);
+
+/**
  * How much shaft the sky is asking for, 0..1 — haze × the key light being up.
  *
  * Multiplied INTO the panel's `density` and `maxDensity` inside the shader, which is the
@@ -83,5 +103,6 @@ export const setGodrayLight = (light: SunLight | null): void => {
 	if (light === null) {
 		godrayActivity.active = false;
 		uGodrayWeight.value = 0;
+		uGodrayRadiance.value = 0;
 	}
 };

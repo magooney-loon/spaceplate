@@ -276,11 +276,12 @@ missing.
 True raymarched crepuscular rays: the view ray is stepped through the key light's shadow
 volume and every unoccluded step adds light, so the beams are cast by real geometry, they
 sit correctly behind walls, and **they do not care whether the sun is on screen**. Three
-passes, composed as three's own `webgpu_postprocessing_godrays` example composes them —
+passes, laid out as three's own `webgpu_postprocessing_godrays` example lays them out —
 `godrays(depth, camera, light)` → `bilateralBlur` (the march is dithered, and the blur is
-what turns dither back into a smooth shaft) → `depthAwareBlend` (an eight-tap poisson
-search that pushes the sample off a depth discontinuity, so rays do not halo across
-silhouettes).
+what turns dither back into a smooth shaft) → a composite that upsamples the half-res ray
+buffer without leaking it across silhouettes.
+
+Only the third is ours rather than the addon's, and the next sections are why.
 
 **It does not work on stock three, and the reason is structural.** `GodraysNode` branches
 on `isPointLight` / `isDirectionalLight` in both `_updateLightParams()` and `inShadow()`.
@@ -313,6 +314,126 @@ interesting one:
 source — so the effect casts the light at the call site. That cast is the type system
 being wrong, not us.
 
+### The banding, and where it actually came from
+
+The shafts read as a stack of hard steps rather than a gradient, and the cause was three
+separate things in the same pass, each of which quantises the same smooth ramp. All three
+are in `patches/three.patch` now; the point of keeping the list is that **each one on its
+own is invisible next to the other two**, so fixing one and looking at the result proves
+nothing.
+
+- **The ray target was 8-bit.** `new RenderTarget(1, 1, { depthBuffer: false })` takes
+  three's default `UnsignedByteType`, and this buffer holds a continuous accumulation that
+  a shaft spreads across most of the screen while only ever using the bottom fifth of the
+  range — call it fifty usable levels. Nothing downstream can put back a level the buffer
+  never stored, so the blur smooths _between_ the contours and leaves the contours. Now
+  `HalfFloatType`; `bilateralBlur` copies its input's type onto its own targets, so it
+  carries through the chain for free.
+- **The dither rolled the sample COUNT, not the sample positions.** Upstream is
+  `round(steps + (steps/8 + 2) * noise)` and then places the samples at `i / count`, so at
+  48 steps there are nine possible counts and every pixel that drew the same count marches
+  the **identical** positions. That is not dither, it is nine deterministic quantisations
+  of the same integral, and it bands over whole regions. Offsetting each sample by the
+  pixel's own blue noise (`(i + noise) / count`) decorrelates neighbours, which is what
+  turns the error into the high-frequency noise the bilateral blur is in the chain to
+  remove. Also cheaper — a loop bound straight off the uniform.
+- **`clamp(x, 0, maxDensity)` drew a contour line of its own**, a flat plateau with a
+  first-derivative break at its rim, across the brightest part of every shaft. Scaling the
+  transmittance by `maxDensity` instead has the same ceiling and approaches it
+  asymptotically. That is also what turns `maxDensity` into a clean linear gain.
+
+Then a fourth, which is on our side of the line: the bilateral blur's `sigmaColor` was
+left at the addon's 0.1 default, **which has to be read against the range of what it is
+filtering**. That buffer only ever holds `0..maxDensity`, so 0.1 told the filter to treat
+any step bigger than a good fraction of the whole signal as an edge worth preserving —
+i.e. to preserve the banding. It is the `blurTolerance` param now, defaulted to about half
+the usable range.
+
+### The composite is ours: inscatter ADDS, it does not lerp
+
+`depthAwareBlend` finishes with `mix(scene, blendColor, rays)`. Two things go wrong with
+that here, and both of them look like the rays arguing with the shadow map rather than
+like a banding problem, which is why they survived the list above:
+
+- **`blendColor` is the key light's colour, magnitude ~1, and the frame is HDR.** Every
+  colour the day curve produces sits around 1 (`SUN_ZENITH` is `[1, 0.98, 0.95]`) because
+  the magnitude lives in `intensity`, which is `SUN_INTENSITY` 4.75. So the thing the
+  shafts mixed toward was **dimmer than most of what they crossed** — sunlit ground, the
+  whole dome — and a beam over the sky came out as a dark streak.
+- **A lerp is a contrast crush by construction.** It pulls lit pixels down and shadowed
+  pixels up toward the same value, so a shaft laid across a shadow boundary erases the
+  boundary.
+
+Inscattered light is light _arriving_ at the camera: it adds to whatever it is in front of
+and it cannot subtract. So `godrayCompositeFn` (in the effect, `vignette.ts`'s precedent)
+adds `keyColour × keyIntensity × rays` instead of lerping. `uGodrayRadiance` is the second
+uniform that took, and it is deliberately the **attenuated** intensity, so a deck that kills
+the key kills its shafts with it.
+
+**The old `sunShafts` post-mortem's "additive read as washed out" does not transfer.** That
+was a broad radial smear with no occlusion in it, where additive really is just a
+brightness; this is a raymarch whose every edge is cast by real geometry. It does transfer
+to the _gain_, though — see the retune below.
+
+**The sky's weight now lands on `density` alone**, not on `density` and `maxDensity` both.
+Multiplying it into both made the whole effect **quadratic in the haze channel** — at half
+haze the shafts were a quarter of themselves — so the weather range read as nothing,
+nothing, nothing, then all at once. `density` is the physical term (more haze is more
+scattering per metre); `maxDensity` is an artistic gain and has no business knowing about
+the weather.
+
+### The upsample has no decision in it, and that is the point
+
+The addon's `depthAwareBlend` handles the half-res buffer with an eight-tap poisson search
+that ends in `select(uv + push, uv)`. Everything about that is discrete: a hard `lessThan`
+threshold decides which taps count, the push direction jumps whenever a tap crosses it, and
+the final `select` is binary. **A per-pixel discrete decision is a thing that crawls**, and
+what it crawls in response to is camera motion — pixels flip sides frame to frame along
+every silhouette in the frame. (It is also quietly broken: it writes
+`pushDir.divAssign(count).normalize()` and throws the normalised value away, so the push it
+applies is the raw mean offset and `edgeStrength` never meant the pixel count its docstring
+claims.)
+
+`godrayCompositeFn` does the standard thing instead — a **joint bilateral upsample**: four
+taps at the ray buffer's own texel pitch, each weighted `exp(-|Δdepth| / falloff)` against
+the centre pixel's linear depth, normalised, with the centre tap's weight 1 by construction
+so the accumulator can never come out empty. Same rejection of the far side of an edge,
+reached smoothly, so camera motion moves it continuously. Fewer fetches, too. `edgeRadius`/
+`edgeStrength` are gone; `upsampleSpread` (tap pitch, in ray-buffer texels) and
+`upsampleTolerance` (the depth window, as a fraction of the pixel's own depth) replace them.
+
+### `density` decides whether the buffer is an occlusion map or a depth map
+
+The single most load-bearing number in the effect, and the least obviously named. The march
+is `1 - exp(-illum)` over `illum = rayLength × density × mean(lit × attenuation)`, so
+`density` sets **where on the exponential a typical ray sits** and `maxDensity` sets how
+bright that is.
+
+Down at the addon's 0.7 a ray is still on the linear part of that curve, which means its
+value is dominated by `rayLength` — i.e. by **how far away the surface that pixel sees
+is**. The buffer is then a depth map with occlusion as a minor term, and that has two
+consequences that both read as "the godrays look wrong" rather than as a tuning problem:
+
+- it lifts everything distant by a flat amount, which is a wash and not a beam;
+- **depth is the thing that changes violently when the camera moves.** Geometry sweeping
+  through the view swings whole regions of the buffer between "far" and "near", so the
+  additive lift lurches about with the camera rather than staying put.
+
+High enough for a typical ray to saturate, the length term falls out of the expression and
+what is left is the share of the ray that was lit — which is occlusion, which is anchored to
+the world and holds still while the camera does not. Hence `density` 6 (it is multiplied by
+the sky's weight, which lives around 0.1..0.5, so the panel number carries that) against
+`maxDensity` 0.06.
+
+**And `maxDensity` has to be read against 4.75.** The composite adds `keyColour ×
+keyIntensity × maxDensity × ray`, and `SUN_INTENSITY` is 4.75, so 0.16 — the first number
+tried after the composite went additive — is most of a unit of radiance added to a scene
+whose lit surfaces sit around 1.5. That is a white veil. What sells a beam is its contrast
+against the unlit air beside it, that contrast _is_ this number, and all of it is also being
+added to everything the beams are not. Its slider stops at 0.5 rather than 1 for the same
+reason: past ~0.2 every value is a white-out, and the useful band deserves the resolution
+more than the reach does.
+
 **It carries a structural latch, and unlike the abandoned screen-space attempt it is
 entitled to one.** Nothing about its cost is skippable from inside the shader: the targets
 are allocated and both the march and the blur run from `updateBefore`, outside it, so a
@@ -322,6 +443,14 @@ camera term in it at all, which is exactly the property the screen-space version
 have (see below). `resolutionScale` (0.5) is the cost lever; it is a shadow-atlas tap per
 step per pixel and the result is dithered and then blurred, so it loses very little at
 half size.
+
+**It is nevertheless OFF by default, which `fogScatter` — same latch, same bargain — is
+not.** The difference is not cost, because the latch already makes that zero in clear air.
+It is that the composite ADDS the key light's own radiance to every pixel with lit air in
+front of it, which is most of the frame, so the whole image brightens and desaturates the
+moment the sky asks for shafts. A latched effect that costs nothing until it fires is still
+a look the first time it fires, and this one changes every existing scene. Same call `ao`
+makes, for the same reason.
 
 ### The screen-space version, and why it was dropped
 

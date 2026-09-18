@@ -114,9 +114,17 @@ deliberate: the effect **raymarches the key light's shadow cascades**, so it nee
 `SunLight` INSTANCE at pipeline-build time. `SkyLight` is where the light is, and it
 already registers the same light's shadow with `keyShadow.ts` from the same `oncreate`.
 
-It writes three things into `godrays.svelte.ts`: the key colour (so the sun→moon crossover
-comes free, exactly as it does for `SkyFog`'s inscatter), a 0..1 haze weight, and the
-activity latch.
+It writes four things into `godrays.svelte.ts`: the key colour (so the sun→moon crossover
+comes free, exactly as it does for `SkyFog`'s inscatter), the key's **intensity**, a 0..1
+haze weight, and the activity latch.
+
+- **The intensity is separate from the colour because the colour is a hue and nothing
+  else.** Every colour the day curve produces has magnitude around 1; the magnitude lives
+  in `intensity`, up to `SUN_INTENSITY` 4.75. The post effect ADDS colour × intensity ×
+  weight to an HDR frame, so without the second factor the shafts are a unit-brightness
+  veil laid over a scene lit at 4.75 — which reads as a contrast crush, not as light
+  (`core/postprocessing/CLAUDE.md` has the full post-mortem). It is the attenuated
+  intensity on purpose: a deck that kills the key kills its shafts with it.
 
 - **The weight is haze × key elevation.** Haze is `descriptor.sky.fogDensity`, which the
   mixer has already folded cloud and fog into — shafts are light scattered on its way to

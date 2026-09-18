@@ -96,13 +96,17 @@ model is lit from the inside by the whole sky. Off by default — read its secti
   (`$core/skybox/fogScatter.svelte.ts`) that keeps it out of the graph below a low
   threshold, hysteresis and all. "Enabled" here means "let the weather decide"; the
   params only shape what it does once the weather has.
-- `godrays` is the same bargain and the most expensive effect in the registry — a
-  half-res raymarch of the sun's shadow cascades, a bilateral blur and an edge-aware
-  composite. `SkyLight`'s task drives it from the haze and the key's elevation and owns the
-  same kind of latch, so it is out of the graph entirely in clear air and at night.
-  `Density` and `Max Density` are CEILINGS the sky spends against, not the values
-  themselves; `Resolution Scale` is the cost lever. It needs a patched `three` — see
-  `$core/postprocessing/CLAUDE.md`.
+- `godrays` carries the same latch and is the most expensive effect in the registry — a
+  half-res raymarch of the sun's shadow cascades, a bilateral blur and a depth-aware
+  upsample. `SkyLight`'s task drives it from the haze and the key's elevation, so it is out
+  of the graph entirely in clear air and at night. **But it is OFF by default**, which
+  `fogScatter` is not, and the difference is not cost: the composite ADDS the key light's
+  radiance to every pixel with lit air in front of it, so the whole frame brightens and
+  desaturates whenever the sky asks for shafts. That is a look a game opts into — `ao`'s
+  call, for `ao`'s reason. `Density` decides whether the ray buffer reads as occlusion or
+  as depth (it wants to be high); `Max Density` is the gain, against a key intensity of
+  ~4.75, so it wants to be small; `Resolution Scale` is the cost lever. It needs a patched
+  `three` — see `$core/postprocessing/CLAUDE.md`.
 - `sceneTransition` is the scene switch's cover, and it is DEFAULT-ENABLED at mix 0 for
   the afterimage's reason (a latch would rebuild the graph exactly when a transition
   starts). Its params are the LOOK of every scene switch in the app. Shape: pattern

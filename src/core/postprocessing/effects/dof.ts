@@ -25,6 +25,12 @@ export const dofEffect: EffectDef<DofParams> = {
 	order: 30,
 	requires: ['viewZ'],
 	params: () => ({ focus: 55.7, minDistance: 50, maxDistance: 200, blurSize: 1, blurSpread: 1 }),
+	// On by default. Note there is no latch and nothing to gate on — unlike the weather
+	// effects, a focus plane is always meaningful — so this is a flat per-frame cost: one
+	// `boxBlur` of the full frame, `(blurSize * 2 + 1)^2` taps, every frame it is enabled.
+	// At the default `blurSize` 1 that is 9 taps; it is the cheapest of the always-on chain
+	// effects, but it is not free the way `godrays` in clear air is free.
+	defaultEnabled: true,
 	ranges: {
 		focus: { min: 0.1, max: 100, step: 0.1 },
 		minDistance: { min: 0, max: 50, step: 0.1 },

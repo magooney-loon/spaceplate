@@ -10,7 +10,13 @@
 	import { clamp01, descriptor } from './model';
 	import { SKY_LAYER_USERDATA } from './layers/skyLayer';
 	import { setKeyShadow } from './keyShadow';
-	import { godrayActivity, setGodrayLight, uGodrayColor, uGodrayWeight } from './godrays.svelte';
+	import {
+		godrayActivity,
+		setGodrayLight,
+		uGodrayColor,
+		uGodrayRadiance,
+		uGodrayWeight
+	} from './godrays.svelte';
 
 	interface Props {
 		/**
@@ -189,6 +195,13 @@
 			// unmounts every sky layer but not this: an environment texture still has a sun,
 			// and a raymarch through its shadow volume is still correct.
 			uGodrayColor.value.setRGB(color[0], color[1], color[2]);
+			// The magnitude the colour above does NOT carry — see the uniform's own note. The
+			// composite adds `colour × this × weight` to an HDR frame, so without it the shafts
+			// are a unit-brightness veil laid over a scene lit at 4.75 and the effect reads as a
+			// contrast crush rather than as light. Deliberately the ATTENUATED intensity (the
+			// one the light is actually shining at), so a deck that kills the key kills its
+			// shafts with it.
+			uGodrayRadiance.value = intensity;
 
 			// How much air there is to scatter in, faded out as the key drops to the horizon.
 			// `direction.y` is the sine of the key's elevation (the model builds it that way),

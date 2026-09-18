@@ -1,14 +1,18 @@
 diff --git a/examples/jsm/tsl/display/GodraysNode.js b/examples/jsm/tsl/display/GodraysNode.js
-index b76c4d7383497c4b3499c34bf3ae20d1ae9b94a0..7bbeeb64697977815e4bb78f9488fe720e25ba03 100644
+index b76c4d7383497c4b3499c34bf3ae20d1ae9b94a0..b933956f52db61a20106fa9ad08da727e71784bf 100644
 --- a/examples/jsm/tsl/display/GodraysNode.js
 +++ b/examples/jsm/tsl/display/GodraysNode.js
-@@ -1,4 +1,4 @@
+@@ -1,5 +1,7 @@
 -import { Frustum, Matrix4, RenderTarget, Vector2, RendererUtils, QuadMesh, TempNode, NodeMaterial, NodeUpdateType, Vector3, Plane } from 'three/webgpu';
-+import { Frustum, Matrix4, RenderTarget, Vector2, RendererUtils, QuadMesh, TempNode, NodeMaterial, NodeUpdateType, Vector3, Vector4, Plane } from 'three/webgpu';
- import { cubeTexture, clamp, viewZToPerspectiveDepth, logarithmicDepthToViewZ, float, Loop, max, Fn, passTexture, uv, dot, uniformArray, If, getViewPosition, uniform, vec4, add, interleavedGradientNoise, screenCoordinate, round, mul, uint, mix, exp, vec3, distance, pow, reference, lightPosition, vec2, bool, texture, perspectiveDepthToViewZ, lightShadowMatrix, context } from 'three/tsl';
+-import { cubeTexture, clamp, viewZToPerspectiveDepth, logarithmicDepthToViewZ, float, Loop, max, Fn, passTexture, uv, dot, uniformArray, If, getViewPosition, uniform, vec4, add, interleavedGradientNoise, screenCoordinate, round, mul, uint, mix, exp, vec3, distance, pow, reference, lightPosition, vec2, bool, texture, perspectiveDepthToViewZ, lightShadowMatrix, context } from 'three/tsl';
++import { Frustum, HalfFloatType, Matrix4, RenderTarget, Vector2, RendererUtils, QuadMesh, TempNode, NodeMaterial, NodeUpdateType, Vector3, Vector4, Plane } from 'three/webgpu';
++// PATCH (spaceplate): `add`, `clamp`, `mul` and `round` dropped — the per-pixel sample-count
++// roll and the hard density clamp that used them are both gone (see the raymarch in setup()).
++import { cubeTexture, viewZToPerspectiveDepth, logarithmicDepthToViewZ, float, Loop, max, Fn, passTexture, uv, dot, uniformArray, If, getViewPosition, uniform, vec4, interleavedGradientNoise, screenCoordinate, uint, mix, exp, vec3, distance, pow, reference, lightPosition, vec2, bool, texture, perspectiveDepthToViewZ, lightShadowMatrix, context } from 'three/tsl';
  
  const _quadMesh = /*@__PURE__*/ new QuadMesh();
-@@ -15,6 +15,9 @@ const _DIRECTIONS = [
+ const _size = /*@__PURE__*/ new Vector2();
+@@ -15,6 +17,9 @@ const _DIRECTIONS = [
  
  const _PLANES = _DIRECTIONS.map( () => new Plane() );
  const _SCRATCH_VECTOR = new Vector3();
@@ -18,7 +22,7 @@ index b76c4d7383497c4b3499c34bf3ae20d1ae9b94a0..7bbeeb64697977815e4bb78f9488fe72
  const _SCRATCH_MAT4 = new Matrix4();
  const _SCRATCH_FRUSTUM = new Frustum();
  
-@@ -39,7 +42,8 @@ let _rendererState;
+@@ -39,7 +44,8 @@ let _rendererState;
   *
   * Limitations:
   *
@@ -28,7 +32,7 @@ index b76c4d7383497c4b3499c34bf3ae20d1ae9b94a0..7bbeeb64697977815e4bb78f9488fe72
   * - The effect requires a full shadow setup. Meaning shadows must be enabled in the renderer,
   * 3D objects must cast and receive shadows and the main light must cast shadows.
   *
-@@ -191,6 +195,69 @@ class GodraysNode extends TempNode {
+@@ -191,6 +197,69 @@ class GodraysNode extends TempNode {
  		this._fNormals = uniformArray( _DIRECTIONS.map( () => new Vector3() ) );
  		this._fConstants = uniformArray( _DIRECTIONS.map( () => 0 ) );
  
@@ -98,7 +102,24 @@ index b76c4d7383497c4b3499c34bf3ae20d1ae9b94a0..7bbeeb64697977815e4bb78f9488fe72
  		/**
  		 * The light the godrays are rendered for.
  		 *
-@@ -339,6 +406,64 @@ class GodraysNode extends TempNode {
+@@ -213,7 +282,15 @@ class GodraysNode extends TempNode {
+ 		 * @private
+ 		 * @type {RenderTarget}
+ 		 */
+-		this._godraysRenderTarget = new RenderTarget( 1, 1, { depthBuffer: false } );
++		// PATCH (spaceplate): HALF FLOAT, not the RenderTarget default (UnsignedByteType).
++		// This buffer holds a continuous accumulation — a shaft is a smooth ramp spread
++		// across most of the screen — and at 8 bits it has 256 levels for a signal that
++		// rarely uses more than the bottom fifth of the range, i.e. ~50 usable steps. The
++		// result is exactly what it sounds like: the gradient inside every beam quantises
++		// into visible contour bands, and neither the bilateral blur nor the composite can
++		// put back a level the buffer never stored. `bilateralBlur` copies its input's type
++		// onto its own targets, so this carries through the whole chain.
++		this._godraysRenderTarget = new RenderTarget( 1, 1, { depthBuffer: false, type: HalfFloatType } );
+ 		this._godraysRenderTarget.texture.name = 'Godrays';
+ 
+ 		/**
+@@ -339,6 +416,64 @@ class GodraysNode extends TempNode {
  
  			}
  
@@ -163,7 +184,7 @@ index b76c4d7383497c4b3499c34bf3ae20d1ae9b94a0..7bbeeb64697977815e4bb78f9488fe72
  		}
  
  	}
-@@ -432,6 +557,68 @@ class GodraysNode extends TempNode {
+@@ -432,6 +567,68 @@ class GodraysNode extends TempNode {
  
  				return output;
  
@@ -232,6 +253,56 @@ index b76c4d7383497c4b3499c34bf3ae20d1ae9b94a0..7bbeeb64697977815e4bb78f9488fe72
  			} else {
  
  				throw new Error( 'THREE.GodraysNode: Unsupported light type.' );
+@@ -554,23 +751,45 @@ class GodraysNode extends TempNode {
+ 
+ 				const illum = float( 0 ).toVar();
+ 
++				// PATCH (spaceplate): THE DITHER OFFSETS THE SAMPLES; it does not jitter their
++				// COUNT. Upstream rolls a per-pixel step count — `round( steps + ( steps / 8 + 2 )
++				// * noise )` — and then places the samples at `i / count`, so with 48 steps every
++				// pixel draws one of nine possible counts and every pixel sharing a count marches
++				// the IDENTICAL set of positions. The march therefore quantises the same way over
++				// whole regions of the screen and the beam reads as a stack of hard steps instead
++				// of a gradient. Offsetting each sample by the pixel's own blue noise decorrelates
++				// neighbours instead, which turns the same error into high-frequency noise — which
++				// is precisely what the bilateral blur downstream exists to remove. Cheaper, too:
++				// a loop bound straight off the uniform, no per-pixel round/uint.
+ 				const noise = interleavedGradientNoise( screenCoordinate ).toConst();
+-				const samplesFloat = round( add( this.raymarchSteps, mul( this.raymarchSteps.div( 8 ).add( 2 ), noise ) ) ).toConst();
++				const samplesFloat = float( this.raymarchSteps ).toConst();
+ 				const samples = uint( samplesFloat ).toConst();
+ 
++				// Hoisted out of the loop: both endpoints are loop-invariant, so the ray's
++				// length is one distance() per march rather than one per step, in the hottest
++				// loop this effect owns.
++				const stepWeight = distance( startPosition, worldPosition ).mul( this.density.div( 100 ) ).toConst();
++
+ 				Loop( samples, ( { i } ) => {
+ 
+-					const samplePos = mix( startPosition, worldPosition, float( i ).div( samplesFloat ) ).toConst();
++					const samplePos = mix( startPosition, worldPosition, float( i ).add( noise ).div( samplesFloat ) ).toConst();
+ 					const shadowInfo = inShadow( samplePos );
+ 					const shadowAmount = shadowInfo.x.oneMinus().toConst();
+ 
+-					illum.addAssign( shadowAmount.mul( distance( startPosition, worldPosition ).mul( this.density.div( 100 ) ) ).mul( pow( shadowInfo.y.div( this._shadowCameraFar ).oneMinus(), this.distanceAttenuation ) ) );
++					illum.addAssign( shadowAmount.mul( stepWeight ).mul( pow( shadowInfo.y.div( this._shadowCameraFar ).oneMinus(), this.distanceAttenuation ) ) );
+ 
+ 				} );
+ 
+ 				illum.divAssign( samplesFloat );
+ 
+-				output.assign( vec4( vec3( clamp( exp( illum.negate() ).oneMinus(), 0, this.maxDensity ) ), depth ) );
++				// PATCH (spaceplate): a SOFT ceiling. `clamp( x, 0, maxDensity )` puts a flat
++				// plateau with a first-derivative break at its rim wherever a ray saturates —
++				// a contour line drawn across the middle of the brightest part of a shaft,
++				// which is the one place nothing should have an edge. Scaling the transmittance
++				// by `maxDensity` has the same ceiling and approaches it asymptotically, so
++				// there is no rim to see. `1 - exp( -illum )` is already in [0,1) for illum >= 0,
++				// so nothing is left to clamp.
++				output.assign( vec4( vec3( exp( illum.negate() ).oneMinus().mul( this.maxDensity ) ), depth ) );
+ 
+ 
+ 			} );
 diff --git a/examples/jsm/tsl/display/RetroPassNode.js b/examples/jsm/tsl/display/RetroPassNode.js
 index 073e32beb4b762fe07e29a2b1595e63a0be11175..44f42fe646c9343456f8b8a5cdd8dd31984c1693 100644
 --- a/examples/jsm/tsl/display/RetroPassNode.js
