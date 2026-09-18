@@ -84,7 +84,7 @@
 <style>
 	.shop {
 		position: absolute;
-		top: 18rem;
+		top: 9rem;
 		left: 50%;
 		transform: translateX(-50%);
 		display: flex;
