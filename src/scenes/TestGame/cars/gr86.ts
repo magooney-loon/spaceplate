@@ -121,8 +121,25 @@ export const gr86 = {
 		finalDrive: 4.1,
 		/** Driveline efficiency, crank torque → wheel torque. */
 		efficiency: 0.9,
-		/** s — clutch-out time per shift. Torque is cut for the whole window. */
+		/** s — the whole shift: pedal down, gear swapped, pedal back up. */
 		shiftTime: 0.28,
+		/** 45% of that on the floor (~0.13 s), then ~0.15 s of progressive
+		 *  re-engagement. A quick road shift; a slower box wants more of both. */
+		clutchOpen: 0.45,
+		/** 1/s — a decent H-pattern driver blipping. Over the ~0.13 s the clutch is
+		 *  open this closes ~85% of the mismatch, so a normal shift is smooth and
+		 *  a big gear jump still lands with a thump. */
+		revMatchRate: 14,
+		/** 0.7 of the raw physical shock — the FA24's flywheel is light and the
+		 *  full figure at a big mismatch chirps the rears on every downshift.
+		 *  This is the knob for "downshifts feel weightless" / "too violent". */
+		clutchShock: 0.7,
+		/** Nm — the clutch's idle drag. Settles the car at ~6 km/h in 1st and
+		 *  walks it backwards in R, which is what creep is; 2nd creeps lazily and
+		 *  6th does not move at all, all from the gearing. */
+		creepTorque: 40,
+		/** m/s — creep is gone by ~8 km/h. */
+		creepSpeed: 2.2,
 
 		// ── The automatic's shift schedule ───────────────────────────────────
 		// The same six gears, picked by the box (sim/drivetrain.ts). Wide open it
@@ -230,8 +247,11 @@ export const gr86 = {
 		squatPerG: 0.045,
 		/** Tracks camber exactly — a sports car holds its ground. */
 		roadFollow: 1,
-		/** m — ~4.4° of roll at full follow; the kerb-strike cap. */
+		/** m — ~4.4° of roll at full follow; the KERB-strike cap (the warp mode). */
 		roadMax: 0.12,
+		/** m — the SLOPE cap: ~19° of gradient, ~30° of camber. A rail, not a
+		 *  feel knob — anything the car can drive on, it should sit flat on. */
+		slopeMax: 0.45,
 		/** 1/s² — the body chases an attitude in ~0.1 s, then bobs. */
 		springK: 60,
 		/** Under-critically damped, so the settle reads as a bob, not a slide. */

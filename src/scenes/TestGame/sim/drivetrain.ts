@@ -52,6 +52,10 @@ export interface DriveInput {
 	 * like the shift flags: the player can switch mode mid-corner, so it is read
 	 * fresh every step and never cached. */
 	auto: boolean;
+	/** 0..1 — how hard the car is cornering (the controller's lateral load / slip
+	 * angle, whichever is loosest, one step stale). The AUTOMATIC only: a box that
+	 * changes gear mid-bend unsettles a car that is already using its tyres. */
+	cornering: number;
 	/** 0..1 — nitrous flow reaching the engine this step. The SCENE owns the
 	 * bottle and the throttle-switch gating (Shift alone does nothing); this is just
 	 * how much spray is in, multiplying wide-open-throttle torque. Sits INSIDE
@@ -81,7 +85,9 @@ export interface DrivetrainState {
 	/** -1 reverse, 0 neutral, 1…6. */
 	gear: number;
 	rpm: number;
-	/** 0 = clutch on the floor (mid-shift), 1 = fully home. */
+	/** 0 = clutch on the floor, 1 = fully home AND biting — the pedal's position
+	 *  times the disc's bite, which are two different things (see `step`). Mid-
+	 *  shift it rides the engagement ramp rather than snapping 0 → 1. */
 	clutch: number;
 	/** 0…1 — how LIT the driven tyres are: wheel overspeed over the spec's
 	 *  `fullSlipSpeed`, so 1 is a tyre doing nothing but smoke. Feeds lateral
@@ -134,6 +140,21 @@ const AUTO_REST_SPEED = 1.5;
  *  save itself; what it may not do is undo its own decision on a twitch. */
 const AUTO_UPSHIFT_LOCK = 4;
 
+/** Cornering effort (`DriveInput.cornering`) over which the automatic holds the
+ *  gear it is in. A shift mid-corner is a torque cut and then a torque step into
+ *  an axle that is already spending its grip sideways — the one moment a box
+ *  should keep its hands to itself. Downshifts are still allowed: they are how
+ *  you get drive back on the way out. */
+const AUTO_CORNER_HOLD = 0.55;
+
+/** Wheelspin over which the automatic will not UPSHIFT. Re-engaging onto a
+ *  spinning axle at a lower ratio is how an automatic turns a small slide into a
+ *  big one. */
+const AUTO_SLIP_HOLD = 0.25;
+
+/** rad/s per rpm — the crank-speed conversion the clutch shock is computed in. */
+const RAD_PER_RPM = (2 * Math.PI) / 60;
+
 export type Drivetrain = ReturnType<typeof createDrivetrain>;
 
 export function createDrivetrain(spec: CarSpec) {
@@ -183,6 +204,10 @@ export function createDrivetrain(spec: CarSpec) {
 	/** 0…1 — the automatic's smoothed pedal DEMAND, which is what its schedule
 	 * interpolates across. The raw pedal is a key. */
 	let autoDemand = 0;
+	/** Last step's raw pedal, for the automatic's KICKDOWN edge. Separate from
+	 * `autoDemand` on purpose: the smoothing is what makes the schedule mean
+	 * something, and the edge is what makes a stab mean something. */
+	let prevAutoThrottle = false;
 	/** s left on the lock an automatic UPSHIFT puts on the gear it just picked
 	 * (`AUTO_UPSHIFT_LOCK`). Separate from `autoHold`, which is every shift's
 	 * settle: this one is only against changing the box's own mind back. */
@@ -242,12 +267,44 @@ export function createDrivetrain(spec: CarSpec) {
 	 * section for the schedule and the three rules (lug-rpm upshift guard,
 	 * anti-hunt downshift margin, stopped-means-1st).
 	 */
-	function autoShift(dt: number, speedMs: number, throttle: number): void {
+	function autoShift(dt: number, speedMs: number, throttle: number, input: DriveInput): void {
 		autoDemand += (throttle - autoDemand) * damp(hw.autoDemandRate, dt);
 		autoHold = Math.max(0, autoHold - dt);
 		autoUpLock = Math.max(0, autoUpLock - dt);
-		// Not in a forward gear, mid-shift, or still settling — the box waits.
-		if (state.gear < 1 || shiftTimer > 0 || autoHold > 0) return;
+		// The pedal going DOWN is an instruction, not a data point — the rising edge
+		// is the kickdown request (see below). Latched here, before any early
+		// return, or a stab during the settle after a shift is simply lost.
+		const stab = throttle > 0 && !prevAutoThrottle;
+		prevAutoThrottle = throttle > 0;
+
+		const [upLifted, upWot] = hw.autoUpshiftRpm;
+		const [downLifted, downWot] = hw.autoDownshiftRpm;
+		const upRpm = upLifted + (upWot - upLifted) * autoDemand;
+		const downRpm = downLifted + (downWot - downLifted) * autoDemand;
+
+		// Not in a forward gear or mid-shift: the box has nothing to say.
+		if (state.gear < 1 || shiftTimer > 0) return;
+
+		// ── KICKDOWN ────────────────────────────────────────────────────────
+		// The smoothed demand takes about a second to reach the wide-open half of
+		// the schedule, which is exactly right for deciding when to change UP and
+		// useless as an answer to "I want to overtake, now": by the time the demand
+		// agrees, the moment is gone. So the pedal's rising edge asks the WIDE-OPEN
+		// downshift question directly (`autoDownshiftRpm`'s second number, the
+		// number that already means kickdown), and asks it THROUGH the settle timer
+		// and the upshift lock — a driver flooring it has overruled both. Every
+		// other refusal still applies: it goes through `requestShift`, and the
+		// anti-hunt margin below is repeated here so a kickdown cannot land the box
+		// straight back at its own upshift point.
+		if (stab && state.gear > 1 && state.rpm <= downWot) {
+			if (rpmInGear(spec, state.gear - 1, speedMs) <= upWot * AUTO_HUNT_MARGIN) {
+				requestShift(-1, speedMs);
+				return;
+			}
+		}
+
+		// Still settling after a shift — the box waits.
+		if (autoHold > 0) return;
 
 		// STOPPED: the box is in 1, whatever the revs say, and it goes there
 		// directly rather than a gear at a time. The rpm schedule alone does not
@@ -259,19 +316,31 @@ export function createDrivetrain(spec: CarSpec) {
 			return;
 		}
 
-		const [upLifted, upWot] = hw.autoUpshiftRpm;
-		const [downLifted, downWot] = hw.autoDownshiftRpm;
-		const upRpm = upLifted + (upWot - upLifted) * autoDemand;
-		const downRpm = downLifted + (downWot - downLifted) * autoDemand;
+		// ── When the box may NOT change up ──────────────────────────────────
+		// All three are the same rule seen three ways: an upshift is a torque cut
+		// followed by a torque step, and there are moments when the car cannot
+		// absorb one. Under BRAKING it is about to need the lower gear anyway;
+		// mid-CORNER the tyres are already spending their budget sideways; mid-
+		// SLIDE, re-engaging onto a spinning axle is how a twitch becomes a spin.
+		// None of them block a DOWNSHIFT — that is how drive comes back.
+		const holdGear =
+			input.backward || input.cornering > AUTO_CORNER_HOLD || state.slip > AUTO_SLIP_HOLD;
 
-		if (state.rpm >= upRpm && state.gear < topGear(spec)) {
+		if (!holdGear && state.rpm >= upRpm && state.gear < topGear(spec)) {
 			if (rpmInGear(spec, state.gear + 1, speedMs) >= hw.lugRpm) {
 				requestShift(1, speedMs);
 				autoUpLock = hw.autoShiftHold * AUTO_UPSHIFT_LOCK;
 			}
 			return;
 		}
-		if (state.rpm <= downRpm && state.gear > 1) {
+		// ON THE BRAKES the box comes down on the KICKDOWN schedule instead of the
+		// coast-down one. Lifted, `downRpm` is 1300 — a gentle walk down the gears
+		// as the car rolls to a stop, which is right for coasting and wrong for
+		// braking: the driver is slowing for something and wants the gear they will
+		// need on the way out, plus the engine braking on the way in. The anti-hunt
+		// margin below is what stops that being a money shift.
+		const downNow = input.backward ? Math.max(downRpm, downWot) : downRpm;
+		if (state.rpm <= downNow && state.gear > 1) {
 			// Freshly upshifted: the only downshift allowed is the one that saves the
 			// engine from lugging, i.e. the LIFTED end of the schedule.
 			if (autoUpLock > 0 && state.rpm > downLifted) return;
@@ -314,18 +383,45 @@ export function createDrivetrain(spec: CarSpec) {
 		// In manual the demand tracks the pedal exactly, so switching INTO auto
 		// mid-corner starts from the pedal you are actually holding rather than
 		// spending a second catching up to it.
-		if (input.auto) autoShift(dt, speedMs, throttle);
-		else autoDemand = throttle;
+		if (input.auto) autoShift(dt, speedMs, throttle, input);
+		else {
+			autoDemand = throttle;
+			prevAutoThrottle = throttle > 0;
+		}
 
 		// ── Clutch & engine speed ────────────────────────────────────────────
 		shiftTimer = Math.max(0, shiftTimer - dt);
 		const ratio = gearRatio(spec, state.gear);
 		const total = totalRatio(spec, state.gear);
-		const connected = ratio !== 0 && shiftTimer === 0;
+		const inGear = ratio !== 0;
 
-		if (!connected) {
-			// Neutral or mid-shift: the engine is on its own. Blipping the throttle
-			// during a shift actually does something, which is the point.
+		// THE CLUTCH PEDAL across a shift. It used to be a dead cut — zero torque
+		// for the whole `shiftTime`, then full torque on the same step the timer
+		// hit zero — and a shift felt like a mute button followed by a kick. What a
+		// clutch actually does is come OUT fast and go back IN progressively, so
+		// that is what this is: `clutchOpen` of the window on the floor, then a
+		// smoothstep back up. The torque the car feels builds over that ramp, which
+		// is where a shift gets its bite, and the rev mismatch left at the moment
+		// of engagement becomes the SHOCK below.
+		const shiftPhase = shiftTimer > 0 ? (hw.shiftTime - shiftTimer) / hw.shiftTime : 1;
+		const engaging = clamp((shiftPhase - hw.clutchOpen) / (1 - hw.clutchOpen), 0, 1);
+		const shiftPedal = engaging * engaging * (3 - 2 * engaging);
+
+		/** How locked the crank is to the road, 0…1 — what the REVS follow, and
+		 *  what engine braking is scaled by (an open clutch transmits none). */
+		let lock = 0;
+		/** Clutch PEDAL position, 0 = floor … 1 = home. Separate from the disc's
+		 *  bite below — a launch dumps the pedal while the disc slips. */
+		let pedal = 0;
+		/** Fraction of crank torque the clutch actually passes: pedal × bite. */
+		let pass = 0;
+		/** The rpm this gear imposes at this road speed — the rev-match target, and
+		 *  the speed the disc is biting onto. */
+		let gearRpm = 0;
+
+		if (!inGear) {
+			// Neutral: the engine is on its own. Blipping the throttle actually does
+			// something, which is the point.
 			state.clutch = 0;
 			state.launch = 0;
 			const free = hw.idleRpm + throttle * (hw.limiterRpm - hw.idleRpm);
@@ -360,7 +456,22 @@ export function createDrivetrain(spec: CarSpec) {
 				state.launchTier = launchHold >= 5500 ? 2 : launchHold >= 5000 ? 1 : 0;
 			}
 			if (launchHold === 0) launchAnnounced = false;
-			state.clutch = launchHold > 0 ? Math.max(coupling, launchQ) : coupling;
+
+			// THE DISC'S BITE AND THE PEDAL'S POSITION ARE DIFFERENT THINGS, and a
+			// launch is exactly where that shows: the pedal is DUMPED while the disc
+			// slips like mad. `bite` is the old clutch-slip model (how hard the disc
+			// is clamped, `clutchMinBite`→1); `pedal` is the shift ramp above, which
+			// a rev-match launch dumps in proportion to depth in the window — so the
+			// deeper the catch, the faster the clutch comes home, which is what
+			// dumping a clutch IS.
+			const bite = launchHold > 0 ? Math.max(coupling, launchQ) : coupling;
+			pedal = launchHold > 0 ? Math.max(shiftPedal, launchQ) : shiftPedal;
+			lock = coupling * pedal;
+			// A fully slipping disc still passes `clutchMinBite`; a pedal on the
+			// floor passes NOTHING. The old dead cut had no pedal at all, so
+			// `clutchMinBite` was the whole story and mid-shift was a special case.
+			pass = pedal * (hw.clutchMinBite + (1 - hw.clutchMinBite) * bite);
+			state.clutch = pedal * bite;
 			// The tyres' chirp reads the boost: full through the drop, easing off
 			// with the tail into 1st.
 			state.launch = launchBoost;
@@ -369,11 +480,33 @@ export function createDrivetrain(spec: CarSpec) {
 			// revs climb even though the car is not. It is a real wheel speed, so this
 			// is just the gearing — a donut on the limiter is 12 m/s of spin over a
 			// 4 m/s car, and the tacho says so.
-			const gearRpm = rpmInGear(spec, state.gear, speedMs + state.spin);
-			const slipping =
-				launchHold > 0 ? launchHold : hw.idleRpm + throttle * (hw.launchRpm - hw.idleRpm);
-			const target = Math.max(hw.idleRpm, gearRpm, gearRpm * coupling + slipping * (1 - coupling));
-			state.rpm += (target - state.rpm) * damp(hw.rpmResponse, dt);
+			gearRpm = rpmInGear(spec, state.gear, speedMs + state.spin);
+			if (shiftTimer > 0 && launchHold === 0) {
+				// MID-SHIFT: the clutch is off the floor, so the engine is free — and
+				// two things are asking it for a speed. The PEDAL (free-rev, as
+				// before: blipping during a shift still does something) and the BOX,
+				// which is pulling the engine onto the speed the gear it is going into
+				// will impose. That second pull is the REV MATCH — the blip on a
+				// downshift and the drop on an upshift — and it matters more here than
+				// in a real car, because the throttle is a KEY: a driver who never
+				// lifts would otherwise re-engage every single upshift straight off
+				// the limiter. Whatever mismatch `revMatchRate` fails to close by the
+				// time the disc bites is the SHOCK the car feels (below): a clean
+				// match is silent, a lazy one kicks.
+				const free = hw.idleRpm + throttle * (hw.limiterRpm - hw.idleRpm);
+				const rate = throttle > 0 ? hw.freeRevRate : hw.freeDropRate;
+				state.rpm += (free - state.rpm) * damp(rate, dt);
+				state.rpm += (Math.max(hw.idleRpm, gearRpm) - state.rpm) * damp(hw.revMatchRate, dt);
+			} else {
+				const slipping =
+					launchHold > 0 ? launchHold : hw.idleRpm + throttle * (hw.launchRpm - hw.idleRpm);
+				const target = Math.max(
+					hw.idleRpm,
+					gearRpm,
+					gearRpm * coupling + slipping * (1 - coupling)
+				);
+				state.rpm += (target - state.rpm) * damp(hw.rpmResponse, dt);
+			}
 		}
 
 		// ── Fuel cut: rev limiter and the top-speed governor ─────────────────
@@ -386,7 +519,7 @@ export function createDrivetrain(spec: CarSpec) {
 
 		// ── Crank torque → wheel force ───────────────────────────────────────
 		let crankTorque = 0;
-		if (connected) {
+		if (inGear) {
 			// Lugging: below `lugRpm` the engine can't make its curve.
 			const lug = clamp(state.rpm / hw.lugRpm, 0.35, 1);
 			// Nitrous multiplies the WOT term only — a fuel cut still cuts and engine
@@ -397,16 +530,53 @@ export function createDrivetrain(spec: CarSpec) {
 				lug *
 				(1 + hw.nitrousTorqueGain * input.nitrous) *
 				(1 + hw.launchTorqueGain * launchBoost);
-			const drag = engineBrakeTorque(spec, state.rpm);
-			crankTorque = cut ? -drag : throttle * wot - (1 - throttle) * drag;
+			// ENGINE BRAKING NEEDS A CLOSED CLUTCH, hence the `lock`. It is also what
+			// stopped a car rolling to a stop in gear from being dragged backwards
+			// through zero by an engine it was barely connected to any more.
+			const drag = engineBrakeTorque(spec, state.rpm) * lock;
+			// CREEP — the other half of the same fact. A slipping disc DRAGS, and at
+			// idle that drag is what a real car pulls away on before the throttle has
+			// said anything: slot 1st (or R) and it walks. It fades out as the clutch
+			// homes (`1 - lock`) and again with road speed (`creepSpeed`), so it is a
+			// walking pace, not a launch — and the gearing does the rest for free,
+			// since the same crank torque through 6th barely moves the car.
+			// THE BRAKE BEATS CREEP, and it has to be settled here rather than by
+			// out-pushing it downstream: the brake force only exists above 0.05 m/s
+			// (`resist`'s gate), so a creep torque that survived the pedal would
+			// walk the car off the line in 0.05 m/s hops that the brake could only
+			// ever answer after the fact.
+			const creep =
+				input.backward || input.handbrake
+					? 0
+					: hw.creepTorque * (1 - lock) * (1 - throttle) * clamp(1 - rolling / hw.creepSpeed, 0, 1);
+			crankTorque = cut ? -drag : throttle * wot - (1 - throttle) * drag + creep;
 		}
+
+		// ── The clutch-drop SHOCK ────────────────────────────────────────────
+		// A disc biting onto a crank that is turning at the wrong speed drags the
+		// two together, and the CAR feels the reaction: the engine's own inertia,
+		// over the time the clutch has to swallow the mismatch. Engine faster than
+		// the gear — a downshift dumped on high revs — shoves the car forward;
+		// slower — an upshift re-engaged from the limiter, or a lazy downshift — is
+		// the engine-braking kick. It rides the same road as every other crank
+		// torque (through the clutch, the gearing and the TRACTION LIMIT), so a big
+		// enough mismatch chirps the tyres instead of teleporting the car, which is
+		// exactly what dumping a clutch does. A launch is excluded: it has its own
+		// model (the plant and the boost), and counting both would be one drop paid
+		// for twice.
+		if (inGear && shiftTimer > 0 && shiftPedal > 0 && launchHold === 0) {
+			const snapTime = Math.max(hw.shiftTime * (1 - hw.clutchOpen), 1e-3);
+			crankTorque +=
+				(hw.clutchShock * hw.engineInertia * (state.rpm - gearRpm) * RAD_PER_RPM) / snapTime;
+		}
+
 		// A slipping clutch transmits less than the crank makes — without this the car
 		// launched off the line at the full traction limit and ran 0-60 in 5.2 s
 		// against the real GR86's 6.1. It is also what stops the car lurching when you
-		// blip the throttle at walking pace.
-		const clutchTorque = hw.clutchMinBite + (1 - hw.clutchMinBite) * state.clutch;
+		// blip the throttle at walking pace. `pass` carries the shift pedal now too,
+		// so this one number is the whole of "how much of the engine reaches the road".
 		const reduction = (total * hw.efficiency) / hw.wheelRadius;
-		const requested = crankTorque * clutchTorque * reduction * Math.sign(ratio || 1);
+		const requested = crankTorque * pass * reduction * Math.sign(ratio || 1);
 
 		// ── Traction at the driven axle ──────────────────────────────────────
 		// Static driven-axle load plus longitudinal transfer (m·a·h/L, and m·a is
@@ -435,8 +605,13 @@ export function createDrivetrain(spec: CarSpec) {
 		// gearing squared: ~460 kg in 1st against ~95 in 3rd. That single number is
 		// why 1st lights up in a blink, 2nd builds over a couple of seconds, and 3rd
 		// (which cannot out-pull the tyre anyway) never spins.
+		// Weighted by the clutch PEDAL: the crank's inertia only reaches the wheels
+		// through a clutch that is in. On the floor it is the axle alone (which is
+		// what the old dead cut modelled by excluding it outright), home it is the
+		// full reflected figure — the ends are unchanged and the ramp between them
+		// is new.
 		const spinMass =
-			((connected ? hw.engineInertia * total * total : 0) + hw.wheelInertia) /
+			((inGear ? hw.engineInertia * total * total * pedal : 0) + hw.wheelInertia) /
 			(hw.wheelRadius * hw.wheelRadius);
 		const wasSpin = state.spin;
 		state.spin += ((requested - driveForce) / spinMass) * dt;
@@ -544,6 +719,7 @@ export function createDrivetrain(spec: CarSpec) {
 		autoHold = 0;
 		autoDemand = 0;
 		autoUpLock = 0;
+		prevAutoThrottle = false;
 	}
 
 	return { state, step, idle, reset };

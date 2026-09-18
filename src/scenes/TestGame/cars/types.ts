@@ -128,8 +128,35 @@ export type CarSpec = {
 		finalDrive: number;
 		/** Driveline efficiency, crank torque → wheel torque. */
 		efficiency: number;
-		/** s — clutch-out time per shift. Torque is cut for the whole window. */
+		/** s — the whole shift window: pedal down, gear swapped, pedal back up. */
 		shiftTime: number;
+		/** Fraction of `shiftTime` the clutch spends FULLY OPEN before it starts
+		 *  coming back; the rest is the progressive re-engagement (smoothstepped).
+		 *  A clutch comes out fast and goes back in slowly, and the ramp is where a
+		 *  shift gets its bite — the whole window used to be a dead torque cut,
+		 *  which read as a mute button followed by a kick. */
+		clutchOpen: number;
+		/** 1/s — how hard the box pulls the engine onto the NEXT gear's speed while
+		 *  the clutch is open: the blip on a downshift, the drop on an upshift.
+		 *  Bigger is a cleaner box; whatever it fails to close is the shock below.
+		 *  It matters more here than in a real car because the throttle is a KEY —
+		 *  nothing makes a keyboard driver lift for an upshift. */
+		revMatchRate: number;
+		/** How much of the clutch-drop SHOCK the car feels, 0 = none, 1 = the raw
+		 *  physical figure (the engine's inertia over the engagement time). The
+		 *  weight a downshift has. It passes through the traction limit like any
+		 *  other torque, so a big mismatch chirps the tyres rather than teleporting
+		 *  the car. */
+		clutchShock: number;
+		/** Nm at the crank that a SLIPPING clutch drags the car with at idle — what
+		 *  a real car creeps away on before the throttle says anything. Fades as the
+		 *  clutch homes and as the car reaches `creepSpeed`; the gearing does the
+		 *  rest (the same torque through 6th barely moves the car). 0 turns creep
+		 *  off, and with it the car parks itself the moment you stop steering. */
+		creepTorque: number;
+		/** m/s at which creep has faded to nothing — where an idling car in gear
+		 *  stops accelerating. Walking-to-jogging pace on a real car. */
+		creepSpeed: number;
 
 		/** rpm the AUTOMATIC upshifts at, `[lifted, wide open]` — the shift
 		 *  schedule, interpolated across pedal demand. A car fact like the gears
@@ -208,9 +235,18 @@ export type CarSpec = {
 		/** Fraction of the road's per-corner height difference the body follows.
 		 *  1.0 is a body that tracks camber exactly. */
 		roadFollow: number;
-		/** m — cap on the road-follow term, so a kerb strike or a wall of a hit
-		 *  cannot throw the model at an angle the car never reaches. */
+		/** m — cap on the road-follow term's WARP mode (one wheel on a kerb, the
+		 *  diagonal a rigid body cannot express anyway), so a kerb strike cannot
+		 *  throw the model at an angle the car never reaches. NOT the slope cap —
+		 *  that is `slopeMax`; capping them together held the body flat on hills. */
 		roadMax: number;
+		/** m — cap on the road-follow term's PITCH and ROLL modes, i.e. on the
+		 *  SURFACE the four wheels are standing on. A safety rail rather than a
+		 *  feel knob (the car should sit on a hill, not lean off it): it works out
+		 *  as `atan(2·slopeMax / wheelbase)` of pitch and `atan(slopeMax /
+		 *  halfTrack)` of roll, so the same number buys more camber than gradient —
+		 *  which is the right way round for a road. */
+		slopeMax: number;
 		/** 1/s² — visual spring rate: how fast the body chases an attitude. */
 		springK: number;
 		/** Visual spring damping ratio. Under 1 so the body bobs into place;

@@ -42,6 +42,23 @@ const DRIFT_GATE_RAMP = 2;
  *  step: one wheel dropping off a kerb must not kick a quarter of the grip out
  *  inside one physics step. */
 const CONTACT_RATE = 30;
+/**
+ * m/s — below this the car counts as STOPPED and the tyres' static friction
+ * takes over from the rolling model.
+ *
+ * It exists because the rolling model has nothing to say down here and that was
+ * a real bug, not a rounding one: `resistForce` is gated on `rolling > 0.05`,
+ * the sideways bleed's cap goes to zero with the corner, `linearDamping` is 0 on
+ * the body by design (drag and rolling resistance are modelled, and damping
+ * would count them twice), and the parked branch below used to hand the body
+ * back with whatever velocity it still had. So a car that came to a stop kept
+ * GLIDING in its last direction — under Rapier's own sleep threshold it never
+ * even settled — while the branch published `speedMs = 0` and the wheels stood
+ * still. A car sliding on stationary wheels is the one thing tyres never do.
+ */
+const REST_SPEED = 0.35;
+/** The same threshold in world units, squared — what the parked test measures. */
+const REST_VEL_SQ = (REST_SPEED * UNITS_PER_METER) ** 2;
 
 // Nitrous: Shift sprays with the throttle open in a forward gear, purges
 // (vents at the hood) with that gate shut. Kit hardware is the spec's
@@ -73,23 +90,59 @@ export function createCarController(spec: CarSpec, world: World) {
 	 *  Everything the TYRES do is scaled by these: drive, brakes, yaw, grip. */
 	let contactFront = 1;
 	let contactRear = 1;
+	/** 0..1 — how hard the car was cornering LAST step (the loosest of the lateral
+	 *  load and the slip angle). The automatic reads it through `DriveInput`: a box
+	 *  that changes gear in the middle of a corner unsettles the car. One step
+	 *  stale by construction — the cornering model runs after the drivetrain. */
+	let cornering = 0;
 
 	/**
 	 * Clear Rapier's force accumulator and immediately re-apply what holds the
-	 * car up (the suspension's rays — see CLAUDE.md's colliders section). Every
-	 * early return below goes through here. `wake` is passed through: the idle
-	 * branch must not wake a sleeping body just to hold up one already resting.
-	 * The rays just ran, so this is also where the ground contact is refreshed.
+	 * car up (the suspension's rays — see CLAUDE.md's colliders section). Called
+	 * ONCE per step, early, because everything downstream now reads the ground
+	 * those rays found (`suspension.groundNormal`) and a step-stale plane would
+	 * point the drive force at last step's hill. `wake` is passed through: the
+	 * parked and startup paths must not wake a sleeping body just to hold up one
+	 * already resting.
+	 *
+	 * Ground contact is the rays' LOAD SHARE, not a count of which rays hit
+	 * anything. The binary version deleted a quarter of the car's grip the moment
+	 * one wheel went light over a crest — but the springs still have to carry the
+	 * whole car, so that corner's load has already MOVED to the others: a lifted
+	 * front wheel reads ~0.95 here where the count read 0.5. Clamped at 1, so a
+	 * loaded corner never hands out more grip than the tune was built on.
 	 */
 	function resetForces(body: RapierRigidBody, wake: boolean, delta: number): void {
 		body.resetForces(wake);
 		suspension.step(body, world);
-		const g = suspension.grounded;
 		const k = damp(CONTACT_RATE, delta);
-		contactFront += (((g[0] ? 1 : 0) + (g[1] ? 1 : 0)) / 2 - contactFront) * k;
-		contactRear += (((g[2] ? 1 : 0) + (g[3] ? 1 : 0)) / 2 - contactRear) * k;
+		const front = clamp((suspension.loadShare(0) + suspension.loadShare(1)) / 2, 0, 1);
+		const rear = clamp((suspension.loadShare(2) + suspension.loadShare(3)) / 2, 0, 1);
+		contactFront += (front - contactFront) * k;
+		contactRear += (rear - contactRear) * k;
 		carSim.contactFront = contactFront;
 		carSim.contactRear = contactRear;
+	}
+
+	/**
+	 * THE STATIC FRICTION at a standstill, applied to the working velocity
+	 * `_vel` — the tyres' answer to "the car is stopping", which the rolling model
+	 * cannot give (see `REST_SPEED`). Takes out as much HORIZONTAL velocity as a
+	 * tyre at `mu` could in this step and never a millimetre per second more, so
+	 * it can only ever bring the car to rest — never reverse it, never snap it.
+	 *
+	 * The horizontal component only: the vertical is the springs settling, and
+	 * grabbing that would fight gravity. It is also what HOLDS the car on a hill
+	 * now that the springs push along the ground normal — a slope up to `mu` is
+	 * held exactly, and anything steeper rolls away, which is what a tyre does.
+	 */
+	function restGrip(delta: number, mu: number): void {
+		const h = Math.hypot(_vel.x, _vel.z);
+		if (h < 1e-6) return;
+		const grab = mu * G * UNITS_PER_METER * delta;
+		const keep = grab >= h ? 0 : (h - grab) / h;
+		_vel.x *= keep;
+		_vel.z *= keep;
 	}
 
 	// Nitrous + startup state — the scene used to own these locals.
@@ -152,6 +205,8 @@ export function createCarController(spec: CarSpec, world: World) {
 		const ignOn = carIgnition.on;
 		const throttle = ignOn && carControls.pressed('throttle');
 		const brake = ignOn && carControls.pressed('brake');
+		const shiftUp = ignOn && carControls.pressed('shiftUp');
+		const shiftDown = ignOn && carControls.pressed('shiftDown');
 
 		// Reset the startup timer when ignition cuts — a mid-startup N press aborts
 		// the rev sequence instantly.
@@ -193,6 +248,31 @@ export function createCarController(spec: CarSpec, world: World) {
 		_forward.set(0, 0, -1).applyQuaternion(_q); // model nose is -Z
 		_right.set(1, 0, 0).applyQuaternion(_q);
 
+		// ── The ground, once, before anything reads it ───────────────────────
+		// Startup and rest both hold the car still, and neither may WAKE a body
+		// that is already asleep. A car in gear with the engine running is NOT at
+		// rest even with nothing pressed — the clutch creeps it (drivetrain.ts), so
+		// "hands off" only means parked in N or with the engine off.
+		const starting = ignOn && !carIgnition.ready;
+		const handsOff =
+			steerKey === 0 && !handbrake && !throttle && !brake && !shiftUp && !shiftDown;
+		const creepable = ignOn && carIgnition.ready && drivetrain.state.gear !== 0 && hw.creepTorque > 0;
+		const resting = handsOff && !creepable && _vel.lengthSq() < REST_VEL_SQ;
+		resetForces(body, !(resting || starting), delta);
+
+		// ── The car drives on the SURFACE, not on the horizon ────────────────
+		// The body cannot pitch or roll (`enabledRotations`), so its own axes stay
+		// horizontal however steep the ground is — and a drive force along a
+		// horizontal nose pushes INTO a hill rather than up it. Both axes are
+		// projected into the plane the springs just measured, which is what puts
+		// the thrust, the brakes and the sideways bleed where the tyres actually
+		// are and makes `speedMs` the speed along the ROAD. Safe to normalise:
+		// the plane is capped at 60° from horizontal (suspension's MIN_NORMAL_Y),
+		// so a horizontal axis keeps at least half its length in it.
+		const ground = suspension.groundNormal;
+		_forward.addScaledVector(ground, -_forward.dot(ground)).normalize();
+		_right.addScaledVector(ground, -_right.dot(ground)).normalize();
+
 		const vForward = _vel.dot(_forward);
 		const vLateral = _vel.dot(_right);
 		const speedMs = vForward / UNITS_PER_METER;
@@ -213,8 +293,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		// Ignition on but the turnon sound hasn't finished yet: the RPM ramps to
 		// ~2000 (a realistic crank-and-fire) then settles back to idle. No drive
 		// force, no shifting — the car stays put until `ready`.
-		if (carIgnition.on && !carIgnition.ready) {
-			resetForces(body, false, delta);
+		if (starting) {
 			// Rev to 2000 over ~0.4 s, then decay back to idle over ~0.8 s.
 			// Using a simple timer that counts up from 0; the turnon sound is ~1.2 s.
 			startupTimer += delta;
@@ -254,19 +333,22 @@ export function createCarController(spec: CarSpec, world: World) {
 			return;
 		}
 
-		// Parked and untouched → hands off, so the body can sleep. resetForces(false)
-		// first: rapier forces persist until cleared, and waking the body to clear them
-		// would defeat the point. Q/E count as input even though they move nothing —
-		// the gearbox is the drivetrain's, and it only advances inside `step()`.
-		const idle =
-			steerKey === 0 &&
-			!handbrake &&
-			!throttle &&
-			!brake &&
-			!carControls.pressed('shiftUp') &&
-			!carControls.pressed('shiftDown');
-		if (idle && _vel.lengthSq() < 0.25) {
-			resetForces(body, false, delta);
+		// Parked and untouched → hands off, so the body can sleep. The rays and the
+		// force reset already ran above (with `wake` false: rapier forces persist
+		// until cleared, and waking the body to clear them would defeat the point).
+		// Q/E count as input even though they move nothing — the gearbox is the
+		// drivetrain's, and it only advances inside `step()`.
+		if (resting) {
+			// THE TYRES ARE STILL THERE WHEN YOU STOP TOUCHING THE PEDALS. This
+			// branch used to hand the body straight back, which is why a car that
+			// had stopped went on gliding in its last direction for ever: nothing
+			// in it was ever going to remove that velocity, and `speedMs = 0`
+			// below meant the wheels did not even turn while it happened. The
+			// static friction takes it out (and holds the car on any slope up to
+			// the tyre's own μ), then the body settles under Rapier's sleep
+			// threshold instead of drifting under it.
+			restGrip(delta, tune.tireMuLong);
+			body.setLinvel(_vel, false);
 			if (ignOn) {
 				drivetrain.idle(delta);
 				carSim.rpm = drivetrain.state.rpm;
@@ -274,7 +356,11 @@ export function createCarController(spec: CarSpec, world: World) {
 				// Engine off — sharp drop to 0, not idling.
 				carSim.rpm += (0 - carSim.rpm) * damp(hw.freeDropRate * 1.5, delta);
 			}
-			carSim.speedMs = 0;
+			// The speed the car IS doing, not a zero: the wheels render this, and a
+			// car still settling the last centimetres of a stop must roll them.
+			// (`speedMs` is pre-friction, i.e. this step's reading — the tyre takes
+			// it out on the way to Rapier, and next step reads the result.)
+			carSim.speedMs = speedMs;
 			carSim.gear = drivetrain.state.gear;
 			carSim.slip = 0;
 			carSim.drift = 0;
@@ -309,17 +395,19 @@ export function createCarController(spec: CarSpec, world: World) {
 				forward: throttle,
 				backward: brake,
 				handbrake,
-				shiftUp: ignOn && carControls.pressed('shiftUp'),
-				shiftDown: ignOn && carControls.pressed('shiftDown'),
+				shiftUp,
+				shiftDown,
 				// The gearbox SWITCH, read fresh like the tune — the box may change
 				// its mind about who shifts halfway through a corner.
 				auto: ignOn && carGearbox.mode === 'auto',
-				nitrous: nitrousFlow
+				nitrous: nitrousFlow,
+				// Last step's cornering effort — the automatic holds its gear through
+				// a corner rather than unsettling the car mid-bend.
+				cornering
 			},
 			tune
 		);
 
-		resetForces(body, true, delta);
 		// How much tyre is on the road: drive through the driven axle(s), brakes +
 		// rolling resistance through all four, the cornering model below likewise.
 		const contact = (contactFront + contactRear) / 2;
@@ -396,6 +484,21 @@ export function createCarController(spec: CarSpec, world: World) {
 		const latLoad = bleedLimit > 0 ? clamp(Math.abs(settle) / bleedLimit, 0, 1) : 0;
 		const bleed = clamp(settle, -bleedLimit, bleedLimit);
 		_vel.addScaledVector(_right, -bleed);
+		// The last metre of a stop is the TYRES', not the rolling model's — see
+		// `REST_SPEED`. Below it, with nothing asking the car to move, static
+		// friction puts the remaining velocity down INCLUDING its sideways half,
+		// which is the difference between coming to a stop and coming to a stop
+		// still sliding.
+		//
+		// "Nothing asking" is the whole condition and it is measured off the DRIVE
+		// FORCE, not off the throttle key: the clutch creeps an idling car in gear
+		// (drivetrain's `creep`), and a rest friction that ignored that would pin
+		// the car to the ground and quietly delete creep — the two would fight
+		// every step, one of them always winning by exactly one step's worth.
+		// Rolling resistance is the yardstick for "not being driven" because it is
+		// what the car coasts against anyway.
+		const coasting = !throttle && Math.abs(out.driveForce) <= hw.rollingResistance;
+		if (coasting && absSpeed < REST_SPEED) restGrip(delta, tune.tireMuLong * contact);
 		body.setLinvel({ x: _vel.x, y: _vel.y, z: _vel.z }, true);
 
 		// The suspension's input: the model's OWN accelerations, not a finite
@@ -455,6 +558,11 @@ export function createCarController(spec: CarSpec, world: World) {
 		carSim.yawRate = ang.y;
 		carSim.velLat = vLateral / UNITS_PER_METER;
 
+		// What the automatic reads NEXT step — the loosest of "this corner is
+		// using the tyre" and "the car is already at an angle". Both are already
+		// computed; this only latches them.
+		cornering = clamp(Math.max(latLoad, Math.abs(beta) / tune.maxDriftAngle), 0, 1);
+
 		publishCarHud(delta, suspension);
 	}
 
@@ -500,6 +608,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		startupTimer = 0;
 		contactFront = 1;
 		contactRear = 1;
+		cornering = 0;
 	}
 
 	return { step, restart, park, drivetrain, suspension };

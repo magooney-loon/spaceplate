@@ -39,6 +39,7 @@ export function createSuspension(spec: CarSpec) {
 	const ROAD_MAX = s.roadMax * UPM;
 	const SPRING_K = s.springK;
 	const SPRING_ZETA = s.springZeta;
+	const SLOPE_MAX = s.slopeMax * UPM;
 
 	// ── Ray geometry (world units) ──────────────────────────────────────────────
 	// The ray starts ABOVE the hub, not at it: at full compression the hub itself
@@ -65,6 +66,16 @@ export function createSuspension(spec: CarSpec) {
 	/** Overshoot past the target clamp is allowed, but not indefinitely. */
 	const COMP_HARD_MIN = (COMP_MIN - ROAD_MAX) * 1.6;
 	const COMP_HARD_MAX = (COMP_MAX + ROAD_MAX) * 1.6;
+	/**
+	 * The steepest surface the springs will push ALONG. A spring force aimed at
+	 * the ground normal is what makes slopes real (the gravity-along-slope term
+	 * falls out of it — see `step`), but a trimesh edge, a barrier face or a kerb
+	 * cheek can hand back a near-horizontal normal, and firing 1290 kg along that
+	 * is a cannon, not a road. Flatter than 60° is a WALL: the tilt is capped, the
+	 * direction kept. The raw normal is still published for the fx (`normal`) —
+	 * only the FORCE is capped.
+	 */
+	const MIN_NORMAL_Y = 0.5;
 	/** s — a render delta longer than this is a tab-switch, not a slow frame. */
 	const MAX_STEP = 1 / 30;
 	/** World units — below this the pose has not visibly moved. */
@@ -105,8 +116,17 @@ export function createSuspension(spec: CarSpec) {
 		normal: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]),
 		/** Physical spring compression per corner, world units, ≥ 0. */
 		load: [0, 0, 0, 0],
-		/** Total upward force handed to Rapier last step (world force units). */
+		/** The VERTICAL component of the force handed to Rapier last step (world
+		 *  force units). Vertical rather than total because that is the reading
+		 *  that means something — it is what holds the car up, and on the flat it
+		 *  IS the total. The tangential rest is the slope term (`step`). */
 		force: 0,
+		/** The average GROUND NORMAL under the loaded corners, world space, unit —
+		 *  straight up when the car is airborne. The controller drives on it: the
+		 *  nose and the drive force are projected into this plane, so a car climbs
+		 *  a hill instead of pushing into it. Capped to `MIN_NORMAL_Y` like the
+		 *  force, so a barrier face cannot re-aim the drivetrain. */
+		groundNormal: new THREE.Vector3(0, 1, 0),
 
 		// ── Written by the VISUAL half ───────────────────────────────────────────
 		/** Per-corner body displacement, world units, + = that corner moved DOWN. */
@@ -136,6 +156,7 @@ export function createSuspension(spec: CarSpec) {
 		reset,
 		compressionRatio,
 		loadRatio,
+		loadShare,
 		groundY
 	};
 
@@ -144,6 +165,8 @@ export function createSuspension(spec: CarSpec) {
 	const _ray = new Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
 	const _patch = new THREE.Vector3();
 	const _bodyQ = new THREE.Quaternion();
+	/** Scratch for `capNormal` — tasks never allocate (core/utils/CLAUDE.md). */
+	const _dir = new THREE.Vector3();
 
 	/**
 	 * Cast the four rays, apply the summed spring force. Call AFTER the
@@ -152,6 +175,17 @@ export function createSuspension(spec: CarSpec) {
 	 * so a skipped step falls through onto the undertray. Takes no `delta`:
 	 * the force is a pure function of the current compression and vertical
 	 * velocity; Rapier does the integrating.
+	 *
+	 * THE FORCE IS AIMED AT THE GROUND NORMAL, not straight up, and that one
+	 * change is what makes slopes exist. Aimed UP it balanced gravity exactly on
+	 * any surface — both forces vertical, so their horizontal sum was zero
+	 * whatever the ground was doing: a hill cost nothing to climb, gave nothing
+	 * back going down, and a car left on one neither rolled away nor was held.
+	 * Aimed at the normal (the standard raycast-vehicle rule) the support is
+	 * `f·n`, whose tangential part IS the gravity-along-slope term — so the hill
+	 * pulls for real and the TYRES have to hold it (the controller's rest
+	 * friction and lateral bleed, both capped at μ·g, which is exactly the slope
+	 * a real tyre holds). On the flat `n` is `(0,1,0)` and nothing changed.
 	 */
 	function step(body: RapierRigidBody, world: World): void {
 		const t = body.translation();
@@ -168,7 +202,12 @@ export function createSuspension(spec: CarSpec) {
 		const k = weight / (4 * REST_SAG);
 		const c = 2 * DAMP_ZETA * Math.sqrt((k * mass) / 4);
 
-		let total = 0;
+		let totalX = 0;
+		let totalY = 0;
+		let totalZ = 0;
+		let nX = 0;
+		let nY = 0;
+		let nZ = 0;
 		for (let i = 0; i < 4; i++) {
 			_patch.set(patches[i][0], RAY_ORIGIN_Y, patches[i][1]).applyQuaternion(_bodyQ);
 			_ray.origin.x = t.x + _patch.x;
@@ -211,11 +250,49 @@ export function createSuspension(spec: CarSpec) {
 			// steps across a lip differentiates to a spike. A wheel is unsprung mass
 			// this model does not have anyway.
 			const f = k * load - c * vy;
-			if (f > 0) total += f;
+			if (f <= 0) continue;
+
+			// The direction, capped off the vertical (MIN_NORMAL_Y). `_dir` holds the
+			// capped normal; on the flat it is exactly (0, 1, 0).
+			capNormal(n[i * 3], n[i * 3 + 1], n[i * 3 + 2]);
+			totalX += f * _dir.x;
+			totalY += f * _dir.y;
+			totalZ += f * _dir.z;
+			// The plane the car is driving on, averaged over the corners that are
+			// actually CARRYING it — an unloaded ray's normal is not the road the
+			// tyres are on.
+			nX += _dir.x;
+			nY += _dir.y;
+			nZ += _dir.z;
 		}
 
-		suspension.force = total;
-		if (total > 0) body.addForce({ x: 0, y: total, z: 0 }, true);
+		// The averaged ground plane for the controller. Length 0 = airborne, and the
+		// only honest answer for a missing surface is straight up.
+		const nLen = Math.hypot(nX, nY, nZ);
+		if (nLen > 1e-6) suspension.groundNormal.set(nX / nLen, nY / nLen, nZ / nLen);
+		else suspension.groundNormal.set(0, 1, 0);
+
+		suspension.force = totalY;
+		if (totalY > 0) body.addForce({ x: totalX, y: totalY, z: totalZ }, true);
+	}
+
+	/** Cap a raw ground normal off the vertical into `_dir` — see MIN_NORMAL_Y.
+	 *  Keeps the direction it leans in, limits how far. */
+	function capNormal(x: number, y: number, z: number): void {
+		if (y >= MIN_NORMAL_Y) {
+			_dir.set(x, y, z);
+			return;
+		}
+		// A normal pointing DOWN is a flipped or back-facing triangle (the track's
+		// trimeshes are one-sided — CLAUDE.md's collider rules); there is no road
+		// under it, so the car rides on the vertical.
+		const h = Math.hypot(x, z);
+		if (y <= 0 || h < 1e-6) {
+			_dir.set(0, 1, 0);
+			return;
+		}
+		const lean = Math.sqrt(1 - MIN_NORMAL_Y * MIN_NORMAL_Y) / h;
+		_dir.set(x * lean, MIN_NORMAL_Y, z * lean);
 	}
 
 	/** Park the rays — nothing is grounded until the next physics step says so. */
@@ -242,6 +319,8 @@ export function createSuspension(spec: CarSpec) {
 	const _one = new THREE.Vector3(1, 1, 1);
 	const _hub = new THREE.Vector3();
 	const road = [0, 0, 0, 0];
+	/** Per-corner ray deviation from the mean — the input to the mode split below. */
+	const dev = [0, 0, 0, 0];
 
 	/**
 	 * Advance the visual springs and rebuild the pose. Call ONCE per rendered
@@ -265,12 +344,35 @@ export function createSuspension(spec: CarSpec) {
 			n++;
 		}
 		const meanDist = n > 0 ? sum / n : UNSPRUNG_DIST;
+		// Ground HIGHER under this wheel → shorter ray → the body rises there, and
+		// `comp` is body-DOWN, so the sign falls straight out of the distance.
+		// An airborne corner deviates by nothing rather than by a cliff.
 		for (let i = 0; i < 4; i++) {
-			// Ground HIGHER under this wheel → shorter ray → the body rises there, and
-			// `comp` is body-DOWN, so the sign falls straight out of the distance.
-			road[i] = suspension.grounded[i]
-				? clamp(ROAD_FOLLOW * (suspension.hitDist[i] - meanDist), -ROAD_MAX, ROAD_MAX)
-				: 0;
+			dev[i] = suspension.grounded[i] ? suspension.hitDist[i] - meanDist : 0;
+		}
+		// THE FOUR DEVIATIONS SPLIT EXACTLY INTO THREE MODES over a rectangle of
+		// patches — pitch (front vs rear), roll (side vs side) and WARP (the
+		// diagonal, which a rigid body cannot express and a real chassis absorbs in
+		// torsion). That split is the difference between following a HILL and
+		// following a KERB, and they want opposite treatment: the pitch and roll
+		// modes are the surface the car is standing on and it should sit on them
+		// fully (`SLOPE_MAX` is a safety rail at ~19°/30°, not a feel knob), while
+		// the warp is a single wheel on something and stays clamped at the old
+		// `ROAD_MAX`. Clamping them together — which is what a per-corner
+		// `clamp(dev, ±roadMax)` does — caps the SLOPE at the kerb limit: the car
+		// rendered 2° nose-up on a 10° climb and visibly floated out of the hill.
+		const pitchMode = (dev[0] + dev[1] - dev[2] - dev[3]) / 4;
+		const rollMode = (dev[0] - dev[1] + dev[2] - dev[3]) / 4;
+		const warpMode = (dev[0] - dev[1] - dev[2] + dev[3]) / 4;
+		const pm = clamp(pitchMode, -SLOPE_MAX, SLOPE_MAX);
+		const rm = clamp(rollMode, -SLOPE_MAX, SLOPE_MAX);
+		const wm = clamp(warpMode, -ROAD_MAX, ROAD_MAX);
+		for (let i = 0; i < 4; i++) {
+			// σz = +1 front (0,1), σx = +1 on the −x side (0,2) — the `wheelPatches`
+			// order, read off the index rather than off a name.
+			const sz = i < 2 ? 1 : -1;
+			const sx = i % 2 === 0 ? 1 : -1;
+			road[i] = ROAD_FOLLOW * (pm * sz + rm * sx + wm * sz * sx);
 		}
 
 		// ── Load transfer ───────────────────────────────────────────────────────
@@ -363,6 +465,25 @@ export function createSuspension(spec: CarSpec) {
 	}
 
 	/**
+	 * Corner `i`'s share of the load it carries AT REST — 1 = its static quarter,
+	 * 0 = airborne, >1 = carrying more than its share. This is the number the GRIP
+	 * model wants, and it is exact rather than a proxy: the spring rate is derived
+	 * from the live weight as `weight / (4 · REST_SAG)`, so a compression of
+	 * exactly `REST_SAG` IS one quarter of the car's weight.
+	 *
+	 * It replaced a BINARY "is this corner's ray hitting anything", and the
+	 * difference is the whole of "one wheel in the air must not delete a quarter
+	 * of the grip": the body's total spring force has to equal its weight either
+	 * way, so a corner going light is a corner whose load the others have already
+	 * TAKEN — one lifted front wheel reads ~(0 + 1.9)/2 here where the binary
+	 * count read (0 + 1)/2, and the front axle keeps the grip it physically still
+	 * has. Uncapped on purpose; the axle-level clamp is the controller's.
+	 */
+	function loadShare(i: number): number {
+		return suspension.load[i] / REST_SAG;
+	}
+
+	/**
 	 * Body-space height of the ground under corner `i`, world units — where its
 	 * ray hit. Body-down IS world-down (pitch and roll are locked), so this is
 	 * exact under the rendered body pose too. Meaningful only while `grounded[i]`.
@@ -382,6 +503,7 @@ export function createSuspension(spec: CarSpec) {
 		suspension.heave = 0;
 		suspension.pitch = 0;
 		suspension.roll = 0;
+		suspension.groundNormal.set(0, 1, 0);
 		suspension.matrix.identity();
 		suspension.moved = false;
 		resetRays();
