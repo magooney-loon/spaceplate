@@ -16,6 +16,7 @@
 	} from 'three/tsl';
 	import { logGltf } from '$extensions/logger';
 	import { currentCar } from '../cars';
+	import { drivenAxles } from '../cars/spec';
 	import { UNITS_PER_METER } from '../units';
 	import { carSim } from '../sim/carTelemetry.svelte';
 	import type { Suspension } from '../sim/suspension';
@@ -44,9 +45,17 @@
 	// `WheelFLMtl` etc), case-insensitive.
 	const WHEEL_MAT = new RegExp(`^${currentCar().model.wheelMaterialPrefix}`, 'i');
 
+	// Which axles this layout drives — the roll below is PER AXLE because only a
+	// driven tyre carries wheelspin (and only the rears carry the handbrake).
+	const [FRONT_DRIVEN, REAR_DRIVEN] = drivenAxles(currentCar());
+
 	// One shared uniform set across all six wheel materials.
 	const uSteer = uniform(0);
-	const uRoll = uniform(0);
+	// Roll angle per AXLE, selected by the same `frontF` flag as the pivot. One
+	// shared accumulator would mean a locked rear snapping back on release and a
+	// burnout spinning the front wheels — see the roll task below.
+	const uRollFront = uniform(0);
+	const uRollRear = uniform(0);
 	// SUSPENSION TRAVEL, in MODEL METRES, one component per wheel in the same
 	// order as `wheelPatches` and as the quadrant split below (x < split first).
 	// The body leans (TestGame.svelte poses the visual group off sim/suspension);
@@ -205,8 +214,10 @@
 			);
 			const lift = vec3(0, travel, 0);
 
-			const cr = cos(uRoll),
-				sr = sin(uRoll);
+			// Per-axle roll, off the SAME quadrant flag the pivot and the travel use.
+			const roll = mix(uRollRear, uRollFront, frontF);
+			const cr = cos(roll),
+				sr = sin(roll);
 			const cs = cos(uSteer),
 				ss = sin(uSteer);
 
@@ -289,11 +300,13 @@
 
 	// ── Per-FRAME uniform updates ────────────────────────────────────────────────
 	//
-	// Both values come from `carSim`, the driving model's plain per-step feed
-	// (carTelemetry.svelte.ts). Deriving them here again would mean the visual lock
-	// could disagree with the angle the physics actually steered at — and it did:
-	// this used to read raw key state, so the wheels sat at full lock while the
-	// speed-sensitive rack was using a third of it.
+	// Every value here comes from `carSim`, the driving model's plain per-step feed
+	// (carTelemetry.svelte.ts) — steer angle, road speed, contact-patch overspeed,
+	// the handbrake. Re-deriving any of them here means the wheels render something
+	// the physics never did, and both times that has happened it was visible: the
+	// steer angle used to be raw key state (wheels at full lock while the
+	// speed-sensitive rack used a third of it), and the roll used to fake wheelspin
+	// off `slip` (see the surface-speed comment in the task).
 	//
 	// THE ROLL MUST BE INTEGRATED IN RENDER TIME, NOT PHYSICS TIME. This used to be
 	// a `usePhysicsTask`, and that was a visible car-only stutter. Threlte's
@@ -331,14 +344,36 @@
 			const steered = uSteer.value !== carSim.steerAngle;
 			uSteer.value = carSim.steerAngle;
 
-			// Roll from road speed, plus whatever the rear tyres are spinning past it —
-			// the same slip term the drivetrain feeds the tacho, so wheelspin looks like
-			// wheelspin. The angle lives in car-local space and the speed is in METRES, so
-			// it converts to world units and divides by the WORLD radius (model radius ×
-			// visualScale) — miss either and the wheels spin 2.5× off and strobe into mush.
-			// Wrapped to ±π so the f32 sin/cos in the shader keeps its precision on long drives.
-			const surfaceSpeed = carSim.speedMs * (1 + carSim.slip * 0.8) * UNITS_PER_METER;
-			uRoll.value = wrapAngle(uRoll.value - (surfaceSpeed / (wheelRadius * visualScale)) * delta);
+			// TWO surface speeds, because that is the whole "which wheels are turning"
+			// reading and it is the drivetrain's, not a guess: an undriven tyre runs at
+			// road speed, a DRIVEN one at road speed plus `carSim.spin` — the real
+			// contact-patch overspeed the drivetrain integrates against the rotating
+			// inertia, the same number the tacho reads through the gearing. This used to
+			// be `speedMs × (1 + slip·0.8)`, and that fudge was wrong in three ways at
+			// once: it spun all four wheels (a RWD burnout lit the fronts), it capped the
+			// overspeed at 0.8× road speed where the real one is a free m/s (12 m/s of
+			// spin over a 4 m/s car in 1st), and it multiplied ROAD speed — so a standing
+			// burnout, the one case the player is staring straight at the tyre, turned
+			// the wheels at exactly zero while the engine screamed on the limiter. The
+			// rig (debug/DebugRig.svelte) has read `spin` since it was published; this is
+			// the model's half of the same fix, and the two now agree.
+			const roadSurface = carSim.speedMs * UNITS_PER_METER;
+			const drivenSurface = (carSim.speedMs + carSim.spin) * UNITS_PER_METER;
+			// The handbrake LOCKS the rears whatever the layout — a handbrake is a rear
+			// brake, and the drivetrain zeroes `spin` for it (locked, not lit). Gated on
+			// actually rolling, like the rig: a parked car's wheels are already still.
+			const rearLocked = carSim.handbrake && Math.abs(carSim.speedMs) > 0.5;
+			const frontSurface = FRONT_DRIVEN ? drivenSurface : roadSurface;
+			const rearSurface = rearLocked ? 0 : REAR_DRIVEN ? drivenSurface : roadSurface;
+
+			// The angle lives in car-local space and the speeds are in METRES, so they
+			// convert to world units and divide by the WORLD radius (model radius ×
+			// visualScale) — miss either and the wheels spin 2.5× off and strobe into
+			// mush. Wrapped to ±π so the f32 sin/cos in the shader keeps its precision
+			// on long drives.
+			const worldRadius = wheelRadius * visualScale;
+			uRollFront.value = wrapAngle(uRollFront.value - (frontSurface / worldRadius) * delta);
+			uRollRear.value = wrapAngle(uRollRear.value - (rearSurface / worldRadius) * delta);
 
 			// Suspension travel. The module's numbers are WORLD units (body space);
 			// this material deforms the model's own baked geometry, which the parent
@@ -358,7 +393,7 @@
 			// its one owner. A parked car with the wheels straight costs nothing —
 			// the suspension's own movement is invalidated by the scene's task, which
 			// is also what moved the body these wheels are countering.
-			if (steered || surfaceSpeed !== 0) invalidate();
+			if (steered || frontSurface !== 0 || rearSurface !== 0) invalidate();
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);

@@ -752,7 +752,18 @@ inherit the GR86's ride.
   velocity buffer or motion blur smears it against its rest pose. Its steer
   angle and roll rate come from `carSim`, not from raw key state — the rack is
   speed-sensitive, so re-deriving it here would show full lock while the physics
-  used a third. **THE ROLL IS INTEGRATED IN RENDER TIME, NOT PHYSICS TIME**, and
+  used a third. **THE ROLL IS PER AXLE AND IT IS THE DRIVETRAIN'S, NOT A FUDGE**:
+  the driven axle turns at `speedMs + carSim.spin` (the real contact-patch
+  overspeed, the same number the tacho reads through the gearing), the undriven
+  one at `speedMs`, and the handbrake locks the rears whatever the layout —
+  exactly what the rig draws, from exactly the same fields. It used to be one
+  shared accumulator at `speedMs × (1 + slip·0.8)`, the same fudge the rig was
+  fixed out of, and it was wrong three ways at once: all four wheels carried the
+  spin (a RWD burnout lit the fronts), the overspeed was capped at 0.8× road
+  speed where the real one is a free m/s (12 m/s of spin over a 4 m/s car in
+  1st), and it multiplied ROAD speed — so a STANDING BURNOUT, the one case the
+  player is staring straight at the tyre, turned the wheels at exactly zero while
+  the engine sat on the limiter. **THE ROLL IS INTEGRATED IN RENDER TIME, NOT PHYSICS TIME**, and
   that distinction was a visible car-only stutter. Threlte's simulation stage
   takes `ceil(accumulator / rate)` substeps per frame, so at the 200 Hz the scene
   ran on then, against 60 fps, it stepped 4/3/3/4/3/3… — a `usePhysicsTask`
@@ -842,9 +853,9 @@ inherit the GR86's ride.
     happens at one end of the car. The live driveline is tinted by torque (dim
     bronze coasting → gold on `powerLoad` → red on `slip`). The HANDBRAKE locks
     the REAR wheels whatever the layout, because a handbrake is a rear brake, and
-    on a rear-driven car it stops the driveshaft with them (the model wheels keep
-    spinning: one of the rig's honest divergences, and a reason to look at the
-    rig). Half-shafts rather than a solid bar because independent suspension means
+    on a rear-driven car it stops the driveshaft with them (the MODEL's wheels
+    lock with them too now — `fx/CarWheels.svelte` reads the same feed, so the
+    skeleton and the car agree). Half-shafts rather than a solid bar because independent suspension means
     one bar could not follow both hubs. Roll is accumulated PER WHEEL, not per
     axle — a shared accumulator snaps a locked rear back on release.
   - **Each wheel wears a STATUS RING** on its outboard face, and the priority

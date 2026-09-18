@@ -95,8 +95,9 @@
 	//     tyres light up (`carSim.slip`);
 	//   · the HANDBRAKE locks the REAR wheels whatever the layout, because a
 	//     handbrake is a rear brake. On a rear-driven car it stops the driveshaft
-	//     with them. (The car MODEL's wheels keep spinning — one of the rig's
-	//     honest divergences, and the reason to look at the rig.)
+	//     with them. (The car MODEL's wheels lock with them now too — fx/CarWheels
+	//     reads the same `spin`/`handbrake` feed this does, so the skeleton and
+	//     the car finally turn their wheels at the same rate.)
 	// Half-shafts, not a solid axle bar: independent suspension means one bar
 	// could not follow both hubs, and watching them articulate is the point.
 	//

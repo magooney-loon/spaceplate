@@ -120,9 +120,10 @@ export const carSim = {
 	// `spin` below is the real overspeed the drivetrain integrated.)
 
 	/** m/s — how much faster the DRIVEN contact patch is running than the road,
-	 *  signed along the nose (drivetrain `state.spin`). The rig rolls its driven
-	 *  wheels at `speedMs + spin` and its undriven wheels at `speedMs`, which is
-	 *  the whole "which wheels are turning" reading. */
+	 *  signed along the nose (drivetrain `state.spin`). The rig AND the car's own
+	 *  wheels (fx/CarWheels) roll the driven axle at `speedMs + spin` and the
+	 *  undriven one at `speedMs`, which is the whole "which wheels are turning"
+	 *  reading — one feed, so the skeleton and the model cannot disagree. */
 	spin: 0,
 	/** m/s — velocity component along body +X, straight off the controller's
 	 *  `vLateral` with no sign games: whatever side +X is, this is the car's
