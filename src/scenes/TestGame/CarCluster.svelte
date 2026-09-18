@@ -477,26 +477,20 @@
 		position: absolute;
 		right: 1rem;
 		bottom: 1rem;
+		/* THE SIZE KNOB — the strip below the pod (bars, lamp chips, gaps) is
+		   sized in em, so the whole panel scales from this one font-size; the
+		   pod is an SVG with a viewBox and follows the width for free. No panel
+		   chrome here — the gauges float, each bezelled in the SVG itself. */
+		font-size: 1.35rem;
 		display: flex;
 		flex-direction: column;
 		align-items: stretch;
-		gap: 0.3rem;
-		padding: 0.45rem 0.6rem 0.55rem;
-		width: 22rem;
-		background: linear-gradient(180deg, rgba(10, 14, 20, 0.72), rgba(0, 0, 0, 0.82));
-		border: 1px solid rgba(74, 144, 217, 0.35);
-		border-radius: 0.6rem;
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.06),
-			0 6px 20px rgba(0, 0, 0, 0.45);
+		gap: 0.3em;
+		width: 22em;
 		color: #fff;
 		font-variant-numeric: tabular-nums;
 		pointer-events: none;
 		user-select: none;
-	}
-
-	.cluster.limiting {
-		border-color: rgba(255, 78, 78, 0.8);
 	}
 
 	/* Ignition off: the backlight dies. The windows blank themselves (the segments
@@ -862,17 +856,17 @@
 	.strip {
 		display: flex;
 		align-items: flex-end;
-		gap: 0.35rem;
+		gap: 0.35em;
 		width: 100%;
-		height: 2.1rem;
+		height: 2.1em;
 	}
 
 	.bar {
 		position: relative;
-		flex: 0 0 0.4rem;
+		flex: 0 0 0.4em;
 		height: 100%;
 		background: rgba(255, 255, 255, 0.1);
-		border-radius: 0.2rem;
+		border-radius: 0.2em;
 		overflow: hidden;
 	}
 
@@ -897,17 +891,19 @@
 	.lamps {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.2rem;
+		gap: 0.2em;
 		margin-left: auto;
 		justify-content: flex-end;
 		align-content: flex-end;
 	}
 
+	/* em off the chip's own font-size, so the strip scales from the cluster's
+	   size knob (the numerals are the original rem ÷ 0.625 — same proportions). */
 	.lamp {
-		font-size: 0.625rem;
+		font-size: 0.625em;
 		letter-spacing: 0.08em;
-		padding: 0.05rem 0.3rem;
-		border-radius: 0.15rem;
+		padding: 0.08em 0.48em;
+		border-radius: 0.24em;
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		color: rgba(255, 255, 255, 0.22);
 	}
