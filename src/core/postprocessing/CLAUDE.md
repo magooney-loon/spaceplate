@@ -7,7 +7,8 @@ graph — everything is declared in the registry and assembled by the builder.
 
 ```
 types.ts       — PassRole / Requirement / EffectDef / BuildContext — the declaration shapes
-registry.ts    — EFFECTS list + resolveEnabledSet policy + structuralKeyOf
+registry.ts    — EFFECT_REGISTRY (the id→def record) + the EffectId / EffectParamMap types
+                 derived from it + resolveEnabledSet policy + structuralKeyOf
 build.ts       — the builder: base pass, MRT union, chain fold, grade, resolve, fallback
 uniforms.ts    — createUniformBag / writeUniformBag — the hot-update path
 luts.svelte.ts — LUT catalogue + async load cache (three's nine example LUTs, public/luts/)
@@ -17,6 +18,9 @@ TransitionDriver.svelte — its one writer: capture, hold, dissolve. Mount insid
 effects/*.ts   — 15 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, motionBlur,
                  rainLens, snowLens, bloom (+lensflare sub-toggle), afterimage,
                  vignette, sceneTransition (chain) · lut (grade) · smaa, fxaa (AA)
+effects/mipSource.ts — NOT an effect: the blurred-copy-of-the-frame helper fogScatter,
+                 rainLens and snowLens share, holding the clamp-what-you-sample and
+                 configure-uvNode/levelNode-in-place rules in one place
 ```
 
 ## Roles — effects are not peers
@@ -27,9 +31,14 @@ Four `PassRole`s exist because a flat enable-grid cannot express the relationshi
   (`extends PassNode`). None enabled → the default `pass(scene, camera)`. The builder
   asks `basePass.getMRT()` instead of assuming the default — a base pass may provision
   attachments the registry never asked for (pixelationPass did exactly that).
-- **chain** (`ao`, `dof`, `motionBlur`, `rainLens`, `snowLens`, `bloom`, `afterimage`,
-  `vignette`, `sceneTransition`) — plain
-  colour-in/colour-out, folded in `order` threading `ctx.color`. Some are TSL `Fn`s,
+- **chain** (in fold order: `ao` 10, `dof` 30, `fogScatter` 32, `motionBlur` 35,
+  `rainLens` 36, `snowLens` 37, `bloom` 40, `afterimage` 45, `vignette` 50,
+  `sceneTransition` 60) — plain
+  colour-in/colour-out, folded in `order` threading `ctx.color`. The progression is
+  scene → air → shutter → lens → eye, and the numbers are the only thing enforcing it:
+  **two effects sharing an `order` are separated by nothing but their position in
+  `EFFECT_REGISTRY`**, which is how `fogScatter` sat at bloom's 40 (and therefore behind
+  the weather lenses) until it was moved to 32. Some are TSL `Fn`s,
   not node classes (`motionBlur`, `vignette`, our `dof`) — no instance holds uniforms,
   so **the uniform bag is the only way to animate them**.
 - **grade** (`lut`) — after the chain, before resolve, **not** mutually exclusive.
@@ -60,7 +69,10 @@ mode param asks — `requiresValues` on the def) and `normal` (ao).
 `resolveEnabledSet` (registry) is pure policy shared by panel and builder: quality
 `low` drops everything; at most one base and one AA (lowest `order` wins); explicit
 `conflicts` enforced the same way; geometry consumers are dropped under a non-default
-base pass (verified combinations only).
+base pass (verified combinations only). It walks the candidates **in `order` and looks
+for a rival among the SURVIVORS**, not among everything enabled — so an effect that was
+itself dropped cannot knock out a third (a `conflicts` chain: A beats B, B must not then
+beat C), and an `order` tie resolves to one winner instead of letting both through.
 
 ## Runtime-modulated effects (the shared-uniform driver pattern)
 
@@ -85,7 +97,10 @@ schedules the task again to decay them.
   band's far edge and takes the maximum blur of anything on screen, which is right inside
   a fog bank and very wrong on a clear evening. **A storm activates this AND `rainLens`**
   — two full-frame targets and two mip chains, the one place the weather-latched effects
-  stack. Budget for it there, not in clear weather where neither is in the graph.
+  stack. Budget for it there, not in clear weather where neither is in the graph. It
+  folds at 32, i.e. BEFORE both lenses: fog is a property of the air and the lenses model
+  the glass in front of the camera, so the droplets refract an already-fogged frame
+  rather than the fog blurring the droplets.
 - **`sceneTransition`** — the scene switch itself, via `TransitionDriver.svelte`. Same
   contract, one extra wrinkle: the driver also owns a RESOURCE (the snapshot `rtt()`),
   which the effect hands over on every build and `Renderer.svelte` clears to `null`
@@ -296,8 +311,10 @@ What a revival restores:
 
 - MRT rows (`normal` is now live — `ao` re-added it): `traa` (depth, velocity), `ssgi` (depth,
   normal, velocity, diffuse), `ssr` (depth, normal, metalrough), `denoise` (depth,
-  normal). The union algorithm is untouched and still general — a row in `build.ts`'s
-  MRT table, a `Requirement` member, and the unpack node on `BuildContext`.
+  normal). The union algorithm is untouched and still general — one row in `build.ts`'s
+  `MRT_ATTACHMENTS` (the record key IS the texture name, and `finalize` carries any
+  per-attachment format/blend fixup), one `Requirement` member, and the field on
+  `BuildContext` the builder fills by name.
 - `pixelationPass` provisions its own `mrt({ output, normal })` internally despite
   requiring nothing — that is why it hit the cache trap.
 - `minQuality` survives on `EffectDef` with no consumer (`ssr`/`ssgi` were the only ones).

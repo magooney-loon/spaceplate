@@ -1,41 +1,17 @@
-// Post-processing extension types. The param shapes are imported from the effect
-// modules in $core/postprocessing/effects — one source of truth; this file only
-// assembles the state shape the UI binds to (every effect gets an `enabled`).
+// Post-processing extension types. The state shape is DERIVED from the registry
+// (`EFFECT_REGISTRY` → `EffectId` + `EffectParamMap`), so adding an effect needs no edit
+// here and the UI's shape cannot drift from the builder's. It did drift, before this was
+// derived: `ao`, `rainLens` and `snowLens` shipped without ever reaching the state type,
+// which nothing caught because every access goes through an `as any`.
 
-import type { AfterimageParams } from '$core/postprocessing/effects/afterimage';
-import type { BloomParams } from '$core/postprocessing/effects/bloom';
-import type { DofParams } from '$core/postprocessing/effects/dof';
-import type { FogScatterParams } from '$core/postprocessing/effects/fogScatter';
-import type { FxaaParams } from '$core/postprocessing/effects/fxaa';
-import type { LutParams } from '$core/postprocessing/effects/lut';
-import type { MotionBlurParams } from '$core/postprocessing/effects/motionblur';
-import type { RetroParams } from '$core/postprocessing/effects/retro';
-import type { SceneTransitionParams } from '$core/postprocessing/effects/sceneTransition';
-import type { SmaaParams } from '$core/postprocessing/effects/smaa';
-import type { SsaaParams } from '$core/postprocessing/effects/ssaa';
-import type { VignetteParams } from '$core/postprocessing/effects/vignette';
+import type { EffectId, EffectParamMap } from '$core/postprocessing/registry';
 
 export const extensionScope = 'postprocessing';
 
-type ParamMap = {
-	bloom: BloomParams;
-	afterimage: AfterimageParams;
-	dof: DofParams;
-	fogScatter: FogScatterParams;
-	motionBlur: MotionBlurParams;
-	vignette: VignetteParams;
-	sceneTransition: SceneTransitionParams;
-	lut: LutParams;
-	smaa: SmaaParams;
-	fxaa: FxaaParams;
-	ssaa: SsaaParams;
-	retro: RetroParams;
-};
-
-export type EffectId = keyof ParamMap;
+export type { EffectId };
 
 export type PostProcessingState = {
-	[K in keyof ParamMap]: { enabled: boolean } & ParamMap[K];
+	[K in EffectId]: { enabled: boolean } & EffectParamMap[K];
 };
 
 export type ExtensionState = PostProcessingState;

@@ -20,26 +20,44 @@ import { smaaEffect } from './effects/smaa';
 import { ssaaEffect } from './effects/ssaa';
 import { vignetteEffect } from './effects/vignette';
 
-/** Display order for panels: base alternates first, then chain, then grade, then AA. */
-export const EFFECTS: EffectDef<any>[] = [
-	ssaaEffect,
-	retroEffect,
-	aoEffect,
-	dofEffect,
-	fogScatterEffect,
-	motionBlurEffect,
-	rainLensEffect,
-	snowLensEffect,
-	bloomEffect,
-	afterimageEffect,
-	vignetteEffect,
+/**
+ * THE registry. Display order for panels: base alternates first, then chain, then grade,
+ * then AA.
+ *
+ * A record rather than an array so the param types survive: `EffectParamMap` below is
+ * derived from it, which is what lets the extension's state shape be GENERATED instead
+ * of hand-listed (it drifted three effects behind when it was). **Each key must equal
+ * its def's `id`** — `EffectDef.id` is a plain `string`, so nothing type-checks that;
+ * `EFFECTS_BY_ID` keys off `def.id` so a mismatch would only skew the types.
+ */
+export const EFFECT_REGISTRY = {
+	ssaa: ssaaEffect,
+	retro: retroEffect,
+	ao: aoEffect,
+	dof: dofEffect,
+	fogScatter: fogScatterEffect,
+	motionBlur: motionBlurEffect,
+	rainLens: rainLensEffect,
+	snowLens: snowLensEffect,
+	bloom: bloomEffect,
+	afterimage: afterimageEffect,
+	vignette: vignetteEffect,
 	// Last in the chain: it composites the frozen previous scene over everything the
 	// chain produced, and wants the vignette (and the rest) applied to both sides alike.
-	sceneTransitionEffect,
-	lutEffect,
-	smaaEffect,
-	fxaaEffect
-];
+	sceneTransition: sceneTransitionEffect,
+	lut: lutEffect,
+	smaa: smaaEffect,
+	fxaa: fxaaEffect
+} as const;
+
+export type EffectId = keyof typeof EFFECT_REGISTRY;
+
+type ParamsOf<T> = T extends EffectDef<infer P> ? P : never;
+
+/** Every effect's param shape, keyed by id — the extension's state shape is built on this. */
+export type EffectParamMap = { [K in EffectId]: ParamsOf<(typeof EFFECT_REGISTRY)[K]> };
+
+export const EFFECTS: EffectDef<any>[] = Object.values(EFFECT_REGISTRY);
 
 export const EFFECTS_BY_ID: ReadonlyMap<string, EffectDef<any>> = new Map(
 	EFFECTS.map((def) => [def.id, def])
@@ -47,6 +65,9 @@ export const EFFECTS_BY_ID: ReadonlyMap<string, EffectDef<any>> = new Map(
 
 /** The base pass used when no base-role effect is enabled. */
 export const DEFAULT_BASE_ID = 'default';
+
+/** Tier ordering for `minQuality`. */
+const QUALITY_RANK: Record<QualityLevel, number> = { low: 0, high: 1 };
 
 /** Default param values per effect id — seeds the extension state. */
 export const effectDefaults = (): EffectValues => {
@@ -56,7 +77,7 @@ export const effectDefaults = (): EffectValues => {
 };
 
 export interface EnabledSetResolution {
-	/** Effect ids that will actually be built, in registry order. */
+	/** Effect ids that will actually be built, in `order` (i.e. fold) order. */
 	active: string[];
 	/** Ids the user enabled but policy removed, with the reason. */
 	dropped: { id: string; reason: string }[];
@@ -104,11 +125,15 @@ export const resolveEnabledSet = (
 	const requirementsOf = (def: EffectDef<any>): Requirement[] =>
 		def.requiresValues ? def.requiresValues(values?.[def.id] ?? def.params()) : def.requires;
 
-	// Quality gates.
+	// Quality gates. Ranked rather than compared against one tier by name, so adding a
+	// middle tier cannot silently turn a gate into a no-op. Currently UNREACHABLE — with
+	// `QualityLevel` being 'low' | 'high', low has already returned above and high
+	// satisfies every possible `minQuality`. The field is kept for the removed effects
+	// that declared it (see "Removed effects" in CLAUDE.md).
 	const qualityOk: EffectDef<any>[] = [];
 	for (const def of defs) {
-		if (def.minQuality === 'high' && quality !== 'high') {
-			drop(def.id, `requires high quality (current: ${quality})`);
+		if (def.minQuality && QUALITY_RANK[quality] < QUALITY_RANK[def.minQuality]) {
+			drop(def.id, `requires ${def.minQuality} quality (current: ${quality})`);
 		} else {
 			qualityOk.push(def);
 		}
@@ -117,17 +142,21 @@ export const resolveEnabledSet = (
 	// Mutual exclusion: base passes replace the scene pass and the AAs replace each
 	// other, so within those roles only one can win (lowest order). Chain effects
 	// coexist — only explicit `conflicts` cross-role pairs are exclusive.
+	//
+	// Walked in `order` so the winner is always already decided: a rival is looked for
+	// among the effects that have SURVIVED, never among all the quality-passing ones.
+	// That is what stops an effect that was itself dropped from knocking out a third
+	// (a chain of `conflicts` — A beats B, B must not then beat C), and it settles
+	// equal orders deterministically instead of letting both through.
 	const survivors: EffectDef<any>[] = [];
-	for (const def of qualityOk) {
+	for (const def of qualityOk.slice().sort((a, b) => a.order - b.order)) {
 		const exclusive = def.role === 'base' || def.role === 'resolve';
-		const rivals = qualityOk.filter((other) => {
-			if (other === def) return false;
-			if (exclusive && other.role === def.role) return true;
-			return Boolean(other.conflicts?.includes(def.id) || def.conflicts?.includes(other.id));
-		});
-		const loser = rivals.some((other) => other.order < def.order);
-		if (loser) {
-			const winner = rivals.find((other) => other.order < def.order)!;
+		const winner = survivors.find(
+			(other) =>
+				(exclusive && other.role === def.role) ||
+				Boolean(other.conflicts?.includes(def.id) || def.conflicts?.includes(other.id))
+		);
+		if (winner) {
 			drop(def.id, `mutually exclusive with ${winner.label}`);
 		} else {
 			survivors.push(def);
@@ -174,10 +203,10 @@ export const structuralKeyOf = (enabled: string[], values: EffectValues): string
 		.map((id) => {
 			const def = EFFECTS_BY_ID.get(id);
 			const structural = def?.structural ?? [];
-			const parts = structural.map((key) => values[id]?.[key] ?? 0);
+			const parts: (string | number)[] = structural.map((key) => values[id]?.[key] ?? 0);
 			// Runtime key material the values cannot carry (the LUT's texture version).
 			const tag = def?.structuralTag?.();
-			if (tag !== undefined) parts.push(tag as never);
+			if (tag !== undefined) parts.push(tag);
 			return parts.length > 0 ? `${id}(${parts.join(',')})` : id;
 		})
 		.join('|');

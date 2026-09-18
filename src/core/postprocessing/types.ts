@@ -157,7 +157,16 @@ export interface EffectDef<P extends EffectParams = EffectParams> {
 	 * pick recompiles the graph.
 	 */
 	structuralTag?: () => string | number;
-	/** Shown in the panel under the effect's controls. */
+	/**
+	 * Prose about what the effect is for and how to tune it.
+	 *
+	 * **Nothing renders this today.** It was the panel's per-effect caption until it turned
+	 * out that svelte-tweakpane-ui puts a `Folder`'s raw HTML children in a `display: none`
+	 * div, so the spans were invisible from the day they were added
+	 * (`extensions/postprocessing/CLAUDE.md`). Showing it again means a real tweakpane
+	 * blade, not a `<span>`. Kept meanwhile because it is the one place several of these
+	 * effects explain themselves to a reader who is not in the source.
+	 */
 	note?: string;
 	/**
 	 * Base role: returns the scene pass itself (ctx.color etc. are not set yet).

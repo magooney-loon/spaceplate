@@ -21,7 +21,14 @@ import type { RenderPipeline, Scene, Camera, WebGPURenderer } from 'three/webgpu
 import type { QualityLevel } from '$extensions/settings/types';
 import { EFFECTS_BY_ID, resolveEnabledSet } from './registry';
 import { createUniformBag } from './uniforms';
-import type { BuildContext, EffectValues, MrtRequirement, UniformBag } from './types';
+import type {
+	BuildContext,
+	EffectDef,
+	EffectValues,
+	MrtRequirement,
+	PassRole,
+	UniformBag
+} from './types';
 
 export interface BuildReport {
 	/** False when the graph threw and the fallback pass was installed instead. */
@@ -62,24 +69,38 @@ export interface PipelineBuild {
 }
 
 /**
- * MRT attachment name → the TSL node that writes it. `velocity` feeds motion blur;
- * `emissive` feeds bloom's material mode — packed as `vec4(emissive, output.a)` and
- * blended like the output attachment (NormalBlending), mirroring
- * webgpu_postprocessing_bloom_emissive. `normal` is view-space, the layout GTAONode's
- * own docs specify (`mrt({ output, normal: normalView })`). Re-adding a member is one
- * row here, one in MRT_TEXTURE_NAME, one on `Requirement` (see "Removed effects" in
- * CLAUDE.md).
+ * The MRT attachments, one row each: the TSL node that writes the attachment, plus any
+ * per-attachment fixup the union cannot express (`finalize`, run after `setMRT`).
+ *
+ * **The record key IS the texture name** the pass exposes, so `basePass.getTextureNode(req)`
+ * needs no second lookup table. Re-adding a removed member (`metalrough`, `diffuse`) is
+ * ONE row here and one on `Requirement` — see "Removed effects" in CLAUDE.md.
+ *
+ * `velocity` feeds motion blur; `emissive` feeds bloom's material mode — packed as
+ * `vec4(emissive, output.a)`, mirroring webgpu_postprocessing_bloom_emissive. `normal` is
+ * view-space, the layout GTAONode's own docs specify (`mrt({ output, normal: normalView })`).
+ * The nodes are thunks so each build gets its own, rather than sharing one across every
+ * pipeline this module ever assembles.
  */
-const MRT_LAYOUT: Record<MrtRequirement, (ctx: any) => any> = {
-	velocity: () => velocity,
-	emissive: () => vec4(emissive, output.a),
-	normal: () => normalView
-};
-
-const MRT_TEXTURE_NAME: Record<MrtRequirement, string> = {
-	velocity: 'velocity',
-	emissive: 'emissive',
-	normal: 'normal'
+const MRT_ATTACHMENTS: Record<
+	MrtRequirement,
+	{ node: () => any; finalize?: (basePass: any, mrtNode: any) => void }
+> = {
+	velocity: { node: () => velocity },
+	// Normals stay at the pass's default float format and default (no) blending: a
+	// blended normal is a meaningless direction, and transparent geometry writing
+	// garbage into it is the known cost of MRT-on-the-main-pass (CLAUDE.md, "Removed
+	// effects" — the prePass question this re-opens).
+	normal: { node: () => normalView },
+	emissive: {
+		node: () => vec4(emissive, output.a),
+		// UnsignedByte emissive saves bandwidth (example does the same); NormalBlending so
+		// transparent surfaces write emissive like they write color (default is no blend).
+		finalize: (basePass, mrtNode) => {
+			mrtNode.setBlendMode('emissive', new BlendMode(NormalBlending));
+			basePass.getTexture('emissive').type = UnsignedByteType;
+		}
+	}
 };
 
 /**
@@ -97,22 +118,6 @@ const REFERENCE_FRAME_SECONDS = 1 / 60;
  * frame of sampling noise into a full-screen streak.
  */
 const MAX_SHUTTER_SCALE = 8;
-
-/** Per-attachment fixups the union can't express — run after setMRT. */
-const MRT_FINALIZE: Record<MrtRequirement, (basePass: any, mrtNode: any) => void> = {
-	velocity: () => {},
-	// Normals stay at the pass's default float format and default (no) blending: a
-	// blended normal is a meaningless direction, and transparent geometry writing
-	// garbage into it is the known cost of MRT-on-the-main-pass (CLAUDE.md, "Removed
-	// effects" — the prePass question this re-opens).
-	normal: () => {},
-	// UnsignedByte emissive saves bandwidth (example does the same); NormalBlending so
-	// transparent surfaces write emissive like they write color (default is no blend).
-	emissive: (basePass, mrtNode) => {
-		mrtNode.setBlendMode('emissive', new BlendMode(NormalBlending));
-		basePass.getTexture('emissive').type = UnsignedByteType;
-	}
-};
 
 /**
  * Private shader-cache namespaces the MRT base pass renders under, ONE PER ATTACHMENT
@@ -203,14 +208,10 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 		// 2. MRT provisioning — only what the enabled effects asked for.
 		if (resolution.mrt.length > 0) {
 			const entries: Record<string, any> = { output };
-			for (const req of resolution.mrt) {
-				entries[MRT_TEXTURE_NAME[req]] = MRT_LAYOUT[req](baseCtx);
-			}
+			for (const req of resolution.mrt) entries[req] = MRT_ATTACHMENTS[req].node();
 			const mrtNode = mrt(entries);
 			basePass.setMRT(mrtNode);
-			for (const req of resolution.mrt) {
-				MRT_FINALIZE[req](basePass, mrtNode);
-			}
+			for (const req of resolution.mrt) MRT_ATTACHMENTS[req].finalize?.(basePass, mrtNode);
 		}
 
 		// 2b. Shader-cache isolation for the MRT pass — LOAD-BEARING, not a tuning knob
@@ -234,28 +235,34 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			aspect,
 			shutterScale
 		};
-		if (resolution.mrt.includes('velocity')) ctx.velocity = basePass.getTextureNode('velocity');
-		if (resolution.mrt.includes('emissive')) ctx.emissive = basePass.getTextureNode('emissive');
-		if (resolution.mrt.includes('normal')) ctx.normal = basePass.getTextureNode('normal');
+		// Attachment texture nodes, under the same names they were provisioned with.
+		for (const req of resolution.mrt) ctx[req] = basePass.getTextureNode(req);
 
-		// 4. Fold chain effects in order, threading ctx.color.
-		const chain = resolution.active
-			.map((id) => EFFECTS_BY_ID.get(id)!)
-			.filter((def) => def.role === 'chain')
-			.sort((a, b) => a.order - b.order);
-
-		for (const def of chain) {
+		/**
+		 * Build one effect and thread its result into the chain: a fresh uniform bag over
+		 * the def's defaults patched with the current values, the node tracked for
+		 * disposal, the bag kept for the hot-update path. Every role but `base` goes
+		 * through here — a base pass PRODUCES the pass rather than consuming a colour, so
+		 * it is built above, before `ctx` exists.
+		 */
+		const foldEffect = (def: EffectDef<any>) => {
 			const bag = createUniformBag({ ...def.params(), ...values[def.id] });
 			const node = track(def.build(ctx, bag));
 			if (node !== undefined && node !== null) ctx.color = node;
 			uniforms.set(def.id, bag);
-		}
+		};
+
+		const activeDefs = resolution.active.map((id) => EFFECTS_BY_ID.get(id)!);
+		const byRole = (role: PassRole) =>
+			activeDefs.filter((def) => def.role === role).sort((a, b) => a.order - b.order);
+
+		// 4. Fold chain effects in order, threading ctx.color.
+		for (const def of byRole('chain')) foldEffect(def);
 
 		// 5. Output colour transform, owned here: if any active effect declares
 		// `displayColor`, disable the pipeline's automatic transform and fold in exactly
 		// one renderOutput() — two callers would tone-map twice. Reads
 		// renderer.toneMapping, never writes it (Threlte owns it).
-		const activeDefs = resolution.active.map((id) => EFFECTS_BY_ID.get(id)!);
 		const wantsDisplayColor = activeDefs.some((def) => def.displayColor);
 		// Reset first — a previous build may have disabled it.
 		pipeline.outputColorTransform = !wantsDisplayColor;
@@ -265,24 +272,12 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 
 		// 6. Grade stage — colour grading after the transform, before AA. Unlike base and
 		// resolve, grades are not mutually exclusive, so fold them all in order.
-		for (const def of activeDefs
-			.filter((def) => def.role === 'grade')
-			.sort((a, b) => a.order - b.order)) {
-			const bag = createUniformBag({ ...def.params(), ...values[def.id] });
-			const node = track(def.build(ctx, bag));
-			if (node !== undefined && node !== null) ctx.color = node;
-			uniforms.set(def.id, bag);
-		}
+		for (const def of byRole('grade')) foldEffect(def);
 
-		// 7. Resolve stage — at most one AA (policy already enforced). Runs last so it
-		// anti-aliases the graded image rather than being smeared by the grade.
-		const resolveDef = activeDefs.find((def) => def.role === 'resolve');
-		if (resolveDef) {
-			const bag = createUniformBag({ ...resolveDef.params(), ...values[resolveDef.id] });
-			const node = track(resolveDef.build(ctx, bag));
-			if (node !== undefined && node !== null) ctx.color = node;
-			uniforms.set(resolveDef.id, bag);
-		}
+		// 7. Resolve stage — at most one AA (`resolveEnabledSet` already enforced that;
+		// folding the list rather than the single find keeps one code path). Runs last so
+		// it anti-aliases the graded image rather than being smeared by the grade.
+		for (const def of byRole('resolve')) foldEffect(def);
 
 		pipeline.outputNode = ctx.color;
 		pipeline.needsUpdate = true;

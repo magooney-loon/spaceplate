@@ -17,6 +17,7 @@
 	import { logPostprocessing } from '$extensions/logger';
 	import { postprocessingState } from '$extensions/postprocessing';
 	import { buildPipeline, type PipelineBuild } from '$core/postprocessing/build';
+	import { writeUniformBag } from '$core/postprocessing/uniforms';
 	import { EFFECTS, structuralKeyOf } from '$core/postprocessing/registry';
 	import { registerSnapshot } from '$core/postprocessing/transitionState.svelte';
 	import type { EffectValues } from '$core/postprocessing/types';
@@ -121,6 +122,11 @@
 
 			const report = build.report;
 			if (!report.ok) {
+				// The fallback disposed every node the failed build had created — including
+				// the transition's snapshot, if the throw came after it registered one.
+				// Clear it again or `coverWithSnapshot()` reports a cover it cannot deliver
+				// and the next scene switch stalls waiting for a capture that never lands.
+				registerSnapshot(null);
 				logPostprocessing.error(
 					'Pipeline build failed — falling back to a plain pass:',
 					report.error
@@ -148,19 +154,13 @@
 		// Tracked reads: the enabled ids and every enabled effect's param values.
 		// Writes go to uniform nodes owned by the current build — no disposal, no
 		// graph change, no round trip through the structural effect.
+		let wrote = false;
 		for (const id of enabledIds) {
 			const bag = build?.uniforms.get(id);
-			if (!bag) continue;
-			const values = (postprocessingState as any)[id];
-			let wrote = false;
-			for (const key of Object.keys(bag)) {
-				if (key in values) {
-					bag[key].value = values[key];
-					wrote = true;
-				}
-			}
-			if (wrote) invalidate();
+			if (bag) wrote = writeUniformBag(bag, (postprocessingState as any)[id]) || wrote;
 		}
+		// Once for the whole sweep, not once per effect.
+		if (wrote) invalidate();
 	});
 
 	// --- teardown -------------------------------------------------------------

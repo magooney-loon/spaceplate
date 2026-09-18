@@ -15,13 +15,23 @@ export const createUniformBag = <P extends EffectParams>(values: P): UniformBag<
 	return bag;
 };
 
-/** In-place value write — the hot path. Never disposes or rebuilds anything. */
+/**
+ * In-place value write — the hot path. Never disposes or rebuilds anything.
+ *
+ * `values` may carry keys the bag does not (the extension state's `enabled` flag, a param
+ * removed since the build); those are skipped. Returns whether anything was written, so a
+ * caller sweeping several bags can `invalidate()` once for the lot instead of per effect.
+ */
 export const writeUniformBag = <P extends EffectParams>(
 	bag: UniformBag<P>,
 	values: Partial<P>
-): void => {
+): boolean => {
+	let wrote = false;
 	for (const key of Object.keys(values) as (keyof P & string)[]) {
 		const node = bag[key];
-		if (node) node.value = values[key]!;
+		if (!node) continue;
+		node.value = values[key]!;
+		wrote = true;
 	}
+	return wrote;
 };

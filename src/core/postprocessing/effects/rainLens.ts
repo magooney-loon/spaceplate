@@ -14,8 +14,9 @@
 // they stream OUTWARD from the point the camera is heading at -- a windscreen, not a
 // window. See "The windshield" in `build` below for the coordinate change that gives it.
 //
-// ORDER 36 -- after every geometry consumer (ao 10, dof 30, motionBlur 35, SCENE-space),
-// before bloom (40, optics: water-scattered light should then bloom).
+// ORDER 36 -- after everything that models the scene or the air in it (ao 10, dof 30,
+// fogScatter 32, motionBlur 35), before bloom (40, optics: water-scattered light should
+// then bloom).
 import {
 	Fn,
 	atan,
@@ -31,11 +32,8 @@ import {
 	smoothstep,
 	sqrt,
 	vec2,
-	vec3,
-	vec4
+	vec3
 } from 'three/tsl';
-import { rtt } from 'three/tsl';
-import { HalfFloatType, LinearMipmapLinearFilter } from 'three/webgpu';
 import {
 	lensActivity,
 	uDropTime,
@@ -43,6 +41,7 @@ import {
 	uWetness
 } from '$core/skybox/layers/precipitation/lensState.svelte';
 import type { EffectDef } from '../types';
+import { mipSource } from './mipSource';
 
 export type RainLensParams = {
 	/**
@@ -84,7 +83,7 @@ export type RainLensParams = {
 	 * and resolves a sharper (if distorted) image than the film around it.
 	 */
 	dropBlur: number;
-	/** Ceiling on the linear value the lens is allowed to SAMPLE. See the header. */
+	/** Ceiling on the linear value the lens is allowed to SAMPLE — see `mipSource.ts`. */
 	inputClamp: number;
 };
 
@@ -346,20 +345,8 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 		const refractedUV = shaderUV.add(n);
 		const sampleUV = vec2(refractedUV.x, refractedUV.y.oneMinus());
 
-		// The mip source. Clamped (see the header), and configured IN PLACE rather than via
-		// `.sample()/.level()`: those return plain TextureNode clones, and only the RTT node
-		// ITSELF carries the `updateBefore` that renders the target — a graph containing
-		// only clones never fills it.
-		const clamped = vec4(ctx.color.rgb.min(vec3(u.inputClamp)), ctx.color.a);
-		const frame: any = ctx.track(
-			rtt(clamped, null, null, {
-				type: HalfFloatType,
-				generateMipmaps: true,
-				minFilter: LinearMipmapLinearFilter
-			})
-		);
-		frame.uvNode = sampleUV;
-		frame.levelNode = focus;
+		// The mip source — mipSource.ts owns the clamp and the configure-in-place rules.
+		const frame = mipSource(ctx, { clamp: u.inputClamp, uv: sampleUV, level: focus });
 
 		// `wetness` was the mesh's `opacityNode` against NormalBlending — the same blend,
 		// written out. Everything the effect does (refraction, blur, drops) arrives through

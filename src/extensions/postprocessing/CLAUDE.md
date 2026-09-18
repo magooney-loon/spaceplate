@@ -3,7 +3,8 @@
 ## Files
 
 ```
-types.ts                    — EffectId + PostProcessingState, assembled from the effect modules' param types
+types.ts                    — EffectId + PostProcessingState, DERIVED from $core/postprocessing's
+                              EFFECT_REGISTRY (adding an effect needs no edit here)
 postprocessing.svelte.ts    — postprocessingState ($state) + postprocessingActions (setEnabled/setParam/resetEffect/resetAll)
 PostProcessingExtension.svelte — Studio toolbar panel, rendered FROM the registry
 index.ts                    — barrel re-exports
@@ -56,7 +57,10 @@ model is lit from the inside by the whole sky. Off by default — read its secti
 `$core/postprocessing/CLAUDE.md` before retuning it.
 
 - Every effect: `{ enabled: boolean } & params` — defaults come from the registry
-  (`def.params()`), so state, builder and panel cannot drift.
+  (`def.params()`) and so does the TYPE (`EffectParamMap`), so state, builder and panel
+  cannot drift. They did, while `types.ts` hand-listed the param shapes: `ao`, `rainLens`
+  and `snowLens` all shipped without reaching `EffectId`, and nothing caught it because
+  every access to the state goes through an `as any`.
 - Quality `low` drops everything (bare pass). `minQuality` still exists on `EffectDef`
   but no effect uses it now — `ssgi`/`ssr` were its only consumers.
 - Geometry consumers (`ao`, `dof`, `motionBlur`, and `bloom` in Material mode) are

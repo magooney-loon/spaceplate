@@ -22,7 +22,6 @@ import {
 	mix,
 	mx_fractal_noise_float,
 	pow,
-	rtt,
 	screenSize,
 	screenUV,
 	smoothstep,
@@ -30,7 +29,6 @@ import {
 	vec3,
 	vec4
 } from 'three/tsl';
-import { HalfFloatType, LinearMipmapLinearFilter } from 'three/webgpu';
 import {
 	lensActivity,
 	uGrowth,
@@ -38,6 +36,7 @@ import {
 	uPatternOffset
 } from '$core/skybox/layers/precipitation/lensState.svelte';
 import type { EffectDef } from '../types';
+import { mipSource } from './mipSource';
 
 export type SnowLensParams = {
 	/**
@@ -57,7 +56,7 @@ export type SnowLensParams = {
 	milk: number;
 	/** How brightly the crystal filaments themselves catch the light. */
 	sparkle: number;
-	/** Ceiling on the linear value the lens is allowed to SAMPLE. See rainLens.ts. */
+	/** Ceiling on the linear value the lens is allowed to SAMPLE — see `mipSource.ts`. */
 	inputClamp: number;
 };
 
@@ -188,18 +187,8 @@ export const snowLensEffect: EffectDef<SnowLensParams> = {
 		// you can see clearly THROUGH ice.
 		const focus = mask.mul(u.frostBlur);
 
-		// The mip source. See rainLens.ts on why this is configured in place rather than
-		// through `.sample()` / `.level()`.
-		const clamped = vec4(ctx.color.rgb.min(vec3(u.inputClamp)), ctx.color.a);
-		const frame: any = ctx.track(
-			rtt(clamped, null, null, {
-				type: HalfFloatType,
-				generateMipmaps: true,
-				minFilter: LinearMipmapLinearFilter
-			})
-		);
-		frame.uvNode = screenUV.add(n);
-		frame.levelNode = focus;
+		// The mip source — mipSource.ts owns the clamp and the configure-in-place rules.
+		const frame = mipSource(ctx, { clamp: u.inputClamp, uv: screenUV.add(n), level: focus });
 
 		// Ice scatters rather than absorbs: milk the frame toward the ice colour by coverage,
 		// then lay the lit crystal filaments over the top. The second term is what keeps the
