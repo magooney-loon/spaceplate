@@ -1519,7 +1519,18 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   (base recovered every frame; the sustained pull-ins — launch, hit, grind
   flinch — share one 60%-of-base cap so together they can never shove the
   camera inside the car; the grind tremble rides on top, clamped by
-  MIN/MAX). The FOV is
+  MIN/MAX). **IDLE ORBIT — the standstill showcase: 5 s under 0.3 m/s and the
+  rig orbits the car at 0.18 rad/s (a full 360, a lap in ~35 s) until it
+  moves again** (task block in this file; state reset on borrow so a fresh
+  spawn gets its own five seconds). trackRotation is GATED OFF while it runs
+  — the first cut left it on and its proportional pull-back rejected the
+  orbit's additive push at a rate × smoothTime offset (~3.6°): the camera
+  nudged aside and stopped, a proportional controller rejecting a
+  disturbance, not a lagging orbit. Re-enabled the instant the car rolls, the
+  same term swings the camera back behind it through its own 0.35 s
+  smoothing — the exit transition is free. Any pointer button held on the
+  canvas pauses the orbit (the player's hand is the director); released, it
+  picks up where it left off. The FOV is
   borrowed and returned with the pose, re-adopted on every borrow so a re-entry
   can't animate from a stale value, and the task only invalidates on frames
   where the lens actually moves.

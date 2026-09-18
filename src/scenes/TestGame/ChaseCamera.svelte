@@ -129,8 +129,31 @@
 	/** Smoothed grind level 0..1 — the flinch's depth and the wobble's size. */
 	let grindLevel = 0;
 	/** The wobble's phase — advanced only while grinding, wrapped so it can't
-	 * grow unbounded over a long scrape. */
+	 *  grow unbounded over a long scrape. */
 	let grindPhase = 0;
+
+	// ── Idle orbit — the standstill showcase ─────────────────────────
+	// 5 s at ~zero speed and the rig orbits the car slowly, a full 360 until
+	// the car moves again. trackRotation is GATED OFF while orbiting — the
+	// first cut left it on and learned why that cannot work: its pull-back is
+	// PROPORTIONAL to the gap, so a constant additive push is rejected at a
+	// constant offset of rate × smoothTime (~3.6°) — the camera nudged to the
+	// side and stopped, exactly a proportional controller rejecting a
+	// disturbance. With it gated, the increments accumulate; with it re-enabled
+	// on exit, the SAME pull-back term swings the camera back behind the car
+	// through its own 0.35 s smoothing — the exit transition is free. The
+	// player's own drag pauses the orbit (see the pointer effect at the
+	// bottom): their hand is the director. `orbiting` is $state because the
+	// useFollow options getter is derived — it has to SEE the flip.
+	const IDLE_ORBIT_AFTER = 5; // s standing still before the orbit starts
+	const IDLE_SPEED = 0.3; // m/s — "stopped" (creep torque never quite zeroes)
+	const ORBIT_RATE = 0.18; // rad/s — a full lap in ~35 s: a showcase, not a spin
+	/** Consecutive seconds at ~zero speed. */
+	let stoppedFor = 0;
+	/** The showcase is running — $state: the useFollow getter tracks it. */
+	let orbiting = $state(false);
+	/** Any pointer button held on the canvas — the orbit stands down. */
+	let holding = false;
 
 	const { camera, dom, invalidate } = useThrelte();
 	let controls = $state.raw<CameraControlsImpl>();
@@ -158,8 +181,12 @@
 		followSmoothTime: 0.12,
 		lookAhead: 0.18,
 		// Track the car's yaw so the camera swings behind it through corners. Smoothed,
-		// or the whole frame snaps sideways the instant the car's nose moves.
-		trackRotation: true,
+		// or the whole frame snaps sideways the instant the car's nose moves — but
+		// STOOD DOWN while the idle orbit runs, or its proportional pull-back rejects
+		// the orbit's additive push at a ~3.6° offset (the "nudged to the side and
+		// stopped" bug). Re-enabled the moment the car moves, it swings the camera
+		// back behind it through this same smoothing — the exit is free.
+		trackRotation: !orbiting,
 		trackRotationSmoothTime: 0.35,
 		// 0 (not π): the model's nose is -Z, so azimuth 0 already sits BEHIND the car.
 		trackRotationOffset: 0
@@ -208,7 +235,8 @@
 		rig.polarAngle = CHASE_POLAR;
 		rig.distance = CHASE_DISTANCE;
 		// Re-entry must not recover a stale zoom base out of a leftover kick, nor
-		// read the current gear as a shift.
+		// read the current gear as a shift, nor orbit a car that only just stood
+		// down — the spawn pose deserves its own five seconds.
 		kickLevel = 0;
 		appliedKick = 0;
 		shiftKick = 0;
@@ -218,6 +246,8 @@
 		hitLevel = 0;
 		hitSeq = carSim.hullHitSeq;
 		grindLevel = 0;
+		stoppedFor = 0;
+		orbiting = false;
 		invalidate();
 
 		return () => {
@@ -244,6 +274,19 @@
 			if (!active || !controls || !target) return;
 			const cam = camera.current;
 			if (!(cam instanceof THREE.PerspectiveCamera)) return;
+
+			// ── Idle orbit: the standstill showcase (constants block above). ──
+			if (Math.abs(carSim.speedMs) < IDLE_SPEED) {
+				stoppedFor += delta;
+				if (!orbiting && stoppedFor >= IDLE_ORBIT_AFTER) orbiting = true;
+			} else {
+				stoppedFor = 0;
+				orbiting = false;
+			}
+			if (orbiting && !holding) {
+				controls.azimuthAngle += ORBIT_RATE * delta;
+				invalidate();
+			}
 
 			// ── Launch kick: snap in with the drop, ease out with the boost tail. ──
 			const boost = clamp(carSim.launch, 0, 1);
@@ -390,6 +433,30 @@
 			dom.removeEventListener('pointercancel', endDrag);
 			dom.removeEventListener('contextmenu', onContextMenu);
 			if (pointer !== null && dom.hasPointerCapture(pointer)) dom.releasePointerCapture(pointer);
+		};
+	});
+
+	// The idle orbit's pause switch: ANY pointer button held on the canvas
+	// stands the showcase down for as long as the player's hand is on the
+	// camera (left-drag orbiting, right-drag height — either way it is their
+	// shot). Released, the orbit picks up where it left off.
+	$effect(() => {
+		if (!active) return;
+
+		const down = () => {
+			holding = true;
+		};
+		const up = () => {
+			holding = false;
+		};
+		dom.addEventListener('pointerdown', down);
+		dom.addEventListener('pointerup', up);
+		dom.addEventListener('pointercancel', up);
+
+		return () => {
+			dom.removeEventListener('pointerdown', down);
+			dom.removeEventListener('pointerup', up);
+			dom.removeEventListener('pointercancel', up);
 		};
 	});
 </script>
