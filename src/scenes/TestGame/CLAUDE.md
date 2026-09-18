@@ -26,7 +26,9 @@ cars/                   — THE GARAGE: everything car-specific is data here
 sim/                    — the driving model, car-agnostic
   controller.ts         — the physics task's brain: drivetrain + nitrous gameplay +
                          startup sequence + spawn/restart + yaw & lateral grip +
-                         carSim writes (extracted from TestGame.svelte)
+                         the SURFACE (the car's basis projected into the ground
+                         plane, grip by axle LOAD SHARE, the static friction that
+                         ends a stop) + carSim writes (extracted from TestGame.svelte)
   drivetrain.ts         — pure engine → clutch → gearbox → driven-axle traction step
                          (createDrivetrain(spec); layout-aware load). Owns BOTH
                          halves of the gearbox: the player's Q/E and the
@@ -36,7 +38,8 @@ sim/                    — the driving model, car-agnostic
                          (the GR86's tunes live in its spec)
   suspension.ts         — the RIDE + body attitude, PER CAR (createSuspension(spec);
                          the controller owns the instance beside its drivetrain):
-                         four raycast springs hold the car up in physics, the
+                         four raycast springs hold the car up in physics — along
+                         the GROUND NORMAL, which is where slopes come from — the
                          spring-damped corners lean it in render. Every knob is
                          spec data; three pose consumers (model, CarWheels, rig)
   hullContacts.ts       — what the chassis hull is actually TOUCHING (not the
@@ -490,13 +493,71 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
     schedules overlap, and with a key for a pedal the demand swings far more than
     an ankle does: without the lock, blipping the throttle in traffic gets
     1→2→1→2 inside a second and a half.
+  - **KICKDOWN is the pedal's RISING EDGE, not the smoothed demand.** The demand
+    is the right input for choosing when to change UP and useless as an answer to
+    "overtake, now": by the time it has climbed into the wide-open half of the
+    schedule, the moment is gone. So a stab asks the WIDE-OPEN downshift question
+    (`autoDownshiftRpm`'s second number — the one that already means kickdown)
+    directly, and asks it THROUGH the settle timer and the upshift lock, because
+    a driver flooring it has overruled both. It still goes through
+    `requestShift`, and it repeats the anti-hunt margin, so it can neither money-
+    shift nor land the box back at its own upshift point.
+  - **Three things stop an UPSHIFT, and they are one rule seen three ways**: an
+    upshift is a torque cut followed by a torque step, and there are moments a
+    car cannot absorb one. On the BRAKES it is about to want the lower gear
+    anyway; mid-CORNER (`DriveInput.cornering`, the controller's lateral load /
+    slip angle, one step stale) the tyres are already spending their budget
+    sideways; mid-SLIDE (`slip`) re-engaging onto a spinning axle is how a twitch
+    becomes a spin. None of them block a DOWNSHIFT — that is how drive comes
+    back. Braking also moves the box onto the KICKDOWN downshift schedule
+    instead of the coast-down one, so it arrives at the corner in the gear it
+    will leave in.
 - **The engine feel is in the numbers on purpose**: a torque CURVE through GEARS
-  (acceleration falls off and snaps back on every upshift), a clutch fully OPEN
-  for the length of a shift (0.28 s torque cut), a slipping clutch below
+  (acceleration falls off and snaps back on every upshift), a PROGRESSIVE CLUTCH
+  across a shift (below), a slipping clutch below
   `launchSpeed` (launches hold ~3200 rpm), engine braking scaled by gear, a
   bouncing fuel-cut limiter, and a traction limit at the driven axle with load
   transfer (flooring 1st spins the wheels; the leftover is `slip`, which the
   controller turns into lost lateral grip). See `sim/drivetrain.ts`'s header.
+- **THE CLUTCH IS A PEDAL AND A DISC, and they are different numbers.** `pedal`
+  is how far it is up, `bite` is how hard the disc is clamped; what reaches the
+  road is their product (`pass`), and what the REVS follow is the disc's speed
+  coupling (`lock`). A launch is exactly where the distinction earns its keep —
+  the pedal is DUMPED while the disc slips like mad — and holding them as one
+  number is why the old model needed `clutchMinBite` to mean two things at once.
+  - A shift was a DEAD CUT: zero torque for the whole `shiftTime`, then full
+    torque on the step the timer hit zero, which read as a mute button followed
+    by a kick. It is now `clutchOpen` of the window on the floor and a
+    smoothstepped re-engagement over the rest, so the torque BUILDS — that ramp
+    is where a shift gets its bite.
+  - **The revs are MATCHED across the shift** (`revMatchRate`): while the clutch
+    is open the engine is pulled onto the speed the gear it is going into will
+    impose. That is the blip on a downshift and the drop on an upshift, and it
+    matters more here than in a real car because the throttle is a KEY — nothing
+    makes a keyboard driver lift, so without it every upshift re-engaged straight
+    off the limiter.
+  - **Whatever the match fails to close is the SHOCK** (`clutchShock`): the
+    engine's own inertia over the engagement time, signed by the mismatch —
+    engine faster than the gear shoves the car, slower is the engine-braking
+    kick. It rides the same road as any other crank torque, THROUGH the traction
+    limit, so a big enough mismatch chirps the tyres instead of teleporting the
+    car. A launch is excluded (it has the plant and the boost; counting both
+    would pay for one clutch drop twice).
+  - **ENGINE BRAKING NEEDS A CLOSED CLUTCH** — it is scaled by `lock` now, which
+    is what stopped a car rolling to a stop in gear being dragged backwards
+    through zero by an engine it was barely connected to.
+  - **CREEP is the same fact from the other side**: a slipping disc DRAGS, and at
+    idle that drag is what a real car pulls away on before the throttle has said
+    anything. `creepTorque` fades as the clutch homes and again with road speed
+    (`creepSpeed`), and the gearing does the rest for free — 1st walks, 6th does
+    not move. R creeps backwards. **The BRAKE beats it**, settled in the
+    drivetrain rather than downstream, because brake force only exists above
+    0.05 m/s and a creep that survived the pedal would walk the car off the line
+    in hops the brake could only answer after the fact.
+  - The cost is a real one and worth knowing: **a car in gear with the engine
+    running is never "parked"**, so it does not sleep and the renderer does not
+    idle. The car sleeps with the engine off, in N, or on the brake. Set
+    `creepTorque: 0` to have the old behaviour back.
 - **REV-MATCH LAUNCH**: slot 1st out of N with the revs in the 4–6k window
   (spec `launchWindowMinRpm/MaxRpm`, judged at the SHIFT TAP — the 0.28 s cut that
   follows lets the revs climb out of it, that climb is the player's timing)
@@ -541,9 +602,13 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   `friction={1}` + Multiply (the track collider's own μ) so barrier scrapes
   drag instead of slide. All grip — longitudinal AND lateral — is modelled in
   the drivetrain/task; contacts keep their normal impulses plus cosmetic
-  friction. Trade-off: a parked car can creep on slopes steeper than rolling
-  resistance holds (~0.75°); hold Space (handbrake force) or a brake key if
-  that ever matters.
+  friction. **A parked car is held by the tyres' STATIC friction**
+  (`controller.ts`'s `restGrip`, capped at μ·g like everything else), so it
+  holds any slope up to the tyre's own μ and rolls away on anything steeper —
+  which is what a tyre does. That replaced "it can creep on slopes steeper than
+  rolling resistance holds (~0.75°), hold Space if it matters": rolling
+  resistance was never the thing holding it, because nothing below 0.05 m/s was
+  applying any force at all.
 - **The chassis is a ROUNDED CONVEX HULL computed from the car's own GLB**
   (`cars/hull.ts`, fed to one `<Collider shape="roundConvexHull">` directly
   under the RigidBody): every mesh except the wheels (material-prefix
@@ -659,7 +724,8 @@ drivetrain, the scene advances the visual half and passes the instance down):
 every tuning knob is the spec's `suspension` block, so a second car cannot
 inherit the GR86's ride.
 
-- **It produces no forces.** The chassis is one dynamic box with
+- **The ATTITUDE produces no forces** (the springs themselves do — see the
+  surface section below). The chassis is one dynamic box with
   `enabledRotations={[false, true, false]}` — the PHYSICS car cannot pitch or
   roll at all, and that lock is a real guarantee (see the driving-model section).
   What leans is the model. Nothing here feeds back.
@@ -703,6 +769,62 @@ inherit the GR86's ride.
   is interpolating underneath it).
 - `suspension.reset()` on scene exit AND on Restart — the springs hold state across
   a teleport otherwise, and a car restarted mid-brake respawns nose-down.
+
+## The surface — the car drives on the ground, not on the horizon
+
+The model used to be flat-world by construction, and the tell was that a hill
+cost nothing to climb and gave nothing back going down. Four things changed;
+all of them are no-ops on flat ground, which is what protects the tune.
+
+- **THE SPRING FORCE IS AIMED AT THE GROUND NORMAL, not straight up**
+  (`suspension.ts`'s `step` — the standard raycast-vehicle rule). Aimed UP it
+  balanced gravity exactly on any surface, because both forces were vertical and
+  their horizontal sum was therefore zero whatever the ground was doing: no
+  gravity-along-slope term existed anywhere in the model. Aimed at the normal the
+  support is `f·n`, whose tangential part IS that term, so the hill pulls for
+  real and the TYRES hold it. The normal is capped at 60° from vertical
+  (`MIN_NORMAL_Y`) before it is used as a direction: a trimesh edge, a barrier
+  face or a kerb cheek can hand back a near-horizontal normal, and firing 1290 kg
+  along that is a cannon. The RAW normal is still what the fx lay marks with —
+  only the force is capped.
+- **The car's BASIS is projected into that plane** (`controller.ts`). The body
+  cannot pitch or roll, so its own axes stay horizontal however steep the ground
+  is, and a drive force along a horizontal nose pushes INTO a hill rather than up
+  it. Projecting the nose and the right vector into the measured ground plane is
+  what puts the thrust, the brakes and the sideways bleed where the tyres
+  actually are, and what makes `speedMs` the speed along the ROAD.
+- **Grip scales by each axle's LOAD SHARE, not by a count of rays that hit**
+  (`suspension.loadShare`, smoothed at `CONTACT_RATE` and clamped to 1). The
+  spring rate is derived from the live weight as `weight / (4 · restSag)`, so a
+  compression of exactly `restSag` IS a quarter of the car — the reading is
+  exact, not a proxy. The binary version deleted a quarter of the car's grip the
+  moment one wheel went light over a crest, which is wrong twice over: the
+  springs still have to carry the whole car, so that corner's load has already
+  MOVED to the others. One lifted front wheel reads ~0.95 where the count read
+  0.5.
+- **The visual road-follow splits SLOPE from KERB.** Four corner deviations
+  decompose exactly into three modes over a rectangle of patches — pitch, roll
+  and WARP (the diagonal, which a rigid body cannot express and a real chassis
+  absorbs in torsion). They want opposite treatment: pitch and roll are the
+  surface the car is standing on and it should sit on them fully (`slopeMax` is a
+  safety rail at ~19°/30°, not a feel knob), the warp is one wheel on something
+  and stays clamped at `roadMax`. Clamping them together — which is what the old
+  per-corner `clamp(dev, ±roadMax)` did — capped the SLOPE at the kerb limit, and
+  the car rendered 2° nose-up on a 10° climb, visibly floating out of the hill.
+- **Stopping is the tyres' job** (`controller.ts`'s `restGrip`). Below
+  `REST_SPEED` the rolling model has nothing to say — `resistForce` is gated on
+  `rolling > 0.05`, the sideways bleed's cap goes to zero with the corner,
+  `linearDamping` is 0 on the body by design — and the parked branch used to hand
+  the body straight back with whatever velocity it still had. So **a car that had
+  stopped went on GLIDING in its last direction for ever**, under Rapier's own
+  sleep threshold so it never even settled, while the branch published
+  `speedMs = 0` and the wheels stood still: a car sliding on stationary wheels,
+  which is the one thing tyres never do. Static friction capped at μ·g now takes
+  it out — including the sideways half, which is the difference between coming to
+  a stop and coming to a stop still sliding — and the branch publishes the honest
+  speed. "Nothing is asking the car to move" is measured off the DRIVE FORCE, not
+  the throttle key, because the clutch creeps an idling car in gear and a rest
+  friction that ignored that would quietly delete creep.
 
 ## Telemetry, wheels, camera
 

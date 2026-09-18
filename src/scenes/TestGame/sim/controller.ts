@@ -135,14 +135,19 @@ export function createCarController(spec: CarSpec, world: World) {
 	 * grabbing that would fight gravity. It is also what HOLDS the car on a hill
 	 * now that the springs push along the ground normal — a slope up to `mu` is
 	 * held exactly, and anything steeper rolls away, which is what a tyre does.
+	 *
+	 * Returns whether it actually took anything out, so the parked branch can
+	 * leave a settled body alone instead of writing its own zero back onto it
+	 * every step — the one path in this file that must never touch a sleeper.
 	 */
-	function restGrip(delta: number, mu: number): void {
+	function restGrip(delta: number, mu: number): boolean {
 		const h = Math.hypot(_vel.x, _vel.z);
-		if (h < 1e-6) return;
+		if (h < 1e-6) return false;
 		const grab = mu * G * UNITS_PER_METER * delta;
 		const keep = grab >= h ? 0 : (h - grab) / h;
 		_vel.x *= keep;
 		_vel.z *= keep;
+		return true;
 	}
 
 	// Nitrous + startup state — the scene used to own these locals.
@@ -254,9 +259,9 @@ export function createCarController(spec: CarSpec, world: World) {
 		// rest even with nothing pressed — the clutch creeps it (drivetrain.ts), so
 		// "hands off" only means parked in N or with the engine off.
 		const starting = ignOn && !carIgnition.ready;
-		const handsOff =
-			steerKey === 0 && !handbrake && !throttle && !brake && !shiftUp && !shiftDown;
-		const creepable = ignOn && carIgnition.ready && drivetrain.state.gear !== 0 && hw.creepTorque > 0;
+		const handsOff = steerKey === 0 && !handbrake && !throttle && !brake && !shiftUp && !shiftDown;
+		const creepable =
+			ignOn && carIgnition.ready && drivetrain.state.gear !== 0 && hw.creepTorque > 0;
 		const resting = handsOff && !creepable && _vel.lengthSq() < REST_VEL_SQ;
 		resetForces(body, !(resting || starting), delta);
 
@@ -347,8 +352,7 @@ export function createCarController(spec: CarSpec, world: World) {
 			// static friction takes it out (and holds the car on any slope up to
 			// the tyre's own μ), then the body settles under Rapier's sleep
 			// threshold instead of drifting under it.
-			restGrip(delta, tune.tireMuLong);
-			body.setLinvel(_vel, false);
+			if (restGrip(delta, tune.tireMuLong)) body.setLinvel(_vel, false);
 			if (ignOn) {
 				drivetrain.idle(delta);
 				carSim.rpm = drivetrain.state.rpm;
