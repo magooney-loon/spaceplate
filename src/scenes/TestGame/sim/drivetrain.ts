@@ -160,8 +160,10 @@ export type Drivetrain = ReturnType<typeof createDrivetrain>;
 export function createDrivetrain(spec: CarSpec) {
 	const hw = spec.hardware;
 
-	const state: DrivetrainState = {
-		gear: 1,
+	    const state: DrivetrainState = {
+		        // Spawn in NEUTRAL — slotting 1st is the driver's call (and the launch
+		        // ritual starts from N).
+		        gear: 0,
 		rpm: hw.idleRpm,
 		clutch: 1,
 		slip: 0,
@@ -693,8 +695,8 @@ export function createDrivetrain(spec: CarSpec) {
 		prevDrive = 0;
 	}
 
-	function reset(): void {
-		state.gear = 1;
+	    function reset(): void {
+		        state.gear = 0;
 		state.rpm = hw.idleRpm;
 		state.clutch = 1;
 		state.slip = 0;

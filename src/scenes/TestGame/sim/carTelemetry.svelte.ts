@@ -21,8 +21,8 @@ export const carSim = {
 	// `as number`: the spec is `as const`, so a bare `idleRpm` would type this
 	// field as the literal 800 and reject every reading the engine ever produces.
 	rpm: currentCar().hardware.idleRpm as number,
-	/** -1 reverse, 0 neutral, 1…6. */
-	gear: 1,
+	/** -1 reverse, 0 neutral, 1…6. Starts in N, like the drivetrain itself. */
+	gear: 0,
 	/** Rises by one on every gear ENGAGEMENT — Q/E taps, the automatic's own
 	 * shifts and its stopped drop-to-1st alike, since they all run through the
 	 * drivetrain's engage(). A SEQ, not a copy of the drivetrain's one-step
@@ -207,7 +207,7 @@ export const carHud = $state({
 	// `as number`: the spec is `as const`, so a bare `idleRpm` would type this
 	// field as the literal 800 and reject every reading the engine ever produces.
 	rpm: currentCar().hardware.idleRpm as number,
-	gear: 1,
+	gear: 0,
 	slip: 0,
 	/** Slip angle in whole DEGREES, unsigned — the drift readout. */
 	driftDeg: 0,
@@ -396,7 +396,7 @@ export function publishCarPose(body: RapierRigidBody): void {
 export function resetCarTelemetry(): void {
 	carSim.speedMs = 0;
 	carSim.rpm = currentCar().hardware.idleRpm;
-	carSim.gear = 1;
+	carSim.gear = 0;
 	carSim.slip = 0;
 	carSim.steer = 0;
 	carSim.steerAngle = 0;
