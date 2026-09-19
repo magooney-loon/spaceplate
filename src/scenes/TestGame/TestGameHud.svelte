@@ -13,18 +13,6 @@
 	// never read off the live revs. The boost itself is continuous; the names
 	// are how the player learns the window.
 	const LAUNCH_LABELS = ['STREET LAUNCH', 'JUICY LAUNCH', 'PERFECT LAUNCH'] as const;
-
-	// The lap clock's display format — m:ss.mmm, `-1` (no lap/best yet) as dashes.
-	// Rounded to whole milliseconds FIRST, then split: deriving minutes/seconds
-	// straight off the float risks `.toFixed` rounding 59.9996s up to "60.000"
-	// instead of carrying into the next minute.
-	const formatLap = (seconds: number): string => {
-		if (seconds < 0) return '--:--.---';
-		const totalMs = Math.round(seconds * 1000);
-		const m = Math.floor(totalMs / 60000);
-		const s = (totalMs % 60000) / 1000;
-		return `${m}:${s.toFixed(3).padStart(6, '0')}`;
-	};
 </script>
 
 <!-- Test Game HUD -->
@@ -79,16 +67,6 @@
 	{#if carHud.perfectLaunch}
 		<div class="launch-flash">{LAUNCH_LABELS[carHud.launchTier] ?? 'PERFECT LAUNCH'}</div>
 	{/if}
-
-	<!-- Lap timer — top right. The gate is the spawn line (sim/lapTimer.ts), so
-	     "LAP n" is crossings, not track knowledge; the running clock ticks
-	     whether or not the car is moving, same as a real stopwatch. -->
-	<div class="lap-timer">
-		<div class="lap-current">{formatLap(carHud.lapTime)}</div>
-		<div class="lap-row"><span>LAST</span><span>{formatLap(carHud.lastLapTime)}</span></div>
-		<div class="lap-row"><span>BEST</span><span>{formatLap(carHud.bestLapTime)}</span></div>
-		<div class="lap-count">LAP {carHud.lapCount}</div>
-	</div>
 
 	<!-- Bottom-left, stacked bottom-up: the track map, and above it the debug
 	     telemetry (debug/DebugHud — the numbers behind the rig's geometry).
@@ -163,48 +141,6 @@
 
 	.info p {
 		font-size: 0.875rem;
-	}
-
-	/* ── Lap timer ──────────────────────────────────────────────────────── */
-	.lap-timer {
-		position: absolute;
-		top: 1rem;
-		right: 1rem;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 0.15rem;
-		padding: 0.5rem 0.75rem;
-		background: rgba(0, 0, 0, 0.5);
-		border: 1px solid #4a90d9;
-		border-radius: 0.25rem;
-		color: #fff;
-		font-variant-numeric: tabular-nums;
-		pointer-events: none;
-	}
-
-	.lap-current {
-		font-size: 1.5rem;
-		font-weight: 700;
-		letter-spacing: 0.02em;
-	}
-
-	.lap-row {
-		display: flex;
-		gap: 0.5rem;
-		font-size: 0.8rem;
-		color: #a8c8e8;
-	}
-
-	.lap-row span:first-child {
-		opacity: 0.7;
-	}
-
-	.lap-count {
-		margin-top: 0.15rem;
-		font-size: 0.75rem;
-		letter-spacing: 0.08em;
-		opacity: 0.7;
 	}
 
 	/* ── Launch flash ───────────────────────────────────────────────────── */

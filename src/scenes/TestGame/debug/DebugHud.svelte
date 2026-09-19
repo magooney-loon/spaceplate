@@ -79,8 +79,6 @@
 			<dd class:hot={carDebugHud.latLoad > 0.95}>{carDebugHud.latLoad.toFixed(2)}</dd>
 			<dt>μ lat</dt>
 			<dd>{carDebugHud.muLat.toFixed(2)}</dd>
-			<dt>wet</dt>
-			<dd class:hot={carDebugHud.wetness > 0.3}>{carDebugHud.wetness.toFixed(2)}</dd>
 			<dt>drift</dt>
 			<dd>{carHud.driftDeg}°</dd>
 			<dt>yaw</dt>

@@ -24,8 +24,6 @@ import { carGearbox, carHandling, carIgnition } from './carSwitches.svelte';
 import { carControls } from './carControls';
 import { clamp, damp } from './carMath';
 import { createSuspension } from './suspension';
-import { createLapTimer, loadBestLap, saveBestLap } from './lapTimer';
-import { skyQueries, rainAmount } from '$core/skybox/model';
 
 // UNITS: the sim thinks in metres, the world is 2.5 units to the metre. Forces
 // and velocities convert at this boundary and nowhere else — see units.ts.
@@ -55,20 +53,6 @@ const CONTACT_RATE = 30;
 const REST_SPEED = 0.35;
 /** The same threshold in world units, squared — what the parked test measures. */
 const REST_VEL_SQ = (REST_SPEED * UNITS_PER_METER) ** 2;
-
-// Rain: the sky's `precipitation` channel (core/skybox) wets the tyres. A
-// TRACK condition, not a setup — it scales every μ this file and the
-// drivetrain compute UNIFORMLY (no sign in it, so it can't touch the
-// stability rule), and lives entirely outside `HandlingTune`.
-/** 1/s — how fast the smoothed wetness follows a RISING rain reading. Faster
- *  than the dry-out: a downpour slicks the road quicker than the sun dries it. */
-const WETNESS_WET_RATE = 1 / 20;
-/** 1/s — how fast wetness follows a FALLING reading (rain easing or stopping).
- *  Slower on purpose — puddles outlast the shower. */
-const WETNESS_DRY_RATE = 1 / 90;
-/** Fraction of μ lost at full wetness (1.0). Wet asphalt, not ice — the car
- *  stays drivable, just looser and later to brake. */
-const WET_GRIP_LOSS = 0.3;
 
 // Nitrous: Shift sprays with the throttle open in a forward gear, purges
 // (vents at the hood) with that gate shut. Kit hardware is the spec's
@@ -105,15 +89,6 @@ export function createCarController(spec: CarSpec, world: World) {
 	 *  that changes gear in the middle of a corner unsettles the car. One step
 	 *  stale by construction — the cornering model runs after the drivetrain. */
 	let cornering = 0;
-	/** 0..1 — smoothed rain wetness (see the `WETNESS_*` constants above). Read
-	 *  fresh from the sky each step and ramped; never a raw per-step reading. */
-	let wetness = 0;
-	/** The lap clock — a start/finish gate at the spawn line (sim/lapTimer.ts).
-	 *  Seeded from the persisted best, the one thing that survives a fresh mount. */
-	const lapTimer = createLapTimer(loadBestLap(spec.id));
-	/** What is currently on disk — a new best is written once, on the step it
-	 *  changes, rather than every step for the rest of the session. */
-	let bestLapAtLastSave = lapTimer.state.bestLapTime;
 
 	/**
 	 * Clear Rapier's force accumulator and immediately re-apply what holds the
@@ -192,7 +167,6 @@ export function createCarController(spec: CarSpec, world: World) {
 	const _rot = { x: 0, y: 0, z: 0, w: 1 } as Rotation;
 	const _lin = { x: 0, y: 0, z: 0 } as Vector;
 	const _ang = { x: 0, y: 0, z: 0 } as Vector;
-	const _pos = { x: 0, y: 0, z: 0 } as Vector;
 
 	function step(delta: number, body: RapierRigidBody): void {
 		// First driven step = the spawn pose. Restart teleports the body back here.
@@ -207,27 +181,11 @@ export function createCarController(spec: CarSpec, world: World) {
 			spawnRot.y = r.y;
 			spawnRot.z = r.z;
 			spawnRot.w = r.w;
-			// The lap gate: a finite segment across the road at the spawn line,
-			// normal along the spawn heading (nose -Z) in the ground plane — see
-			// sim/lapTimer.ts's header for why this is the whole checkpoint model.
-			_q.set(r.x, r.y, r.z, r.w);
-			_forward.set(0, 0, -1).applyQuaternion(_q);
-			lapTimer.setGate(t.x, t.z, _forward.x, _forward.z);
 		}
 
 		// The selected setup, re-read every step — switching tunes is a live change.
 		const tune = spec.tunes[carHandling.mode];
-
-		// Rain: the sky's live weather, read fresh (never cached) and ramped into
-		// a smoothed wetness — see the `WETNESS_*`/`WET_GRIP_LOSS` constants above.
-		// A TRACK condition, so it multiplies every μ below UNIFORMLY rather than
-		// living inside `tune`.
-		const rain = rainAmount(skyQueries.getWeather());
-		wetness += (rain - wetness) * damp(rain > wetness ? WETNESS_WET_RATE : WETNESS_DRY_RATE, delta);
-		const grip = 1 - WET_GRIP_LOSS * wetness;
-		carSim.wetness = wetness;
-
-		const latGrip = latMu(tune) * grip;
+		const latGrip = latMu(tune);
 
 		// The `steer` slot reads SCREEN-natural (− left, + right); this model's sign is
 		// the opposite. Negated at exactly this line and nowhere else. With the arrows
@@ -285,21 +243,6 @@ export function createCarController(spec: CarSpec, world: World) {
 		_q.set(rot.x, rot.y, rot.z, rot.w);
 		_forward.set(0, 0, -1).applyQuaternion(_q); // model nose is -Z
 		_right.set(1, 0, 0).applyQuaternion(_q);
-
-		// The lap clock — a stopwatch, so it runs whether or not the pedals are
-		// touched (starting/resting return early below, but the lap does not
-		// pause with them). Position only, so this stays cheap: no ground/basis
-		// work needed for a plane test.
-		const pos = body.translation(_pos);
-		lapTimer.step(delta, pos.x, pos.z);
-		if (lapTimer.state.bestLapTime !== bestLapAtLastSave) {
-			bestLapAtLastSave = lapTimer.state.bestLapTime;
-			saveBestLap(spec.id, bestLapAtLastSave);
-		}
-		carSim.lapTime = lapTimer.state.lapTime;
-		carSim.lastLapTime = lapTimer.state.lastLapTime;
-		carSim.bestLapTime = lapTimer.state.bestLapTime;
-		carSim.lapCount = lapTimer.state.lapCount;
 
 		// ── The ground, once, before anything reads it ───────────────────────
 		// Startup and rest both hold the car still, and neither may WAKE a body
@@ -400,7 +343,7 @@ export function createCarController(spec: CarSpec, world: World) {
 			// static friction takes it out (and holds the car on any slope up to
 			// the tyre's own μ), then the body settles under Rapier's sleep
 			// threshold instead of drifting under it.
-			if (restGrip(delta, tune.tireMuLong * grip)) body.setLinvel(_vel, false);
+			if (restGrip(delta, tune.tireMuLong)) body.setLinvel(_vel, false);
 			if (ignOn) {
 				drivetrain.idle(delta);
 				carSim.rpm = drivetrain.state.rpm;
@@ -457,8 +400,7 @@ export function createCarController(spec: CarSpec, world: World) {
 				// a corner rather than unsettling the car mid-bend.
 				cornering
 			},
-			tune,
-			grip
+			tune
 		);
 
 		// How much tyre is on the road: drive through the driven axle(s), brakes +
@@ -526,10 +468,9 @@ export function createCarController(spec: CarSpec, world: World) {
 		// Bleed the sideways velocity, capped at what the tyres could actually pull
 		// back (CLAUDE.md "Cornering is the μ, not the damp rate"). μ runs from
 		// `handbrakeMuLat` to `latGrip`, interpolated across the drivetrain's
-		// `gripFactor` — both ends scaled by rain `grip` so the handbrake's own
-		// drift limit gets slicker in the wet too, not just the planted end.
-		const handbrakeMuLat = tune.handbrakeMuLat * grip;
-		const muLat = handbrakeMuLat + (latGrip - handbrakeMuLat) * clamp(out.gripFactor, 0, 1);
+		// `gripFactor`.
+		const muLat =
+			tune.handbrakeMuLat + (latGrip - tune.handbrakeMuLat) * clamp(out.gripFactor, 0, 1);
 		const settle = vLateral * damp(hw.gripRate, delta);
 		// m/s² → world units/s this step, and only as much as is on the ground.
 		const bleedLimit = muLat * G * UNITS_PER_METER * delta * contact;
@@ -552,7 +493,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		// Rolling resistance is the yardstick for "not being driven" because it is
 		// what the car coasts against anyway.
 		const coasting = !throttle && Math.abs(out.driveForce) <= hw.rollingResistance;
-		if (coasting && absSpeed < REST_SPEED) restGrip(delta, tune.tireMuLong * grip * contact);
+		if (coasting && absSpeed < REST_SPEED) restGrip(delta, tune.tireMuLong * contact);
 		body.setLinvel({ x: _vel.x, y: _vel.y, z: _vel.z }, true);
 
 		// The suspension's input: the model's OWN accelerations, not a finite
@@ -631,7 +572,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		carSim.powerLoad = 0;
 		carSim.gripFactor = 1;
 		carSim.loose = 0;
-		carSim.muLat = latMu(spec.tunes[carHandling.mode]) * (1 - WET_GRIP_LOSS * wetness);
+		carSim.muLat = latMu(spec.tunes[carHandling.mode]);
 		carSim.clutch = 1;
 	}
 
@@ -649,11 +590,6 @@ export function createCarController(spec: CarSpec, world: World) {
 		body.setLinvel({ x: 0, y: 0, z: 0 }, true);
 		body.setAngvel({ x: 0, y: 0, z: 0 }, true);
 		body.resetForces(true);
-		// The running lap clock has to reset with the pose — otherwise a lap in
-		// progress keeps counting stale time and then falsely completes the moment
-		// the teleported car next crosses the line. lastLapTime/lapCount/best stay
-		// (see lapTimer.ts's `reset` — "nothing else" matches this function's own).
-		lapTimer.reset();
 	}
 
 	/** Unmount: park the instruments' module state and this controller's locals,
@@ -668,12 +604,9 @@ export function createCarController(spec: CarSpec, world: World) {
 		contactFront = 1;
 		contactRear = 1;
 		cornering = 0;
-		wetness = 0;
-		// The session's lap fields, not the persisted best — see lapTimer.ts's `park`.
-		lapTimer.park();
 	}
 
-	return { step, restart, park, drivetrain, suspension, lapTimer };
+	return { step, restart, park, drivetrain, suspension };
 }
 
 export type CarController = ReturnType<typeof createCarController>;

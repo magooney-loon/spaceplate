@@ -123,8 +123,8 @@ fx/                     — the car's visual effects
                          points INTO the car) and bounce off the body
   NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
                          boost from the nitrous flow (the lensState contract)
-debug/                  — the debug TOOL: the 3D rig, its readout, and the lap gate
-                         viz. All on the same B switch (`carView`), and the HUD
+debug/                  — the debug TOOL, both halves: the 3D rig and its readout.
+                         Both are on the same B switch (`carView`), and the HUD
                          one is the only HTML component outside the HUD shell —
                          it belongs with the rig it explains, not with the
                          scene's chrome
@@ -143,13 +143,6 @@ debug/                  — the debug TOOL: the 3D rig, its readout, and the lap
                          friction circle. Pure visualization, never feeds physics
                          (complements the Studio-gated Rapier collider debug in
                          extensions/physics)
-  LapGate.svelte        — the START/FINISH SEGMENT sim/lapTimer.ts actually tests,
-                         drawn at the spawn (rig + both views). World-anchored, so
-                         it mounts as a scene sibling and never moves; the pose,
-                         heading and width are read off the timer's own `gate`
-                         object and the road height is measured by the car's
-                         suspension rays at spawn. Bar + end posts + a chevron for
-                         the counting direction; flashes white on a counted lap
 audio/                  — the engine NOTE
   carSounds.ts          — the scene's SOUND MANIFEST, declared on the engine's registry
                          (urls, gains, positional params, pool depth — data only)
@@ -919,44 +912,6 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   the labels — so the map holds against pale asphalt and a bright sky without
   boxing the corner off. Same rule as the glows either way: drawn, never
   filtered.
-
-## Lap timing — a gate, not a track
-
-`sim/lapTimer.ts`. The minimap outline above is the only track-shape data this
-scene has, and it is built for drawing, not for gameplay (no ordered waypoints,
-no measured lap length). The lap timer therefore checks exactly ONE thing: a
-nose-first crossing of a FINITE segment through the car's own SPAWN pose,
-wing-tip to wing-tip across the road — the same pose `controller.ts` already
-captures for Restart, so the gate costs no new authored data. A driver who cuts
-the course is not caught; that is the accepted trade for not inventing
-checkpoint coordinates nobody measured (this file's own "measured, not guessed"
-rule for track facts).
-
-- **The gate is a SEGMENT, not a line.** The crossing test is against a plane,
-  and a plane is infinite — a bare test scored forward passes anywhere on the
-  spawn's line, and a closed circuit crosses that line somewhere else by
-  necessity, so phantom laps landed half a track away. The crossing now also
-  has to fall within `GATE_HALF_WIDTH` (20 u) of the spawn along the gate; a
-  pass wide of it still flips the crossing edge, so the next in-gate crossing
-  is detected normally. `debug/LapGate.svelte` draws the exact segment on the
-  B view and flashes white on a counted lap, so the width can be checked
-  against the road by eye.
-- **`MIN_LAP_TIME` (10 s) is what stands in for "you actually went around."**
-  Without it, creeping back over the spawn line and pulling away again — the
-  ordinary first few seconds off a restart — reads as an instant lap. Ten
-  seconds is nowhere near a real lap on this track and only ever rejects that
-  wiggle.
-- **The clock is a stopwatch, not a pedal-gated timer** — `lapTime` counts
-  real seconds whether the car is parked, mid-startup, or driving, because
-  that is what a lap clock does. Only Restart resets it (and only the running
-  time and the crossing edge — `lastLapTime`/`lapCount`/the persisted best
-  survive, matching Restart's own "pose and motion back to spawn, nothing
-  else" contract elsewhere in this file).
-- **The best lap is the one thing that outlives a mount**, in `localStorage`
-  under `testgame.bestLap.<car id>` — loaded once when `createCarController`
-  runs, written once per new best. Session fields (`lastLapTime`, `lapCount`)
-  reset on unmount like the drivetrain/nitrous locals; the persisted best does
-  not, the same split `park()` already draws for everything else.
 
 ## Telemetry, wheels, camera
 
