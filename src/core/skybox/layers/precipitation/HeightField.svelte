@@ -24,7 +24,14 @@
 	import type { Object3D } from 'three/webgpu';
 	import { positionWorld, vec3 } from 'three/tsl';
 	import { descriptor } from '../../model';
-	import { heightFieldState, heightTarget, uHeightCenter, uHeightExtent } from './heightField';
+	import {
+		HEIGHT_MAP_SIZE,
+		heightFieldState,
+		heightTarget,
+		setHeightMapSize,
+		uHeightCenter,
+		uHeightExtent
+	} from './heightField';
 
 	interface Props {
 		/**
@@ -32,6 +39,13 @@
 		 * Rain's is 70 wide, so 40 leaves margin for wind drift at the edges.
 		 */
 		extent?: number;
+		/**
+		 * Map resolution, per graphics preset (`Skybox.svelte`). More resolution buys
+		 * sharper object edges only (see `HEIGHT_MAP_SIZE`'s note) -- cheap either way,
+		 * since the whole pass runs at most a few times a second and only while
+		 * something is falling.
+		 */
+		mapSize?: number;
 		/** How far above the camera the pass camera sits, and how far down it sees. */
 		height?: number;
 		depth?: number;
@@ -52,10 +66,17 @@
 		depth = 400,
 		intervalMs = 150,
 		cameraDeltaWorld = 6,
+		mapSize = HEIGHT_MAP_SIZE,
 		exclude
 	}: Props = $props();
 
 	const { scene, renderer, camera, autoRenderTask } = useThrelte();
+
+	// Applied on mount and whenever the preset changes it -- a plain write onto the
+	// shared render target, not reactive state (see `setHeightMapSize`'s note).
+	$effect(() => {
+		setHeightMapSize(mapSize);
+	});
 
 	// Orthographic and axis-aligned by construction, which is what lets heightField.ts map
 	// world XZ into map UV with two scalars instead of a full matrix. The frustum is left

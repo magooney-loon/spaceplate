@@ -66,9 +66,10 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 
 - **Draw order** = render queue + `renderOrder`: 1 (Nebula, Stars, Meteors), 2 (Moon),
   2.2 (Birds — under the deck, over the moon), 2.5 (CloudDeck — occludes the moon),
-  2.6 (bolt), 3 (Rain, Snow), 3.2 (DustMotes — nearest), 4 (the faint lightning sky
-  wash). The lens overlays are post-processing chain effects and don't participate in
-  draw order at all (see _The lenses left_ below).
+  2.6 (bolt), 3 (Rain streaks, Snow), 3.1 (Rain rings), 3.2 (Rain burst), 3.3
+  (DustMotes — nearest), 4 (the faint lightning sky wash). The lens overlays are
+  post-processing chain effects and don't participate in draw order at all (see
+  _The lenses left_ below).
 - **Task order** falls back to mount order among `before: autoRenderTask` tasks; the one
   real dependency is Lightning → CloudDeck (flash published and read in the same frame).
 - **Anything that MOVES the camera must run in the main stage, not here.** Six layers
@@ -172,7 +173,24 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   The render target is created
   at module scope so its identity is stable before any material bakes
   `texture(target.texture)` into its node graph — swapping a texture under a live
-  material invalidates its cache key.
+  material invalidates its cache key. **Resolution is per graphics preset**
+  (`Skybox.svelte`'s `HEIGHT_FIELD_SIZE`, 320/192), resized in place at runtime via
+  `setHeightMapSize` — the texture's identity survives the resize, so consumers baked
+  against it need no rebuild (same contract `SkyLight`'s `shadowMapSize` resize relies
+  on).
+- **`sampleHeightFieldSlope` answers "which way is downhill" for splashes that must sit
+  IN a sloped surface, not just at its height** — a forward-difference gradient (two
+  extra samples over `sampleHeightField`'s one), read only by Rain's impact rings, not
+  by `surfaceAt`'s per-streak call (that would triple the height-field reads for the
+  9000 streaks that only ever need "has it hit yet", never the tilt). Rain's ring block
+  turns the gradient into TWO things from the same first-order Taylor step, not two
+  separate mechanisms: `slope.x·dx + slope.y·dz` (`dx`/`dz` being the offset from the
+  sampled impact point) is simultaneously the ring's TILT — replacing the old flat
+  `surfaceLocalY` placement, which floated over one edge and clipped into the other on
+  a bank — and, once `dx`/`dz` include an accumulated downhill offset
+  (`SLOPE_SLIDE_SPEED × progress`, clamped by `SLOPE_MAX` so a curb's near-vertical edge
+  can't fling a ring sideways), the ring's SLIDE. On flat ground `slope` is zero and
+  both collapse to the original flat, static placement exactly.
 - **TSL builds a node in whatever stage CONSUMES it, and only `AttributeNode` lifts
   itself to a varying** — arithmetic on top of one is simply re-emitted per stage.
   `opacityNode` is a fragment node, so naming a motion term in it drags the whole solve

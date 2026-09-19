@@ -28,6 +28,7 @@
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';
 	import {
+		cameraPosition,
 		float,
 		fract,
 		mix,
@@ -44,7 +45,7 @@
 		vec4
 	} from 'three/tsl';
 	import { clamp01, descriptor, mulberry32, rainAmount, windAxisX, windAxisZ } from '../../model';
-	import { sampleHeightField } from './heightField';
+	import { sampleHeightField, sampleHeightFieldSlope } from './heightField';
 	import {
 		billboardClip,
 		instancedQuad,
@@ -100,9 +101,12 @@
 		maxSpeed = 28,
 		widthWorld = 0.018,
 		splashCount = 1500,
-		ringDuration = 0.5,
-		ringRadius = 0.22,
-		burstDuration = 0.28,
+		// Duration and radius came DOWN together: a splash this size is a quick, tight
+		// event in reality -- the old 0.22/0.5 pairing read as a slow-motion puddle ring
+		// rather than an individual raindrop's impact.
+		ringDuration = 0.4,
+		ringRadius = 0.13,
+		burstDuration = 0.22,
 		seed = 20260831
 	}: Props = $props();
 
@@ -175,6 +179,14 @@
 	 * reflector, so a ring at midnight must not glow at its noon brightness.
 	 */
 	const uLight = uniform(0.4);
+	/**
+	 * The key light's direction (`descriptor.light.direction`, same convention as
+	 * `SkyFog`'s `sunInscatter` and `DustMotes`' rim term) -- feeds the burst droplets'
+	 * backlight glint. A flying droplet is a tiny lens; it catches the sun the same way
+	 * a dust mote does, and it is the cheapest way to make a splash read as WATER rather
+	 * than a grey speck.
+	 */
+	const uKeyDir = uniform(new THREE.Vector3(0, 1, 0));
 
 	/**
 	 * The camera's own world velocity in units per second, smoothed -- a raw position-delta
@@ -224,6 +236,18 @@
 	 * is the old figure at 60fps, so the live behaviour is unchanged.
 	 */
 	const TELEPORT_SPEED = 480;
+
+	/**
+	 * Slope response for the impact rings -- see the block that uses these, near
+	 * `sampleHeightFieldSlope`. `SLOPE_SLIDE_SPEED` is world units/second of downhill
+	 * creep AT slope magnitude 1 (45deg); real banks/ramps sit well under that, so a
+	 * ring drifts a fraction of its own radius over its life rather than visibly
+	 * running off. `SLOPE_MAX` clamps the gradient itself before it drives anything --
+	 * a curb or wall edge is a near-vertical jump in the height field over one eps step,
+	 * and an unclamped slide there would fling the ring sideways at an ungainly speed.
+	 */
+	const SLOPE_SLIDE_SPEED = 0.35;
+	const SLOPE_MAX = 1.2;
 
 	/**
 	 * Builds every layer, once. One closure because all of it is BUILD-TIME props -- see
@@ -545,12 +569,47 @@
 			const dropScale = m.aParams.z.div(widthWorld).mul(0.55).add(0.45);
 			const radius = dropScale.mul(ringRadius);
 
-			// Laid flat in XZ at the surface, lifted a hair to stay off it: these share a
-			// plane with the ground, and depth-testing coplanar geometry z-fights.
+			// THE LOCAL SLOPE, sampled once at the impact point -- not inside `surfaceAt`
+			// (which every falling streak also calls): a slope costs two extra height-field
+			// samples, and only the ~1500 rings need it, not the 9000 streaks. `worldImpact`
+			// reuses `m.surfaceLocalY`, which is already the height-field's own answer for
+			// this XZ, so the extra samples are exactly the two `sampleHeightFieldSlope`
+			// needs and no more.
+			const worldImpact = modelWorldMatrix.mul(vec4(m.x, m.surfaceLocalY, m.z, 1)).xyz;
+			const { valid: slopeValid, slope } = sampleHeightFieldSlope(worldImpact);
+			const slopeMag = slope.length().min(float(SLOPE_MAX));
+			const safeMag = slopeMag.max(1e-4);
+			// Unit downhill direction in world XZ -- water runs AWAY from increasing height,
+			// so this is the gradient, negated and normalised. Floored by `safeMag` rather
+			// than a raw `.normalize()`, which is NaN at exactly zero slope (flat ground,
+			// the common case).
+			const downhillX = slope.x.div(safeMag).negate();
+			const downhillZ = slope.y.div(safeMag).negate();
+			// Grows with the ring's own life and gated on `slopeValid`, so a splash whose
+			// slope sample fell outside the map (an edge case `sampleHeightField`'s own
+			// fail-safe already covers) sits still instead of drifting on bad data.
+			const slideDist = slopeMag.mul(SLOPE_SLIDE_SPEED).mul(progress).mul(slopeValid);
+			const slideX = downhillX.mul(slideDist);
+			const slideZ = downhillZ.mul(slideDist);
+
+			// The full horizontal offset from the impact point -- the quad's own corner
+			// spread PLUS the downhill creep, both measured from the same origin the slope
+			// was sampled at.
+			const dx = corner.x.mul(radius).add(slideX);
+			const dz = corner.y.mul(radius).add(slideZ);
+
+			// NOT flat in XZ any more: `slope.x * dx + slope.y * dz` is the height field's
+			// own first-order approximation of "how much higher/lower is the ground HERE
+			// than at the impact point" -- the same linear (Taylor) step the slope sample
+			// itself is built from. On a flat floor `slope` is zero and this reduces to the
+			// original flat placement exactly; on a bank it tilts the ring (and slides it)
+			// to sit IN the surface instead of floating over one edge and clipping into the
+			// other. Lifted a hair off the surface either way, to stay off it -- these share
+			// a plane with the ground, and depth-testing coplanar geometry z-fights.
 			const local = vec3(
-				m.x.add(corner.x.mul(radius)),
-				m.surfaceLocalY.add(0.015),
-				m.z.add(corner.y.mul(radius))
+				m.x.add(dx),
+				m.surfaceLocalY.add(0.015).add(slope.x.mul(dx)).add(slope.y.mul(dz)),
+				m.z.add(dz)
 			);
 			// Honest projection, not depth-pinned: a ring lies on the world and must be
 			// occluded by anything in front of it.
@@ -564,19 +623,67 @@
 			const grow = sqrt(progress);
 			const bandWidth = mix(float(0.3), float(0.09), progress);
 			const r = sqrt(corner.x.mul(corner.x).add(corner.y.mul(corner.y)));
-			const band = smoothstep(float(0), bandWidth, r.sub(grow).abs()).oneMinus();
 
-			ringMaterial.colorNode = vec3(0.62, 0.72, 0.84).mul(uLight);
+			// THE WOBBLE: a real splash crown is not a perfect circle, and a mathematically
+			// perfect one is the tell that gives away a procedural ring at this small a size
+			// -- there is nowhere for imperfection to hide the way there was at the old
+			// radius. Two sine terms at different Cartesian frequencies, phased per-drop off
+			// `m.aRandoms.x` (already carried for culling, reused rather than spending a
+			// new attribute slot). Perturbing the DISTANCE FIELD directly rather than an
+			// angle needs no atan2: a smooth Cartesian noise field still varies as you walk
+			// around the circle, which is all an irregular rim needs.
+			const wobble = sin(corner.x.mul(9).add(corner.y.mul(6)).add(m.aRandoms.x.mul(41)))
+				.mul(0.35)
+				.add(
+					sin(corner.x.mul(-5).add(corner.y.mul(11)).add(m.aRandoms.x.mul(17))).mul(0.25)
+				);
+			const rWarped = r.add(wobble.mul(0.1));
+
+			const band = smoothstep(float(0), bandWidth, rWarped.sub(grow).abs()).oneMinus();
+
+			// THE REBOUND: a real drop's crown collapses and throws a second, tighter ring a
+			// beat after the first -- the "plink-plink" a single band can't produce. Delayed
+			// (`step` gate at progress 0.1), reaches only half the primary's radius, and
+			// fades faster (`pow(..., 2.5)` against the primary's `2`) so it reads as an echo
+			// rather than a second identical ripple. Warped by the SAME `wobble`, not a
+			// second draw of it -- both rings come off the same disturbance, so they share a
+			// directionality rather than looking like two unrelated shapes.
+			const reboundProgress = progress.sub(0.1).div(0.55).clamp(0, 1);
+			const reboundGrow = sqrt(reboundProgress).mul(0.5);
+			const reboundWidth = mix(float(0.14), float(0.04), reboundProgress);
+			const rebound = smoothstep(float(0), reboundWidth, rWarped.sub(reboundGrow).abs())
+				.oneMinus()
+				.mul(step(float(0.1), progress))
+				.mul(pow(reboundProgress.oneMinus(), float(2.5)));
+
+			// THE FLASH: a brief bright core exactly at contact -- the "snap" of impact, not
+			// only the ring that follows it. Both edges written ascending then inverted
+			// (`smoothstep(0, x, ...).oneMinus()`), never descending -- WGSL leaves
+			// `smoothstep` undefined when edge0 > edge1 (same rule as `wrapFade` elsewhere
+			// in this file).
+			const flash = smoothstep(float(0), float(0.06), progress)
+				.oneMinus()
+				.mul(smoothstep(float(0), float(0.6), r).oneMinus());
+
+			const glow = band.add(rebound.mul(0.7)).add(flash).clamp(0, 1);
+
+			// The flash mixes the ripple's water-blue toward white -- an impact is a moment
+			// of bright scatter, not a tinted ring from frame one.
+			ringMaterial.colorNode = mix(vec3(0.62, 0.72, 0.84), vec3(1, 1, 1), flash).mul(uLight);
 			ringMaterial.opacityNode = opacity
 				.mul(active)
 				.mul(m.alive)
 				.mul(m.wrapFade)
-				.mul(band)
+				.mul(glow)
 				// Squared, so the ring holds its brightness while it is still tight and then
 				// goes quickly, instead of lingering as a wide grey halo.
 				.mul(pow(progress.oneMinus(), float(2)))
 				.mul(m.aRandoms.y)
-				.mul(0.6);
+				// A touch brighter than the old 0.6 -- a smaller ring at the same brightness
+				// reads as fainter even though it covers the same fraction of its own quad;
+				// this keeps it punchy rather than washing out into the ground at the new
+				// scale.
+				.mul(0.72);
 		}
 
 		// ── The burst ────────────────────────────────────────────────────────────────
@@ -609,8 +716,11 @@
 					const angle = ((b + rng() * 0.7) / BURST_PER_IMPACT) * Math.PI * 2;
 					burstShape[j * 4] = Math.cos(angle);
 					burstShape[j * 4 + 1] = Math.sin(angle);
-					burstShape[j * 4 + 2] = 0.06 + rng() * 0.1;
-					burstShape[j * 4 + 3] = widthWorld * (1.8 + rng() * 2.2);
+					// Reach and size both came DOWN with the ring: 0.05-0.14, smaller than even
+					// the original 0.06-0.16 -- a splash this size throws droplets a few
+					// centimetres, not the better part of a ring's old diameter.
+					burstShape[j * 4 + 2] = 0.05 + rng() * 0.09;
+					burstShape[j * 4 + 3] = widthWorld * (1.2 + rng() * 1.5);
 				}
 			}
 
@@ -625,7 +735,9 @@
 			const active = m.below.mul(step(m.secondsSinceImpact, float(burstDuration)));
 
 			// Out along its own bearing, and up on a parabola that returns to the surface --
-			// 4p(1-p) peaks at 0.5 and is zero at both ends.
+			// 4p(1-p) peaks at 0.5 and is zero at both ends. Back to the original 1.6 now
+			// that `reach` itself came down with the ring -- a smaller droplet doesn't need
+			// the extra airtime the livelier `reach` used to earn it.
 			const reach = aShape.z;
 			const arc = progress.mul(progress.oneMinus()).mul(4);
 			const local = vec3(
@@ -637,10 +749,25 @@
 			// Billboarded and honestly projected, as the streaks are.
 			burstMaterial.vertexNode = billboardClip(local, corner.mul(aShape.w));
 
+			// THE GLINT: a flying droplet is a tiny lens, and it catches backlight the same
+			// way `DustMotes` does -- same dot product, same reasoning (../atmosphere/
+			// DustMotes.svelte). Computed from `local` (box-local, camera-anchored) through
+			// the model matrix to get a real world position, exactly as `surfaceAt` does
+			// above.
+			const worldPos = modelWorldMatrix.mul(vec4(local, 1)).xyz;
+			const viewDir = worldPos.sub(cameraPosition).normalize();
+			const rim = viewDir.dot(uKeyDir).max(0).pow(float(6));
+
 			// A round speck, fading as it falls back.
 			const d2 = corner.x.mul(corner.x).add(corner.y.mul(corner.y));
 			const speck = smoothstep(float(0), float(1), d2).oneMinus();
-			burstMaterial.colorNode = vec3(0.6, 0.7, 0.82).mul(uLight);
+			// Warm-white added on top of the droplet's own pale blue, not mixed toward it --
+			// a glint is light arriving at the lens, the same "inscatter adds, it doesn't
+			// lerp" reasoning `godrays`' composite uses (postprocessing/CLAUDE.md), just
+			// small enough here that the distinction is mostly `.add` vs `mix` in the code.
+			burstMaterial.colorNode = vec3(0.6, 0.7, 0.82)
+				.mul(uLight)
+				.add(vec3(1, 1, 0.96).mul(rim).mul(0.7));
 			burstMaterial.opacityNode = opacity
 				.mul(active)
 				.mul(m.alive)
@@ -716,9 +843,11 @@
 
 			// Splashes are water catching the light, so they track the key and fill as
 			// Snow's flakes do -- bright in daylight, faint under a night deck.
-			const { ambient, intensity } = descriptor.light;
+			const { direction, ambient, intensity } = descriptor.light;
 			const lit = Math.min(1.1, Math.max(0.2, 0.25 + ambient * 0.5 + intensity * 0.09));
 			uLight.value = lit;
+			// The burst glint's direction -- see `uKeyDir`'s note.
+			uKeyDir.value.set(direction.x, direction.y, direction.z);
 
 			// The streaks track it too, but on a much shallower curve and off a high floor:
 			// a splash is a reflection and genuinely goes dark, while a falling drop is lit

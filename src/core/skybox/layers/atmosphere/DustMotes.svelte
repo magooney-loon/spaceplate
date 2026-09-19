@@ -300,14 +300,14 @@
 	$effect(() => camera.subscribe((cam) => cam.layers.enable(AMBIENT_LAYER)));
 </script>
 
-<!-- renderOrder 3.2: nearest of the near-camera layers, drawn after Rain/Snow (3) so a
-     mote in front of a raindrop still composites correctly, and before the lightning
-     wash (4). -->
+<!-- renderOrder 3.3: nearest of the near-camera layers, drawn after Rain's streaks (3),
+     rings (3.1) and burst (3.2) so a mote in front of a raindrop still composites
+     correctly, and before the lightning wash (4). -->
 <T.Mesh
 	bind:ref={mesh}
 	{geometry}
 	{material}
-	renderOrder={3.2}
+	renderOrder={3.3}
 	frustumCulled={false}
 	userData={SKY_LAYER_USERDATA}
 />

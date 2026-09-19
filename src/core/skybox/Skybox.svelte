@@ -49,6 +49,15 @@
 	// Identity is stable per preset (a reference into the table), so keying on it is safe.
 	const precipitation = $derived(PRECIPITATION[settingsState.graphics.quality]);
 
+	// The precipitation height field's resolution, per preset (heightField.ts's
+	// `HEIGHT_MAP_SIZE` note: more resolution buys sharper object edges and nothing
+	// else, which is exactly what a splash landing a texel inside a barrier needs).
+	// Cheap either way -- the pass runs a few times a second at most, and only while
+	// something is falling -- so this is a smaller cut than the shadow map's, safe to
+	// resize at runtime the same way (`setHeightMapSize`'s note).
+	const HEIGHT_FIELD_SIZE: Record<QualityLevel, number> = { high: 320, low: 192 };
+	const heightFieldSize = $derived(HEIGHT_FIELD_SIZE[settingsState.graphics.quality]);
+
 	// Shadow copies of everything the model can change, so the driver can tell a frame
 	// that moved from one that did not. Plain variables, never reactive.
 	let lastT = Number.NaN;
@@ -125,9 +134,10 @@
 
 	     DRAW order is the render queue + renderOrder: the dome is opaque, everything
 	     else transparent, settled by renderOrder 1 (Nebula, Stars, Meteors), 2 (Moon),
-	     2.2 (Birds), 2.5 (CloudDeck), 2.6 (the bolt), 3 (Rain, Snow), 3.2 (Dust Motes)
-	     and 4 (the lightning wash) -- the deck over the moon because a deck occludes
-	     it, near-camera layers last because they are nearest.
+	     2.2 (Birds), 2.5 (CloudDeck), 2.6 (the bolt), 3 (Rain streaks, Snow), 3.1
+	     (Rain rings), 3.2 (Rain burst), 3.3 (Dust Motes) and 4 (the lightning wash)
+	     -- the deck over the moon because a deck occludes it, near-camera layers
+	     last because they are nearest.
 
 	     TASK order falls back to mount order among the `before: autoRenderTask` tasks,
 	     and ONE dependency lives here: Lightning publishes the flash to `flashState`
@@ -139,7 +149,7 @@
 	<!-- The precipitation height field. Mounted OUTSIDE the group it hides, and before it,
 	     so its pass has run by the time Rain and Snow read the map. Renders nothing
 	     itself. -->
-	<HeightField exclude={() => skyGroup} />
+	<HeightField exclude={() => skyGroup} mapSize={heightFieldSize} />
 
 	<T.Group bind:ref={skyGroup} userData={SKY_LAYER_USERDATA}>
 		<Sky setEnvironment={true} cubeMapSize={128} scale={1000} />

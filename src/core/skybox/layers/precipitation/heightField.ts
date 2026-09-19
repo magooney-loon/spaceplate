@@ -16,14 +16,23 @@
 //
 // Same sharing pattern as flashState.ts: a plain module with one writer (HeightField's
 // task) and any number of readers, none of them reactive.
+//
+// `sampleHeightFieldSlope` reads the same map to answer a second question -- "which way
+// is downhill from here?" -- for the splash decals that need to sit IN the local surface
+// rather than at a fixed world height (a banked corner, not just a flat floor). Two extra
+// samples on top of `sampleHeightField`'s one; see its own note for why it stays this
+// cheap and this coarse.
 
 import * as THREE from 'three/webgpu';
 import { float, step, textureLevel, uniform, vec2 } from 'three/tsl';
 
 /**
- * Resolution of the height map. 256 over a 70-unit box is ~0.27 world units per texel --
- * finer than a rain drop is wide, and the map is sampled with NEAREST on purpose (see
- * below), so more resolution buys sharper object edges and nothing else.
+ * Default/initial resolution of the height map, before `Skybox.svelte`'s graphics
+ * preset resizes it (see `setHeightMapSize`) -- 256 over a 70-unit box is ~0.27 world
+ * units per texel, finer than a rain drop is wide, and the map is sampled with NEAREST
+ * on purpose (see below), so more resolution buys sharper object edges and nothing
+ * else: a coarse texel is where a splash 30cm from a barrier reads as landing IN the
+ * barrier, or a streak stops a visible margin above the ground it is about to hit.
  */
 export const HEIGHT_MAP_SIZE = 256;
 
@@ -53,6 +62,20 @@ heightTarget.texture.colorSpace = THREE.NoColorSpace;
 heightTarget.texture.name = 'precipitation-height';
 
 /**
+ * Resize the map in place, from `Skybox.svelte`'s graphics preset. Safe at runtime the
+ * same way `SunShadowNode` resizing its atlas is (`SkyLight.svelte`'s `shadowMapSize`
+ * note): `setSize` reallocates the underlying GPU texture but the texture OBJECT keeps
+ * its identity, which is what Rain/Snow's `texture(heightTarget.texture)` was baked
+ * against at mount -- a resize here needs no rebuild on their side. Guarded so a
+ * same-size call (most frames, most preset toggles that don't touch this) is a no-op
+ * rather than a redundant reallocation.
+ */
+export const setHeightMapSize = (size: number) => {
+	if (heightTarget.width === size) return;
+	heightTarget.setSize(size, size);
+};
+
+/**
  * Where the map is centred in world XZ, and its half-extent. Written by HeightField's
  * task, read by every consumer's node graph -- shared uniform NODES, so one write updates
  * Rain and Snow together. Two scalars rather than a matrix because the pass camera is
@@ -74,16 +97,21 @@ export const heightFieldState = {
 };
 
 /**
- * Sample the field at a world-space position. Returns the surface's world Y and a 0/1
- * validity flag. `valid` is 0 both where nothing was drawn and where the sample falls
- * OUTSIDE the map -- a particle that has drifted past the baked footprint has no
+ * Sample the field at a world-space position, optionally offset in world XZ (the
+ * two-extra-sample gradient below is the one caller that needs the offset; every other
+ * caller takes the default and reads dead centre). Returns the surface's world Y and a
+ * 0/1 validity flag. `valid` is 0 both where nothing was drawn and where the sample
+ * falls OUTSIDE the map -- a particle that has drifted past the baked footprint has no
  * information, and inventing one would be worse than letting it fall.
  *
  * Sampled with `textureLevel(..., 0)` rather than plain `texture(...)`: this runs in the
  * VERTEX stage, which has no implicit derivatives on WebGPU, so an automatic-LOD sample
  * is invalid there. `textureLevel` compiles to an explicit-LOD fetch.
  */
-export const sampleHeightField = (worldPosition: THREE.Node<'vec3'>) => {
+export const sampleHeightField = (
+	worldPosition: THREE.Node<'vec3'>,
+	xzOffset: THREE.Node<'vec2'> = vec2(0, 0)
+) => {
 	// World XZ -> map UV. BOTH NEGATIONS ARE LOAD-BEARING, and they come from two
 	// different places.
 	//
@@ -98,7 +126,7 @@ export const sampleHeightField = (worldPosition: THREE.Node<'vec3'>) => {
 	// vector. Looking straight down cannot avoid a flip on one axis; sampling a render
 	// target adds a second one on the other, and BOTH are undone here, in the one place
 	// that owns the world <-> uv mapping.
-	const rel = worldPosition.xz.sub(uHeightCenter).div(uHeightExtent.mul(2));
+	const rel = worldPosition.xz.add(xzOffset).sub(uHeightCenter).div(uHeightExtent.mul(2));
 	const uv = vec2(rel.x.negate(), rel.y.negate()).add(0.5);
 
 	const sample = textureLevel(heightTarget.texture, uv, float(0));
@@ -109,4 +137,34 @@ export const sampleHeightField = (worldPosition: THREE.Node<'vec3'>) => {
 	const inside = step(d.x.max(d.y), float(0.5));
 
 	return { height: sample.r, valid: sample.a.mul(inside) };
+};
+
+/**
+ * The local surface SLOPE at a world position -- `(dHeight/dX, dHeight/dZ)` -- from two
+ * extra samples offset in world XZ (a forward difference, not a centred one: three
+ * samples total instead of four, plenty for a splash-scale effect when the map itself
+ * is coarser than a texel-perfect derivative would need -- see `HEIGHT_MAP_SIZE`'s
+ * note). Built on top of `sampleHeightField`'s own offset param rather than duplicating
+ * the UV math.
+ *
+ * `eps` (world units) wants to be a few texels, not one: at NEAREST filtering, one
+ * texel's difference against its neighbour is a step function (identical inside a
+ * texel, a hard jump at its edge), which reads as the "generated" tell every other
+ * NEAREST choice in this module was made to avoid. A few texels averages across that
+ * quantisation into something that reads as a slope rather than a staircase.
+ *
+ * `valid` is ANDed across all three samples: a gradient with one leg standing on "no
+ * surface" is not a slope, it is nonsense, and every caller already treats a flat
+ * (zero) slope as the safe default for "couldn't tell" -- the same fail-safe
+ * `sampleHeightField` itself relies on.
+ */
+export const sampleHeightFieldSlope = (worldPosition: THREE.Node<'vec3'>, eps = 0.6) => {
+	const center = sampleHeightField(worldPosition);
+	const alongX = sampleHeightField(worldPosition, vec2(eps, 0));
+	const alongZ = sampleHeightField(worldPosition, vec2(0, eps));
+	const valid = center.valid.mul(alongX.valid).mul(alongZ.valid);
+	const slope = vec2(alongX.height.sub(center.height), alongZ.height.sub(center.height))
+		.div(eps)
+		.mul(valid);
+	return { height: center.height, valid, slope };
 };
