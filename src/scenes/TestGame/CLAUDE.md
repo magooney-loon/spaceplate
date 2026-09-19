@@ -1147,7 +1147,7 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   accepted difference: puffs in a pool do not sort against each other by
   depth, because they are one mesh — at these alphas it reads as more stable,
   not wrong.
-- **`TireSmoke.svelte` (fx/) is the squeal made visible** — a `puffPool` of 32,
+- **`TireSmoke.svelte` (fx/) is the squeal made visible** — a `puffPool` of 64,
   spawned CONTINUOUSLY at the contact patches while a wheel slides: rate =
   2 + 8×intensity puffs/s per wheel, so a brief squeak is a wisp and a burnout
   builds a proper cloud. Intensity is the squeal/marks TWIN with ALL SIX
@@ -1156,10 +1156,26 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   slide/brake/cornering. LIT, not unlit (the skid-marks lesson):
   MeshStandardNodeMaterial, near-white albedo — bright gray against day
   asphalt, dims with the environment at night instead of glowing; the billboard
-  normal points at the camera, so no normalNode. Velocity = lazy rise + a
-  LAGGED share of the car's motion (smoke trails behind a moving car) + a small
-  rearward roll off the spinning tyre (rears roll harder); perlin roil +
-  cellular clumps + soft radial rim. World-anchored at TestGame root
+  normal points at the camera, so no normalNode. **Puffs are born OUTBOARD of
+  the wheel's own centreline** (`SMOKE_OUTBOARD` — half the tyre's width, the
+  same measured number SkidMarks' ribbon uses, plus a little for the fender
+  lip), not on it: a puff spawned dead-centre on the wheel starts inside the
+  tyre/fender's own depth, so the bodywork's opaque geometry clipped the
+  growing quad in a hard flat line instead of a soft cloud edge. Velocity =
+  lazy rise + a LAGGED share of the car's motion (smoke trails behind a moving
+  car) + a small rearward roll off the spinning tyre (rears roll harder) + a
+  matching OUTWARD kick (bigger on the rears) that carries the puff clear of
+  the fender instead of drifting back into it; perlin roil + cellular clumps +
+  soft radial rim. **A per-wheel HEAT, 0..1** (`HEAT_UP`/`HEAT_DOWN`) climbs
+  over ~4s while that wheel is actively smoking and falls back faster once it
+  stops, scaling newly-spawned puffs' SIZE (`s0`/`grow`) — so a held burnout's
+  cloud keeps thickening the longer it runs instead of streaming at one
+  constant puff size the moment it crosses `SMOKE_ON`. Deliberately never
+  touches spawn rate or lifetime: both are already tuned close to the pool's
+  ceiling (the POOL bullet below — a two-wheel burnout wants ~26 of the 64
+  alive, a four-wheel slide ~52), and a bigger puff costs fill rate, not ring
+  slots, so it cannot cause the early-recycle popping raising either of those
+  would. World-anchored at TestGame root
   (`target={chaseAnchor}`, same body-space wheel offsets as SkidMarks — both
   from the spec's geometry via `wheelPatches`, one shared source). The task runs
   `{ before: autoRenderTask }`, i.e. after Rapier's synchronization, so a puff
