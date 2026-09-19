@@ -33,11 +33,13 @@ export type PaintFinish = 'solid' | 'metallic' | 'pearl' | 'shift';
 export type PaintOption = {
 	id: string;
 	label: string;
-	/** The manufacturer paint code — display-only. */
-	code: string;
-	/** sRGB hex, an approximation of the code. */
+	/** The manufacturer paint code — display-only. Optional: only include one
+	 *  when it's a REAL, verified code (the GR86's are) — an invented one is
+	 *  worse than none, it reads as researched when it isn't. */
+	code?: string;
+	/** sRGB hex, an approximation of the paint (or of the code, when there is one). */
 	hex: string;
-	/** The finish this code SHIPS as — the shop's default on select, and the
+	/** The finish this paint SHIPS as — the shop's default on select, and the
 	 *  chips there override it without touching the colour. */
 	finish: PaintFinish;
 };

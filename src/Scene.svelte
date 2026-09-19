@@ -4,6 +4,7 @@
 	import MainMenu from '$scenes/MainMenu/MainMenu.svelte';
 	import DemoScene from '$scenes/DemoScene/DemoScene.svelte';
 	import TestGame from '$scenes/TestGame/TestGame.svelte';
+	import { carGarage } from '$scenes/TestGame/cars';
 </script>
 
 {#if sceneState.currentScene === 'mainMenu'}
@@ -20,6 +21,11 @@
 
 {#if sceneState.currentScene === 'testGame'}
 	<T.Group name="TestGame" position={[0, -0.7572, 0]}>
-		<TestGame />
+		<!-- Keyed on the garage's chosen car (TestGame/cars/CLAUDE.md's "Garage"
+		     section) — everything car-specific builds once at TestGame's mount,
+		     so switching cars from the Garage shop remounts this subtree fresh. -->
+		{#key carGarage.currentId}
+			<TestGame />
+		{/key}
 	</T.Group>
 {/if}

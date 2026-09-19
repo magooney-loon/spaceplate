@@ -16,8 +16,17 @@
 	//
 	// No transitions (repo rule): the bar appears and disappears, the chips and
 	// rings snap — the car re-painting underneath is the animation.
+	//
+	// `paints` is `$derived`, NOT a plain const read once at mount — this
+	// component lives in the HUD (SceneHud.svelte), which routes on
+	// `sceneState.visibleScene` and does NOT remount when the Garage switches
+	// cars (only the 3D scene does, via Scene.svelte's `{#key
+	// carGarage.currentId}`). A plain `currentCar().model.paints` would freeze
+	// on whichever car was active when the HUD first mounted — the GR86's
+	// sheet, forever, once TestGame.svelte itself is showing a different car
+	// (same staleness carPaint.svelte.ts's own PAINTS used to have).
 
-	const paints = currentCar().model.paints;
+	const paints = $derived(currentCar().model.paints);
 
 	const FINISHES: readonly { id: PaintFinish; label: string }[] = [
 		{ id: 'solid', label: 'Solid' },
@@ -75,7 +84,8 @@
 		</div>
 
 		<p class="readout">
-			{selected.label} · {selected.code} · {carPaint.finish}
+			{selected.label}{#if selected.code}
+				· {selected.code}{/if} · {carPaint.finish}
 			{#if carPaint.finish !== selected.finish}<span class="factory">· factory {selected.finish}</span>{/if}
 		</p>
 	</div>

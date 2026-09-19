@@ -57,6 +57,18 @@
 	const spawnPosition = [...car.model.spawn.position] as [number, number, number];
 	const spawnRotation = [...car.model.spawn.rotation] as [number, number, number];
 
+	// carPaint is a latched choice that survives a Restart and a scene exit —
+	// by design (carPaint.svelte.ts) — but it does NOT know about a car
+	// SWITCH, because it's a module singleton and the Garage shop can point
+	// `currentCar()` at a whole different order sheet. Reset it here, once,
+	// only when the latched id isn't on THIS car's sheet at all (a fresh
+	// spawn, or a switch away from a car that had it) — an id that's still
+	// valid (the same car, or two cars sharing an id) must survive untouched.
+	if (!car.model.paints.some((paint) => paint.id === carPaint.id)) {
+		carPaint.id = car.model.paints[0]?.id ?? '';
+		carPaint.finish = car.model.paints[0]?.finish ?? 'solid';
+	}
+
 	// Both models are draco + KTX2 compressed, so the decoders must be handed to useGltf
 	// (same setup as the gltf-viewer extension: DRACO/KTX2 fetch their decoder binaries
 	// on demand from a CDN pinned to the installed three version; Meshopt ships in three).

@@ -3,10 +3,12 @@
 	import { engineSounds } from '$core';
 	import CarCluster from './CarCluster.svelte';
 	import PaintShop from './PaintShop.svelte';
+	import Garage from './Garage.svelte';
 	import TrackMinimap from './TrackMinimap.svelte';
 	import DebugHud from './debug/DebugHud.svelte';
 	import { requestCarRestart } from './sim/carSwitches.svelte';
 	import { togglePaintShop } from './sim/carPaint.svelte';
+	import { toggleGarageShop } from './sim/garageShop.svelte';
 	import { carHud } from './sim/carTelemetry.svelte';
 
 	// The launch flash's tier names — latched at the catch (carSim.launchTier),
@@ -42,6 +44,14 @@
 			}}
 		>
 			◈ Paint Shop
+		</button>
+		<button
+			onclick={() => {
+				engineSounds.click.play();
+				toggleGarageShop();
+			}}
+		>
+			▣ Garage
 		</button>
 	</div>
 
@@ -85,6 +95,12 @@
 	     it writes the latched paint id/finish the scene's material effect reads.
 	     A top bar with no backdrop — it never covers the car it re-colours. -->
 	<PaintShop />
+
+	<!-- The garage — self-gates on garageShop.open (sim/garageShop.svelte).
+	     Picking a car writes carGarage.currentId (cars/garage.svelte.ts);
+	     Scene.svelte keys the TestGame mount on that id, so the pick remounts
+	     the scene fresh against the new car's spec. -->
+	<Garage />
 </div>
 
 <style>

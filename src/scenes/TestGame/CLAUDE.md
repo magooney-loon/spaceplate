@@ -1,6 +1,7 @@
 # TestGame (`src/scenes/TestGame/`)
 
-A standalone tech demo game: a drivable GR86 on a small race track, on top of the engine
+A standalone tech demo game: drivable cars (GR86, Audi RS3 Sportback, Nissan Pulsar
+GTI-R — pick from the Garage) on a small race track, on top of the engine
 (Threlte/Rapier/sky/on-demand rendering) but **not part of it**. Nothing here is
 engine architecture — do not generalise from this code into `core/` or
 `extensions/`, and keep engine docs free of TestGame specifics. The scene pair is
@@ -15,6 +16,14 @@ PaintShop.svelte        — the paint shop: a TOP BAR (no backdrop, world stays
                          interactive) — order-sheet swatches + finish chips
                          (solid/metallic/pearl/shift, factory finish resets on
                          colour select), selection applies live
+Garage.svelte           — the change-car shop: a TOP BAR, same shape as
+                         PaintShop — one card per CARS entry showing exactly
+                         what's in its spec (power/torque/weight/top speed/
+                         gear count/layout, nothing invented here). Picking a
+                         car writes carGarage.currentId; Scene.svelte keys the
+                         TestGame mount on that id, so the pick REMOUNTS the
+                         scene fresh against the new spec (garage.svelte.ts's
+                         header) — the same rebuild a scene re-entry does
 TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart) + the
                          upper-middle launch flash (STREET / JUICY / PERFECT) +
                          the bottom-left `.corner` column, which is what ANCHORS
@@ -25,10 +34,27 @@ cars/                   — THE GARAGE: everything car-specific is data here
                          model/audio/cluster/tunes + layout 'rwd'|'fwd'|'awd')
   gr86.ts               — the GR86 spec: real-car hardware, measured geometry,
                          the two tunes (values + inline comments = source of truth)
+  rs3.ts                — the Audi RS3 Sportback spec (AWD, 6-speed as given):
+                         real headline numbers (power/torque/0-60/top speed/
+                         weight), everything else researched the same way;
+                         geometry MEASURED off its GLB, which — unlike the
+                         GR86's — needed its wheel assembly's four separate
+                         materials (tire/brake/disk/hub) RENAMED at the asset
+                         level to share one prefix (see its own header).
+                         Grip-only — see its `tunes` comment
+  gtir.ts               — the Nissan Pulsar GTI-R spec (FWD as specified —
+                         the real car is AWD; FWD is this demo's deliberate
+                         drivetrain-variety choice, 5-speed as given). Its GLB
+                         is the one exception to "GLBs are authored in
+                         metres" (units.ts) — off by a measured ×3.776 — so
+                         its geometry fields and `model.scale` carry an extra
+                         conversion factor documented in its own header.
+                         Grip-only — see its `tunes` comment
   spec.ts               — spec math: gearRatio/rpmInGear/engineTorque +
                          layout-aware drivenAxleLoad/drivenAxles + centerOfMass +
                          wheelPatches (shared layout)
-  garage.svelte.ts      — CARS registry + carGarage.currentId ($state) + currentCar()
+  garage.svelte.ts      — CARS registry + carGarage.currentId ($state, written
+                         by Garage.svelte) + currentCar()
   index.ts              — barrel (directory imports can't resolve .svelte.ts)
 sim/                    — the driving model, car-agnostic
   controller.ts         — the physics task's brain: drivetrain + nitrous gameplay +
@@ -74,7 +100,12 @@ sim/                    — the driving model, car-agnostic
                          for fx that test against the car's volume)
   carPaint.svelte.ts    — the latched paint choice (id + finish override; the
                          order sheet is car data: spec.model.paints) + the
-                         shop's open state
+                         shop's open state. PAINTS is read fresh from
+                         `currentCar()` per call, not snapshotted at module
+                         load — this module is a singleton and the Garage can
+                         switch cars mid-session
+  garageShop.svelte.ts  — the Garage shop's open state (Garage.svelte's
+                         counterpart to carPaint's `paintShop`)
   carMath.ts            — `clamp` / `damp`, shared by the sim modules
 fx/                     — the car's visual effects
   puffPool.ts           — the smoke primitive: one mesh / one material / one draw
@@ -193,7 +224,9 @@ units.ts                — UNITS_PER_METER + G: the SI ↔ world boundary (trac
 ## Multi-car — the spec is the car
 
 Everything car-specific is DATA in `cars/`; the code (sim/, fx/, audio/, the
-cluster, the scene) is car-agnostic and reads `currentCar()` once at init.
+cluster, the scene) is car-agnostic and reads `currentCar()` once per mount
+(TestGame.svelte's own top-level script) — see the "Switching cars" note
+below for what "per mount" means now that there's a Garage.
 **Adding a car** is: one `cars/<id>.ts` exporting a `CarSpec` (see `types.ts`
 for every field and its contract), plus one entry in `CARS` (garage.svelte.ts).
 No component edits. The GLB contract a new model must match: wheel materials
@@ -206,9 +239,29 @@ by the paint shop (HUD button — no key, it is pointer UI) — no re-export to
 re-spray; the measured anchors (axles,
 exhaust tips,
 lamps) go in the spec's geometry. The chassis collider needs no spec numbers —
-it IS the model (the hull is computed at load).
+it IS the model (the hull is computed at load). **The GLB is also assumed
+authored in real metres** (`units.ts`'s header) so `model.scale` can just be
+`UNITS_PER_METER` — cars/gtir.ts's GLB isn't, and carries its own conversion
+factor instead; see its header before assuming every car's geometry fields
+are as simple as the GR86's. If the wheel assembly's materials don't already
+share one case-insensitive prefix in the source file (cars/rs3.ts's didn't —
+tire/brake/disk/hub were four separate names), rename them at the ASSET level
+(the JSON chunk's material name strings only — geometry/Draco data untouched)
+rather than widening `wheelMaterialPrefix` into something that could also
+match an unrelated material.
 Engine audio files are SHARED across cars — a new car voices them via
 `audio.layerRpm` (where each layer sits on ITS tacho) + `audio.pitchScale`.
+
+**Switching cars** is the Garage shop (Garage.svelte, HUD button, same shape
+as the paint shop): picking a car writes `carGarage.currentId`
+(garage.svelte.ts), and Scene.svelte keys its `<TestGame />` mount on that id
+— so a pick unmounts and remounts the whole scene against the new spec, the
+same rebuild a scene re-entry does. Nothing about that is car-code's problem
+EXCEPT the one module-level singleton that used to snapshot the booting car's
+data at import time: `sim/carPaint.svelte.ts`'s order sheet is read fresh
+from `currentCar()` on every call now, not captured once, and TestGame.svelte
+resets the latched paint id on mount if it isn't on the new car's sheet — see
+both files' own headers before adding another car-keyed singleton.
 
 `layout` is spec-level plumbing: RWD is the fully implemented, validated model.
 Two things read it, and both must: the drivetrain's driven-axle LOAD
@@ -219,7 +272,14 @@ an FWD spec with a live rear axle it does not have). But FWD and AWD HANDLING FE
 (front-slip understeer, torque split, handbrake-while-
 driven) is deliberately unwritten — the current model is rear-slip-centric
 (looseness, driftAlign, "the fronts are never the axle that lets go") and
-should not be guessed at without the cars to tune against.
+should not be guessed at without the cars to tune against. cars/rs3.ts (AWD)
+and cars/gtir.ts (FWD) exist now and exercise the LOAD/driveline plumbing for
+real, but each carries only a Grip tune — its own `tunes.drift` is a literal
+copy of `tunes.grip` (both required by the `Record<HandlingMode,
+HandlingTune>` contract), rather than a rear-slip-model Drift tune faking a
+front-slip character this engine can't yet compute honestly. Don't treat
+either car's numbers as a validated AWD/FWD handling feel — they're a
+starting point for whoever writes that model, same as the GR86 was for RWD.
 
 ## Controls
 
@@ -236,12 +296,16 @@ the tool live in `debug/`) come up together in `rig` and `both`, and
 the rig's analysis overlays (suspension rays, CG vectors, friction circle) only
 in `rig`. The paint shop opens from the HUD's Paint Shop button (no key: it is
 pointer UI, and every pad button the input map could spare is taken) — the
-GR86's order sheet as a top bar (Track bRED, Halo White, Raven Black,
-Steel/Pavement metallic, Neptune pearl, Trueno metallic, Solar Shift
-colour-flip, Ridge Green, Yuzu) with finish chips beside the title: selecting
-a colour applies its FACTORY finish, the chips override finish without
-touching colour, all applied live. No backdrop, no pause — the world stays
-interactive around the bar.
+CURRENT car's order sheet as a top bar (the GR86's: Track bRED, Halo White,
+Raven Black, Steel/Pavement metallic, Neptune pearl, Trueno metallic, Solar
+Shift colour-flip, Ridge Green, Yuzu) with finish chips beside the title:
+selecting a colour applies its FACTORY finish, the chips override finish
+without touching colour, all applied live. No backdrop, no pause — the world
+stays interactive around the bar. The Garage button opens the same shape of
+bar for the OTHER kind of choice — which car — one card per `CARS` entry with
+its power/torque/weight/top speed/gear count/layout read straight off its
+spec; picking one remounts the scene onto that car (see "Switching cars"
+above).
 Launching is a ritual: sit in N, rev into the 4–6k window (the shift lights
 turn green and fill as you go), tap E — a REV-MATCH LAUNCH drops the clutch
 clean, and the closer to 6k the harder it plants (≈1 g at the top; the cluster
