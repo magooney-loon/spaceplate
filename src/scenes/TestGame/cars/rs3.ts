@@ -261,6 +261,18 @@ export const rs3 = {
 		wheelMaterialPrefix: 'wheel',
 		wheelRadiusFallback: 0.325,
 		paintMaterial: 'MAT_RS3_2018_Base.004',
+		/** The GLB's own merged front+rear lamp housing (fx/CarTaillights.svelte).
+		 *  As exported it had NO emissive at all (unlike the GR86's own
+		 *  `Light_Bucket`) — baked one in directly at the asset level: the base
+		 *  colour texture IS the lamp cluster's real artwork (tail lens, third
+		 *  brake strip, side marker, lower reflector all present as their own
+		 *  regions), so the emissive map is that same texture with everything
+		 *  that ISN'T one of those regions (the chrome trim, the dark headlight-
+		 *  lens oval) masked to black, plus KHR_materials_emissive_strength 10 —
+		 *  same strength the GR86 ships at. Geometry/Draco data untouched; only
+		 *  new bytes appended (one bufferView/image/texture) and the material's
+		 *  own emissiveTexture/emissiveFactor/extension fields written. */
+		lampMaterial: 'MAT_Lights.001',
 		/** Real RS3 (8V facelift) order-sheet colours — names are the actual
 		 *  factory names, hexes are approximations of them (no verified paint
 		 *  codes to hand in this session, so `code` is left off rather than

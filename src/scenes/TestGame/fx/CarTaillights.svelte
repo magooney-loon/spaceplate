@@ -38,10 +38,13 @@
 
 	let { scene }: { scene: THREE.Group } = $props();
 
-	// The GLB contract: the lamp-interior material's name. Like the wheel
-	// material prefix, a new car's GLB must match or this rig stays dark (with a
-	// warning in the log).
-	const BUCKET_MATERIAL = 'Light_Bucket';
+	// The GLB contract: the lamp-interior material's name — the car's OWN spec
+	// field (`model.lampMaterial`), like `paintMaterial` and
+	// `wheelMaterialPrefix`. Optional: a car with no matching material (or none
+	// declared at all) still gets the real SpotLight throw below — it just has
+	// no glowing housing on the model, and the bake effect logs a warning
+	// instead of failing.
+	const BUCKET_MATERIAL = currentCar().model.lampMaterial;
 	/** Car-local metres: everything aft of this is the tail cluster (the front
 	 * cluster ends ≈ −1.5, the rear starts ≈ +1.6, between them is cabin). */
 	const TAIL_Z = 1.0;
@@ -158,6 +161,10 @@
 	// geometry.
 	$effect(() => {
 		interior.length = 0;
+		// No lampMaterial declared at all is a car's DELIBERATE choice (see the
+		// spec field's own comment), not a broken contract — skip quietly; the
+		// SpotLight throw below still works, it just has nothing to bake.
+		if (!BUCKET_MATERIAL) return;
 		const buckets: THREE.Mesh[] = [];
 		scene.traverse((obj) => {
 			const mesh = obj as THREE.Mesh;

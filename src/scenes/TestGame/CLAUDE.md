@@ -134,9 +134,12 @@ fx/                     — the car's visual effects
                          continuous pattern; the drain hiss rides the nitrous
                          voices in carAudio, blended under the spray)
   CarHeadlights.svelte  — car-local lights (nose is -Z); lamp anchors from the spec
-  CarTaillights.svelte  — tail glow + brake flare on the GLB's own Light_Bucket
-                         emissive (a TSL re-materialise of the baked bucket,
-                         per-vertex front/rear split on the baked z) + the two red
+  CarTaillights.svelte  — tail glow + brake flare on the GLB's own lamp-housing
+                         emissive (`model.lampMaterial`, optional — a TSL
+                         re-materialise of the baked bucket, per-vertex
+                         front/rear split on the baked z; a car with no match
+                         skips the bake and keeps only the SpotLight throw
+                         below) + the two red
                          SpotLights at the spec's tailLamp anchors that THROW the
                          lamps' light on the road behind (POP_LIGHT rules:
                          permanent mount, intensity-driven, world-unit distance).
@@ -239,7 +242,18 @@ by the paint shop (HUD button — no key, it is pointer UI) — no re-export to
 re-spray; the measured anchors (axles,
 exhaust tips,
 lamps) go in the spec's geometry. The chassis collider needs no spec numbers —
-it IS the model (the hull is computed at load). **The GLB is also assumed
+it IS the model (the hull is computed at load).
+
+`model.lampMaterial` is the ONE OPTIONAL piece of that contract: the lamp-
+housing material name, front+rear merged into one mesh, for
+fx/CarTaillights.svelte's glow — a car without a matching material (or
+without the field at all, cars/gtir.ts) still gets the real SpotLight throw
+onto the road, just no glowing housing on the model. If a car's GLB shipped
+that material with no emissive baked in at all (cars/rs3.ts's didn't), bake
+one in at the ASSET level rather than faking the look in code: append the new
+image/texture as raw bytes after the existing buffer (see rs3.ts's own header
+for the exact method) so Draco-compressed geometry elsewhere in the same file
+is never re-encoded and can't drift. **The GLB is also assumed
 authored in real metres** (`units.ts`'s header) so `model.scale` can just be
 `UNITS_PER_METER` — cars/gtir.ts's GLB isn't, and carries its own conversion
 factor instead; see its header before assuming every car's geometry fields

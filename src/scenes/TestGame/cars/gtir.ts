@@ -264,6 +264,13 @@ export const gtir = {
 		wheelMaterialPrefix: 'Nissan',
 		wheelRadiusFallback: 0.284,
 		paintMaterial: 'GTI-R_Paint',
+		// No `lampMaterial` — this GLB has no separate lamp-housing mesh at all;
+		// the head/tail light look is baked into the shared body diffuse atlas
+		// (`Bodyunrefunblendbodyunrefunblend0211_diff`), which paint/hull code
+		// already treats as ordinary bodywork. The real SpotLight throw
+		// (geometry.tailLamp, below) still works — this car just has no
+		// glowing housing on the model itself (fx/CarTaillights.svelte skips
+		// its bake cleanly when this is unset).
 		/** Period-correct early-90s Nissan colours — names are real, hexes are
 		 *  approximations of them (no verified paint codes to hand in this
 		 *  session, so `code` is left off rather than invented — see

@@ -335,6 +335,8 @@ export const gr86 = {
 		wheelRadiusFallback: 0.33,
 		/** The GLB's shared body-panel material. */
 		paintMaterial: 'Paint',
+		/** The GLB's own merged front+rear lamp housing (fx/CarTaillights.svelte). */
+		lampMaterial: 'Light_Bucket',
 		/** The 2023+ GR86 order sheet (approximate hexes — a paint code is a
 		 *  mixing recipe, not a screen colour). First entry is the default, and
 		 *  it is Track bRED: that is what the GLB shipped painted in. */

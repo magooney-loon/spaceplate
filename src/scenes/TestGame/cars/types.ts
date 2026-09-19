@@ -348,6 +348,15 @@ export type CarSpec = {
 		 *  Colours are approximations (a paint code is a mixing recipe, not a
 		 *  screen colour); the FINISH is what each code actually ships as. */
 		paints: readonly PaintOption[];
+		/** The lamp-housing material in the GLB (name, exact match) — one mesh
+		 *  spanning BOTH the front and rear clusters, its emissive baked at
+		 *  export (fx/CarTaillights.svelte re-materialises it: front rides the
+		 *  ignition, rear rides the lights/brake logic, split by a per-vertex Z
+		 *  test). Optional: a car without a matching mesh still gets the real
+		 *  SpotLight throw onto the road (fed by `geometry.tailLamp`, material-
+		 *  independent) — it just has no glowing lamp housing on the model
+		 *  itself, and CarTaillights logs a warning instead of failing. */
+		lampMaterial?: string;
 	};
 
 	// ── Audio — the engine NOTE. Files are SHARED across cars (one recorded
