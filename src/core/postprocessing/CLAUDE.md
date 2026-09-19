@@ -235,8 +235,8 @@ returns already-cubic sources verbatim, so our cube `scene.environment` (what
   chain, **pre-tonemap** (before tone mapping = real lens falloff; after = crushed
   shadows). Multiplies **rgb** — reattach alpha if the chain value is vec4 there.
 - **`dof.ts`** — the basic DoF: `mix(color, boxBlur(color), smoothstep(min, max,
-abs(viewZ + focus)))`. The bokeh `DepthOfFieldNode` was dropped for performance (one
-  box blur vs its multi-pass kernel). viewZ from `basePass.getViewZNode()`, no MRT.
+abs(viewZ + focus)))`. The bokeh `DepthOfFieldNode` is not used — performance (this is
+  one box blur vs its multi-pass kernel). viewZ from `basePass.getViewZNode()`, no MRT.
 - **`fogScatter.ts`** — the frame mixed against a blurred copy of itself on the fog band
   (three's `webgpu_custom_fog_scattering`), which is the scattering half of fog that a
   `fogNode` cannot do: absorption pales a distant silhouette, scattering is what takes
@@ -370,10 +370,9 @@ adds `keyColour × keyIntensity × rays` instead of lerping. `uGodrayRadiance` i
 uniform that took, and it is deliberately the **attenuated** intensity, so a deck that kills
 the key kills its shafts with it.
 
-**The old `sunShafts` post-mortem's "additive read as washed out" does not transfer.** That
-was a broad radial smear with no occlusion in it, where additive really is just a
-brightness; this is a raymarch whose every edge is cast by real geometry. It does transfer
-to the _gain_, though — see the retune below.
+**Additive does not read as washed out here.** A broad radial smear with no occlusion in
+it really is just a brightness; this is a raymarch whose every edge is cast by real
+geometry. The caution does apply to the _gain_, though — see `density` vs `maxDensity` below.
 
 **The sky's weight now lands on `density` alone**, not on `density` and `maxDensity` both.
 Multiplying it into both made the whole effect **quadratic in the haze channel** — at half
@@ -492,7 +491,7 @@ daylight (`core/skybox/model/CLAUDE.md`).
   DemoScene's reflector.
 - **The precipitation fields still perturb it**, via the no-blending rule below: they
   are thousands of small transparent quads in the scene pass, each punching its own
-  normal through. The prePass question under "Removed effects" is the real fix.
+  normal through. The prePass question under "Not built" is the real fix.
 
 ## Not built: pixelation, ssgi, ssr, traa (ao is the one revived so far)
 
@@ -582,16 +581,15 @@ the mix is a real crossfade between them. Nothing renders twice.
   two fronts:** the dip and the reveal run the same threshold over it, so a wipe sweeps
   once each way and a dissolve's blobs return in the order they left.
 - **The sequence lives in `sceneActions.transitionTo`**: capture → dip → swap → assets →
-  warm → reveal. **The dip happens BEFORE the swap**, and that is the ordering fix: the
-  swap and the mount behind it are the biggest main-thread stall in the sequence, and
-  running them under a live dissolve is what made the old transition judder. The one
-  dissolve the player watches now runs while the outgoing scene is still mounted and
-  nothing is blocking.
+  warm → reveal. **The dip happens BEFORE the swap**: the swap and the mount behind it are
+  the biggest main-thread stall in the sequence, and a live dissolve over them is exactly
+  what judders. The one dissolve the player watches runs while the outgoing scene is still
+  mounted and nothing is blocking.
 - **`Loader.svelte`'s black veil is still the fallback** and still load-bearing: quality
   `low` bypasses post-processing entirely, the effect can be switched off, and a build
   can fail. `coverWithSnapshot()` returns false in all three and the veil covers instead,
   opaque and without the fades. While the composite IS covering, the same veil is the
   transparent status readout on top of it — **unconditionally, for the whole
-  transition**. Gating it on `$active` (as it first shipped) made it vanish the moment
-  the downloads finished, which is the start of the warm gate: the longest phase of a
-  heavy scene's first entry, and the one that most needs a label on it.
+  transition**. Gating it on `$active` would make it vanish the moment the downloads
+  finish, which is the start of the warm gate: the longest phase of a heavy scene's first
+  entry, and the one that most needs a label on it.

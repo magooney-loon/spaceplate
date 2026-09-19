@@ -37,7 +37,7 @@ Two factors, unioned as transmittances (`1 - (1 - range)(1 - height)`):
 
 ### The height term is our own integral, NOT `exponentialHeightFogFactor`
 
-Three's helper was tried and removed, and both of its problems were visible on screen:
+Three's helper is not used — both of its problems are visible on screen:
 
 - **It has a hard ceiling.** `max(top - fragmentY, 0)` means exactly no fog above `top`,
   and since the product with viewZ is then SQUARED, the ramp underneath saturates within
@@ -131,11 +131,11 @@ haze weight, and the activity latch.
   the camera, so a clear noon must produce none of them. The elevation fade exists because
   a key raking along the horizon is the one position where the cascades' far edge fills the
   screen, and without it a dawn flickers as the light crosses `KEY_MIN_ELEVATION`.
-- **There is no on-screen term**, and that is the whole reason this can carry a latch where
-  the abandoned screen-space version could not: a raymarch integrates along the view ray,
-  so the shafts exist with the sun behind you. The latch therefore only ever watches signals
-  that move on weather-blend and day-curve timescales, and the hysteresis band actually
-  works on them.
+- **There is no on-screen term**, and that is the whole reason this can carry a latch: a
+  raymarch integrates along the view ray, so the shafts exist with the sun behind you —
+  nothing in the gate swings with what is in frame. The latch therefore only ever watches
+  signals that move on weather-blend and day-curve timescales, and the hysteresis band
+  actually works on them.
 - **It is one of the few sky consumers that is NOT procedural-mode-only.** `SkyLight`
   mounts in every environment mode, so an HDR or cube environment still gets godrays — an
   environment texture still has a sun, and a raymarch through its shadow volume is still

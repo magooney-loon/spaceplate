@@ -214,9 +214,9 @@ Engine audio files are SHARED across cars — a new car voices them via
 Two things read it, and both must: the drivetrain's driven-axle LOAD
 (`spec.ts` `drivenAxleLoad`: RWD rear-bias + transfer, FWD front-bias −
 transfer, AWD full weight) and the debug rig's driveline (`spec.ts`
-`drivenAxles` — which axle, as `[front, rear]`). The rig used to hard-code the
-GR86's RWD driveline, so an FWD spec would have been drawn with a live rear
-axle it does not have. But FWD and AWD HANDLING FEEL (front-slip understeer, torque split, handbrake-while-
+`drivenAxles` — which axle, as `[front, rear]`; a hard-coded driveline would draw
+an FWD spec with a live rear axle it does not have). But FWD and AWD HANDLING FEEL
+(front-slip understeer, torque split, handbrake-while-
 driven) is deliberately unwritten — the current model is rear-slip-centric
 (looseness, driftAlign, "the fronts are never the axle that lets go") and
 should not be guessed at without the cars to tune against.
@@ -261,14 +261,12 @@ and Settings now flags the chip amber so anyone it bites can rebind it.
 **Those are DEFAULTS, not the keymap.** Input is the engine's slot system: the
 scene declares `sim/carControls.ts` (one slot per input — label, group, default
 bindings) and the engine owns the keys, rebinding in Settings ▸ Controls,
-persistence, the gamepad and the blur release. The scene used to hand-roll a
-`svelte:window` keymap because the shared one only spoke FPS actions; it doesn't
-any more. See `src/extensions/input/CLAUDE.md`.
+persistence, the gamepad and the blur release. See `src/extensions/input/CLAUDE.md`.
 
 Either Shift is a wet nitrous kit on a throttle switch: it only sprays while held
-WITH ↑ open in a forward gear (gear ≥ 1). Both Shift keys are ONE pedal — which is
-now simply two bindings on one `nitrous` slot; the held-code tracking that used to
-make that work, and the blur release that stops a Shift let go while unfocused from
+WITH ↑ open in a forward gear (gear ≥ 1). Both Shift keys are ONE pedal — simply
+two bindings on one `nitrous` slot; the held-code tracking that makes that
+work, and the blur release that stops a Shift let go while unfocused from
 sticking the pedal, are the engine's. The kit's NUMBERS are the
 car's (spec hardware: `nitrousTorqueGain`, +45% crank torque, applied by the
 drivetrain INSIDE its traction limit — so a shot in 1st/2nd becomes wheelspin,
@@ -324,10 +322,9 @@ inertia tensor into world space first, then zeroes the chosen world axis), so a
 lock picked for the spawn heading stops protecting the car's actual roll axis the
 moment it yaws away from that heading. World Y (yaw) is the only axis that's
 heading-independent, so it's the only one that can be left free while the other
-two stay a real, always-on guarantee. (This used to be `[true, true, false]` —
-roll-only — which is why the car could occasionally tip up onto two wheels, and
-once tipped over nothing gated the drivetrain on the chassis being upright, so a
-flipped car could still drive.)
+two stay a real, always-on guarantee. (Roll-only — `[true, true, false]` — is
+what lets the car occasionally tip up onto two wheels, and with nothing gating
+the drivetrain on the chassis being upright, a flipped car could still drive.)
 
 ### Two setups, one car
 
@@ -568,12 +565,12 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   road is their product (`pass`), and what the REVS follow is the disc's speed
   coupling (`lock`). A launch is exactly where the distinction earns its keep —
   the pedal is DUMPED while the disc slips like mad — and holding them as one
-  number is why the old model needed `clutchMinBite` to mean two things at once.
-  - A shift was a DEAD CUT: zero torque for the whole `shiftTime`, then full
-    torque on the step the timer hit zero, which read as a mute button followed
-    by a kick. It is now `clutchOpen` of the window on the floor and a
-    smoothstepped re-engagement over the rest, so the torque BUILDS — that ramp
-    is where a shift gets its bite.
+  number would force `clutchMinBite` to mean two things at once.
+  - A shift is a CLUTCH ACTION, not a dead cut: `clutchOpen` of the window on the
+    floor, then a smoothstepped re-engagement over the rest, so the torque BUILDS —
+    that ramp is where a shift gets its bite. (A dead cut — zero torque for the
+    whole `shiftTime`, full torque the step the timer hits zero — reads as a mute
+    button followed by a kick.)
   - **The revs are MATCHED across the shift** (`revMatchRate`): while the clutch
     is open the engine is pulled onto the speed the gear it is going into will
     impose. That is the blip on a downshift and the drop on an upshift, and it
@@ -587,9 +584,9 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
     limit, so a big enough mismatch chirps the tyres instead of teleporting the
     car. A launch is excluded (it has the plant and the boost; counting both
     would pay for one clutch drop twice).
-  - **ENGINE BRAKING NEEDS A CLOSED CLUTCH** — it is scaled by `lock` now, which
-    is what stopped a car rolling to a stop in gear being dragged backwards
-    through zero by an engine it was barely connected to.
+  - **ENGINE BRAKING NEEDS A CLOSED CLUTCH** — it is scaled by `lock`, which
+    is what stops a car rolling to a stop in gear being dragged backwards
+    through zero by an engine it is barely connected to.
   - **CREEP is the same fact from the other side**: a slipping disc DRAGS, and at
     idle that drag is what a real car pulls away on before the throttle has said
     anything. `creepTorque` fades as the clutch homes and again with road speed
@@ -601,7 +598,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   - The cost is a real one and worth knowing: **a car in gear with the engine
     running is never "parked"**, so it does not sleep and the renderer does not
     idle. The car sleeps with the engine off, in N, or on the brake. Set
-    `creepTorque: 0` to have the old behaviour back.
+    `creepTorque: 0` to switch it off.
 - **REV-MATCH LAUNCH**: slot 1st out of N with the revs in the 4–6k window
   (spec `launchWindowMinRpm/MaxRpm`, judged at the SHIFT TAP — the 0.28 s cut that
   follows lets the revs climb out of it, that climb is the player's timing)
@@ -661,16 +658,16 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   mesh's 8 bbox corners so extremes survive the stride), interior meshes cost
   nothing (quickhull discards inside points) — decimated to ~8 k REAL
   surface vertices (what <AutoColliders> feeds `ColliderDesc.convexHull`, but
-  one hull for the whole car; an early cut also added every mesh's 8 bbox
-  corners and those phantom points — roof-height corners at the nose/tail
-  tips, box corners on every curved bumper — were exactly the boxy-too-big
-  hull). The 5 cm MARGIN is a small edge FILLET: Rapier DILATES round hulls by
+  one hull for the whole car; do NOT add every mesh's 8 bbox corners — those
+  phantom points (roof-height corners at the nose/tail tips, box corners on
+  every curved bumper) are exactly a boxy-too-big hull). The 5 cm MARGIN is a
+  small edge FILLET: Rapier DILATES round hulls by
   the border radius, so every edge — nose, tail, belly, roofline — GLANCES
   OUTWARD everywhere, so the point cloud's belly is CLAMPED (points below
   `BELLY_LINE + HULL_MARGIN` lift up) to land the dilated bottom exactly on
-  the old box's 0.134 bump-stop line — the margin can grow and the hull can
+  the 0.134 bump-stop line — the margin can grow and the hull can
   never become a ground contact ahead of the springs. Net size: doors at
-  0.91 + 0.05 = 0.96 (the old box's 0.95), mirrors a touch wider, roof
+  0.91 + 0.05 = 0.96, mirrors a touch wider, roof
   1.31 + 0.05, ends at their true taper + 5 cm. It is the sole MASS carrier, with EXPLICIT properties — mass +
   centerOfMass (cogHeight × the weight-bias lever rule, 15.5 cm ahead of the
   origin on the GR86) + principalAngularInertia (yaw = the spec's
@@ -716,39 +713,31 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   bottoms) .. 1.31 (roof), wheel centres at y 0.335 (`geometry.hubY`), axles z
   ±wheelbase/2, track x ±0.78. The spec's measured anchors (axles, lamps,
   exhaust tips) come from those numbers; the chassis collider needs no
-  measuring any more — the hull IS the model (cars/hull.ts reads it at load).
+  measuring — the hull IS the model (cars/hull.ts reads it at load).
   If the model is ever replaced, re-measure the anchors (the accessor min/max
   in the GLB JSON is readable without decoding Draco).
 
-## Shadows — the car casts, the track casts too now, everything receives
+## Shadows — the car casts, the track casts too, everything receives
 
 `DOCS/testperf.md` is this scene's performance reference; read it before
 touching anything on the frame path. The one rule that lives here because it is
 a scene-content decision, not an engine one:
 
 **`castShadow` is a policy, never a blanket flag — the car's half lives in
-`TestGame.svelte`, the track's half in `world/Track.svelte`.** It used
-to be `castShadow = receiveShadow = true` on every mesh in both GLBs, and that
-was wrong in both directions at once. `SkyLight` USED TO fit its ONE cascade to
-the bounding sphere of the visible CASTERS, capped at 400 world units. The
-track's `Metal` mesh spans ~2 970 × 2 540 world units, so the fit
-saturated at 400 and centred ~1 090 units from where the car actually drives:
-**the car was outside its own shadow frustum, so nothing in the drivable area
-cast or received a sun shadow at all** — while the renderer re-rendered all
-313 725 track triangles into the 2048² map every frame to achieve it (the car
-moves, so `needsUpdate` is armed every frame).
-
-The fix (`testperf.md` §1.1) was: the track stops casting, the car does, and
-the car's interior/engine materials (`CAR_NON_CASTERS` — 117 176 of its
-324 640 triangles, never in its silhouette) do not either.
-
-**Since three r186 the single cascade is gone** — `SkyLight` is a `SunLight`
+`TestGame.svelte`, the track's half in `world/Track.svelte`.** A blanket
+`castShadow = receiveShadow = true` on every mesh in both GLBs is wrong in
+both directions at once. `SkyLight` is a `SunLight`
 fitting two cascades to the view camera (`core/skybox/CLAUDE.md`), so an
-oversized caster can no longer drag the box off the car. That removed the
-correctness objection to track shadows; the cost one is real but partial now.
+oversized caster cannot drag the box off the car — but an oversized caster
+still pays: every enabled caster re-renders into the 2048² map each frame it
+is armed (the car moves, so `needsUpdate` is armed every frame), and the
+track's `Metal` mesh alone spans ~2 970 × 2 540 world units.
+
+The car casts, minus its interior/engine materials (`CAR_NON_CASTERS` — 117 176
+of its 324 640 triangles, never in its silhouette).
 `TRACK_CASTS_SHADOWS` is **on**, scoped to `TRACK_CASTERS` (`Metal` +
 `Leafs_Mat`, 262 663 of the track's 313 725 triangles — Ground/Asphalt/Decals
-stay excluded, they can only ever shadow themselves) — so the car finally gets
+stay excluded, they can only ever shadow themselves) — so the car gets
 barrier and tree shade, at the cost of that geometry re-rendering into the
 shadow map twice a frame (once per cascade) in a scene that is already
 fill-bound. **Flipped without a profiled measurement** — watch the Stats HUD
@@ -761,9 +750,10 @@ anything more invasive. Full numbers: `testperf.md` §1.1's update note.
 
 `sim/suspension.ts` is the ONE owner of the car's body attitude, and its three
 consumers are the car MODEL (TestGame.svelte poses the visual group), the WHEELS
-(`fx/CarWheels.svelte`) and the debug rig. It used to live inside DebugRig, which
-meant the skeleton leaned and the car drawn over it did not. It is a PER-CAR
-instance now (`createSuspension(spec)` — the controller creates it beside its
+(`fx/CarWheels.svelte`) and the debug rig — one owner because the lean must be
+the same lean everywhere; owned by the rig alone, the skeleton would lean and
+the car drawn over it would not. It is a PER-CAR
+instance (`createSuspension(spec)` — the controller creates it beside its
 drivetrain, the scene advances the visual half and passes the instance down):
 every tuning knob is the spec's `suspension` block, so a second car cannot
 inherit the GR86's ride.
@@ -776,9 +766,9 @@ inherit the GR86's ride.
 - **The input is the model's own acceleration, not a measurement.**
   `carSim.accelFwd` is `(driveForce + resistForce) / mass` — literally the
   longitudinal force the controller hands Rapier — and `carSim.accelLat` is the
-  sideways delta-v the grip model applied, over the step. The first version
-  finite-differenced the body's interpolated world pose TWICE per frame and
-  needed a one-pole just to be readable. This is exact, noiseless, free, and
+  sideways delta-v the grip model applied, over the step. A finite difference of
+  the body's interpolated world pose would need TWO derivatives per frame and a
+  one-pole just to be readable; this is exact, noiseless, free, and
   available a frame earlier. It also inherits the grip clamp: `accelLat`
   saturates at μ·g, so a car already sliding at the limit stops leaning harder.
 - **Each corner is a SPRING-DAMPER, not a one-pole**, and that is the difference
@@ -816,8 +806,8 @@ inherit the GR86's ride.
 
 ## The surface — the car drives on the ground, not on the horizon
 
-The model used to be flat-world by construction, and the tell was that a hill
-cost nothing to climb and gave nothing back going down. Four things changed;
+A flat-world model has a tell: a hill
+costs nothing to climb and gives nothing back going down. Four things fix that;
 all of them are no-ops on flat ground, which is what protects the tune.
 
 - **THE SPRING FORCE IS AIMED AT THE GROUND NORMAL, not straight up**
@@ -841,8 +831,8 @@ all of them are no-ops on flat ground, which is what protects the tune.
   (`suspension.loadShare`, smoothed at `CONTACT_RATE` and clamped to 1). The
   spring rate is derived from the live weight as `weight / (4 · restSag)`, so a
   compression of exactly `restSag` IS a quarter of the car — the reading is
-  exact, not a proxy. The binary version deleted a quarter of the car's grip the
-  moment one wheel went light over a crest, which is wrong twice over: the
+  exact, not a proxy. A binary count deletes a quarter of the car's grip the
+  moment one wheel goes light over a crest, which is wrong twice over: the
   springs still have to carry the whole car, so that corner's load has already
   MOVED to the others. One lifted front wheel reads ~0.95 where the count read
   0.5.
@@ -852,18 +842,18 @@ all of them are no-ops on flat ground, which is what protects the tune.
   absorbs in torsion). They want opposite treatment: pitch and roll are the
   surface the car is standing on and it should sit on them fully (`slopeMax` is a
   safety rail at ~19°/30°, not a feel knob), the warp is one wheel on something
-  and stays clamped at `roadMax`. Clamping them together — which is what the old
-  per-corner `clamp(dev, ±roadMax)` did — capped the SLOPE at the kerb limit, and
-  the car rendered 2° nose-up on a 10° climb, visibly floating out of the hill.
+  and stays clamped at `roadMax`. Clamping them together — a per-corner
+  `clamp(dev, ±roadMax)` — caps the SLOPE at the kerb limit, and
+  the car renders 2° nose-up on a 10° climb, visibly floating out of the hill.
 - **Stopping is the tyres' job** (`controller.ts`'s `restGrip`). Below
   `REST_SPEED` the rolling model has nothing to say — `resistForce` is gated on
   `rolling > 0.05`, the sideways bleed's cap goes to zero with the corner,
-  `linearDamping` is 0 on the body by design — and the parked branch used to hand
-  the body straight back with whatever velocity it still had. So **a car that had
-  stopped went on GLIDING in its last direction for ever**, under Rapier's own
-  sleep threshold so it never even settled, while the branch published
-  `speedMs = 0` and the wheels stood still: a car sliding on stationary wheels,
-  which is the one thing tyres never do. Static friction capped at μ·g now takes
+  `linearDamping` is 0 on the body by design — so the parked branch must not
+  hand the body straight back with whatever velocity it still has. **A car that
+  has stopped would GLIDE on in its last direction for ever**, under Rapier's own
+  sleep threshold so it never even settles, while the branch publishes
+  `speedMs = 0` and the wheels stand still: a car sliding on stationary wheels,
+  which is the one thing tyres never do. Static friction capped at μ·g takes
   it out — including the sideways half, which is the difference between coming to
   a stop and coming to a stop still sliding — and the branch publishes the honest
   speed. "Nothing is asking the car to move" is measured off the DRIVE FORCE, not
@@ -915,10 +905,9 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   and the car can leave it (the dirt plane runs 460 m past the circuit), so an
   unclamped marker walks off the instrument. Riding the edge, dimmed, is the
   honest reading: "off the map, that way".
-- **NO PANEL CHROME — it floats, exactly as the cluster's gauges do.** It had a
-  bezelled plate for a while, and the plate was the mistake: a gauge carries a
-  dark face because a NEEDLE needs a dial behind it, and a map does not. What
-  replaces it as the thing keeping the outline legible is a SHADOW pass — a wide
+- **NO PANEL CHROME — it floats, exactly as the cluster's gauges do.** A gauge
+  carries a dark face because a NEEDLE needs a dial behind it, and a map does
+  not. What keeps the outline legible instead is a SHADOW pass — a wide
   dark copy of the same path under the halo, plus `paint-order: stroke fill` on
   the labels — so the map holds against pale asphalt and a bright sky without
   boxing the corner off. Same rule as the glows either way: drawn, never
@@ -976,26 +965,27 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   the driven axle turns at `speedMs + carSim.spin` (the real contact-patch
   overspeed, the same number the tacho reads through the gearing), the undriven
   one at `speedMs`, and the handbrake locks the rears whatever the layout —
-  exactly what the rig draws, from exactly the same fields. It used to be one
-  shared accumulator at `speedMs × (1 + slip·0.8)`, the same fudge the rig was
-  fixed out of, and it was wrong three ways at once: all four wheels carried the
-  spin (a RWD burnout lit the fronts), the overspeed was capped at 0.8× road
+  exactly what the rig draws, from exactly the same fields. One shared
+  accumulator at `speedMs × (1 + slip·0.8)` would be wrong three ways at once:
+  all four wheels would carry the
+  spin (a RWD burnout lights the fronts), the overspeed would be capped at 0.8× road
   speed where the real one is a free m/s (12 m/s of spin over a 4 m/s car in
-  1st), and it multiplied ROAD speed — so a STANDING BURNOUT, the one case the
-  player is staring straight at the tyre, turned the wheels at exactly zero while
-  the engine sat on the limiter. **THE ROLL IS INTEGRATED IN RENDER TIME, NOT PHYSICS TIME**, and
-  that distinction was a visible car-only stutter. Threlte's simulation stage
-  takes `ceil(accumulator / rate)` substeps per frame, so at the 200 Hz the scene
-  ran on then, against 60 fps, it stepped 4/3/3/4/3/3… — a `usePhysicsTask`
-  integration advanced the wheels by 20 ms, then 15 ms, then 15 ms of rotation on
-  consecutive frames. A ±17% pulse in wheel rotation on a 20 Hz beat, underneath a
-  chassis that
-  Rapier's synchronization stage was smoothly INTERPOLATING to the frame's own
+  1st), and it would multiply ROAD speed — so a STANDING BURNOUT, the one case
+  the player is staring straight at the tyre, would turn the wheels at exactly
+  zero while the engine sits on the limiter. **THE ROLL IS INTEGRATED IN RENDER TIME, NOT PHYSICS TIME**, and
+  that distinction is the difference between a smooth wheel and a car-only
+  stutter. Threlte's simulation stage
+  takes `ceil(accumulator / rate)` substeps per frame, so at 200 Hz against
+  60 fps it steps 4/3/3/4/3/3… — a `usePhysicsTask`
+  integration advances the wheels by 20 ms, then 15 ms, then 15 ms of rotation
+  on consecutive frames: a ±17% pulse in wheel rotation on a 20 Hz beat,
+  underneath a chassis that
+  Rapier's synchronization stage is smoothly INTERPOLATING to the frame's own
   time — body smooth, wheels pulsing, on the object the player is staring at.
-  It is a `{ before: autoRenderTask }` task now, which uses the frame's delta and
+  It is a `{ before: autoRenderTask }` task, which uses the frame's delta and
   runs after that synchronization. The cost is that `carSim` is up to one substep
-  old rather than exactly current: invisible, where the pulse was not.
-  **Dropping to 60 Hz did not retire this fix, it made it load-bearing.** The
+  old rather than exactly current: invisible, where the pulse is not.
+  **Dropping to 60 Hz does not retire this rule, it makes it load-bearing.** The
   substep count per frame is `ceil`, so it is never constant at any rate — and at
   60 Hz on a high-refresh display it is 0 or 1, i.e. frames where a physics-time
   integration would not advance the wheels AT ALL. A 100% pulse instead of a 17%
@@ -1016,9 +1006,9 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   geometry ×2.5 (track half 0.775 m is the real car's — the GLB's measured
   pivots stay in CarWheels); the mark height is the EMPIRICALLY TUNED body-space
   `LAY_Y = 0.8` — a road line derived from the wheel-contact colliders
-  (hubY − wheelRadius + epsilon) was tried, checked out against rapier in
-  isolation, and rendered UNDER the surface in-browser; don't re-derive without
-  explaining that. **`LAY_Y` is the height on FLAT GROUND AT REST**: each wheel
+  (hubY − wheelRadius + epsilon) checks out against rapier in isolation but
+  renders UNDER the surface in-browser; don't re-derive it without explaining
+  that. **`LAY_Y` is the height on FLAT GROUND AT REST**: each wheel
   adds its suspension ray's offset off the rest road line
   (`suspension.groundY(i) − suspension.restGroundY`), the strip's width vector
   is tilted into the ground plane, and each segment carries the ray's ground
@@ -1088,8 +1078,8 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
     cast to what they hit, with a contact-patch disc sized and tinted by
     `suspension.loadRatio(i)` — the PHYSICAL compression, deliberately a different
     reading from the `compressionRatio` the struts show. The rays ARE the car's
-    ground contact and were the one part of the model with no picture at all; an
-    airborne wheel used to look exactly like a loaded one. `suspension` exposes
+    ground contact — the one part of the model with no other picture; without
+    them an airborne wheel looks exactly like a loaded one. `suspension` exposes
     `rayOriginY` / `maxToi` / `wheelRadius` / `loadRatio` for this; the tyre fx
     read `groundY(i)` / `restGroundY` / `normal` (the same cast, with its normal).
   - **At the CENTRE OF MASS** (`centerOfMass(spec)` — the same point cars/hull.ts
@@ -1138,23 +1128,23 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
 
 - **`fx/puffPool.ts` is the smoke primitive** — ONE mesh, ONE material, ONE draw
   call, shared by TireSmoke and the exhaust puffs. Read its header before
-  touching either: it replaced two pools of N meshes with N material instances
-  (32 + 16), and the reason that was expensive is not the reason it looks like.
+  touching either: a pool of N meshes means N material instances, and the
+  reason that is expensive is not the reason it looks like.
   Identical node graphs really do share a compiled WGSL program and pipeline
   (three keys them by generated source), but each MATERIAL still builds its own
   node graph the first time it renders — a main-thread NodeBuilder analyze +
   WGSL generation, per material, paid on the frame that material first becomes
-  visible. A burnout spawns ~40 puffs/s, so 31 of those builds landed in the
-  first second of the first slide. That was the first-puff hitch. Geometry is
+  visible. A burnout spawns ~40 puffs/s, so 31 of those builds would land in
+  the first second of the first slide — the first-puff hitch. Geometry is
   the SkidMarks pattern: `count` quads, positions in WORLD space written per
   frame, per-vertex `aPuff` (birth, life, strength, seed) written once at spawn
   and aged shader-side against `uTime`. Billboarding is CPU-side against the
-  camera's right/up basis — the same arithmetic the per-mesh
-  `quaternion.copy(camera.quaternion)` did, minus N matrix compositions. **No
-  boot warm any more**: the mesh is permanently in the graph, so its one
+  camera's right/up basis — the same arithmetic as a per-mesh
+  `quaternion.copy(camera.quaternion)`, minus N matrix compositions. **No
+  boot warm**: the mesh is permanently in the graph, so its one
   pipeline compiles on the scene's first rendered frame for free, and dead
   puffs are DEGENERATE (four verts on a point) rather than hidden. The one
-  accepted difference: puffs in a pool no longer sort against each other by
+  accepted difference: puffs in a pool do not sort against each other by
   depth, because they are one mesh — at these alphas it reads as more stable,
   not wrong.
 - **`TireSmoke.svelte` (fx/) is the squeal made visible** — a `puffPool` of 32,
@@ -1200,15 +1190,16 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
     `renderList.pushLight()` (`Renderer.js:3082`), and
     `LightsNode.customCacheKey()` hashes each light's `id` and `castShadow`, so
     the lights array is part of every material's cache key. Per-pop toggling
-    would be a full recompile several times a second. `CarHeadlights` already
-    follows this (`light.intensity = on ? m.intensity : 0`); now both do.
-  - **It was the FIFTH light when mounted** (sky key + sky fill + two headlight
-    projectors; `CarTaillights`' tail pair has since taken the scene to seven),
-    i.e. deliberately over `DOCS/best-practices.md` §4's three-light guideline.
+    would be a full recompile several times a second. `CarHeadlights`
+    follows this (`light.intensity = on ? m.intensity : 0`); so does the pop
+    light.
+  - **It is one of the scene's SEVEN lights** (sky key + sky fill + two headlight
+    projectors + the `CarTaillights` pair), i.e. deliberately over
+    `DOCS/best-practices.md` §4's three-light guideline.
     The standing cost is one more light evaluated per fragment of every lit
     material, always, even at intensity 0 — there is no way to have it
-    available and not pay. What bought it is `DOCS/testperf.md` §1.1, which
-    took 313 725 triangles out of the shadow pass. It does not cast shadows: a
+    available and not pay. The budget that pays for it is the shadow scoping
+    in `DOCS/testperf.md` §1.1. It does not cast shadows: a
     shadow-casting PointLight is six shadow renders.
   - **ONE lamp for both pipes**, because two sources 0.9 m apart lit for 150 ms
     are not resolvable. The per-pipe asymmetry survives anyway — `fire()`
@@ -1252,12 +1243,12 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   bounce is a rising edge of `carSim.limiting` that can come and go inside one
   rendered frame, so polling it per frame would silently drop bangs. Everything
   VISUAL — energy decay, the uniforms, tip visibility, the group scale, the
-  smoke pool, the `invalidate()` — is a `{ before: autoRenderTask }` task. All
-  of it used to sit in the physics task, which meant it ran 3–4× per drawn
-  frame (the simulation stage takes `ceil(accumulator / rate)` substeps), and
-  worse, `uTime` advanced by the SUBSTEP TOTAL — 20 ms / 15 ms / 15 ms on
-  consecutive frames at 200 Hz against 60 fps — so the flame's own noise
-  animation pulsed on a 20 Hz beat. **WARM WINDOW** (still needed, for the TIPS
+  smoke pool, the `invalidate()` — is a `{ before: autoRenderTask }` task, never
+  the physics task: the simulation stage takes `ceil(accumulator / rate)`
+  substeps, so a physics task runs 3–4× per drawn frame and its `uTime`
+  advances by the SUBSTEP TOTAL — 20 ms / 15 ms / 15 ms on
+  consecutive frames at 200 Hz against 60 fps — and the flame's own noise
+  animation would pulse on a 20 Hz beat. **WARM WINDOW** (still needed, for the TIPS
   only): the six tip materials are invisible until the first pop, so their
   pipelines compiled on it — a visible hitch on the first downshift. The window
   force-shows both tips at their zero-alpha defaults, and it runs while
@@ -1267,7 +1258,7 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   the floor for entries that never warm (the Studio panel's instant `setScene`
   has no veil). It lives INSIDE the visual task, after that task's own
   visibility write — anything set at mount would be overwritten before a frame
-  ever rendered. The smoke pool needs no warming any more (see puffPool).
+  ever rendered. The smoke pool needs no warming (see puffPool).
 
 - **`sim/hullContacts.ts` is the one place that reads what the chassis hull is
   actually TOUCHING** — not the ground contact (the raycast springs in
@@ -1277,8 +1268,7 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   published onto `carSim.hullContact*` for anyone to read — `debug/DebugRig.svelte`
   (flashes/tints the hull) and `fx/CarImpacts.svelte` (sparks/dust) both
   consume the SAME numbers rather than each re-deriving them, which is the
-  whole point: this used to be duplicated inside `CarImpacts.svelte` itself,
-  and it carried a real bug there that a second copy would have carried too.
+  whole point — a second copy is a second place for the same bug.
   **It reads manifolds, never events** — a `sensor` collider (the car's one
   collider is the load-bearing hull, so this would delete its collisions
   outright) throws away position/normal/force; `oncollisionenter` only fires
@@ -1286,18 +1276,17 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   `oncontact` hands back a force with no position. So instead, every step:
   `world.contactPairsWith(hull)` → `world.contactPair(hull, other)` → the
   manifold.
-  **It does NOT read solver contacts, and that is the fix for a real bug**:
-  the first version did (`numSolverContacts()` / `solverContactPoint(i)` /
-  `contactImpulse(i)`), which is exactly why sparks (and the rig's hull tint)
-  only ever fired on the ROAD and never on a fence/wall hit — verified against
-  the installed `@dimforge/rapier3d-compat` directly: a rounded convex hull
+  **It does NOT read solver contacts** (`numSolverContacts()` /
+  `solverContactPoint(i)` / `contactImpulse(i)`): verified against
+  the installed `@dimforge/rapier3d-compat` directly, a rounded convex hull
   (`roundConvexHull`, what `cars/hull.ts` builds) driven into a static
   `trimesh` (what the barriers are, `world/trackColliders.ts`) genuinely gets
   stopped by the solver — the collision is real — but `numSolverContacts()`
   and `contactImpulse()` report **zero** for that shape pair, for the entire
   duration of the touch, in the installed Rapier/Parry version. Against the
   floor (an analytic `cuboid`, a well-supported pair) those same calls work
-  fine, which is exactly the "only works on the ground" symptom this was.
+  fine. Reading solver contacts is exactly how you build a sparks rig that
+  fires on the ROAD and never on a fence/wall hit.
   `numContacts()` / `contactDist(i)` / `localContactPoint1/2(i)` / `normal()`
   ARE populated for every pair this scene has, so this module reads those
   instead: **touching** is `contactDist(i) <= 0` on the DEEPEST contact of the
@@ -1329,8 +1318,8 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   `hullHitDv / HULL_HIT_FULL_DV`) and a SCRATCH (`hullContact` &&
   `hullSlideMs` above a floor → a continuous spark stream off the scrape
   point, rate scaled by slide speed — there is no per-step "how hard pressed"
-  number any more to also scale it by, since that lived in the impulse this
-  file's header explains is unavailable for this shape pair; slide speed
+  number to also scale it by: the impulse it would come from is unavailable for
+  this shape pair (see `sim/hullContacts.ts`'s header); slide speed
   alone still reads as a scrape scaling with how fast it's grinding). Still
   polls from a `usePhysicsTask`, not a render task — `hullHitSeq` can rise and
   `hullContact` can come and go entirely inside one physics step, and this
@@ -1341,10 +1330,10 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   Pooled, hoisted callbacks, `autoInvalidate: false` — §4 throughout.
   **THE NORMAL POINTS INTO THE CAR, and the emission respects that**:
   `hullNormal*` is oriented toward the chassis COM (the sign the closing-speed
-  read needs), so the old emission — spawn 5 cm INSIDE the skin, kick along
-  the normal, floor-clamp that component — fired every spark through the
-  chassis. But kicking along the flipped normal just buries the stream in the
-  wall instead, so the emission now does NEITHER: sparks get a share of the
+  read needs). Spawning 5 cm INSIDE the skin, kicking along
+  the normal and floor-clamping that component fires every spark through the
+  chassis; kicking along the flipped normal just buries the stream in the
+  wall instead — so the emission does NEITHER: sparks get a share of the
   slide velocity plus an isotropic jitter cone and run IN THE INTERFACE
   between the two surfaces (which is where real grind debris goes), spawned
   2 cm out along the flipped normal. The solids settle the leftovers —
@@ -1393,13 +1382,12 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   mild below ~0.55, `exhaustpop2` aggressive above ~0.8, coin-flip between) and
   every hit is jittered — volume by energy × randomness, rate 0.88–1.12, a fresh
   randomized lowpass per hit (thunder-clap contract: no two bangs alike). Pops
-  are POOLED positional voices (`poly` on the declarations — the old clone lists)
+  are POOLED positional voices (`poly` on the declarations)
   placed at the dominant tip via a per-play `position` (model metres, same
   TIP_L/TIP_R space; polyphonic, so double-bangs overlap), the pool stealing
   oldest past its depth — and at the PANNER-DEFAULT distance curve
-  (ref 1/rolloff 1), which is what the old clones actually ran with:
-  `Audio.clone()` copies no panner param, so POP_GAIN was tuned against ~1/distance
-  attenuation (see carSounds.ts's HIT_POS). NITROUS: three voices — `nitrosstart` on ENGAGE
+  (ref 1/rolloff 1), which POP_GAIN is tuned against (~1/distance
+  attenuation; see carSounds.ts's HIT_POS). NITROUS: three voices — `nitrosstart` on ENGAGE
   (flow crosses up through ~0.02), its REVERSE `nitrosend.opus` (made offline via
   ffmpeg `areverse` — buffer sources can't play backwards) on RELEASE (the first
   frame the flow falls while on; pedal lift and bottle-dry are both releases),
@@ -1411,7 +1399,7 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   combustive — bed, pops, nitrous all stop when the switch is off. Switching on
   starts a realistic startup: the turnon sound cranks, RPM revs to ~2k then
   settles, and only when the crank's sound ends does `carIgnition.ready` flip true
-  (the tick polls the handle — the old `onEnded` callback, at frame rate) and the
+  (the tick polls the handle at frame rate) and the
   idle bed fade in — throttle, brake and shifting are gated on `ready`. Switching
   off cuts instantly: bed silences under the turnoff shot, `ready` clears, the car
   coasts to a stop. Edge-triggered on the press, and the bed cuts instantly on
@@ -1465,8 +1453,7 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   sample that precedes its first; join-jump 2941 vs p95-of-deltas 5857 —
   verified, the bed wavs' own standard). The pop wavs are PEAK-NORMALIZED to -3 dBFS
   offline (+6.03/+8.05 dB pure gain — a transient must slam past the bed's
-  continuous RMS or it's inaudible; their peaks originally sat AT the bed's
-  effective level, fully masked) on top of `POP_GAIN` at runtime. The six wavs are
+  continuous RMS or it's inaudible) on top of `POP_GAIN` at runtime. The six wavs are
   CUT FOR LOOPING (ffmpeg: self-crossfade construction — each file is the
   crossfade of itself, extracted so its last sample flows into its first;
   verified join-jump < p95 of normal sample deltas), HEAD-TRIMMED to their settled
@@ -1538,20 +1525,22 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   can't animate from a stale value, and the task only invalidates on frames
   where the lens actually moves.
 
-  **The rig reads the car's pose from the MAIN stage, and that used to be one
-  frame stale.** `useFollow` and `<CameraControls>` both register plain main-stage
-  tasks with no ordering option, and Rapier's synchronization stage — the thing
-  that writes the body's interpolated transform — sorted AFTER the main stage by
-  default. So the camera framed the car one frame behind where the car was drawn,
-  and `useFollow`'s `lookAhead` velocity (`Δposition / delta`) took its numerator
-  from the previous frame and its denominator from the current one. Fixed at the
-  stage, not here — `core/utils/PhysicsWorld.svelte` (`DOCS/testperf.md` §1.7).
+  **The rig reads the car's pose from the MAIN stage, which is only correct
+  because Rapier's synchronization is pinned ahead of it.** `useFollow` and
+  `<CameraControls>` both register plain main-stage
+  tasks with no ordering option, and `@threlte/rapier` only constrains
+  synchronization to `after: simulation, before: renderStage` — it sorts AFTER
+  the main stage by default. Left there, the camera frames the car one frame
+  behind where the car is drawn,
+  and `useFollow`'s `lookAhead` velocity (`Δposition / delta`) takes its
+  numerator from the previous frame and its denominator from the current one.
+  The pin lives at the stage, not here — `core/utils/PhysicsWorld.svelte`
+  (`DOCS/testperf.md` §1.7).
 
-  Two things not to conclude from that. It was **not** the cause of the car's 4K
-  stutter — that is fill rate, closed in §2.6, and this fix changed nothing
-  observable about it. And **nothing in this file should be "corrected" back to
-  compensate for the old ordering**: the `lookAhead`/`followSmoothTime` values are
-  the feel, not a workaround.
+  Two things not to conclude from that. It is **not** the cause of the car's 4K
+  stutter — that is fill rate, closed in §2.6. And **nothing in this file should
+  be "corrected" to compensate for a stale pose**: the
+  `lookAhead`/`followSmoothTime` values are the feel, not a workaround.
 
   Two rules come with borrowing:
   - **Save the pose on entry, restore it on exit.** `Camera.svelte` sets its

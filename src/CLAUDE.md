@@ -82,9 +82,9 @@ autoRender={false}>` is a Canvas **option** — never toggled from an `$effect`
   `{ after: autoRenderTask, autoInvalidate: false }` (`webgpu-notes.md` §2). Renderer.svelte
   must stay the **first** child inside `<Canvas>` so it draws before the Gizmo.
 - **Tone mapping is owned by Threlte's renderer context** (default AgX), driven by the `<Canvas>`
-  `toneMapping` option. Never also write `renderer.toneMapping` from a component — two owners for
-  one property caused several of the earlier bugs. (The FXAA effect only _reads_ it, when it
-  takes over the output colour transform.)
+  `toneMapping` option. Never also write `renderer.toneMapping` from a component — one
+  property, one owner. (The FXAA effect only _reads_ it, when it takes over the output
+  colour transform.)
 
 Background: `DOCS/webgpu-notes.md` — WebGPU gotchas, the Studio task-ordering rules any new
 pipeline must follow, and the reactivity rules. Read it before debugging anything renderer-shaped.

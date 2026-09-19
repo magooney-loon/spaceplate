@@ -50,11 +50,10 @@ step for the frame's real delta upstream of every stage, task and Rapier accumul
 the app. It also pins TSL `time`, which the scheduler cannot reach.
 
 - **Do not read `performance.now()` / `Date.now()` to animate anything** — it bypasses
-  the clock and drifts slow in a below-realtime take. No exceptions remain:
-  `core/audio/weatherAudio.ts` was the one sanctioned use and no longer needs it (its
-  thunder delay is scheduled on the `AudioContext` clock). Audio is still the one part of
-  the app not yet on scene time — `PlayOptions.delay` is wall-clock seconds until step 3
-  of `DOCS/AUDIO.md`.
+  the clock and drifts slow in a below-realtime take. No exceptions. (`core/audio/
+  weatherAudio.ts`'s thunder delay schedules on the `AudioContext` clock — the right
+  clock for sound.) Audio is still the one part of the app not yet on scene time —
+  `PlayOptions.delay` is wall-clock seconds until step 3 of `DOCS/AUDIO.md`.
 - **A `delta` of 0 is legal** — a held frame. No divisions by it.
 - `engineClock.elapsed` / `.delta` / `.fixed` are readable from outside a task.
 - **A per-frame quantity that is not a delta still has to be normalised by one.** three's
@@ -71,8 +70,8 @@ the app. It also pins TSL `time`, which the scheduler cannot reach.
 
 `waitForAssetsIdle()` is "has the app stopped loading yet?", callable. The scene
 transition awaits it after the swap (`$extensions/scene`), which is what makes the veil
-cover a scene's OWN assets — the boot Loader only ever covered the boot scene's, so every
-later entry used to run on a fixed budget and pop its GLBs in afterwards.
+cover a scene's OWN assets — the boot Loader covers only the boot scene's; without this
+gate a later entry runs on a fixed budget and pops its GLBs in afterwards.
 
 - **Idle means QUIET FOR A GRACE PERIOD, not `loaded === total`.** three's LoadingManager
   has no drain event worth latching: `loaded` catches up with `total` transiently BETWEEN

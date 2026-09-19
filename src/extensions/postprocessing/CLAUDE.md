@@ -27,11 +27,11 @@ in elements moves nothing**. Two consequences to respect when editing the panel:
   `:last-child`. `SECTIONS` says so, and the Reset All footer is rendered just before it
   for that reason.
 - **Raw HTML inside a `Folder` never renders.** svelte-tweakpane-ui puts a folder's
-  children in a `display: none` div (they exist only so it can compute a blade index), so
-  the per-effect `note` and suppression spans the panel used to carry were invisible from
-  the day they were added. They are gone; the `(off)` suffix on a suppressed effect's
-  title is what remains, and `def.note` currently has no reader. Putting it back means a
-  real tweakpane blade, not a `<span>`.
+  children in a `display: none` div (they exist only so it can compute a blade index) —
+  a per-effect `note` or suppression marker placed here is invisible on arrival. The
+  `(off)` suffix on a suppressed effect's title is the visible carrier, and `def.note`
+  currently has no reader. A real per-effect label means a real tweakpane blade, not a
+  `<span>`.
 
 The engine side lives in **`src/core/postprocessing/`** (registry, builder, uniform
 bag, one module per effect) — see its `CLAUDE.md` for the architecture and the

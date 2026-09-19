@@ -96,12 +96,12 @@ pinned before simulation — `core/input/InputRuntime.svelte`.
 
 localStorage `spaceplate-input-bindings`, `version: 1`. **Only slots the player actually
 changed are stored**; a slot with no entry resolves to its code default, so changing a
-default in code reaches existing players. The pre-slot system serialised the whole resolved
-map, which froze every default forever behind whatever was in a user's browser on first
-load. Reset = delete the entry. Entries for maps/slots that no longer exist are kept, not
+default in code reaches existing players. (Serialising the whole resolved map instead
+would freeze every default behind whatever was in a user's browser on first load.)
+Reset = delete the entry. Entries for maps/slots that no longer exist are kept, not
 pruned — switching branches shouldn't destroy your binds.
 
-The old `spaceplate-input-settings` key is deleted on boot.
+The legacy `spaceplate-input-settings` key is deleted on boot.
 
 ## Reactivity split
 

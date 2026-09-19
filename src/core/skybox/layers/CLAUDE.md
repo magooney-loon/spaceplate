@@ -252,7 +252,7 @@ Two more things that are load-bearing rather than taste:
   GROW as they travel out, which is the perspective the flow is a projection of). Its
   seam at ±π closes cell-for-cell only if the circumference is an INTEGER number of the
   pattern's columns — that is what `RADIAL_COLUMNS` is, why the second layer's multiplier
-  is 2 rather than the source's 1.85, and why the `scale` param no longer sizes those
+  is 2 rather than the source's 1.85, and why the `scale` param does not size those
   layers (a zoom is `log(r) + log(k)`, a phase shift along the flow). Static drops stay
   in cartesian pattern space: they cling to the glass, they do not run.
 - **Its coverage is radial too, and applied to the BLEND, not to the field**
@@ -270,8 +270,8 @@ Two more things that are load-bearing rather than taste:
   is a blend factor, so any positive value shows and its floor can sit low. Growth is a
   POSITION for the frost front, which does not reach the corners of the frame until
   ~0.086 — below that the effect is a fullscreen pass whose output is provably its input.
-  The old shared 0.002 floor is what kept the snow lens drawing for ~30 s of melt after
-  every snowfall.
+  A shared low floor here would keep the snow lens drawing for ~30 s of melt after every
+  snowfall.
 
 ### `lightning/`
 
@@ -315,12 +315,12 @@ Two more things that are load-bearing rather than taste:
 - Both of Lightning's meshes blend additively with a **custom blend that writes no
   destination alpha**. Stock `AdditiveBlending` is `src.a + dst.a`, and a layer that
   carries its coverage in `colorNode` (as the bolt does, to keep `uBolt`'s 1.25 peak out
-  of alpha's [0,1] clamp) emits `src.a = 1` over its whole quad. The lens layers used to
-  draw last and multiply the frame's alpha into their own wetness, so that stamp came back
-  as a hard-edged rectangle of over-blurred wet lens on every strike — they no longer read
-  frame alpha, but the flag stays: the frame's alpha is the canvas's. **Any large additive
-  layer that does not put real coverage in `opacityNode` owes the frame the same custom
-  blend.**
+  of alpha's [0,1] clamp) emits `src.a = 1` over its whole quad. A downstream reader of
+  frame alpha — a lens layer multiplying the frame's alpha into its own wetness, say —
+  would carry that stamp through as a hard-edged rectangle on every strike; the lens
+  layers do not read frame alpha, but the flag stays: the frame's alpha is the canvas's.
+  **Any large additive layer that does not put real coverage in `opacityNode` owes the
+  frame the same custom blend.**
 
 ### `fauna/`
 

@@ -62,17 +62,16 @@ Frames go through WebCodecs via mediabunny (`encoder.ts`) and are timestamped
 exactly `1/fps` in the output, so the video is exactly-spaced on a machine rendering the scene
 at 8 fps. The viewport crawls while a take runs; that is the take working, not a stall.
 
-**There was a second, `realtime` mode** (`MediaRecorder` off `canvas.captureStream(0)`), and
-it is gone rather than deprecated. MediaRecorder timestamps each frame by the wall-clock
-moment `requestFrame()` ran, so its timeline **is** the wall clock: making the frame cheaper
-reduces how _often_ a take hitches and cannot stop it hitching. Every hitch went into the file
-as a long frame. Keeping it meant a mode switch, a second encoder, a second finalize path and
-a branch in the task, all to produce the worse file. Reviving it is a `MediaRecorder` +
-`captureStream(0)` + `track.requestFrame()` job, and it would now have to bring its own
-canvas: the 2D one it used to share with the take is gone (see "Video goes straight off the
-live canvas"), and `captureStream` off the live WebGPU canvas is not the same thing. Note it
-must also pin the render loop with `invalidate()` per frame, which the take does not need
-because the engine clock invalidates every frame it releases.
+**Not built: a `realtime` mode** (`MediaRecorder` off `canvas.captureStream(0)`). MediaRecorder
+timestamps each frame by the wall-clock moment `requestFrame()` ran, so its timeline **is** the
+wall clock: making the frame cheaper reduces how _often_ a take hitches and cannot stop it
+hitching — every hitch goes into the file as a long frame. On top of the worse file it would
+mean a mode switch, a second encoder, a second finalize path and a branch in the task. Reviving
+it is a `MediaRecorder` + `captureStream(0)` + `track.requestFrame()` job, and it would have
+to bring its own canvas: the take's 2D one is gone (see "Video goes straight off the live
+canvas"), and `captureStream` off the live WebGPU canvas is not the same thing. It would also
+have to pin the render loop with `invalidate()` per frame, which the take does not need because
+the engine clock invalidates every frame it releases.
 
 **A take owns the engine clock.** `take.ts`'s `start()` installs its `step` as
 the fixed-step source (`core/utils/engineClock.ts` — read its header), and from that moment
@@ -82,7 +81,7 @@ and the physics are on the same clock as the timestamps by construction, so a ta
 at 8fps is not slow-motion in anything.
 
 **The advance decision is latched, once per frame, by the clock source.** This is the important
-invariant and getting it wrong is what made the first takes twitchy. `take.ts`'s `step()`
+invariant — get it wrong and the take twitches. `take.ts`'s `step()`
 runs before any stage, decides the frame and writes `captureRuntime.posed`; the capture task
 runs `{ after: autoRenderTask }` and encodes **iff** that latch is set, then clears it. It must
 never re-derive the decision from the encoder's state, because `saturated` is asynchronous and
@@ -192,19 +191,18 @@ frame, and both captures read `renderer.domElement` at its new size.
 
 ## Audio: a deterministic offline render
 
-Audio used to be the odd one out in this file: every other guarantee here comes from the
-take owning the engine clock, and Web Audio has no clock to own — `AudioContext.currentTime`
-is wall-clock and cannot be substituted. The old answer was a **live tap** — a
-`MediaStreamAudioDestinationNode` fanned off the master bus, encoded by mediabunny's
-pull-style `MediaStreamAudioTrackSource` — and it drifted, because the video track is
-`frameIndex / fps` scene-seconds no matter how long each frame took while the tap recorded
-whatever the `AudioContext` produced at that wall-clock moment. On a machine sustaining the
-target fps the two stayed close; on a heavy take — 4K, a demanding scene, a slow GPU — the
-finished file's sound ran ahead of its picture by exactly how far the renderer fell behind
-(`core/audio/scheduler.ts`, `schedulerDrift()`). No fix keeps a tap "live": the only correct
-answer is to render the audio offline through the same scene clock. That is what happens
-now, and the machinery lives in `core/audio/` (`timeline.ts` + `render.ts` — see that
-CLAUDE.md for the recorder's contract); this section covers capture/'s half of it.
+Audio is the one guarantee here that cannot come from the take owning the engine clock:
+Web Audio has no clock to own — `AudioContext.currentTime` is wall-clock and cannot be
+substituted. A **live tap** (a `MediaStreamAudioDestinationNode` fanned off the master bus,
+encoded by mediabunny's pull-style `MediaStreamAudioTrackSource`) cannot work either: the
+video track is `frameIndex / fps` scene-seconds no matter how long each frame took, while a
+tap records whatever the `AudioContext` produced at that wall-clock moment. On a machine
+sustaining the target fps the two stay close; on a heavy take — 4K, a demanding scene, a slow
+GPU — the finished file's sound runs ahead of its picture by exactly how far the renderer
+fell behind (`core/audio/scheduler.ts`, `schedulerDrift()`). No fix keeps a tap "live": the
+only correct answer is to render the audio offline through the same scene clock. The
+machinery lives in `core/audio/` (`timeline.ts` + `render.ts` — see that CLAUDE.md for the
+recorder's contract); this section covers capture/'s half of it.
 
 - **Armed at the same instant the clock is claimed.** `take.ts`'s `start()` calls
   `audio.recording.arm(sceneNow())` immediately before `setFixedStepSource(step)` — both
@@ -237,10 +235,10 @@ CLAUDE.md for the recorder's contract); this section covers capture/'s half of i
   codec probe: webm tries opus then vorbis, mp4 tries aac then opus), an empty take, a failed
   offline render, **and the audio encoder rejecting the rendered buffer inside `finish()`** —
   each falls back to a silent video rather than failing the take. That last one is the easy
-  one to leave unguarded, and it used to be: the `.catch()` was around
-  `recording.render()` only, so a throw from `audioSource.add()` skipped `close()` and
-  `finalize()` and took **the whole video** with it. It is reachable because the codec is
-  probed before the buffer exists — the channel count (2, matching `CHANNELS` in
+  one to leave unguarded: the obvious `.catch()` sits around `recording.render()`
+  only, and a throw from `audioSource.add()` skips `close()` and `finalize()` and
+  takes **the whole video** with it. It is reachable because the codec is probed
+  before the buffer exists — the channel count (2, matching `CHANNELS` in
   `core/audio/render.ts`) and the bitrate can be passed to the probe, but the sample rate
   cannot, since it is the live `AudioContext`'s and the buffer is not rendered until stop.
   `OfflineTake.hasAudio` reports which happened; the panel status line and the console log

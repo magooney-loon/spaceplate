@@ -98,10 +98,10 @@ sources ──▶ music ────┐
 
 - **Three's listener stays the master.** Its own contract (`setMasterVolume`, the filter
   slot) keeps working, and every bus ends at `listener.gain`, so nothing bypasses the graph
-  however many buses sit above it. Don't re-parent it. (A capture tap used to fan off this
-  node; the offline render replaced it — see "Deterministic takes" below.)
-- **`ui` is a child of `sfx`**, so click/swoosh ride the sfx fader exactly as they used to,
-  with a place to trim UI separately later.
+  however many buses sit above it. Don't re-parent it, and don't tap it for capture — the
+  take is an offline render (see "Deterministic takes" below.)
+- **`ui` is a child of `sfx`**, so click/swoosh ride the sfx fader, with a place to trim UI
+  separately later.
 - **A volume is a gain node, not a number call sites multiply in.** `settingsState.audio`
   reaches the graph in exactly one place — `syncMixerFromSettings()`, called from a single
   `$effect` in `AudioRuntime.svelte`. Nothing else may read `settingsState.audio.*Volume`
@@ -112,9 +112,9 @@ sources ──▶ music ────┐
 - **ROUTING IS PER VOICE, AND CLONES ARE THE TRAP.** `routeToBus` is structural
   (`{ gain: GainNode }`) because `PositionalAudio` is not an `Audio<GainNode>` to
   TypeScript — it overrides `getOutput()` to a `PannerNode` — while both still end in
-  `this.gain`. The registry routes every voice it creates, so engine code no longer clones;
-  but **`Audio.clone()` is `new this.constructor(this.listener)`**, and that constructor
-  wires `gain → listener.getInput()`, so any clone comes back wired **past the whole bus
+  `this.gain`. The registry routes every voice it creates; but **`Audio.clone()` is
+  `new this.constructor(this.listener)`**, and that constructor wires
+  `gain → listener.getInput()`, so any clone comes back wired **past the whole bus
   graph, at full volume — and past the take recorder, which never sees it**. Nothing in
   the repo clones a voice; the rule stands because the bypass is silent.
 - **`busAudible(id)` is for TASK-driven consumers only.** Buses are plain objects, so a
