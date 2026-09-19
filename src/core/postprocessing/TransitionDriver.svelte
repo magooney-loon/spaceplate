@@ -1,21 +1,16 @@
 <script lang="ts">
 	// The scene transition's one writer: captures the frozen frame, dissolves it to the
 	// veil colour, holds while the new scene loads and warms, then dissolves the veil
-	// into the live scene. Draws nothing. What the snapshot is, why it is mixed in the
-	// chain and why the middle phase is a loading screen: ./transitionState.svelte.ts.
+	// into the live scene. Draws nothing. What the snapshot is and why the middle phase
+	// is a loading screen: ./transitionState.svelte.ts.
 	//
-	// THE TASK ONLY RUNS FOR THE TWO ANIMATED PHASES. During the hold it stops itself,
-	// and that is deliberate: nothing on screen is moving (the cover is flat), so
-	// forcing full-rate frames of a half-mounted scene through the whole download would
-	// be pure waste. The warm gate starts its own forced-frame loop when it is that
-	// phase's turn (core/utils/Warmup.svelte) — the two no longer overlap.
-	//
-	// While it does run it is `autoStart: false` with `autoInvalidate` LEFT ON —
-	// Warmup.svelte's bargain and for the same reason: on-demand rendering would
-	// otherwise stop drawing frames mid-dissolve (nothing else invalidates while a scene
-	// sits still), and an `invalidate()` from inside a task that has already run is
-	// cleared before the next frame reads it. It runs `{ before: autoRenderTask }` so the
-	// value it writes is the one the frame about to be drawn uses.
+	// The task only runs for the two animated phases — during the hold it stops itself,
+	// since nothing on screen is moving and forcing full-rate frames would be waste
+	// (the warm gate runs its own forced-frame loop for that phase instead,
+	// core/utils/Warmup.svelte). `autoStart: false` with `autoInvalidate` left on, same
+	// bargain as Warmup.svelte: on-demand rendering would otherwise stop drawing frames
+	// mid-dissolve. Runs `{ before: autoRenderTask }` so the value it writes is the one
+	// the frame about to be drawn uses.
 	import { onDestroy } from 'svelte';
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import { postprocessingState } from '$extensions/postprocessing';

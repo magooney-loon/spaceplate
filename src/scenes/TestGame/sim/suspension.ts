@@ -169,23 +169,19 @@ export function createSuspension(spec: CarSpec) {
 	const _dir = new THREE.Vector3();
 
 	/**
-	 * Cast the four rays, apply the summed spring force. Call AFTER the
-	 * controller's `resetForces`, on EVERY path through the physics step
+	 * Cast the four rays, apply the summed spring force. Call after the
+	 * controller's `resetForces`, on every path through the physics step
 	 * (including parked/startup early-returns) — there are no wheel colliders,
-	 * so a skipped step falls through onto the undertray. Takes no `delta`:
-	 * the force is a pure function of the current compression and vertical
-	 * velocity; Rapier does the integrating.
+	 * so a skipped step falls through onto the undertray. Takes no `delta`: the
+	 * force is a pure function of compression and vertical velocity; Rapier
+	 * integrates.
 	 *
-	 * THE FORCE IS AIMED AT THE GROUND NORMAL, not straight up, and that one
-	 * change is what makes slopes exist. Aimed UP it balanced gravity exactly on
-	 * any surface — both forces vertical, so their horizontal sum was zero
-	 * whatever the ground was doing: a hill cost nothing to climb, gave nothing
-	 * back going down, and a car left on one neither rolled away nor was held.
-	 * Aimed at the normal (the standard raycast-vehicle rule) the support is
-	 * `f·n`, whose tangential part IS the gravity-along-slope term — so the hill
-	 * pulls for real and the TYRES have to hold it (the controller's rest
-	 * friction and lateral bleed, both capped at μ·g, which is exactly the slope
-	 * a real tyre holds). On the flat `n` is `(0,1,0)` and nothing changed.
+	 * The force is aimed at the ground normal, not straight up — aimed up it
+	 * balanced gravity exactly on any surface (both forces vertical, zero
+	 * horizontal sum), so a hill cost nothing to climb and gave nothing back
+	 * going down. Aimed at the normal, the support's tangential part IS the
+	 * gravity-along-slope term, so the hill pulls for real and the tyres have to
+	 * hold it. On the flat this is `(0,1,0)` and nothing changes.
 	 */
 	function step(body: RapierRigidBody, world: World): void {
 		const t = body.translation();

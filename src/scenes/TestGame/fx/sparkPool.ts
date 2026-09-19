@@ -1,35 +1,20 @@
-// A pool of world-anchored, velocity-STREAKED sparks — ONE mesh, ONE material,
-// ONE draw call. The `fx/puffPool.ts` primitive's hot sibling, and it follows
-// exactly the same rules for exactly the same reasons (read that header first):
-// `count` quads in one BufferGeometry, positions written in WORLD space by
-// `update()`, per-puff values on a per-vertex attribute written ONCE at spawn
-// and aged shader-side against `uTime`, dead slots collapsed to a point so they
-// cost a vertex transform and zero fragments. One material means one node-graph
-// build, on the scene's first rendered frame, behind the entry veil — a spark
-// burst is the worst possible moment to discover a NodeBuilder analyze.
+// A pool of world-anchored, velocity-streaked sparks — one mesh, one material,
+// one draw call. `fx/puffPool.ts`'s hot sibling, following the same rules for
+// the same reasons (read that header first).
 //
-// WHAT IS DIFFERENT FROM A PUFF, and why this is its own primitive rather than
-// a puffPool config:
+// What's different from a puff: a puff is billboarded (a camera-facing disc);
+// a spark is a streak — the quad is built on the spark's own velocity axis,
+// rolled about it to face the camera, and stretched in proportion to speed,
+// which is most of what separates "sparks" from "orange dots". A puff dims
+// what's behind it; a spark is white-hot metal and adds (unlit
+// `MeshBasicNodeMaterial` + AdditiveBlending — a lit spark would be dimmed by
+// night exposure exactly when it should read brightest). Sparks also cool:
+// the colour ramp is driven by age and position along the streak (white ->
+// yellow -> orange -> dull red), plus a hard sputter (a `step()` on a
+// per-spark hash) since real sparks tumble and blink out rather than fade.
 //
-//   • A puff is BILLBOARDED — a camera-facing disc. A spark is a STREAK: the
-//     quad is built on the spark's own velocity axis, rolled about that axis to
-//     face the camera, and stretched along it in proportion to speed. That is
-//     the motion smear a real spark leaves on a camera sensor and on the eye,
-//     and it is most of what separates "sparks" from "orange dots".
-//   • A puff DIMS what is behind it; a spark is white-hot metal and ADDS. So:
-//     `MeshBasicNodeMaterial` + AdditiveBlending, unlit — the skid-marks "always
-//     light it" lesson does not apply to something that is itself the emitter,
-//     and a lit spark would be dimmed by the night exposure exactly when it
-//     should read brightest.
-//   • Sparks COOL. The colour ramp is driven by age AND by position along the
-//     streak (the head is the particle, the tail is where it was), so a spark
-//     goes white → yellow → orange → dull red on its way out instead of just
-//     fading. Plus a hard SPUTTER — real sparks tumble and blink out — which is
-//     a `step()` on a per-spark hash, not a fade.
-//
-// No noise textures: a spark is smaller than one texel of the perlin PNG at any
-// sane sampling rate, so the mottle that makes smoke work would be invisible
-// here. The variety comes from the per-spark seed instead.
+// No noise textures — a spark is smaller than one texel of the perlin PNG, so
+// the variety comes from the per-spark seed instead.
 
 import * as THREE from 'three/webgpu';
 import {

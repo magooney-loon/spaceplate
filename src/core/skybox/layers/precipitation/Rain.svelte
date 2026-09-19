@@ -1,57 +1,29 @@
 <script lang="ts">
-	// WebGPU-safe rain layer: falling streaks that STOP at the world's surfaces, plus the
-	// two impact layers -- an expanding ground ring and a small upward burst. Each drop is
-	// a TSL-driven quad animated in the vertex node, and the mesh is recentered on the
-	// active camera every frame -- no world-sized particle system needed.
+	// WebGPU-safe rain layer: falling streaks that stop at the world's surfaces, plus two
+	// impact layers (an expanding ground ring and a small upward burst). Each drop is a
+	// TSL-driven quad animated in the vertex node, recentred on the active camera every
+	// frame — no world-sized particle system needed.
 	//
-	// ── THE BOX FOLLOWS THE CAMERA; THE DROPS DO NOT ─────────────────────────────────
+	// The box follows the camera; the drops do not. The mesh is camera-anchored so drops
+	// surround the view, but each drop's `fract()` wrap is taken about the anchor in
+	// world space (see `motionOf`), pinning the drop to a fixed world position and
+	// recycling it only when the box leaves it behind — drops stream past with honest
+	// parallax, and splashes stay on the patch of ground they landed on.
 	//
-	// Conflating those two is what makes rain feel bolted to the player. The mesh is
-	// camera-anchored so drops always surround the view, but each drop's `fract()` wrap is
-	// taken about the anchor IN WORLD SPACE (see `motionOf`), pinning the drop to a fixed
-	// world position and merely recycling it when the box leaves it behind: drops stream
-	// past with honest parallax, and splashes stay on the patch of ground they landed on.
+	// Collision costs nothing per drop: the fall is a deterministic sawtooth
+	// (`u = fract((y0 + halfH - t*speed) / boxH)`), the height field converts the
+	// surface height under a drop into the sawtooth phase it reaches at (`uImpact`), so
+	// "has it landed?" and "how long ago?" are both closed-form in the vertex stage — no
+	// CPU clock, no collision events, no per-drop state. Where the height field has no
+	// data, drops fall straight through rather than freezing mid-air.
 	//
-	// The quad is INSTANCED (skyLayer.ts): one head-anchored four-vertex quad drawn
-	// `count` times.
+	// A splash belongs to a place, not a drop: it's evaluated at the drop's impact
+	// point, never its live position (which keeps accumulating wind drift after
+	// landing). `fallSinceImpact = (uImpact - u) * boxH` rolls the drift back to where
+	// the drop actually hit — `freezeAtImpact` in `motionOf` is that switch.
 	//
-	// ── COLLISION, AND WHY IT COSTS NOTHING PER DROP ──────────────────────────────────
-	//
-	// The fall is a deterministic sawtooth: `u = fract((y0 + halfH - t*speed) / boxH)`
-	// walks 1 -> 0 and wraps. That determinism is the whole trick: the height field
-	// (heightField.ts) gives the surface height under a drop, which converts to the
-	// sawtooth phase `uImpact` at which it reaches it -- so "has it landed?" is
-	// `u <= uImpact` and "how long ago?" is `(uImpact - u) * boxH / speed`, both
-	// closed-form in the vertex stage. No CPU clock, no collision events, no per-drop
-	// state; the splash layers reuse the drops' own instance buffers.
-	//
-	// Where the height field has no data -- outside its footprint, or before its first
-	// pass -- `valid` is 0, `uImpact` is forced below the box, and drops fall straight
-	// through: the failure mode is the old behaviour, never drops frozen in mid-air.
-	//
-	// The field records only the TOPMOST surface per column, so rain stops on a roof and
-	// does not reach the floor beneath it -- correct outdoors (sheltered spots for free),
-	// wrong inside a multi-storey interior, which would need a different approach.
-	//
-	// ── A SPLASH BELONGS TO A PLACE, NOT TO A DROP ────────────────────────────────────
-	//
-	// The splash layers are evaluated at the drop's IMPACT point, never at its live
-	// position: the live position still contains accumulated wind travel, which keeps
-	// accumulating after the drop has landed, so a splash evaluated there slides downwind
-	// for its whole life and can walk off the surface it landed on. The fix is closed-form:
-	// `fallSinceImpact` is exactly `(uImpact - u) * boxH`, and rolling the drift back by
-	// that much gives the world position where the drop actually hit -- the splash layers
-	// evaluate their whole solution (position, height sample, timing) there.
-	// `freezeAtImpact` in `motionOf` is that switch; the streaks, which really are at their
-	// live position, leave it off.
-	//
-	// ── SHEETS ────────────────────────────────────────────────────────────────────────
-	//
-	// Rain arrives in bands that travel with the wind, and that -- more than drop count --
-	// is what makes a downpour read as weather rather than as a particle system. `uSheet`
-	// modulates the density threshold by a two-octave travelling wave along the wind
-	// bearing, so drops thin out and thicken in slow gusts. It is a WIND phenomenon: still
-	// air gets none of it.
+	// Sheets: `uSheet` modulates the density threshold by a travelling wave along the
+	// wind bearing, so drops thin/thicken in slow gusts — a wind phenomenon, none in still air.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';

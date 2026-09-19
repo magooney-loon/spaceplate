@@ -11,40 +11,24 @@
 	import type { CarHull } from '../cars/hull';
 
 	// Impact FX — what the chassis hull hitting the world looks like. Two effects
-	// off one signal:
+	// off one signal: SCRATCH (the car pressed against something and sliding —
+	// a continuous stream of hot streaks off the scrape point, rate scaled by
+	// slide speed) and HIT (the car arrived — a wide burst of sparks plus a
+	// short cough of dust).
 	//
-	//   SCRATCH — the car is pressed against something and SLIDING along it, so
-	//             the contact patch grinds: a continuous stream of hot streaks
-	//             trailing off the scrape point, rate scaled by how fast it's
-	//             sliding. Barrier scrapes, kerbing, bellying out over a lip.
-	//   HIT     — the car ARRIVED at something: an impulse spike, which throws a
-	//             wide burst of sparks off the contact plus a short cough of dust.
+	// This is purely a consumer of `sim/hullContacts.ts`'s signal — no Rapier
+	// imports, no manifold walking of its own. That module owns the one correct
+	// reading of the narrow phase (its header has the full story: solver
+	// contacts are never populated for this hull shape against the track's
+	// trimesh, so an earlier version of this component only ever fired on the
+	// floor and never on a wall) and publishes onto `carSim.hullContact*`.
 	//
-	// ── THIS READS THE ALREADY-DETECTED SIGNAL, NOT RAPIER DIRECTLY ────────────
+	// `carSim.hullHitSeq` is what a HIT keys off — it increments once per real
+	// rising-edge arrival, which `hullHitFlash` alone can't distinguish from
+	// still decaying. SCRATCH just reads `hullContact` + `hullSlideMs`
+	// continuously, no edge detection needed.
 	//
-	// This component used to poll `world.contactPairsWith`/`contactPair` itself,
-	// which is also where it inherited a real bug: it read `numSolverContacts()`
-	// / `solverContactPoint(i)` / `contactImpulse(i)`, and those are NEVER
-	// populated for the chassis's `roundConvexHull` against the track's
-	// `trimesh` colliders (verified against the installed rapier3d-compat) — so
-	// it only ever fired on the FLOOR (an analytic `cuboid`, a shape pair Rapier
-	// does support) and never on a fence or wall. `sim/hullContacts.ts` now owns
-	// the one correct reading of the narrow phase (its header has the full
-	// story and the fix: `numContacts()`/`contactDist(i)`/`localContactPoint1/2`
-	// instead, with "how hard" derived from the car's own tracked velocity
-	// rather than the solver's absent impulse) and publishes it once per
-	// physics step onto `carSim.hullContact*`. This component is now purely a
-	// CONSUMER of that signal — no Rapier imports, no manifold walking — so the
-	// fix lives in exactly one place and the debug rig and this effect can
-	// never again disagree about what counts as a hit.
-	//
-	// `carSim.hullHitSeq` is what a HIT is keyed off: it increments once per
-	// real rising-edge arrival in `hullContacts.ts`, which is the one-shot
-	// signal this needs — `hullHitFlash` alone can't tell "still decaying from
-	// the last hit" from "a fresh one just landed". SCRATCH just reads
-	// `hullContact` + `hullSlideMs` continuously, no edge detection needed.
-	//
-	// SPLIT LIKE THE EXHAUST: this still polls from a `usePhysicsTask`, not a
+	// Split like the exhaust FX: this polls from a `usePhysicsTask`, not a
 	// render task — `hullHitSeq` can tick and `hullContact` can come and go
 	// entirely inside one physics step, and a render-stage poll would coalesce
 	// several steps into one read and miss one. It runs after

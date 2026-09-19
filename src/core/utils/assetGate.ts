@@ -1,26 +1,21 @@
 import { useProgress } from '@threlte/extras';
 import { logEngine } from '$extensions/logger';
 
-// THE ASSET GATE — "has the app stopped loading yet?", callable.
+// The asset gate — "has the app stopped loading yet?", callable.
 //
-// three's LoadingManager has no 'queue drained' event worth latching on: an item
-// finishing makes `loaded` catch up with `total` transiently BETWEEN items, so the
-// first catch-up is not the end of the queue (that is the same trap Loader.svelte's
-// `settled` documents at boot). IDLE here therefore means QUIET FOR A GRACE PERIOD —
-// the manager inactive for `quietMs` without interruption; any new item restarts the
-// wait. The nothing-to-load case falls out of it for free.
+// three's LoadingManager has no 'queue drained' event: an item finishing makes
+// `loaded` catch up with `total` transiently between items, so idle here means quiet
+// for a grace period instead — the manager inactive for `quietMs` without
+// interruption; any new item restarts the wait.
 //
-// It watches the DEFAULT loading manager, which is the one every loader in this app
-// ends up on: Threlte's `useGltf`/`useLoader` (the car, the track), the bare
-// `TextureLoader`s (the moon, the noise PNGs, the clearcoat maps) and the audio
-// buffers alike. THAT is why a scene declares nothing — mounting it starts its loads
-// and this sees them. What it cannot see is a promise that never touches the manager;
-// wrap that scene's subtree in @threlte/extras' `<Suspense>` and register the promise
-// with `useSuspense()` if one ever exists. None does today.
+// It watches the default loading manager, which every loader in this app ends up on
+// (useGltf/useLoader, bare TextureLoaders, audio buffers), so a scene declares
+// nothing — mounting it starts its loads and this sees them. What it can't see is a
+// promise that never touches the manager; wrap that subtree in `<Suspense>` +
+// `useSuspense()` if one ever exists (none does today).
 //
-// `useProgress()` takes no Threlte context (it patches the manager at module scope and
-// hands back module-global stores), so this is callable from plain modules — the scene
-// transition lives outside the Canvas.
+// `useProgress()` takes no Threlte context, so this is callable from plain modules —
+// the scene transition lives outside the Canvas.
 
 const { active } = useProgress();
 

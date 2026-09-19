@@ -1,22 +1,11 @@
-// THE TAKE RECORDER — what the audio layer was TOLD, stamped in scene seconds.
+// The take recorder's storage: what the audio layer was told, stamped in scene seconds.
+// Pure storage — plays nothing, reads nothing back, and imports nothing from voices.ts
+// (which imports this). voices.ts drives it since it owns the live voice set; render.ts
+// turns what lands here into an AudioBuffer.
 //
-// Pure storage: it plays nothing, reads nothing back and imports nothing from voices.ts
-// (which imports this — the dependency runs one way only). `voices.ts` owns the driving,
-// because it owns the live voice set; `render.ts` turns what lands here into an
-// AudioBuffer.
-//
-// WHY THIS EXISTS: a capture take's video is `frameIndex / fps` SCENE seconds however
-// long each frame took to draw, while the live AudioContext runs on the wall clock. Any
-// recording tapped off the live graph therefore drifts by exactly how far the renderer
-// fell behind (core/audio/scheduler.ts, `schedulerDrift()`). Replaying scene-time stamps
-// into an OfflineAudioContext instead makes the audio exactly as long as the video, by
-// construction, at any render speed.
-//
-// TWO KINDS OF RECORD:
-//   - EVENTS are discrete and rare — a voice started, a voice stopped.
-//   - AUTOMATION is continuous: volume, rate and world position sampled once per frame.
-//     EPSILON-GATED, so a steady bed costs nothing and only a value that actually moved
-//     writes a breakpoint.
+// Two kinds of record: EVENTS are discrete and rare (a voice started or stopped).
+// AUTOMATION is continuous — volume, rate, world position — sampled once per frame and
+// epsilon-gated, so a steady bed costs nothing and only a moved value writes a breakpoint.
 
 import type { BusId } from './types';
 
@@ -41,12 +30,8 @@ export type RecordedVoice = {
 	readonly bus: BusId;
 	/** The decoded variant this voice drew. Reused as-is by the replay — buffers are not context-bound. */
 	readonly buffer: AudioBuffer;
-	/**
-	 * Scene time the voice's BUFFER begins, which may sit before the take armed — a bed
-	 * already looping is stamped at `now − cursor`. `render.ts` clips against the take
-	 * window and seeks into the buffer by the difference, so there is no separate offset
-	 * field to keep in step with this one.
-	 */
+	/** Scene time the voice's buffer begins — may sit before the take armed, for a bed
+	 * already looping, stamped at `now - cursor`. */
 	startScene: number;
 	stopScene: number | null;
 	readonly loop: boolean;
@@ -57,10 +42,8 @@ export type RecordedVoice = {
 	rate: Curve;
 	/** Only for positional voices. */
 	pos: { x: Curve; y: Curve; z: Curve } | null;
-	/**
-	 * World-space facing, only for DIRECTIONAL positional voices — an omnidirectional
-	 * panner ignores orientation, so recording it would be a curve per frame for nothing.
-	 */
+	/** World-space facing, only for directional positional voices — an omnidirectional
+	 * panner ignores orientation. */
 	orient: { x: Curve; y: Curve; z: Curve } | null;
 };
 
@@ -107,10 +90,7 @@ const emptyListener = (): RecordedTake['listener'] => ({
 	uz: emptyCurve()
 });
 
-/**
- * Append a breakpoint if the value actually moved. The FIRST sample always lands, so a
- * curve is never empty for a parameter that was ever observed.
- */
+/** Append a breakpoint if the value actually moved. The first sample always lands. */
 export const sample = (curve: Curve, t: number, value: number, eps: number): void => {
 	const n = curve.v.length;
 	if (n > 0 && Math.abs(curve.v[n - 1] - value) < eps) return;

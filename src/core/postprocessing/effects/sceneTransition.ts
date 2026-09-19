@@ -35,31 +35,19 @@ export type SceneTransitionParams = {
 	/** Noise frequency of the dissolve. Dissolve only. */
 	scale: number;
 	/**
-	 * The three durations, in SECONDS. None of them is a shader value — the driver reads
-	 * them from the panel state (`postprocessingState.sceneTransition.*`) and their
-	 * uniforms in the bag go unused, which is the price of keeping every knob in one
-	 * place.
-	 *
-	 * `veilSeconds`     — the dip: how long the frozen frame takes to dissolve to flat.
-	 * `minCoverSeconds` — floor on the whole cover, dip included. A re-entry into an
-	 *                     already-cached scene passes its asset and warm gates in a
-	 *                     couple of frames; without a floor the loading UI would strobe
-	 *                     on and straight back off.
-	 * `revealSeconds`   — the reveal: the veil dissolving into the live scene.
+	 * The three durations, in seconds. None is a shader value — the driver reads them
+	 * from the panel state and their bag uniforms go unused, the price of keeping every
+	 * knob in one place. `veilSeconds` is the dip (frozen frame to flat); `minCoverSeconds`
+	 * floors the whole cover so a re-entry into an already-cached scene doesn't strobe
+	 * the loading UI on and off; `revealSeconds` is the veil dissolving into the live scene.
 	 */
 	veilSeconds: number;
 	minCoverSeconds: number;
 	revealSeconds: number;
-	/**
-	 * Zoom the frozen frame reaches at full dip, as a fraction of the frame. 0 = still.
-	 *
-	 * This and the two below are the plate's degradation, and all three RIDE THE DIP
-	 * rather than a clock: `uTransitionVeil` is 0 at capture and 1 at flat, so they reach
-	 * their full value exactly as the plate goes flat, whatever the load costs. The first
-	 * version ramped them off seconds-held, which meant a long load walked them off the
-	 * end of their own range and then revealed a mip-2, 45%-grey, 30%-zoomed plate into a
-	 * sharp scene.
-	 */
+	/** Zoom the frozen frame reaches at full dip, as a fraction of the frame. This and
+	 * the two below are the plate's degradation, and all three ride the dip
+	 * (`uTransitionVeil`, 0 at capture to 1 at flat) rather than a clock, so a long load
+	 * doesn't walk them off the end of their own range. */
 	push: number;
 	/** Mip level the frozen frame blurs to at full dip. 0 = stays sharp. */
 	blur: number;
@@ -146,15 +134,12 @@ export const sceneTransitionEffect: EffectDef<SceneTransitionParams> = {
 		]
 	},
 	build: (ctx, u) => {
-		// The frozen frame. `autoUpdate: false` makes this a manual capture: the node
-		// renders the chain into its target only on frames where the driver has set
-		// `textureNeedsUpdate`, and holds that image until the next capture. Tracked for
-		// disposal — the builder only owns what an effect RETURNS. Mipmapped, because the
-		// cover blurs as it ages, and that blur is a mip level (the `rtt()` + `levelNode`
-		// route fogScatter/rainLens established here). They regenerate on capture only.
-		// `autoUpdate` is an RTTNode option, not a RenderTarget one — the addon `.d.ts`
-		// types the bag as RenderTargetOptions and does not know that (CLAUDE.md's
-		// "Rebuild discipline": the typings are looser than the runtime).
+		// The frozen frame. `autoUpdate: false` makes this a manual capture: it renders
+		// the chain into its target only on frames the driver flags via
+		// `textureNeedsUpdate`, and holds that image until the next capture. Mipmapped
+		// since the cover's blur is a mip level (fogScatter/rainLens's `rtt()` +
+		// `levelNode` route). `autoUpdate` is an RTTNode option, not a RenderTarget one
+		// — the addon `.d.ts` doesn't know that (CLAUDE.md's "Rebuild discipline").
 		const snapshot = ctx.track(
 			rtt(ctx.color, null, null, {
 				autoUpdate: false,
@@ -165,18 +150,11 @@ export const sceneTransitionEffect: EffectDef<SceneTransitionParams> = {
 		) as any;
 		registerSnapshot(snapshot);
 
-		// ── The plate degrades across the DIP, not across the load ────────────────
-		//
-		// The frozen frame gets a push-in, a mip blur and a drain toward grey as it
-		// dissolves away, so the exit is a film dissolve rather than a hard cut. All
-		// three ride `uTransitionVeil` (0 at capture, 1 at flat), which is why a
-		// ten-second load and a one-second load leave the plate in exactly the same
-		// state: the motion that has to carry the LOAD is Loader.svelte's veil, on the
-		// compositor, where a blocked main thread cannot stop it.
-		//
-		// `uvNode` and `levelNode` are set IN PLACE, never through `.sample()`/`.level()`:
-		// those return plain TextureNode clones and only the RTT node ITSELF carries the
-		// `updateBefore` that fills the target (fogScatter's header has the full note).
+		// The plate degrades across the dip, not the load: push-in, mip blur and a
+		// drain toward grey, all riding `uTransitionVeil` (0 at capture, 1 at flat) —
+		// a ten-second load and a one-second load leave the plate in the same state.
+		// `uvNode`/`levelNode` set in place, not via `.sample()`/`.level()` (those
+		// return clones; only the RTT node itself carries the fill).
 		const veil = uTransitionVeil;
 		// Zoom about the centre.
 		const zoom = float(1).add(u.push.mul(veil));
@@ -191,27 +169,21 @@ export const sceneTransitionEffect: EffectDef<SceneTransitionParams> = {
 		const mask = maskFor(pattern, u, ctx.aspect);
 		const soft = u.softness;
 
-		/**
-		 * Where a 0…1 driver value puts the front. The front sweeps from -softness to
-		 * 1+softness so both ends clear the mask range completely; `+0.5` centres the
-		 * soft edge on the front itself. Without a mask (the plain fade) the value IS
-		 * the weight — a uniform mask cannot produce a full-range fade through this.
-		 */
+		/** Where a 0..1 driver value puts the front. Sweeps from -softness to 1+softness
+		 * so both ends clear the mask range; without a mask (plain fade) the value IS
+		 * the weight. */
 		const advance = (t: any): any => {
 			if (mask === null) return t;
 			const front = t.mul(soft.mul(2).add(1)).sub(soft);
 			return clamp(front.sub(mask).div(soft.mul(2)).add(0.5), float(0), float(1));
 		};
 
-		// THE COVER: the frozen plate dissolving to the veil colour. Draining to black is
-		// a multiply, so it costs one op and cannot disturb alpha. Black is the veil
-		// colour on purpose — it is 0 in linear working colour and 0 after any output
-		// transform, so it matches Loader.svelte's `#000` exactly with nothing to keep
-		// in sync. A game restyling its veil should fade its own background IN over the
-		// dip rather than expect this plate to match it.
+		// The cover: the frozen plate dissolving to the veil colour. Black is the veil
+		// colour on purpose — 0 in linear working colour and 0 after any output
+		// transform, so it matches Loader.svelte's `#000` exactly with nothing to sync.
 		const covered = vec4(frozen.rgb.mul(float(1).sub(advance(veil))), frozen.a);
 
-		// THE SCREEN: the live scene under whatever the cover currently is.
+		// The screen: the live scene under whatever the cover currently is.
 		return mix(ctx.color, covered, advance(uTransitionMix));
 	}
 };

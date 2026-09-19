@@ -19,10 +19,9 @@ weatherAudio.ts     — rain bed + thunder claps; the sky's audio consumer
 index.ts            — barrel
 ```
 
-> **Reworked per `DOCS/AUDIO.md`** — all six steps have landed (the mixer, the registry
-> + voices, the scene clock, the panel rename, the deterministic capture render, and
-> the carAudio acceptance pass — TestGame declares its own manifest and mixes through
-> the facade, no raw THREE.Audio left in the repo). **Not yet runtime-verified by ear.**
+> No raw `THREE.Audio` anywhere in the repo — every sound, including TestGame's car
+> audio, goes through the registry and mixes through the facade. **Not yet
+> runtime-verified by ear.**
 
 ## The registry is the only door
 
@@ -71,9 +70,8 @@ bed.volume = 0.4;
   it exposes is a `SoundDef` field here. Only `<AudioListener>` / `useAudioListener()`
   are used from `@threlte/extras`.
 - **Loading is ours, not Threlte's `<Audio src>`.** `fetch` + `decodeAudioData` hands back
-  the `AudioBuffer` directly — which the `OfflineAudioContext` replay (`render.ts`) reuses
-  rather than decoding twice — and gives a real per-sound status in place of the
-  hand-maintained `AUDIO_TOTAL = 5 + …` counter that used to sit in GlobalAudio.svelte.
+  the `AudioBuffer` directly, which the `OfflineAudioContext` replay (`render.ts`) reuses
+  rather than decoding twice, and gives a real per-sound load status.
 - **A voice is null until its buffer lands.** Callers that already poll (weatherAudio)
   retry each tick; callers that do not (the music/ambience beds) await `soundsReady()`.
 - **`freeAt`, not `isPlaying`, decides whether a pooled voice is free.** Three's
@@ -108,10 +106,9 @@ sources ──▶ music ────┐
   reaches the graph in exactly one place — `syncMixerFromSettings()`, called from a single
   `$effect` in `AudioRuntime.svelte`. Nothing else may read `settingsState.audio.*Volume`
   to scale a voice; that duplication is what the mixer replaced.
-- **`enabled` is a MUTE on the bus**, not a per-call-site `if` guard. The old guards could
-  each be forgotten individually and one was: a click fired while sfx was disabled left
-  the old `soundTriggers.click` counter above zero, and since `sfxEnabled` was an effect
-  dependency, enabling audio replayed it.
+- **`enabled` is a MUTE on the bus**, not a per-call-site `if` guard — a scattered guard
+  at every call site can be forgotten at one of them, where a mute on the bus itself
+  cannot.
 - **ROUTING IS PER VOICE, AND CLONES ARE THE TRAP.** `routeToBus` is structural
   (`{ gain: GainNode }`) because `PositionalAudio` is not an `Audio<GainNode>` to
   TypeScript — it overrides `getOutput()` to a `PannerNode` — while both still end in
@@ -119,9 +116,7 @@ sources ──▶ music ────┐
   but **`Audio.clone()` is `new this.constructor(this.listener)`**, and that constructor
   wires `gain → listener.getInput()`, so any clone comes back wired **past the whole bus
   graph, at full volume — and past the take recorder, which never sees it**. Nothing in
-  the repo clones any more (TestGame's carAudio was the last, moved to pooled registry
-  voices by the acceptance pass); the rule stands because the bypass is silent, not
-  because anything still needs the reminder.
+  the repo clones a voice; the rule stands because the bypass is silent.
 - **`busAudible(id)` is for TASK-driven consumers only.** Buses are plain objects, so a
   `$derived` over them would never re-run. Components derive audibility from
   `settingsState.audio` primitives instead (`AudioRuntime.svelte`) — which is also
@@ -149,9 +144,9 @@ contextTime = anchorContext + (sceneTime − anchorScene)
   accumulate. **When a fixed-step source claims the engine clock the anchor freezes**, and
   the gap that then opens IS the capture drift.
 - **`schedulerDrift()` measures that gap** — how far the live audio clock has run ahead of
-  scene time since a take began, in seconds. Zero in realtime. That gap is exactly how far
-  the old live tap's sound ran ahead of its picture; the offline render removed it from
-  takes, and this remains the honest gauge of how far the live monitor has fallen behind
+  scene time since a take began, in seconds. Zero in realtime. Finished takes never
+  contain this drift (the offline render replays scene-time stamps, not the live
+  clock); this remains the honest gauge of how far the live monitor has fallen behind
   mid-take.
 - **The live graph during a take is a MONITOR.** Slope 1 means it plays a take's audio at
   wall-clock pace regardless of how slowly the renderer is going, which is deliberately

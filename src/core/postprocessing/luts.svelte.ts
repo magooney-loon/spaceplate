@@ -1,13 +1,11 @@
-// LUT assets for the `lut` effect — the only effect with an asset dependency (see
-// the "LUTs" section of CLAUDE.md). The set is three's own: the nine LUTs from
-// webgpu_postprocessing_3dlut, copied verbatim into `public/luts/`, filenames kept
-// as three ships them so the sets stay diffable. Credits: RocketStock (the `.CUBE`
-// grades) and FreePresets.com (Presetpro-Cinematic).
+// LUT assets for the `lut` effect — the only effect with an asset dependency (see the
+// "LUTs" section of CLAUDE.md). The set is three's own nine LUTs from
+// webgpu_postprocessing_3dlut, copied verbatim into `public/luts/`. Credits:
+// RocketStock (the `.CUBE` grades) and FreePresets.com (Presetpro-Cinematic).
 //
 // A `.svelte.ts` module because the load is async while `EffectDef.build()` is
-// synchronous: the effect builds as a no-op until its texture has landed, and the
-// `$state` version counter is what rebuilds the graph once it has. Nothing here is
-// read per frame.
+// synchronous: the effect builds as a no-op until its texture lands, and the `$state`
+// version counter rebuilds the graph once it has.
 
 import { LUTCubeLoader } from 'three/addons/loaders/LUTCubeLoader.js';
 import { LUT3dlLoader } from 'three/addons/loaders/LUT3dlLoader.js';
@@ -47,32 +45,25 @@ type LoadState = 'loading' | 'ready' | 'failed';
 const textures = new Map<number, Data3DTexture>();
 const states = new Map<number, LoadState>();
 
-/**
- * Bumped whenever a load completes. The `lut` effect returns it from `structuralTag`,
- * so the graph rebuilds exactly once per texture that arrives — no polling, and no
- * per-frame reactive read.
- */
+/** Bumped whenever a load completes. The `lut` effect returns it from `structuralTag`,
+ * so the graph rebuilds exactly once per texture that arrives. */
 export const lutState = $state({ version: 0 });
 
 /** The loaded texture for a catalogue index, or undefined if it is not ready yet. */
 export const getLutTexture = (index: number): Data3DTexture | undefined => textures.get(index);
 
-/**
- * All three loaders return `{ texture3D }` with the cube's edge length in
+/** All three loaders return `{ texture3D }` with the cube's edge length in
  * `image.width`; only the parser varies. `.png` LUTs are horizontal strips, not
- * sampled images — hence a dedicated loader rather than a TextureLoader.
- */
+ * sampled images — hence a dedicated loader rather than a TextureLoader. */
 const loaderFor = (file: string) => {
 	if (/\.cube$/i.test(file)) return new LUTCubeLoader();
 	if (/\.3dl$/i.test(file)) return new LUT3dlLoader();
 	return new LUTImageLoader();
 };
 
-/**
- * Start loading a catalogue entry if it has not been started already. Safe to call
- * from `build()` — it never throws, and a failed load degrades to no grading rather
- * than taking the pipeline's fallback path.
- */
+/** Start loading a catalogue entry if not already started. Safe to call from `build()`
+ * — it never throws, and a failed load degrades to no grading rather than taking the
+ * pipeline's fallback path. */
 export const ensureLutLoaded = (index: number): void => {
 	const entry = LUT_CATALOGUE.find((e) => e.value === index);
 	if (!entry) return;

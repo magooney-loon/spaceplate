@@ -1,53 +1,27 @@
 <script lang="ts">
 	// WebGPU snow layer -- the precipitation counterpart to Rain.svelte.
 	//
-	// THE SPLIT. `precipitation` says how much is falling and `precipitationType` says what
-	// kind (0 snow, 1 rain); `snowAmount` in weatherMixer.ts multiplies the two, and Rain
-	// takes the complement from the same definition. Outside the sleet band exactly one
-	// layer is live, so the usual case pays for one field of particles rather than two --
-	// and inside it both render at a share that sums to the amount, which is what sleet is.
+	// The split: `precipitation` says how much is falling, `precipitationType` says what
+	// kind (0 snow, 1 rain); `snowAmount` in weatherMixer.ts multiplies the two, Rain
+	// takes the complement. Outside the sleet band only one layer is live.
 	//
-	// THE LOOK, ported from a reference shader (the Journey-style point snow):
-	//   - SPECKS, not blobs. The sprite is an inverse-distance falloff
-	//     (0.5/d - 1, clamped): a tight bright core with a faint halo. A soft disc at
-	//     snow scale reads as styrofoam; this reads as snow.
-	//   - SMALL. Median radius ~0.05 world units with modest variance. The reference
-	//     perspective-scales its point size (uSize * 1/-z); world-unit billboards do
-	//     that for free.
-	//   - COHERENT SWAY. The horizontal wander is phased by POSITION, not by a random
-	//     per-flake seed: sin(t + x*k) drives z, cos(t + z*k) drives x. Neighbours share
-	//     phase, so the field shears and swirls like one wind field instead of jittering
-	//     independently. The sway sits INSIDE the wrap: a flake pushed past the box edge
-	//     re-enters on the far side, indistinguishable among thousands.
-	//   - TWINKLE. A flake is a plate and it tumbles, so its brightness pulses as its
-	//     face turns toward and away from the light. Each flake gets its own rate, so
-	//     the field scintillates rather than breathing as one.
-	//   - FLURRIES. Density is banded by travelling waves along the wind bearing, the
-	//     same construction as Rain's sheets and documented there. The sway makes
-	//     neighbours move together; this makes whole regions arrive and pass.
+	// The look, ported from a reference shader (Journey-style point snow): specks, not
+	// blobs (inverse-distance falloff sprite, `0.5/d - 1`); small (perspective-scaled
+	// world-unit billboards); coherent sway (horizontal wander phased by position, not
+	// per-flake random, so neighbours share phase and the field shears like one wind
+	// field); twinkle (each flake tumbles at its own rate); flurries (density banded by
+	// travelling waves along the wind bearing, same construction as Rain's sheets).
 	//
-	// THE MOTION is all in the vertex node -- zero CPU work per frame per flake, exactly
-	// as Rain: slow fall, fract-wrapped through the box, plus an accumulated wind-drift
-	// term. Flakes are diffuse reflectors, so colour rides the descriptor's light hints
-	// (see `uFlakeTint`); Rain's streaks do the same on a much shallower curve.
+	// Motion is all in the vertex node — zero CPU per frame per flake, same recipe as
+	// Rain: fall, fract-wrapped through the box, plus accumulated wind drift. Colour
+	// rides the descriptor's light hints (`uFlakeTint`).
 	//
-	// The mesh is recentered on the active camera every frame, as Rain is, so the box
-	// follows the player without a world-sized particle system. The quad is instanced
-	// (skyLayer.ts), as Rain's.
-	//
-	// ── "ZERO CPU PER FLAKE" WAS NEVER THE BILL, AND NEITHER WAS FILL RATE ────────────
-	//
-	// The layer read as a fill-rate problem for a long time (best-practices.md §3.6) and
-	// paid for it with quad area and instance counts. Those were real but small. THE
-	// ACTUAL COST WAS THAT THE ENTIRE MOTION SOLVE RAN AGAIN IN THE FRAGMENT STAGE,
-	// per blended pixel of every flake.
-	//
-	// TSL builds a node in whatever stage CONSUMES it, and only `AttributeNode` lifts
-	// itself to a varying (`AttributeNode.js` -> `varying(this)`); every piece of
-	// arithmetic on top of one is simply re-emitted. `opacityNode` is a fragment node, so
-	// naming `settle` or `wrapFade` in it dragged their whole dependency chain along:
-	// two `fract` wraps, four sin/cos sway terms, the height-field texture fetch, three
-	// smoothsteps and two matrix multiplies -- none of which vary across a flake's quad --
+	// "Zero CPU per flake" was never the bill, and neither was fill rate: the real cost
+	// was the entire motion solve re-running in the fragment stage per blended pixel.
+	// TSL builds a node in whatever stage consumes it, and only `AttributeNode` lifts
+	// itself to a varying — `opacityNode` is a fragment node, so naming `settle` or
+	// `wrapFade` in it dragged two `fract` wraps, four sin/cos sway terms, a
+	// height-field fetch, three smoothsteps and two matrix multiplies along with it —
 	// recomputed for every fragment, and at these sprite sizes most fragments come in 2x2
 	// quads the rasteriser shades whole. A snow fragment cost tens of times what a rain
 	// one did, which is also the answer to the puzzle §3.6 left open: snow costing more

@@ -43,18 +43,12 @@ const DRIFT_GATE_RAMP = 2;
  *  inside one physics step. */
 const CONTACT_RATE = 30;
 /**
- * m/s — below this the car counts as STOPPED and the tyres' static friction
- * takes over from the rolling model.
- *
- * It exists because the rolling model has nothing to say down here and that was
- * a real bug, not a rounding one: `resistForce` is gated on `rolling > 0.05`,
- * the sideways bleed's cap goes to zero with the corner, `linearDamping` is 0 on
- * the body by design (drag and rolling resistance are modelled, and damping
- * would count them twice), and the parked branch below used to hand the body
- * back with whatever velocity it still had. So a car that came to a stop kept
- * GLIDING in its last direction — under Rapier's own sleep threshold it never
- * even settled — while the branch published `speedMs = 0` and the wheels stood
- * still. A car sliding on stationary wheels is the one thing tyres never do.
+ * m/s — below this the car counts as stopped and the tyres' static friction
+ * takes over from the rolling model, which has nothing to say down here
+ * (`resistForce` gates on `rolling > 0.05`, `linearDamping` is 0 by design).
+ * Without this the car used to keep gliding in its last direction forever
+ * under Rapier's own sleep threshold while `speedMs` published 0 — a car
+ * sliding on stationary wheels, which tyres never do.
  */
 const REST_SPEED = 0.35;
 /** The same threshold in world units, squared — what the parked test measures. */
@@ -98,19 +92,16 @@ export function createCarController(spec: CarSpec, world: World) {
 
 	/**
 	 * Clear Rapier's force accumulator and immediately re-apply what holds the
-	 * car up (the suspension's rays — see CLAUDE.md's colliders section). Called
-	 * ONCE per step, early, because everything downstream now reads the ground
-	 * those rays found (`suspension.groundNormal`) and a step-stale plane would
-	 * point the drive force at last step's hill. `wake` is passed through: the
-	 * parked and startup paths must not wake a sleeping body just to hold up one
-	 * already resting.
+	 * car up (the suspension's rays). Called once per step, early, since
+	 * everything downstream reads the ground those rays found — a step-stale
+	 * plane would point the drive force at last step's hill. `wake` is passed
+	 * through so the parked/startup paths don't wake a sleeping body just to
+	 * hold up one already resting.
 	 *
-	 * Ground contact is the rays' LOAD SHARE, not a count of which rays hit
-	 * anything. The binary version deleted a quarter of the car's grip the moment
-	 * one wheel went light over a crest — but the springs still have to carry the
-	 * whole car, so that corner's load has already MOVED to the others: a lifted
-	 * front wheel reads ~0.95 here where the count read 0.5. Clamped at 1, so a
-	 * loaded corner never hands out more grip than the tune was built on.
+	 * Contact is the rays' load share, not a count of which hit anything — a
+	 * lifted front wheel reads ~0.95 here (its load moved to the others, which
+	 * still carry the whole car) where a binary count would read 0.5 and delete
+	 * a quarter of the car's grip.
 	 */
 	function resetForces(body: RapierRigidBody, wake: boolean, delta: number): void {
 		body.resetForces(wake);

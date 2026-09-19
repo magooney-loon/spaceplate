@@ -1,8 +1,7 @@
-// The pipeline builder: resolves the base pass, provisions the MRT attachments,
-// folds the chain, applies the resolve stage, and owns every node it creates
-// (disposal on rebuild). Discipline — every numeric param reaches a node factory
-// as a `uniform()` from the bag, never a raw number — in ./CLAUDE.md ("Rebuild
-// discipline").
+// The pipeline builder: resolves the base pass, provisions MRT attachments, folds the
+// chain, applies the resolve stage, and owns every node it creates (disposal on
+// rebuild). Every numeric param reaches a node factory as a `uniform()` from the bag,
+// never a raw number — see ./CLAUDE.md ("Rebuild discipline").
 
 import {
 	pass,
@@ -58,44 +57,27 @@ export interface PipelineBuild {
 	uniforms: Map<string, UniformBag<any>>;
 	/** Write the viewport aspect (vignette roundness); called by the frame task. */
 	setAspect(aspect: number): void;
-	/**
-	 * Write the frame's SCENE delta in seconds (`engineClock.delta`); called by the frame
-	 * task. Turns per-frame velocity into shutter-normalised velocity — see
-	 * `BuildContext.shutterScale`.
-	 */
+	/** Write the frame's scene delta in seconds; called by the frame task — turns
+	 * per-frame velocity into shutter-normalised velocity, see `BuildContext.shutterScale`. */
 	setShutterScale(deltaSeconds: number): void;
 	/** Dispose every node this build created. Does not touch the pipeline itself. */
 	dispose(): void;
 }
 
 /**
- * The MRT attachments, one row each: the TSL node that writes the attachment, plus any
- * per-attachment fixup the union cannot express (`finalize`, run after `setMRT`).
- *
- * **The record key IS the texture name** the pass exposes, so `basePass.getTextureNode(req)`
- * needs no second lookup table. Re-adding a removed member (`metalrough`, `diffuse`) is
- * ONE row here and one on `Requirement` — see "Removed effects" in CLAUDE.md.
- *
- * `velocity` feeds motion blur; `emissive` feeds bloom's material mode — packed as
- * `vec4(emissive, output.a)`, mirroring webgpu_postprocessing_bloom_emissive. `normal` is
- * view-space, the layout GTAONode's own docs specify (`mrt({ output, normal: normalView })`).
- * The nodes are thunks so each build gets its own, rather than sharing one across every
- * pipeline this module ever assembles.
+ * The MRT attachments, one row each. The record key IS the texture name the pass
+ * exposes, so `basePass.getTextureNode(req)` needs no second lookup table. `velocity`
+ * feeds motion blur; `emissive` feeds bloom's material mode; `normal` is view-space for
+ * GTAONode. Nodes are thunks so each build gets its own.
  */
 const MRT_ATTACHMENTS: Record<
 	MrtRequirement,
 	{ node: () => any; finalize?: (basePass: any, mrtNode: any) => void }
 > = {
 	velocity: { node: () => velocity },
-	// Normals stay at the pass's default float format and default (no) blending: a
-	// blended normal is a meaningless direction, and transparent geometry writing
-	// garbage into it is the known cost of MRT-on-the-main-pass (CLAUDE.md, "Removed
-	// effects" — the prePass question this re-opens).
 	normal: { node: () => normalView },
 	emissive: {
 		node: () => vec4(emissive, output.a),
-		// UnsignedByte emissive saves bandwidth (example does the same); NormalBlending so
-		// transparent surfaces write emissive like they write color (default is no blend).
 		finalize: (basePass, mrtNode) => {
 			mrtNode.setBlendMode('emissive', new BlendMode(NormalBlending));
 			basePass.getTexture('emissive').type = UnsignedByteType;
@@ -103,28 +85,19 @@ const MRT_ATTACHMENTS: Record<
 	}
 };
 
-/**
- * The frame time velocity-consuming params are tuned AGAINST: `shutterScale` is exactly 1
- * here, so `motionBlur.blurAmount = 0.25` still means what it has always meant on a 60Hz
- * display and only departs from it where the frame time does. See
- * `BuildContext.shutterScale` for why the normalisation exists at all.
- */
+/** The frame time velocity-consuming params are tuned against — 1/60s, so
+ * `motionBlur.blurAmount` keeps its usual meaning at 60Hz. */
 const REFERENCE_FRAME_SECONDS = 1 / 60;
 
-/**
- * Ceiling on the scale (480 fps). The product `velocity × shutterScale` is self-limiting —
- * a shorter frame moves proportionally less — so this is not needed for the smear width;
- * it is there so one pathological delta (a resumed tab, a clock handover) cannot turn a
- * frame of sampling noise into a full-screen streak.
- */
+/** Ceiling on the shutter scale (480 fps), so one pathological delta (a resumed tab, a
+ * clock handover) can't turn a frame of sampling noise into a full-screen streak. */
 const MAX_SHUTTER_SCALE = 8;
 
 /**
- * Private shader-cache namespaces the MRT base pass renders under, ONE PER ATTACHMENT
- * SET, reused for the module's lifetime — a fresh `context()` per build recompiles the
- * whole scene (the MRT shader-cache trap, ./CLAUDE.md). Deliberately never disposed or
- * `track`ed: must outlive the builds that use them; bounded by distinct attachment sets
- * (≤ 8 today).
+ * Private shader-cache namespaces the MRT base pass renders under, one per attachment
+ * set, reused for the module's lifetime — a fresh `context()` per build recompiles the
+ * whole scene (the MRT shader-cache trap, ./CLAUDE.md). Never disposed — bounded by
+ * distinct attachment sets (<= 8 today).
  */
 const passContexts = new Map<string, any>();
 
@@ -153,7 +126,7 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			try {
 				node.dispose?.();
 			} catch {
-				/* a broken dispose must not mask the original error */
+				// A broken dispose must not mask the original error.
 			}
 		}
 		disposables.length = 0;
@@ -170,8 +143,7 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 		mrt: resolution.mrt
 	};
 
-	// The fallback installs a bare pass — a broken graph must not take the render
-	// loop down with it.
+	// A broken graph must not take the render loop down with it.
 	const installFallback = (error: unknown) => {
 		disposeAll();
 		uniforms.clear();
@@ -214,10 +186,8 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			for (const req of resolution.mrt) MRT_ATTACHMENTS[req].finalize?.(basePass, mrtNode);
 		}
 
-		// 2b. Shader-cache isolation for the MRT pass — LOAD-BEARING, not a tuning knob
-		// (full trap in ./CLAUDE.md). An empty `context()` gives the pass a private cache
-		// namespace so a differently-shaped render of the same scene can't reuse its
-		// compiled shader. Ask the PASS, not `resolution.mrt`: a base-pass effect may
+		// 2b. Shader-cache isolation for the MRT pass — load-bearing, not a tuning knob
+		// (see ./CLAUDE.md). Ask the pass, not `resolution.mrt`: a base-pass effect may
 		// provision its own MRT internally and slip through unisolated.
 		const passMrt = basePass.getMRT();
 		if (passMrt !== null) basePass.contextNode = isolationContext(passMrt);
@@ -235,16 +205,11 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			aspect,
 			shutterScale
 		};
-		// Attachment texture nodes, under the same names they were provisioned with.
 		for (const req of resolution.mrt) ctx[req] = basePass.getTextureNode(req);
 
-		/**
-		 * Build one effect and thread its result into the chain: a fresh uniform bag over
-		 * the def's defaults patched with the current values, the node tracked for
-		 * disposal, the bag kept for the hot-update path. Every role but `base` goes
-		 * through here — a base pass PRODUCES the pass rather than consuming a colour, so
-		 * it is built above, before `ctx` exists.
-		 */
+		/** Build one effect and thread its result into the chain. Every role but `base`
+		 * goes through here — a base pass produces the pass rather than consuming a
+		 * colour, so it's built above, before `ctx` exists. */
 		const foldEffect = (def: EffectDef<any>) => {
 			const bag = createUniformBag({ ...def.params(), ...values[def.id] });
 			const node = track(def.build(ctx, bag));
@@ -259,24 +224,19 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 		// 4. Fold chain effects in order, threading ctx.color.
 		for (const def of byRole('chain')) foldEffect(def);
 
-		// 5. Output colour transform, owned here: if any active effect declares
-		// `displayColor`, disable the pipeline's automatic transform and fold in exactly
-		// one renderOutput() — two callers would tone-map twice. Reads
-		// renderer.toneMapping, never writes it (Threlte owns it).
+		// 5. Output colour transform: if any active effect declares `displayColor`,
+		// disable the pipeline's automatic transform and fold in exactly one
+		// `renderOutput()` — two callers would tone-map twice.
 		const wantsDisplayColor = activeDefs.some((def) => def.displayColor);
-		// Reset first — a previous build may have disabled it.
 		pipeline.outputColorTransform = !wantsDisplayColor;
 		if (wantsDisplayColor) {
 			ctx.color = renderOutput(ctx.color, renderer.toneMapping, renderer.outputColorSpace);
 		}
 
-		// 6. Grade stage — colour grading after the transform, before AA. Unlike base and
-		// resolve, grades are not mutually exclusive, so fold them all in order.
+		// 6. Grade stage — not mutually exclusive with resolve, so fold them all in order.
 		for (const def of byRole('grade')) foldEffect(def);
 
-		// 7. Resolve stage — at most one AA (`resolveEnabledSet` already enforced that;
-		// folding the list rather than the single find keeps one code path). Runs last so
-		// it anti-aliases the graded image rather than being smeared by the grade.
+		// 7. Resolve stage — at most one AA; runs last so it anti-aliases the graded image.
 		for (const def of byRole('resolve')) foldEffect(def);
 
 		pipeline.outputNode = ctx.color;
@@ -292,9 +252,8 @@ export const buildPipeline = (opts: BuildOptions): PipelineBuild => {
 			aspect.value = value;
 		},
 		setShutterScale: (deltaSeconds: number) => {
-			// A delta of 0 is legal — a held frame, or the head frame of a capture take. Nothing
-			// moved, so velocity is zero and the scale is irrelevant; 1 keeps it out of the way
-			// rather than dividing by zero.
+			// A delta of 0 is legal (a held frame, or a capture take's head frame) — 1
+			// keeps the scale out of the way rather than dividing by zero.
 			shutterScale.value =
 				deltaSeconds > 0 ? Math.min(REFERENCE_FRAME_SECONDS / deltaSeconds, MAX_SHUTTER_SCALE) : 1;
 		},

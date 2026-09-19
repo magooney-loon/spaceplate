@@ -1,12 +1,6 @@
-// VOICES — the THREE.Audio objects, pooled, and the handles games hold.
-//
-// The engine creates every voice. Games never mount <Audio>/<PositionalAudio> and never
-// write an `oncreate` attach function: that plumbing existed only to hand a mounted
-// instance back to the module that mixes it, and it is what made the registry unable to
-// see (and step 5's offline render unable to reproduce) anything a scene played.
-//
-// ONE-SHOTS ARE POOLED, LOOPS ARE NOT. A one-shot draws from a pool `poly` deep and is
-// handed back by finishing; a loop is a long-lived thing the caller holds and stops.
+// The THREE.Audio objects, pooled, and the handles games hold. The engine creates every
+// voice — games never mount <Audio>/<PositionalAudio>. One-shots are pooled (a pool
+// `poly` deep, handed back by finishing); loops are long-lived and the caller stops them.
 
 import {
 	Audio as ThreeAudio,
@@ -37,14 +31,12 @@ import {
 import type { BusId, PlayOptions, SoundDef, VoiceHandle } from './types';
 
 /**
- * Engine-wide positional fallbacks, used for any field a declaration omits. These moved
- * here from `extensions/sound/soundState.svelte.ts` — they are engine config that the
- * runtime consumes in every build, so the Studio panel is just another caller.
+ * Engine-wide positional fallbacks for any field a declaration omits.
  *
- * DELIBERATELY PLAIN, not `$state`: it is read inside `createVoice()`, which runs from
- * whatever called `play()` — sometimes an `$effect`. Reactive state read there would make
- * every sound-playing effect depend on the tuning knobs. The only writer is the Studio
- * panel, which drives the widgets' own state and calls `refreshPositional()` itself.
+ * Deliberately plain, not `$state`: read inside `createVoice()`, which can run from an
+ * `$effect`, and reactive state there would make every sound-playing effect depend on
+ * the tuning knobs. The Studio panel is the only writer and calls `refreshPositional()`
+ * itself after moving one.
  */
 export const positionalDefaults = {
 	ref: 5,
@@ -59,7 +51,7 @@ const applyPositional = (audio: ThreePositionalAudio, def: SoundDef): void => {
 	audio.setMaxDistance(def.max ?? positionalDefaults.max);
 	audio.panner.panningModel = def.panningModel ?? positionalDefaults.panningModel;
 	audio.setDistanceModel(def.distanceModel ?? 'inverse');
-	// Reset explicitly when undeclared, to the PannerNode's own omnidirectional defaults.
+	// Reset to the PannerNode's own omnidirectional defaults when undeclared.
 	const cone = def.cone ?? { inner: 360, outer: 360, outerGain: 0 };
 	audio.setDirectionalCone(cone.inner, cone.outer, cone.outerGain);
 };
@@ -71,14 +63,11 @@ const worldScale = new Vector3();
 const worldFwd = new Vector3();
 
 /**
- * Land a positional voice's panner on its CURRENT world pose, as a real event the next
- * updateMatrixWorld ramp anchors to.
- *
- * Three only pushes a positional voice's panner while `isPlaying` — and one rendered frame
- * LATER — so every path that STARTS a voice needs this: a fresh voice would otherwise speak
- * its first frame from the WORLD ORIGIN, a pooled one from wherever its previous play left
- * the params, and a resumed loop from where it was PAUSED (the car's crossfaded bed layers
- * pause for seconds while the car drives on).
+ * Land a positional voice's panner on its current world pose immediately. Three only
+ * pushes a positional voice's panner while `isPlaying`, one rendered frame later — every
+ * path that starts a voice needs this, or it speaks its first frame from the wrong spot
+ * (world origin for a fresh voice, the previous play's spot for a pooled one, or the
+ * pause point for a resumed loop).
  */
 const landPanner = (audio: ThreeAudio<AudioNode>): void => {
 	if (!(audio instanceof ThreePositionalAudio)) return;
@@ -86,7 +75,7 @@ const landPanner = (audio: ThreeAudio<AudioNode>): void => {
 	if (!panner.positionX) return;
 	audio.updateWorldMatrix(true, false);
 	audio.matrixWorld.decompose(worldPos, worldQuat, worldScale);
-	// Three's rest facing is local +Z (PositionalAudio.updateMatrixWorld).
+	// Three's rest facing is local +Z.
 	worldFwd.set(0, 0, 1).applyQuaternion(worldQuat);
 	const at = audio.context.currentTime;
 	panner.positionX.setValueAtTime(worldPos.x, at);
@@ -97,13 +86,8 @@ const landPanner = (audio: ThreeAudio<AudioNode>): void => {
 	panner.orientationZ.setValueAtTime(worldFwd.z, at);
 };
 
-/**
- * Re-apply the positional params to every live voice. The Studio panel calls this after
- * moving a fallback — a tuning slider you cannot hear is not a tuning slider.
- *
- * Reading through `def ?? positionalDefaults` again is what keeps per-sound overrides
- * winning: a declaration that set its own `ref` is unaffected by the fallback moving.
- */
+/** Re-apply positional params to every live voice. The Studio panel calls this after
+ * moving a fallback, so a per-sound override still wins. */
 export const refreshPositional = (): void => {
 	for (const voice of live) {
 		if (!(voice.audio instanceof ThreePositionalAudio)) continue;
@@ -116,26 +100,18 @@ type Voice = {
 	readonly soundId: string;
 	readonly audio: ThreeAudio | ThreePositionalAudio;
 	/**
-	 * Context time at which this voice stops being busy. `Infinity` while looping.
-	 *
-	 * NOT DERIVABLE FROM `audio.isPlaying`, and that is the whole reason this field
-	 * exists: three's `stop(delay)` flips `isPlaying` to false IMMEDIATELY and defers
-	 * only the source's own stop, so a `duration`-limited voice looks free while it is
-	 * still ringing. Stealing it there would orphan the live BufferSource — `play()`
-	 * overwrites `this.source`, and the old one keeps sounding through the shared gain
-	 * with nothing holding a reference to stop it.
+	 * Context time this voice stops being busy. `Infinity` while looping. Not derivable
+	 * from `audio.isPlaying`: three's `stop(delay)` flips that false immediately and
+	 * defers only the source's own stop, so a `duration`-limited voice would look free
+	 * while still ringing and stealing it would orphan the live BufferSource.
 	 */
 	freeAt: number;
 	/** Cutoff this voice was configured with, kept so a take armed mid-flight can record it. */
 	lowpass: number | null;
 	/** This voice's entry in the take being recorded, or null when nothing is recording. */
 	rec: RecordedVoice | null;
-	/**
-	 * The ONE handle for this voice, made on first play and reused after. A handle
-	 * addresses the voice, not the play, so a fresh object per play buys nothing — and a
-	 * scope holds every handle it is given until release: a pooled pop firing ~10/s would
-	 * grow that set without bound. One per voice keeps it at pool depth.
-	 */
+	/** The one handle for this voice, made on first play and reused — a scope holds every
+	 * handle it's given until release, so a fresh object per play would grow unbounded. */
 	handle: VoiceHandle | null;
 };
 
@@ -160,7 +136,6 @@ const createVoice = (soundId: string, positional: boolean): Voice | null => {
 
 	const audio = positional ? new ThreePositionalAudio(listener) : new ThreeAudio(listener);
 	if (audio instanceof ThreePositionalAudio) applyPositional(audio, def);
-	// Keep the editor tree clean — these are engine objects, not scene content.
 	audio.userData.hideInTree = true;
 	audio.userData.selectable = false;
 	routeToBus(audio, def.bus ?? 'sfx');
@@ -170,7 +145,7 @@ const createVoice = (soundId: string, positional: boolean): Voice | null => {
 	return voice;
 };
 
-/** Apply everything that must be set BEFORE `play()`, since `play()` reads these fields. */
+/** Apply everything that must be set before `play()`, since `play()` reads these fields. */
 const configure = (voice: Voice, options: PlayOptions, loop: boolean): boolean => {
 	const def = getDef(voice.soundId);
 	const buffer = pickBuffer(voice.soundId);
@@ -181,13 +156,11 @@ const configure = (voice: Voice, options: PlayOptions, loop: boolean): boolean =
 	audio.setLoop(loop);
 	audio.setVolume((def.volume ?? 1) * (options.volume ?? 1));
 	audio.setPlaybackRate(options.rate ?? 1);
-	// Through the setter, not the field: `play()` re-applies `this.detune` to the new
-	// source, and the field is declared read-only.
+	// Through the setter: `play()` re-applies `this.detune` and the field is read-only.
 	audio.setDetune(options.detune ?? 0);
 
-	// A FRESH filter node per voice — `Audio.copy()` shares the template's filter array
+	// A fresh filter node per voice — `Audio.copy()` shares the template's filter array
 	// by reference, so reusing one would couple every clap's cutoff to the last one set.
-	// Cleared explicitly when unasked: a pooled voice must not inherit the previous play's.
 	if (options.lowpass !== undefined) {
 		const filter = audio.context.createBiquadFilter();
 		filter.type = 'lowpass';
@@ -201,8 +174,6 @@ const configure = (voice: Voice, options: PlayOptions, loop: boolean): boolean =
 	if (options.at) {
 		if (audio instanceof ThreePositionalAudio) {
 			options.at.add(audio);
-			// A per-play offset inside the parent (an exhaust tip, a hull contact). Reset
-			// when absent — a pooled voice must not inherit the previous play's spot.
 			if (options.position) audio.position.set(...options.position);
 			else audio.position.set(0, 0, 0);
 			landPanner(audio);
@@ -236,9 +207,6 @@ const makeHandle = (voice: Voice): VoiceHandle => ({
 	pause() {
 		if (!voice.audio.isPlaying) return;
 		voice.audio.pause();
-		// Load-bearing during a take: the rain bed pauses and resumes as weather moves,
-		// and both engine beds do on a settings change. Without the pair of records the
-		// replay would run them straight through.
 		noteStop(voice.rec, sceneNow());
 		voice.rec = null;
 	},
@@ -246,8 +214,7 @@ const makeHandle = (voice: Voice): VoiceHandle => ({
 		if (voice.audio.isPlaying || !voice.audio.buffer) return;
 		landPanner(voice.audio);
 		voice.audio.play();
-		// Resumes mid-buffer, so stamp the start back by the cursor and let render.ts
-		// seek: `play()` has just set `_startedAt`, leaving `bufferOffset` at `_progress`.
+		// Resumes mid-buffer: stamp the start back by the cursor and let render.ts seek.
 		recordStart(voice, sceneNow() - bufferOffset(voice.audio));
 	},
 	stop() {
@@ -258,7 +225,6 @@ const makeHandle = (voice: Voice): VoiceHandle => ({
 });
 
 const release = (voice: Voice): void => {
-	// Every stop path funnels through here, so this is the one place a take needs.
 	noteStop(voice.rec, sceneNow());
 	voice.rec = null;
 	live.delete(voice);
@@ -292,37 +258,27 @@ export const playOneShot = (soundId: string, options: PlayOptions = {}): VoiceHa
 		if (voice) pool.push(voice);
 	}
 	if (!voice) {
-		// Every slot busy: steal the one that frees soonest. `poly: 1` makes this the
-		// stop-and-restart the old `playOneShot` did.
 		voice = pool.reduce((a, b) => (a.freeAt <= b.freeAt ? a : b));
 		if (voice.audio.source) voice.audio.stop();
 	}
 	if (!configure(voice, options, false)) return null;
 
-	// `delay` is SCENE seconds: converted here, in the one place that knows about both
-	// clocks. Three's `play()` wants an offset from `context.currentTime`, so the absolute
-	// context time comes back as a relative one. Clamped at 0 — the anchor can sit a
-	// fraction behind on the frame a take claims the clock.
+	// `delay` is scene seconds; clamped at 0 since the anchor can sit a fraction behind
+	// on the frame a take claims the clock.
 	const startScene = sceneNow() + Math.max(0, options.delay ?? 0);
 	const startedAt = toContextTime(startScene);
 	voice.audio.play(Math.max(0, startedAt - now()));
-	// Stamped at the SCHEDULED scene time, not now: a thunder clap eight seconds out
-	// belongs eight seconds into the take, wherever the live monitor happened to put it.
+	// Stamped at the scheduled scene time, not now.
 	recordStart(voice, startScene);
 
 	const natural = voice.audio.buffer ? voice.audio.buffer.duration / voice.audio.playbackRate : 0;
 	const span = options.duration !== undefined ? Math.min(options.duration, natural) : natural;
 	if (options.duration !== undefined && voice.audio.source) {
-		// `Audio.source` is typed as the base AudioNode; it is always a BufferSource for
-		// a buffer-backed voice, which is the only kind the registry makes. `span` needs no
-		// conversion: the scene↔context map has slope 1, so intervals carry over unchanged.
 		(voice.audio.source as AudioBufferSourceNode).stop(startedAt + span);
 	}
 	voice.freeAt = startedAt + span;
-	// A `duration` one-shot's deadline is knowable at START, so stamp it on the take
-	// record now: nothing reaps a pooled voice when freeAt passes, so a later noteStop
-	// would never land and the replay would run the buffer to its natural end — a 3 s
-	// scrape droning under a 0.3 s hit (found by the carAudio acceptance pass).
+	// A `duration` one-shot's deadline is knowable at start: stamp it now, since nothing
+	// reaps a pooled voice when freeAt passes and a later noteStop would never land.
 	if (options.duration !== undefined && voice.rec && voice.rec.stopScene === null) {
 		voice.rec.stopScene = startScene + span;
 	}
@@ -356,13 +312,9 @@ export const stopAllVoices = (soundId?: string): void => {
 	}
 };
 
-/**
- * Tab-hide parking. rAF stops when the tab hides but the AudioContext does not, so a
- * bed drones at its last pitch behind a hidden tab — found once per scene that owns a
- * loop (CarEngineAudio.svelte), so the engine owns it now.
- *
- * Loops only: a one-shot in flight is shorter than the blink that hid the tab.
- */
+/** Tab-hide parking: rAF stops when the tab hides but the AudioContext does not, so a
+ * loop would otherwise drone at its last pitch behind a hidden tab. Loops only — a
+ * one-shot in flight is shorter than the blink that hid the tab. */
 const parked: Voice[] = [];
 
 export const parkVoices = (): void => {
@@ -385,14 +337,9 @@ export const unparkVoices = (): void => {
 	parked.length = 0;
 };
 
-/**
- * Detach finished pooled positional one-shots from their `at` parent. Called per frame by
- * `AudioRuntime`'s task.
- *
- * A pooled voice outlives its play: without this it stays parented to the last object it
- * sounded at until the slot is reused — and if that object's scene unmounts first, the
- * voice pins a dead subtree. Loops are not pooled; their handle or scope detaches them.
- */
+/** Detach finished pooled positional one-shots from their `at` parent, so a slot doesn't
+ * pin a dead subtree after its scene unmounts. Called per frame by AudioRuntime's task.
+ * Loops are not pooled; their handle or scope detaches them. */
 export const reapVoices = (): void => {
 	for (const pool of pools.values()) {
 		for (const voice of pool) {
@@ -402,22 +349,13 @@ export const reapVoices = (): void => {
 };
 
 // ── Take recording ──────────────────────────────────────────────────────────────
-//
-// The driving half of `timeline.ts`, here because this module owns the live voice set.
-// Everything below is inert unless a capture take has armed it.
+// The driving half of timeline.ts, here because this module owns the live voice set.
+// Inert unless a capture take has armed it.
 
 /**
- * Three's playback cursor for a voice, in buffer seconds.
- *
- * Reaches into `_progress` / `_startedAt`, which are the same fields `Audio.pause()` uses
- * to resume where it left off. Needed for ONE case, and it is not an edge case: the music
- * and ambience beds have been looping since boot, so a take that arms mid-session has no
- * `start` event for them and would render them from silence — or from sample 0, an
- * audible jump — without this.
- *
- * Typed `Audio<AudioNode>` (the DOM global) because a voice may be a `PositionalAudio`,
- * which is not an `Audio<GainNode>` to TypeScript (`getOutput()` overrides to a
- * `PannerNode`) — the same trap `routeToBus` documents. Only base-class members are read.
+ * Three's playback cursor for a voice, in buffer seconds. Reaches into `_progress` /
+ * `_startedAt` (the same fields `Audio.pause()` uses to resume). Needed so a bed already
+ * looping when a take arms mid-session doesn't render from silence or a sample-0 jump.
  */
 const bufferOffset = (audio: ThreeAudio<AudioNode>): number => {
 	const a = audio as unknown as { _progress?: number; _startedAt?: number };
@@ -455,7 +393,6 @@ const samplePose = (voice: Voice, rec: RecordedVoice, sceneTime: number): void =
 	samplePosition(rec.pos.z, sceneTime, worldPos.z);
 	if (rec.orient) {
 		worldFwd.set(0, 0, 1).applyQuaternion(worldQuat);
-		// A unit vector, so the volume epsilon (1e-3) is the right grain, not the position one.
 		sampleVolume(rec.orient.x, sceneTime, worldFwd.x);
 		sampleVolume(rec.orient.y, sceneTime, worldFwd.y);
 		sampleVolume(rec.orient.z, sceneTime, worldFwd.z);
@@ -463,13 +400,12 @@ const samplePose = (voice: Voice, rec: RecordedVoice, sceneTime: number): void =
 };
 
 /**
- * Enter a voice into the take. `startScene` is absolute scene time and may sit BEFORE the
- * take armed, for a bed already in flight — `render.ts` clips that against the take window.
+ * Enter a voice into the take. `startScene` may sit before the take armed, for a bed
+ * already in flight — render.ts clips that against the take window.
  */
 const recordStart = (voice: Voice, startScene: number): void => {
 	if (!isRecordingAudio() || !voice.audio.buffer) return;
-	// A pooled voice can be STOLEN mid-take — close the previous entry before the new one
-	// takes the slot, or it would run to the end of the take with no stop.
+	// A pooled voice can be stolen mid-take — close the previous entry first.
 	if (voice.rec) noteStop(voice.rec, sceneNow());
 	voice.rec = noteStart({
 		soundId: voice.soundId,
@@ -481,10 +417,8 @@ const recordStart = (voice: Voice, startScene: number): void => {
 		lowpass: voice.lowpass,
 		positional: positionalParamsOf(voice.audio)
 	});
-	// Seed the automation AT THE START, not at the next frame's sample: render.ts's
-	// applyCurve falls back to gain 1 / rate 1 / the origin for an empty curve, and a
-	// short one-shot (a pop) must not open its take segment there. The epsilon gate
-	// keeps the next per-frame sample from duplicating these.
+	// Seed automation at the start, not the next frame's sample, so a short one-shot
+	// doesn't open its take segment at render.ts's gain-1/rate-1 fallback.
 	if (voice.rec) {
 		sampleVolume(voice.rec.volume, startScene, voice.audio.getVolume());
 		sampleRate(voice.rec.rate, startScene, voice.audio.playbackRate);
@@ -501,10 +435,8 @@ const listenerScale = new Vector3();
 const listenerFwd = new Vector3();
 const listenerUp = new Vector3();
 
-/**
- * Begin recording. Snapshots the bus graph and every voice already sounding, then the
- * per-frame sampler takes over.
- */
+/** Begin recording: snapshot the bus graph and every voice already sounding, then the
+ * per-frame sampler takes over. */
 export const armRecording = (sceneTime: number): void => {
 	armTimeline(sceneTime);
 	busCurves = [];
@@ -514,8 +446,8 @@ export const armRecording = (sceneTime: number): void => {
 	}
 	for (const voice of live) {
 		if (!voice.audio.isPlaying) continue;
-		// Started before the take: stamp it at `now − offset` so the replay seeks into the
-		// buffer by exactly the amount that has already been heard.
+		// Started before the take: stamp at `now - offset` so the replay seeks into the
+		// buffer by exactly what's already been heard.
 		recordStart(voice, sceneTime - bufferOffset(voice.audio));
 	}
 	tickRecording(sceneTime);
@@ -527,7 +459,7 @@ export const disarmRecording = (): RecordedTake | null => {
 	return disarmTimeline();
 };
 
-/** Sample every automated parameter for this frame. Epsilon-gated inside `timeline.ts`. */
+/** Sample every automated parameter for this frame. Epsilon-gated inside timeline.ts. */
 export const tickRecording = (sceneTime: number): void => {
 	if (!isRecordingAudio()) return;
 
@@ -544,8 +476,7 @@ export const tickRecording = (sceneTime: number): void => {
 	const curves = listenerCurves();
 	if (curves && listener) {
 		listener.matrixWorld.decompose(listenerPos, listenerQuat, listenerScale);
-		// Same basis three's own AudioListener.updateMatrixWorld feeds the Web Audio
-		// listener: forward is -Z, up is the object's up, both in world space.
+		// Same basis three's own AudioListener feeds Web Audio: forward -Z, up = object up.
 		listenerFwd.set(0, 0, -1).applyQuaternion(listenerQuat);
 		listenerUp.copy(listener.up).applyQuaternion(listenerQuat);
 		samplePosition(curves.x, sceneTime, listenerPos.x);
@@ -563,13 +494,8 @@ export const tickRecording = (sceneTime: number): void => {
 /** How many voices are live. */
 export const voiceCount = (): number => live.size;
 
-/**
- * What is playing, on which bus, at what gain — the Studio panel's inspector.
- *
- * A SNAPSHOT taken on demand rather than a `$state` mirror updated per frame: a reactive
- * write nobody is looking at is still an invalidation, and this would be one per voice
- * per frame to drive a readout that is only ever glanced at.
- */
+/** What is playing, on which bus, at what gain — the Studio panel's inspector. A
+ * snapshot taken on demand, not a `$state` mirror updated per frame. */
 export const voiceSnapshot = (): {
 	soundId: string;
 	bus: BusId;

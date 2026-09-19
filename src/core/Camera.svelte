@@ -3,12 +3,8 @@
 	import { AudioListener } from '@threlte/extras';
 </script>
 
-<!-- The key light lives in core/skybox/SkyLight.svelte, driven by the sky descriptor
-     (sun by day, moon by night). -->
-<!-- Boot framing: the model's default clock is manual, frozen at t = 0.75 (sunset) —
-     sun on the horizon due west, direction (-1, 0, 0). The camera hangs back east and
-     high, tilted down ~24 degrees so the sun rides the top of the frame. If the default
-     clock ever changes, this aim needs to change with it. -->
+<!-- Boot framing: the default clock is frozen at t = 0.75 (sunset, sun due west) — this
+     aim needs to change if that default ever does. Key light is core/skybox/SkyLight.svelte. -->
 <T.PerspectiveCamera
 	fov={60}
 	near={1}

@@ -1,32 +1,23 @@
-// THE WARM GATE — "has the scene stopped COMPILING yet?", the asset gate's sibling.
+// The warm gate — "has the scene stopped compiling yet?", the asset gate's sibling.
 //
-// WARMING IS RENDERING, NOT `compileAsync`. During a normal frame three creates every
-// pipeline SYNCHRONOUSLY (`Pipelines.getForRender` passes no promise array, so
-// `WebGPUPipelineUtils.createRenderPipeline` takes the `device.createRenderPipeline`
-// branch, not the `…Async` one) — so a material's first draw BLOCKS the main thread on
-// its WGSL build and pipeline creation. That stall is the scene-entry hitch, and the
-// only way to spend it somewhere invisible is to draw the frame that pays it while the
-// veil is up. `renderer.compileAsync()` cannot substitute: the post-processing base pass
-// renders the scene under its own `contextNode` (an isolation context, see the MRT
-// shader-cache trap in core/postprocessing/CLAUDE.md), and that node's id/version are
-// hashed into every RenderObject's cache key. compileAsync runs with the renderer's
-// default context, so it would compile a second set of variants the real pass never
-// looks up — cost and GPU memory for nothing.
+// Warming is rendering, not `compileAsync`: three creates every pipeline
+// synchronously on a material's first draw, which is the scene-entry hitch, and the
+// only way to spend it invisibly is to draw the frame that pays it behind the veil.
+// `renderer.compileAsync()` can't substitute — the base pass renders under its own
+// isolation context (the MRT shader-cache trap, core/postprocessing/CLAUDE.md), so
+// compileAsync would build a second set of variants the real pass never looks up.
 //
-// So the gate FORCES FRAMES and watches `renderer.info.memory.programs`, which counts
-// live shader programs and only moves when three builds a new one. Quiet for a few
-// consecutive rendered frames = nothing left to compile for what the scene is currently
-// drawing. Warmup.svelte owns that loop; this module is the handshake, because the
-// caller (the scene transition) lives outside the Canvas and has no Threlte context.
+// So the gate forces frames and watches `renderer.info.memory.programs`, which only
+// moves when three builds a new pipeline — quiet for a few consecutive rendered
+// frames means nothing left to compile. Warmup.svelte owns that loop; this module is
+// the handshake, since the caller (the scene transition) has no Threlte context.
 //
-// WHAT IT CANNOT SEE: `_projectObject` skips invisible objects and frustum-culled ones,
-// so a material that draws NOTHING during the window compiles on the frame it first
-// appears. `warmupState.active` is the contract for those — an fx that hides itself
-// until its first use force-shows at zero alpha while it is true, and the quiet
-// detector then waits for the pipelines that produces (fx/CarExhaustFlames.svelte's
-// exhaust tips are the case this exists for). Never force a LIGHT visible for this: the
-// lights array is part of every lit material's cache key, so toggling one recompiles the
-// whole scene.
+// What it can't see: a material that draws nothing during the window (hidden,
+// frustum-culled) compiles on the frame it first appears. `warmupState.active` is the
+// contract for those — force yourself visible at zero alpha while it's true
+// (fx/CarExhaustFlames.svelte's exhaust tips are the case this exists for). Never
+// force a light visible for this — the lights array is part of every lit material's
+// cache key, so toggling one recompiles the whole scene.
 
 import { logEngine } from '$extensions/logger';
 

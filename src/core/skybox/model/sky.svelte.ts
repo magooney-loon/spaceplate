@@ -54,88 +54,40 @@ const SUN_HORIZON: RGB = [1, 0.6, 0.35];
 const SUN_ZENITH: RGB = [1, 0.98, 0.95];
 const MOON_COLOR: RGB = [0.55, 0.68, 1];
 
-/**
- * PEAK key output at high sun. Pairs with `Sky.svelte`'s `environmentIntensity` (0.25):
- * they are ONE change -- the env map scales the dome down and this absorbs the daylight
- * it stopped delivering, so the key carries the day instead of the sky. Move them
- * together and re-measure; never compensate with the day curve's `exposure`
- * (renderer-global). Deliberately a day-only knob: by night the env map contributes
- * almost nothing and the moon and fill constants below do the work.
- */
+/** Peak key output at high sun. Pairs with `Sky.svelte`'s `environmentIntensity` (0.25)
+ * as one change — move them together and re-measure; never compensate with the day
+ * curve's `exposure` (renderer-global). Full rationale: model/CLAUDE.md. */
 const SUN_INTENSITY = 4.75;
 
-/**
- * A playable night, not a physical moon -- real moonlight is ~1/400,000 of sunlight.
- * An ABSOLUTE level, not a fraction of the sun: the env map bakes black at night (see
- * MOON_AMBIENT), so nothing about its scale ever reached the night and nothing about
- * rescaling it should. It does not track SUN_INTENSITY and must not be "restored" to
- * some ratio of it.
- */
+/** A playable night, not a physical moon. An absolute level, not a fraction of the sun
+ * — must not be "restored" to some ratio of `SUN_INTENSITY`. */
 const MOON_INTENSITY = Math.PI / 12;
 
-/**
- * What a NEW moon keeps of the full moon's key and fill, as a fraction. The rest scales
- * with the lit fraction, so the light matches the disc the player can see -- a crescent
- * that still threw a full moon's shadows was the giveaway that the phase was cosmetic.
- *
- * Not zero, and not physical: real moonlight is a steep function of phase (a quarter
- * moon is roughly a tenth of a full one, never mind a new one), which would hand the
- * player several unlit nights per cycle. The floor plus NIGHT_AMBIENT below is what
- * keeps a new-moon night dark rather than blind. Deliberately LINEAR in illumination
- * above the floor: the curve is a look knob and the floor is the playability one, and
- * mixing the two makes neither adjustable.
- */
+/** What a new moon keeps of the full moon's key and fill, as a fraction — a
+ * playability floor, not physics (real moonlight is a much steeper function of phase). */
 const MOON_PHASE_FLOOR = 0.15;
 
-/**
- * Ambient fill published to the key-light consumer, in the same units as `intensity`.
- * Exists because the env map cannot carry night: SkyMesh zeroes its sun term below
- * -2.31 degrees of sun elevation, so the cube bakes black and every surface facing away
- * from the moon receives nothing. SkyLight mounts a light for this fill.
- *
- * DAY_AMBIENT is deliberately zero -- the env map genuinely carries daylight, so the fill
- * gets out of the way by day. TWILIGHT_AMBIENT covers the same blind spot through
- * twilight: the dome is still black there, and the moon (at opposition by default) sets
- * as the sun rises, so without it dawn reads darker than midnight.
- */
+/** Ambient fill published to the key-light consumer, since the env map can't carry
+ * night (SkyMesh zeroes its sun term below -2.31deg elevation). `DAY_AMBIENT` is zero
+ * since the env map genuinely carries daylight; `TWILIGHT_AMBIENT` covers the same
+ * blind spot at dawn/dusk. See model/CLAUDE.md. */
 const MOON_AMBIENT = Math.PI / 32;
 const DAY_AMBIENT = 0;
 const TWILIGHT_AMBIENT = Math.PI / 14;
 
-/**
- * Starlight and airglow: the floor under deep night, independent of the moon.
- *
- * It exists BECAUSE the moon phases. Before the cycle, the moon sat at opposition
- * forever, so `MOON_AMBIENT` was up every night by construction and there was nothing
- * to floor. A cycling moon spends part of it new -- unlit AND in the daytime sky -- and
- * on those nights the dome bakes black, the twilight hump has expired and the moon fill
- * is at MOON_PHASE_FLOOR, which together is a frame the player cannot navigate.
- *
- * A third of MOON_AMBIENT, and max()'d in with the others rather than added, so a full
- * moon is unchanged to the last decimal and only the nights that had nothing gain
- * anything.
- */
+/** Starlight/airglow floor under deep night, independent of the moon — needed because
+ * a new moon is unlit *and* in the daytime sky, which without this is a frame the
+ * player can't navigate. Max()'d in with the others, not added. */
 const NIGHT_AMBIENT = Math.PI / 96;
 
-/**
- * Floor on the elevation used to *aim* the key light, in degrees. Without it the sun
- * keeps aiming the light from underground through civil twilight, lighting undersides
- * and throwing shadows upward. It deliberately does NOT prop up flat ground at sunrise:
- * a 3-degree light leaves horizontal surfaces dark and gives vertical faces the light
- * -- that is what a low sun does.
- */
+/** Floor on the elevation used to *aim* the key light, in degrees — without it the sun
+ * aims the light from underground through civil twilight. */
 const KEY_MIN_ELEVATION = 3;
 
-/**
- * Boots on a NAMED weather so the first frame is reproducible from the panel.
- *
- * `storm` is the library's loudest entry, and that is the point: it is the default so
- * that the deck, the rain, the lens, the wind and the strike scheduler are all live in
- * the first frame instead of behind a `setWeather` call nobody makes. It is also the
- * most expensive boot the engine has -- a full cloud deck plus 12 000 rain instances --
- * so a scene measuring its own frame budget should `clearWeather({ over: 0 })` rather
- * than measure this.
- */
+/** Boots on a named weather so the first frame is reproducible from the panel.
+ * `storm` is deliberately the loudest entry so every weather renderer is live
+ * immediately — also the most expensive boot the engine has, so a scene measuring its
+ * own budget should `clearWeather({ over: 0 })` first. */
 const BOOT_WEATHER = 'storm';
 
 // A named target is a `Partial<WeatherChannels>`, so it is spread over a full vector
@@ -331,28 +283,19 @@ const compose = (t: number, day: number, deltaMs = 0) => {
 	const daytime = isDaytime(elevation);
 	const phase = phaseFor(elevation, rising, pathOptions.maxElevation ?? DEFAULT_MAX_ELEVATION);
 
-	// Sun and moon are computed INDEPENDENTLY and combined with max(), never lerped
-	// across one shared weight (a shared `horizon` weight once dimmed the sun AND handed
-	// over to the moon, cutting a horizon sun to an eighth of peak). `sunSet` is the sun's
-	// own extinction across its last six degrees, and nothing else.
+	// Sun and moon are computed independently and combined with max(), never lerped
+	// across one shared weight (a shared weight once dimmed the sun and handed over to
+	// the moon at the same time, cutting a horizon sun to an eighth of peak).
 	//
-	// EVERY RAMP THAT CROSSES THE HORIZON BAND IS A SMOOTHSTEP, NOT A LINEAR CLAMP, and
-	// that is a fix rather than a flourish. A `clamp01` ramp arrives at its ends with a
-	// non-zero slope, so each end is a CORNER: the light's rate of change jumps there
-	// while the sun keeps moving at a constant rate, and at 60x time scale the whole band
-	// is seconds wide, so those corners are what the eye actually reads as the sky "not
-	// blending". `sunSet` was the worst of them by far, because it also drives `sunShare`
-	// below: pinned to exactly 0 at -6 degrees by the clamp, the share went from 0 to 0.75
-	// within ONE degree of elevation, swinging the key light three-quarters of the way
-	// from moon-blue to sun-warm in about four seconds. Smoothstepping it cut the largest
-	// break in the share by ~50x. Endpoints are identical (0 at -6, 1 at 0) and so is the
-	// midpoint, so nothing about the authored levels moved.
+	// Every ramp crossing the horizon band is a smoothstep, not a linear clamp: a
+	// `clamp01` ramp arrives at its ends with non-zero slope, which is a corner the eye
+	// reads as the sky "not blending" — `sunSet` mattered most since it also drives
+	// `sunShare` below. Endpoints and midpoint are unchanged from the clamp, so no
+	// authored level moved.
 	const sunSet = smooth01(-6, 0, elevation);
-	// Altitude ramp: the sun's STRENGTH keeps growing above the horizon band -- a flat
-	// lerp would put noon-level light on a 9-degree sun. Quarter-strength floor at the
-	// horizon, full output only above 45 degrees. Deliberately still LINEAR: its corners
-	// sit at 0 and 45 degrees where the light is bright and slow-moving, and easing it
-	// would dim mid-morning by ~15% -- a look change, not a smoothness one.
+	// Sun's strength keeps growing above the horizon band — a flat lerp would put
+	// noon-level light on a 9-degree sun. Deliberately linear (not eased): its corners
+	// sit where the sun is bright and slow-moving.
 	const sunStrength = 0.25 + 0.75 * clamp01(elevation / 45);
 	const sunKey = SUN_INTENSITY * sunSet * sunStrength;
 	// The moon's own rise/set ramp, shared by its key and its fill so the two cannot

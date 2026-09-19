@@ -14,126 +14,43 @@
 	import type { Suspension } from '../sim/suspension';
 	import { HULL_HIT_FLASH_TIME } from '../sim/hullContacts';
 
-	// The debug rig — the car's SKELETON, drawn instead of (or over) the model.
+	// The debug rig — the car's skeleton, drawn instead of (or over) the model.
+	// The driving model is one dynamic body standing on four raycast springs
+	// (sim/suspension.ts) with grip modelled in the drivetrain/task rather than
+	// in any contact; the car model is the illusion, this rig draws what's
+	// actually being driven.
 	//
-	// The driving model is one dynamic body for the chassis, standing on FOUR
-	// RAYCAST SPRINGS (sim/suspension.ts) with the grip modelled in the
-	// drivetrain/task rather than in any contact. The car model is the illusion;
-	// this rig draws what is actually being driven.
+	// The one rule: the rig never guesses. Every number it draws is published
+	// by the model (`carSim` + the shared `suspension` instance) rather than
+	// re-derived — a re-derivation is exactly how a skeleton comes to show a car
+	// nobody drove (steer angle and wheel spin were both bitten by this once;
+	// they now read `carSim.steerAngle`/`carSim.spin` directly).
 	//
-	// ── THE ONE RULE: THE RIG NEVER GUESSES ──────────────────────────────────
-	// Every number it draws is PUBLISHED by the model — `carSim` (telemetry) and
-	// the shared `suspension` instance. Nothing here re-derives a value that the
-	// physics also computed, because that is precisely how a skeleton comes to
-	// show a car nobody drove. Two of those divergences have already been fixed
-	// and are worth remembering:
-	//   · the steer angle used to be `steer × maxSteerAngle`, which showed the
-	//     Grip lock while Drift steered at 0.62 rad. It reads `carSim.steerAngle`;
-	//   · the wheel spin used to be `speedMs × (1 + slip × 0.8)`, a fudge for a
-	//     real overspeed the drivetrain integrates. It reads `carSim.spin`.
+	// B cycles model -> rig -> both. 'both' draws the skeleton over the car;
+	// 'rig' hides the car and adds the analysis layer (suspension rays, CG
+	// vectors, friction circle), which would otherwise bury a car drawn under it.
 	//
-	// ── WHAT IS DRAWN, AND IN WHICH VIEW ─────────────────────────────────────
-	// B cycles model → rig → both. 'both' draws the SKELETON over the car (the
-	// structural layer); 'rig' hides the car and adds the ANALYSIS layer on top,
-	// because those overlays are large and would bury a car drawn under them.
+	// The driveline is the layout's, not the GR86's: `drivenAxles(spec)` decides
+	// which axle gets a diff/half-shafts/driveshaft (a dead axle gets nothing —
+	// total absence is the least ambiguous "not turning"), driven wheels roll at
+	// `speedMs + carSim.spin`, undriven at `speedMs`, and the driveline tints by
+	// torque (bronze coasting -> gold on power -> red as tyres light up).
 	//
-	// SKELETON (both views):
-	//   · the CHASSIS as a wireframe CONVEX HULL — the same point cloud the
-	//     collider is built from, passed in by the scene (which computes it once
-	//     per load), so what you see is what Rapier holds, minus the 5 cm
-	//     rounding margin (too small to read at wireframe scale);
-	//   · the hull FLASHES white-hot on a HIT and tints ORANGE while it's
-	//     pressed and SLIDING against something — `carSim.hullContact*`
-	//     (sim/hullContacts.ts), read off Rapier's own contact manifolds each
-	//     physics step, never events (that file's header has the argument). A
-	//     small marker (sphere + normal spike) is drawn AT the contact point,
-	//     so a scrape reads as "here", not just "hull went orange" — the debug
-	//     half of fx/CarImpacts.svelte, which spawns its sparks off this exact
-	//     same signal;
-	//   · four wheels at the spec's wheel patches, front pair steered at
-	//     `carSim.steerAngle` (the same radians CarWheels renders), each rolling
-	//     at ITS OWN surface speed — see the driveline note below;
-	//   · a STATUS RING on each wheel's outboard face: what that corner is doing
-	//     right now, colour-coded (airborne / locked / spinning / braking /
-	//     driving / coasting). This is the fastest read in the rig;
-	//   · the DRIVELINE, and only the driveline that exists — see below;
-	//   · four suspension struts riding the SHARED suspension, tinted by the
-	//     corner's visual compression.
+	// The compression moves the body, not the hubs: hubs sit on the road and
+	// can't move, so a compressed corner brings the body down to meet it —
+	// every body-mounted part rides the suspension's attitude matrix. The one
+	// cost: the wireframe hull is no longer pixel-exact to the collider's pose
+	// (the collider itself can't pitch/roll), so the lean here is the gauge,
+	// drawn on the shape. The analysis group is the exception — its arrows are
+	// physical vectors in the body's yaw frame, so it takes the pose's
+	// translation only, never its rotation.
 	//
-	// ANALYSIS ('rig' view only):
-	//   · the four SUSPENSION RAYS, drawn from where they are actually cast down
-	//     to what they actually hit, with a CONTACT PATCH disc sized and tinted by
-	//     the corner's PHYSICAL spring load. The rays ARE the car's ground
-	//     contact; before this they were the one part of the model with no
-	//     picture at all, and an airborne wheel looked exactly like a loaded one;
-	//   · at the CENTRE OF MASS (the same point cars/hull.ts hands Rapier, from
-	//     `centerOfMass(spec)` — one lever rule, two consumers): the heading, the
-	//     VELOCITY vector, the combined ACCELERATION vector, and the SLIP-ANGLE
-	//     wedge between heading and velocity. A drift is that wedge opening;
-	//   · the FRICTION CIRCLE around them: a ring at the LIVE lateral μ·g the
-	//     sideways bleed is capped at this step, inside a dim ring at the tyre's
-	//     full μ. The accel arrow is drawn in the same g-per-unit scale, so the
-	//     arrow reaching the bright ring IS the tyre saturating, and the gap
-	//     between the two rings is the grip wheelspin/brake/looseness has cost.
-	//     (It is a LATERAL budget: the longitudinal cap is the drivetrain's own
-	//     `tireMuLong × drivenAxleLoad` and is a different number, so a braking
-	//     arrow may honestly overshoot the ring.)
-	//
-	// ── THE DRIVELINE IS THE LAYOUT'S, NOT THE GR86'S ────────────────────────
-	// This used to be hard-coded RWD: a driveshaft to a rear diff, rear wheels
-	// carrying the wheelspin, front wheels rolling at road speed — on any spec,
-	// including one declaring `layout: 'fwd'`. It reads `drivenAxles(spec)` now:
-	//   · a DRIVEN axle gets a diff, two half-shafts and a driveshaft from the
-	//     transfer puck (so AWD grows a second one forward);
-	//   · an UNDRIVEN axle gets NOTHING — no diff, no shafts. A dead axle really
-	//     is just hubs and struts, and total absence is the least ambiguous way
-	//     to answer "which wheels are turning";
-	//   · driven wheels roll at `speedMs + carSim.spin`, undriven at `speedMs`, so
-	//     wheelspin visibly happens at one end of the car and not the other;
-	//   · the whole live driveline is TINTED by torque — dim bronze coasting,
-	//     gold on power (`carSim.powerLoad`, the friction circle), red as the
-	//     tyres light up (`carSim.slip`);
-	//   · the HANDBRAKE locks the REAR wheels whatever the layout, because a
-	//     handbrake is a rear brake. On a rear-driven car it stops the driveshaft
-	//     with them. (The car MODEL's wheels lock with them now too — fx/CarWheels
-	//     reads the same `spin`/`handbrake` feed this does, so the skeleton and
-	//     the car finally turn their wheels at the same rate.)
-	// Half-shafts, not a solid axle bar: independent suspension means one bar
-	// could not follow both hubs, and watching them articulate is the point.
-	//
-	// ── THE COMPRESSION MOVES THE BODY, NOT THE HUBS ─────────────────────────
-	// This was inverted at first and read as a car that dived under power and
-	// squatted under braking, and leaned INTO its corners. The corner compressions
-	// were right the whole time; the wrong END of the strut was being moved. The
-	// hubs sit on the road and cannot move, so a compressed corner has to bring
-	// the BODY down to meet its hub, exactly like the real thing. Every
-	// body-mounted part (chassis hull, strut towers, diffs, transfer puck, and the
-	// centre-of-mass group) therefore rides the suspension's attitude matrix, and
-	// the half-shafts/struts articulate between that and the fixed hubs.
-	//
-	// The one honest cost: the wireframe hull is no longer pixel-exact to the
-	// collider's pose. The collider does NOT pitch or roll (`enabledRotations`
-	// leaves only yaw free), so the couple of degrees of lean here is the GAUGE,
-	// drawn on the shape rather than beside it. Its rest pose, size and rounding
-	// are still the true ones. The ANALYSIS group is the exception and
-	// deliberately so: its arrows are physical vectors in the body's YAW frame, so
-	// it takes the pose's TRANSLATION and not its rotation — leaning the velocity
-	// vector by a cosmetic roll would be drawing the fake into the measurement.
-	//
-	// VISUALIZATION ONLY — nothing here feeds back into physics. The task runs at
-	// `{ before: autoRenderTask }` (render time) for the same reason CarWheels
-	// does: a physics-task integration pulses against the interpolated body
-	// (TestGame/CLAUDE.md, "THE ROLL IS INTEGRATED IN RENDER TIME").
-	//
-	// COST: ~24 MeshBasicNodeMaterials. Identical node graphs share a compiled
-	// program, but each material still builds its own graph the first time it
-	// RENDERS (the puffPool lesson, fx/puffPool.ts) — so the first press of B
-	// pays them all in one frame. That is a debug tool hitching once on the frame
-	// you asked for it, which is the right place for the cost; invisible layers
-	// cost nothing until shown, because `_projectObject` skips them.
-	//
-	// The Rapier collider debug (physics extension panel, Studio-gated) draws the
-	// world's colliders; this draws the car's kinematics. They complement.
+	// Visualization only, nothing feeds back into physics. Runs at
+	// `{ before: autoRenderTask }` (render time), same reason as CarWheels — a
+	// physics-task integration would pulse against the interpolated body.
+	// ~24 materials; identical node graphs share a compiled program, but each
+	// still builds its own graph on first render, so the first press of B pays
+	// them all in one frame. Full rationale: TestGame's CLAUDE.md.
 
 	let {
 		view = 'model',

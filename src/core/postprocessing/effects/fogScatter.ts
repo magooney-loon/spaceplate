@@ -31,16 +31,10 @@ export const fogScatterEffect: EffectDef<FogScatterParams> = {
 	id: 'fogScatter',
 	label: 'Fog Scattering',
 	role: 'chain',
-	// After AO (10) and the basic DoF (30), BEFORE motion blur (35), the lenses (36/37)
-	// and bloom (40): this is a property of the air in the scene, so it belongs under
-	// anything modelling the lens, the shutter or the eye, and bloom should spread the
-	// light that scattering has already moved.
-	//
-	// It sat at 40 until it was noticed that that is bloom's own order — a tie broken
-	// only by the two effects' positions in the registry array — and that it put fog
-	// AFTER the lenses, so a storm (the one weather that activates scattering and rain
-	// together) blurred the atmosphere through the windscreen droplets instead of the
-	// other way round.
+	// After AO (10) and the basic DoF (30), before motion blur (35), the lenses (36/37)
+	// and bloom (40): fog is a property of the air, so it belongs under anything
+	// modelling the lens/shutter/eye, and before the lenses so a storm's rain droplets
+	// refract an already-fogged frame rather than the fog blurring the droplets.
 	order: 32,
 	// `viewZ` is a PassNode builtin — no MRT attachment, so this effect adds no
 	// attachment to the union and never forces a scene-wide shader rebuild.
@@ -60,15 +54,12 @@ export const fogScatterEffect: EffectDef<FogScatterParams> = {
 	structuralTag: () => (fogScatterActivity.active ? 'on' : 'off'),
 	note: 'Blurs the frame into the distance on the scene fog band, so a fog bank softens what is inside it instead of only paling it. Driven by the weather fog channel — it does nothing in clear weather, and leaves the pipeline entirely below a low fog threshold.',
 	build: (ctx, u) => {
-		// Dry: fold in nothing at all. The effect stays "enabled" in the panel — this is
-		// the weather's decision, not the user's — and the graph is exactly what it would
-		// be with the effect switched off.
+		// Dry: fold in nothing. The effect stays "enabled" in the panel — this is the
+		// weather's decision, not the user's.
 		if (!fogScatterActivity.active) return ctx.color;
 
-		// `viewZ` is NEGATIVE in front of the camera (three's view-space convention), so
-		// the distance along the ray is its negation. Everything past the band's far edge
-		// — the sky included — clamps to 1, which is what fog thick enough to trigger this
-		// should do to a sky.
+		// viewZ is negative in front of the camera, so distance along the ray is its
+		// negation. Past the band's far edge (sky included) it clamps to 1.
 		const distance = ctx.viewZ.negate();
 		const band = smoothstep(uFogNear, uFogFar, distance);
 
@@ -76,10 +67,8 @@ export const fogScatterEffect: EffectDef<FogScatterParams> = {
 		// every weather, including none.
 		const weight = band.mul(uFogScatter).mul(u.strength);
 
-		// The blurred copy (mipSource.ts owns the clamp and the configure-in-place rules).
-		// The level RAMPS with the band rather than sitting at `blur` everywhere: a
-		// constant mip level would soften the pixels at the camera's feet as hard as the
-		// ones at the horizon, and the near end of a fog bank is where you can still see.
+		// The level ramps with the band rather than sitting at `blur` everywhere: a
+		// constant level would soften the camera's feet as hard as the horizon.
 		const scattered = mipSource(ctx, {
 			clamp: u.inputClamp,
 			uv: screenUV,

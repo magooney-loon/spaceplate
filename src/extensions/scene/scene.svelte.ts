@@ -73,49 +73,25 @@ export const sceneActions: ExtensionActions = {
 
 	/**
 	 * Warm scene transition — the per-scene "bootloader". Every user-facing switch
-	 * goes through here (the goTo* actions); the swap happens under a full-screen cover
-	 * so the entry cost is never on screen:
+	 * goes through here; the swap happens under a full-screen cover so the entry
+	 * cost is never on screen:
 	 *
-	 *   1. THE CAPTURE — the pipeline freezes the outgoing scene's last frame
-	 *      (core/postprocessing/transitionState.svelte.ts). When there is no pipeline to
-	 *      do it with, Loader.svelte's black veil covers instead and this waits two rAFs
-	 *      for it to paint
-	 *   2. THE DIP — that frozen frame dissolves to a flat veil while the loading UI
-	 *      fades in over it. IT HAPPENS BEFORE THE SWAP, and that is the point: the
-	 *      outgoing scene is still mounted, nothing is blocking the main thread, so the
-	 *      one dissolve the player actually watches runs clean. Everything expensive
-	 *      happens after it, under a cover that no longer has to animate
-	 *   3. setScene swaps the scene ({#if} routing: old unmounts, new mounts — the
-	 *      swoosh fires here, under the cover)
-	 *   4. one rAF for the mount to flush: component init is where every useGltf /
-	 *      TextureLoader call in the new scene fires, so the loading queue is filled
-	 *      by the end of it
-	 *   5. THE ASSET GATE — hold the cover until that queue drains
-	 *      (core/utils/assetGate.ts). The boot Loader only ever covered the BOOT
-	 *      scene's assets; every later scene used to enter on a fixed budget and
-	 *      pop its track/car in afterwards. Capped by a timeout, so this can delay
-	 *      an entry but never block one
-	 *   6. one rAF for the Svelte mount effects to flush — the subtrees gated on those
-	 *      assets (`{#if $carModel}` and friends) mount here
-	 *   7. THE WARM GATE — `warmScene()` (core/utils/warmup.svelte.ts) forces real
-	 *      frames of the real pipeline until three stops building shader programs.
-	 *      Warming AFTER the asset gate is the point: a material's pipeline is built on
-	 *      its first DRAW, so a frame drawn before the textures land warms the wrong
-	 *      thing. Those frames are drawn UNDER the cover, which is what makes them free
-	 *      to look at
-	 *   8. THE REVEAL — the veil dissolves into the live scene, after a minimum cover
-	 *      time the driver enforces so a cached re-entry does not strobe the loading UI
+	 *   1. capture   — freeze the outgoing scene's last frame (or the black veil
+	 *                  fallback when there's no pipeline to do it with)
+	 *   2. dip       — the frozen frame dissolves to flat, BEFORE the swap, while
+	 *                  the outgoing scene is still mounted and nothing is blocking
+	 *   3. setScene  — {#if} routing: old unmounts, new mounts, swoosh fires
+	 *   4. rAF       — flushes mount, filling the loading queue
+	 *   5. asset gate — hold the cover until that queue drains (capped by a timeout)
+	 *   6. rAF       — flushes the subtrees those assets gated
+	 *   7. warm gate  — forces real frames until three stops building shader
+	 *                  programs (must run after the asset gate, or it warms the
+	 *                  wrong material variants)
+	 *   8. reveal    — dissolve into the live scene, after a minimum cover time
 	 *
-	 * The warm used to be a fixed grace budget on the theory that three compiled in the
-	 * background. It does not: outside `compileAsync` every pipeline is created
-	 * synchronously on the frame that first draws it, which is exactly why entering a
-	 * scene hitched. So the veil now waits on a real signal — the live program count
-	 * holding still across several drawn frames — and a light scene leaves sooner than
-	 * the old budget while a heavy one gets as long as it needs, capped.
-	 *
-	 * No warm frame is forced from HERE: this module lives outside the Canvas and has
-	 * no Threlte context. `warmScene()` is the handshake with the component that does
-	 * (Warmup.svelte), and it resolves immediately when there is no Canvas at all.
+	 * No warm frame is forced from here — this module lives outside the Canvas
+	 * and has no Threlte context; `warmScene()` is the handshake with the
+	 * component that does (Warmup.svelte). Full rationale: scene/CLAUDE.md.
 	 */
 	async transitionTo(scene: SceneType) {
 		if (sceneState.currentScene === scene || busy) return;

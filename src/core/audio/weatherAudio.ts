@@ -1,10 +1,5 @@
 // Weather audio: the rain bed and the thunder claps, driven from the sky. See
 // audio/CLAUDE.md for the contract (never an `$effect` here).
-//
-// A CONSUMER of the audio layer now, not an owner of THREE.Audio objects: the takes,
-// the random draw, the clone-per-clap and the reaping are the registry's
-// (`thunder` is a variant set in engineSounds.ts), and the flight time is a scheduled
-// `delay` instead of a polled queue.
 
 import { busAudible } from './mixer';
 import { engineSounds } from './engineSounds';
@@ -16,14 +11,14 @@ import { flashState } from '$core/skybox/layers/lightning/flashState';
 let rainLevel = 0;
 /** Seconds for the rain bed to fade in and out. Slow: weather does not switch on. */
 const RAIN_FADE = 1.6;
-/** Snow is nearly silent, but not silent -- a whiteout has a hiss to it. */
+/** Snow is nearly silent, but not silent — a whiteout has a hiss to it. */
 const SNOW_SHARE = 0.18;
 
-/** Metres per second -- paces the flash-to-thunder delay that sells a storm's scale. */
+/** Metres per second — paces the flash-to-thunder delay that sells a storm's scale. */
 const SPEED_OF_SOUND = 343;
 /** Distance at which a strike is inaudible. Beyond this no thunder is scheduled. */
 const THUNDER_RANGE = 4200;
-/** Share of bolt strikes that voice thunder -- a clap for every bolt reads as an fx loop, not weather. */
+/** Share of bolt strikes that voice thunder — a clap for every bolt reads as an fx loop. */
 const BOLT_THUNDER_CHANCE = 0.75;
 
 let lastStrikeId = flashState.strikeId;
@@ -47,33 +42,29 @@ const clapVoicing = (distance: number): { rate: number; lowpass: number } => {
 export const tickWeatherAudio = (delta: number): void => {
 	const w = descriptor.weather;
 
-	// One bed for both, weighted: rain is loud, snow is a faint hiss. Using the shared
-	// split means the bed follows sleet across the blend instead of cutting out.
+	// One bed for both, weighted: rain is loud, snow is a faint hiss.
 	const target = rainAmount(w) + snowAmount(w) * SNOW_SHARE;
 
-	// Framerate-independent one-pole, as the sky layers use: a hard cut would click,
-	// and would make a 20 s weather blend arrive instantly in the audio.
+	// Framerate-independent one-pole, as the sky layers use — a hard cut would click.
 	rainLevel += (target - rainLevel) * (1 - Math.exp(-delta / RAIN_FADE));
 
-	// Lazily created rather than awaited: this module already polls every frame, so
-	// retrying is free, and `loop()` returns null until the buffer has decoded --
-	// the same guard the old `rainAudio?.buffer` check was.
+	// Lazily created: this module already polls every frame, so retrying is free, and
+	// `loop()` returns null until the buffer has decoded.
 	rainBed ??= engineSounds.rain.loop({ paused: true, volume: 0 });
 
 	if (rainBed) {
-		// The setting is the BUS's (core/audio/mixer.ts) -- this level is the weather's
-		// own, and the two multiply in the graph instead of here.
+		// The setting is the bus's (core/audio/mixer.ts); this level is the weather's own.
 		const audible = rainLevel > 0.004 && busAudible('ambience');
-		// Volume first, then play -- otherwise the frame a shower starts on gets one
-		// buffer's worth of rain at whatever level was left over.
+		// Volume first, then play, so the frame a shower starts on isn't a full buffer of
+		// rain at whatever level was left over.
 		rainBed.volume = rainLevel;
 		if (audible && !rainBed.playing) rainBed.resume();
 		else if (!audible && rainBed.playing) rainBed.pause();
 	}
 
 	// A new strike: schedule its thunder for when the sound would arrive. Bolts only
-	// (a sheet is a cell backlighting itself, no channel to the ground), and not all
-	// of them -- a clap for every event reads as a sound effect on repeat.
+	// (a sheet is a cell backlighting itself, no channel to the ground), and not all of
+	// them — a clap for every event reads as a sound effect on repeat.
 	if (flashState.strikeId !== lastStrikeId) {
 		lastStrikeId = flashState.strikeId;
 		const distance = flashState.strikeDistance;
@@ -84,11 +75,6 @@ export const tickWeatherAudio = (delta: number): void => {
 			busAudible('sfx')
 		) {
 			const { rate, lowpass } = clapVoicing(distance);
-			// The flight time is a SCHEDULED delay on the audio clock now, not a queue
-			// drained by this tick -- which also makes the arrival sample-accurate
-			// instead of landing on the next frame boundary. The take is drawn by the
-			// registry: the takes are varieties of weather, not near/far markers
-			// (distance is already spoken for by volume, rate and filter).
 			engineSounds.thunder.play({
 				delay: distance / SPEED_OF_SOUND,
 				// Inverse falloff, not inverse-square: squared attenuation makes thunder

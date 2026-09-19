@@ -1,22 +1,18 @@
-// THE SLOT REGISTRY — devices in, slot readings out.
+// The slot registry — devices in, slot readings out.
 //
-// The engine owns exactly this: physical device state, the binding tables, their
-// persistence, and the frame stamps that make edges observable. It owns NO game
-// actions; every action is a slot in a map some game declared (DOCS/input.md).
+// The engine owns physical device state, binding tables, their persistence, and the
+// frame stamps that make edges observable. It owns no game actions; every action is
+// a slot in a map some game declared (DOCS/input.md).
 //
-// ── The two halves ───────────────────────────────────────────────────────────
-// Device state, resolved bindings and slot readings are PLAIN objects, recomputed
-// on device change and read by physics tasks — `$state` there is an invalidation
-// per key per step for values no UI renders. `inputState` below is the reactive
-// half: bindings, capture, connected pads, i.e. exactly what Settings renders.
-// Same split as `carSim`/`carHud` and the sky descriptor/`skyMeta`.
+// Device state, resolved bindings and slot readings are plain objects, recomputed on
+// device change and read by physics tasks — `$state` there is an invalidation per
+// key per step for values no UI renders. `inputState` below is the reactive half:
+// bindings, capture, connected pads, i.e. what Settings renders.
 //
-// ── Why there is no "sample input at the top of the frame" step ───────────────
-// Keyboard and mouse are event-driven, so slots are recomputed IN the DOM handler;
-// the gamepad is recomputed in its poll task. `pressed`/`value`/`axis` are
-// therefore never stale, which is what makes them safe to read from a physics
-// task, a render task and a HUD alike. Only EDGES need a frame, and they get one
-// through a stamp rather than a clear pass — see `advanceInputFrame`.
+// There is no "sample input at the top of the frame" step: keyboard/mouse recompute
+// slots inside the DOM handler, the gamepad inside its poll task, so
+// `pressed`/`value`/`axis` are never stale. Only edges need a frame, via a stamp
+// rather than a clear pass — see `advanceInputFrame`.
 
 import { logInput } from '$extensions/logger';
 import type {

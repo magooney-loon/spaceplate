@@ -1,24 +1,18 @@
 // The blurred copy of the frame that fogScatter, rainLens and snowLens all sample: a
 // half-float `rtt()` over the chain colour with a mip chain, so a `levelNode` buys a
-// broad low-frequency smear in ONE bilinear fetch instead of a gaussian's several taps
+// broad low-frequency smear in one bilinear fetch instead of a gaussian's several taps
 // per pixel. Each caller supplies where to sample and how far down the chain.
 //
-// It exists to hold two invariants that were previously restated in three effect headers
-// and could be half-remembered by the fourth:
+// Two invariants worth keeping in one place rather than three effect headers: clamp
+// what is SAMPLED, never the frame (the chain carries unbounded linear HDR — the sky's
+// sun disc reaches 60800 — so callers mix against the unclamped `ctx.color`, keeping a
+// bright source's real radiance wherever the effect is thin); and configure
+// `uvNode`/`levelNode` IN PLACE, since `.sample()`/`.level()` return plain TextureNode
+// clones and only the RTT node itself carries the `updateBefore` that fills the target.
 //
-// CLAMP WHAT IS SAMPLED, NEVER THE FRAME. The chain carries unbounded linear HDR — the
-// sky's sun disc reaches 60800 linear (`SkyMesh.js`) — and one runaway pixel dragged
-// through a mip chain comes back as a screen-wide smear. The clamp applies only to the
-// copy; every caller mixes against the UNCLAMPED `ctx.color`, so a bright source keeps
-// its real radiance wherever the effect is thin.
-//
-// CONFIGURE `uvNode`/`levelNode` IN PLACE. `.sample()` / `.level()` return plain
-// TextureNode CLONES, and only the RTT node ITSELF carries the `updateBefore` that
-// renders the target — a graph containing only clones never fills it.
-//
-// The scene transition's snapshot deliberately does NOT come through here: it is a
-// manual capture (`autoUpdate: false`, no clamp, held across frames), which is a
-// different resource with a different lifetime. See effects/sceneTransition.ts.
+// The scene transition's snapshot does NOT come through here — it's a manual capture
+// (`autoUpdate: false`, no clamp, held across frames), a different resource with a
+// different lifetime. See effects/sceneTransition.ts.
 
 import { rtt, vec3, vec4 } from 'three/tsl';
 import { HalfFloatType, LinearMipmapLinearFilter } from 'three/webgpu';

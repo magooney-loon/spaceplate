@@ -15,6 +15,5 @@ Which environment lights the scene — orthogonal to time and weather.
   Register by dropping files into `public/textures/skybox/{hdr,exr,equi_env}/` (or
   6-face sets under `cube/<name>/`, face order px nx py ny pz nz) and adding an entry.
 
-**Why this is core and not an extension:** it used to be `extensions/skybox` state,
-but `Skybox.svelte` consumes it in every build — engine state dressed as an optional
-add-on, with a backwards core→extensions import. The Studio panel is just a caller.
+**Why this is core and not an extension:** `Skybox.svelte` consumes it in every build,
+Studio or not, so it is engine state — the Studio panel is just a caller.

@@ -1,23 +1,14 @@
-// THE MIXER — the engine's bus graph (plan: DOCS/AUDIO.md, "The mixer").
+// The engine's bus graph. Every voice connects to a bus, never to the listener directly
+// — a bus is a real GainNode, so a volume or mute is one write on the audio thread.
 //
-// Every voice connects to a BUS, never to the listener directly. A bus is a real
-// GainNode, so a volume or a mute is one write on the audio thread instead of a
-// number every call site multiplies in by hand at the moment it plays.
-//
-//   sources ──▶ ui ───────┐
-//               music ────┤
+//   sources ──▶ music ────┐
 //               ambience ─┼──▶ listener.gain ──▶ context.destination
 //               sfx ──────┤        (master)
-//                 └─ ui ──┘   (three's AudioListener — untouched)
+//                 └─ ui ──┘
 //
-// THREE'S LISTENER STAYS THE MASTER, and that is load-bearing twice: its own
-// contract (setMasterVolume, the filter slot) keeps working, and capture/'s tap
-// fans off `listener.gain`, so it still sees everything however many buses sit
-// above it.
-//
-// `ui` is a CHILD of `sfx`, not a sibling: click/swoosh ride the sfx fader today
-// and must keep doing so, but a game that wants UI trimmed separately now has a
-// place to do it.
+// Three's listener stays the master: its own contract (setMasterVolume, the filter
+// slot) keeps working, and every bus ends at `listener.gain`, so nothing bypasses the
+// graph. `ui` is a child of `sfx`, not a sibling, so click/swoosh ride the sfx fader.
 
 import type { AudioListener as ThreeAudioListener } from 'three';
 import { settingsState } from '$extensions/settings';
@@ -27,11 +18,9 @@ import type { BusId } from './types';
 export type { BusId };
 
 /**
- * What the mixer needs of a voice: its output gain, and nothing else.
- *
- * Structural rather than `Audio` because `PositionalAudio` is NOT an `Audio<GainNode>`
- * to TypeScript — it overrides `getOutput()` to return a `PannerNode`. Both still end in
- * `this.gain` (the panner is upstream of it), which is the only node routing touches.
+ * What the mixer needs of a voice: its output gain. Structural rather than `Audio`
+ * because `PositionalAudio` is not an `Audio<GainNode>` to TypeScript — it overrides
+ * `getOutput()` to a `PannerNode` — but both still end in `this.gain`.
  */
 type Routable = { gain: GainNode };
 
@@ -44,20 +33,17 @@ type Bus = {
 	muted: boolean;
 };
 
-/**
- * Below this a bus counts as inaudible. Only ever a COST decision — the gain node
- * has already made it silent — but a looping source that cannot be heard should not
- * be decoding, which is what `busAudible()` is for.
- */
+/** Below this a bus counts as inaudible — a cost decision, since the gain node has
+ * already made it silent, but a looping source nobody can hear shouldn't decode. */
 const AUDIBLE_EPS = 1e-4;
 
-/** Three's own ramp for volume changes (`Audio.setVolume`). Short enough to feel instant, long enough not to click. */
+/** Ramp time for volume changes. Short enough to feel instant, long enough not to click. */
 const RAMP = 0.01;
 
 let listener: ThreeAudioListener | null = null;
 let buses: Map<BusId, Bus> | null = null;
 
-/** Which bus each voice is currently on — a fresh `Audio` is wired to the listener by its constructor. */
+/** Which bus each voice is currently on. */
 const routing = new WeakMap<Routable, Bus>();
 
 const gainOf = (bus: Bus): number => (bus.muted ? 0 : bus.volume);
@@ -66,10 +52,7 @@ const applyGain = (bus: Bus): void => {
 	bus.input.gain.setTargetAtTime(gainOf(bus), bus.input.context.currentTime, RAMP);
 };
 
-/**
- * Build the graph. Called once, from the audio runtime, after the listener exists
- * (`Camera.svelte` mounts `<AudioListener />` before it). Idempotent.
- */
+/** Build the graph. Called once, from the audio runtime, after the listener exists. Idempotent. */
 export const installMixer = (audioListener: ThreeAudioListener): void => {
 	if (buses) return;
 	listener = audioListener;
@@ -106,7 +89,7 @@ export const installMixer = (audioListener: ThreeAudioListener): void => {
 	syncMixerFromSettings();
 };
 
-/** Tear the graph down — the runtime's unmount, and HMR. Sources are left to their own disposal. */
+/** Tear the graph down. Sources are left to their own disposal. */
 export const uninstallMixer = (): void => {
 	if (!buses) return;
 	for (const bus of buses.values()) {
@@ -119,12 +102,8 @@ export const uninstallMixer = (): void => {
 const busOf = (id: BusId): Bus | null => buses?.get(id) ?? null;
 
 /**
- * Point a voice at a bus.
- *
- * **Every voice needs this, including clones.** `Audio.clone()` is
- * `new this.constructor(this.listener)` (three's `Audio.js`), and that constructor
- * wires `gain → listener.getInput()` — so a clone comes back wired PAST the whole
- * bus graph, at full volume, however its template was routed.
+ * Point a voice at a bus. Every voice needs this, including clones — `Audio.clone()`
+ * wires `gain → listener.getInput()`, past the whole bus graph, at full volume.
  */
 export const routeToBus = (audio: Routable, id: BusId): void => {
 	const bus = busOf(id);
@@ -135,17 +114,14 @@ export const routeToBus = (audio: Routable, id: BusId): void => {
 	try {
 		audio.gain.disconnect(from);
 	} catch {
-		// Already disconnected, or never connected where we thought. Reconnecting below
-		// is still correct; a double edge would be the only harm and there isn't one.
+		// Already disconnected, or never connected where expected — reconnecting below is still correct.
 	}
 	audio.gain.connect(bus.input);
 	routing.set(audio, bus);
 };
 
-/**
- * Can anything on this bus actually be heard? Walks to master, so a muted `sfx`
- * silences `ui` under it. Loops gate playback on this — see AUDIBLE_EPS.
- */
+/** Can anything on this bus actually be heard? Walks to master, so a muted `sfx`
+ * silences `ui` under it. Loops gate playback on this. */
 export const busAudible = (id: BusId): boolean => {
 	let bus = busOf(id);
 	if (!bus) return false;
@@ -170,14 +146,8 @@ export const setBusMuted = (id: BusId, muted: boolean): void => {
 	applyGain(bus);
 };
 
-/**
- * Push `settingsState.audio` into the graph. The ONE place settings meets the bus
- * tree; called from the runtime's effect on the primitives it reads.
- *
- * `enabled` is a MUTE, not a gate — the scattered `if (…Enabled)` guards this
- * replaces could each be forgotten individually, and one of them was (the stale
- * click, DOCS/AUDIO.md "Why").
- */
+/** Push `settingsState.audio` into the graph. The one place settings meets the bus
+ * tree. `enabled` is a mute on the bus, not a per-call-site guard. */
 export const syncMixerFromSettings = (): void => {
 	if (!buses) return;
 	const a = settingsState.audio;
@@ -190,10 +160,8 @@ export const syncMixerFromSettings = (): void => {
 	setBusMuted('sfx', !a.sfxEnabled);
 };
 
-/**
- * The bus tree's SHAPE and current gains — what `render.ts` rebuilds inside an
- * OfflineAudioContext, and what `timeline.ts` attaches its gain curves to.
- */
+/** The bus tree's shape and current gains — what render.ts rebuilds offline, and what
+ * timeline.ts attaches its gain curves to. */
 export const busGraph = (): { id: BusId; parent: BusId | null; gain: number }[] => {
 	if (!buses) return [];
 	return [...buses.values()].map((b) => ({

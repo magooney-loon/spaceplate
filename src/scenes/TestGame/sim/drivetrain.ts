@@ -1,29 +1,19 @@
 // Engine + clutch + gearbox, generic over a CarSpec (cars/). Pure SI, pure
 // function of its own state — no runes, no Three, no Rapier. The controller
 // (sim/controller.ts) owns the body and calls `step()` once per physics step
-// with the road speed it measured. What this models — torque curve through
-// gears, clutch cut on a shift, slipping-clutch launch, engine braking,
-// fuel-cut limiter, traction-limited driven axle with load transfer, traction
-// control, the automatic — is CLAUDE.md's "engine feel" bullet; this header
-// only covers what that doesn't. The three SETUP numbers (driven-axle grip,
-// wheelspin's lateral cost, traction control) come in per step as a
-// `HandlingTune` (handling.ts) and are never cached, since the player can
-// switch tunes mid-corner.
+// with the road speed it measured. What this models is TestGame's CLAUDE.md
+// "engine feel" section; this header covers only what that doesn't. The three
+// setup numbers (driven-axle grip, wheelspin's lateral cost, traction control)
+// come in per step as a `HandlingTune` (handling.ts), never cached — the
+// player can switch tunes mid-corner.
 //
-// ── Wheelspin is a SPEED, not a ratio ──────────────────────────────────────────
-// `spin` is how much faster the driven tyre's contact patch is running than the
-// road, in m/s, integrated against the rotating inertia in the car's spec. It
-// used to be a force ratio clamped to 0…1 that scaled road speed by at most
-// 1.8×, and that had two consequences worth remembering:
-//   - **The revs could not run away.** A donut at 4 m/s pinned in 1st sat at about
-//     2 900 rpm however hard the tyres were spinning, because the "wheel speed" was
-//     road speed times a number that saturated. Now the surplus force accelerates
-//     the wheels for real and the limiter is what stops it — a burnout screams.
-//   - **The limiter used to BRAKE the car mid-wheelspin.** Its fuel cut turns crank
-//     torque negative, and the drive force followed it straight to −2 100 N. A
-//     spinning tyre hands the road full μ in the direction the wheels are turning,
-//     whatever the engine is doing, so the force is now +traction throughout and
-//     bouncing off the limiter no longer stops the slide.
+// Wheelspin (`spin`) is a speed, not a ratio: how much faster the driven
+// tyre's contact patch is running than the road, in m/s, integrated against
+// the car's rotating inertia. Not a force ratio clamped to a multiplier — that
+// couldn't let revs run away under wheelspin, and the limiter's fuel cut used
+// to brake the car mid-spin (crank torque negative, drive force following it
+// negative) where a spinning tyre actually hands the road full traction in
+// the direction the wheels are turning regardless of what the engine is doing.
 
 import type { CarSpec } from '../cars/types';
 import {

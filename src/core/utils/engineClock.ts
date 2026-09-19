@@ -1,26 +1,20 @@
-// THE ENGINE CLOCK — one source of scene time for the whole app (rules in
+// The engine clock — one source of scene time for the whole app (rules in
 // core/utils/CLAUDE.md; this header is the mechanism).
 //
-// Every animated thing integrates a `delta` (sky model, TSL layer accumulators,
-// Rapier's substep accumulator, flypath camera), all from Threlte's scheduler off
-// the wall clock — wrong the moment something must render SLOWER THAN REALTIME on
-// purpose: an offline capture take (extensions/capture/) timestamps frame N at
-// exactly N/fps however long it took to draw.
+// Everything animated integrates a `delta` off Threlte's scheduler, which normally
+// runs on the wall clock — wrong when something must render slower than realtime on
+// purpose (an offline capture take timestamps frame N at exactly N/fps however long
+// it took to draw). The substitution happens at `Scheduler.run`: the scheduler derives
+// delta as `time - lastTime`, so handing it a fabricated timestamp
+// (`lastTime + step * 1000`) makes every stage, task and Rapier's accumulator see
+// exactly `step` seconds — a task's `delta` is always scene time, and `delta === 0` on
+// a held frame is legal (pause-correct).
 //
-// The substitution happens ONE LEVEL UP, at `Scheduler.run` — the single place a
-// frame's delta is computed before it is fanned out. The scheduler derives delta as
-// `time - lastTime` (`frame-scheduling/Scheduler.js`), so handing it a FABRICATED
-// timestamp (`lastTime + step * 1000`) makes every stage, task and Rapier's
-// accumulator see exactly `step` seconds. Hence: a task's `delta` argument IS scene
-// time always (new game code is capture-correct with no rule to remember), and
-// `delta === 0` on a held frame is legal — integrating it is pause-correct.
+// TSL `time` is the one thing the scheduler can't reach — it resolves to
+// `nodeFrame.time`, which three advances itself off `performance.now()` — so this
+// module writes `renderer._nodes.nodeFrame.time` directly, once per frame.
 //
-// TSL `time` is the one thing the scheduler does not reach: it resolves to
-// `nodeFrame.time`, which three advances itself per rAF off `performance.now()`.
-// Nothing public feeds it, so this module writes `renderer._nodes.nodeFrame.time`
-// directly, once per frame, before the render. Private field; guarded, non-fatal.
-//
-// In realtime — every production frame; only capture installs a source — this is a
+// In realtime (every production frame — only capture installs a source) this is a
 // pass-through: it reads `nodeFrame.time` rather than writing it.
 
 import type { Scheduler } from '@threlte/core/webgpu';

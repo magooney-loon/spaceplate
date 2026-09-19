@@ -1,6 +1,6 @@
 <script lang="ts">
-	// The gamepad half of the slot system: wraps `useGamepad` (@threlte/extras), read
-	// once per frame into the registry's device state. See input/CLAUDE.md.
+	// Wraps `useGamepad` (@threlte/extras), read once per frame into the registry's
+	// device state. See input/CLAUDE.md.
 	import { untrack } from 'svelte';
 	import { useTask } from '@threlte/core/webgpu';
 	import { useGamepad } from '@threlte/extras';

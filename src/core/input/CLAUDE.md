@@ -37,8 +37,7 @@ The **input extension** (`$extensions/input`) owns slots, bindings and persisten
   something the slot system deliberately cannot express; the engine map's `toggleUi` slot
   exists only to name it in one place.
 - **Blur and tab-hide release every device.** A key let go while unfocused sends no keyup,
-  and a stuck pedal is the result. This is the job TestGame's `heldCodes` set used to do
-  per-scene.
+  and a stuck pedal is the result.
 - Capture (rebinding) takes priority over everything except Ctrl+H; Escape cancels.
 
 ## InputRuntime — the frame, and on-demand rendering
@@ -98,9 +97,8 @@ Mount inside a scene to enable it: auto-requests lock on mount, falls back to th
 non-UI click/keydown, releases on unmount. No scene mounts it today — DemoScene dropped it;
 the demo camera is a static `[0, 1, 12]` vantage.
 
-**`aiming` is the scene's to supply**, not the engine's: it used to read
-`isPressed('player1', 'secondaryAction')` from the old FPS action enum, and the engine no
-longer declares any gameplay slot to have an opinion about.
+**`aiming` is the scene's to supply**, not the engine's — the engine declares no gameplay
+slot to have an opinion about.
 
 ```svelte
 <MouseLook aiming={() => fpsControls.pressed('aim')} />

@@ -1,28 +1,19 @@
-// Car engine audio — TestGame's own consumer of the engine's audio layer, and its
-// ACCEPTANCE TEST (DOCS/AUDIO.md's carAudio table): everything this module used to do
-// with raw <PositionalAudio> mounts, hand-multiplied gains and clones — the rpm bed,
-// the pops, the squeal, the deadline shrieks — is expressed through the registry here.
-// That is also what puts the car in a capture take: the offline render replays exactly
-// what this module asks the facade for (core/audio/timeline.ts).
+// Car engine audio — TestGame's own consumer of the engine's audio layer: the rpm
+// bed, the pops, the squeal, the deadline shrieks are all expressed through the
+// registry (core/audio) rather than raw `<PositionalAudio>` mounts, hand-multiplied
+// gains or clones — which is also what puts the car in a capture take, since the
+// offline render replays exactly what this module asks the facade for.
 //
-// THE CONTRACT (weatherAudio.ts is the precedent): CarEngineAudio.svelte mounts only
-// anchor groups, takes a scope, and once buffers are ready calls
-// `initCarAudio(scope, anchors)`; its task calls `tickCarAudio(delta)` — never an
-// `$effect` (carSim is plain state; an effect would run once at mount and never
-// again). Sound DATA lives in carSounds.ts; every mixing decision lives here. The old
-// lifecycle functions are gone with the mounts: unmount is the scope's `release()`
-// (the component's cleanup), and tab-hide parking is the engine's (AudioRuntime parks
-// loops) — only the edge-state sync remains in `detachCarAudio`.
+// The contract (weatherAudio.ts is the precedent): CarEngineAudio.svelte mounts
+// only anchor groups, takes a scope, and once buffers are ready calls
+// `initCarAudio(scope, anchors)`; its task calls `tickCarAudio(delta)`, never an
+// `$effect` (carSim is plain state). Sound data lives in carSounds.ts; every mixing
+// decision lives here. Unmount is the scope's `release()`; tab-hide parking is the
+// engine's (AudioRuntime parks loops).
 //
-// WHY NO WEBGPU COMPUTE (the three.js webgpu_compute_audio example): that example
-// processes a WHOLE buffer offline — compute → getArrayBufferAsync → play the
-// result once. An engine note must follow rpm every frame, and per-frame GPU
-// readback means a streaming scheduler whose only product is latency: three's
-// Audio already pitch-shifts live via `setPlaybackRate` (setTargetAtTime-smoothed
-// resampling — the same math the example's `element(index × pitch)` shader does),
-// on the audio thread, with zero round-trips. If a compute-processed layer is ever
-// wanted anyway, a per-sound declaration could hand the registry a raw AudioBuffer
-// without touching this module's shape.
+// No WebGPU compute audio: an engine note must follow rpm every frame, and
+// per-frame GPU readback would only add latency — three's `Audio` already
+// pitch-shifts live via `setPlaybackRate` on the audio thread with zero round-trips.
 
 import type { Object3D } from 'three';
 import { busAudible, sceneNow, type AudioScope, type PlayOptions, type VoiceHandle } from '$core';
@@ -232,32 +223,17 @@ let handbrakePrev = carSim.handbrake;
 
 // ── Tyres ────────────────────────────────────────────────────────────────────
 //
-// The squeal loop: ONE voice under the car, not per-corner — RWD wheelspin is a
-// rear-axle sound, a drift is the whole car, and per-corner voices would need
-// per-wheel slip the sim doesn't publish. Level = the LOOSEST of six sources,
-// never a sum (the looseness model's own rule, handling.ts: sources that stack
-// make a gentle cornering slide scream):
-//   - WHEELSPIN: carSim.slip past the TC lamp's own 0.15 — lamp and squeal agree
-//     the rears are lit.
-//   - SLIDE: |drift| ramped 8°→25° (the cluster's slide flag reads 10°; a few
-//     degrees is just a car cornering), gated on road speed — slip angle at a
-//     standstill is noise.
-//   - HANDBRAKE: locked rears scaled by speed, so the yank is audible before the
-//     slip angle has developed.
-//   - CORNERING: carSim.latLoad — the share of the lateral grip budget the corner
-//     is spending. Grip's planted max banking never lights a drift angle, wheels
-//     the rears or touches the brake, but the tyres ARE at their limit — the load
-//     is the only honest signal that corner gives, so it sings from ~75% of
-//     budget and pins at full lock at speed.
-//   - LAUNCH: carSim.launch — the rev-match boost live: full quality through
-//     the clutch drop, easing off with the tail into 1st. The chirp off the
-//     line, sized by how hard the catch was.
-//   - HARD BRAKE: the pedal at speed — there is no ABS/lockup channel, so the
-//     squeal is the drama the missing tyre slip would have supplied. Fades out
-//     below ~20 km/h, so a stop doesn't end in a squeak at the line.
-// NOT gated on ignition — tyres are not combustive (the module's own rule); a
-// handbrake slide with the engine off still squeals. Attack outruns release:
-// squeal arrives with the slide and lingers a beat while the rubber catches up.
+// The squeal loop: one voice under the car, not per-corner (RWD wheelspin is a
+// rear-axle sound, a drift is the whole car, and the sim doesn't publish
+// per-wheel slip). Level is the loosest of six sources, never a sum (sources
+// that stack make a gentle cornering slide scream): wheelspin (past the TC
+// lamp's 0.15), slide (|drift| ramped 8-25 deg, gated on road speed), handbrake
+// (locked rears scaled by speed), cornering (carSim.latLoad — the only honest
+// signal Grip's planted max-banking corner gives), launch (the rev-match boost)
+// and hard brake at speed (there's no ABS/lockup channel, so this supplies the
+// drama). Not gated on ignition — a handbrake slide with the engine off still
+// squeals. Attack outruns release: the squeal arrives with the slide and
+// lingers a beat while the rubber catches up.
 
 /** Squeal level at full slip — under the bed's redline presence. Dial by ear. */
 const SQUEAL_GAIN = 0.6;

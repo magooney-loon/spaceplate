@@ -7,43 +7,35 @@ types.ts              — extensionScope, and nothing else
 AudioExtension.svelte — Studio toolbar panel (buses + positional fallbacks + inspector)
 ```
 
-Was `extensions/sound/`. The rename is the smaller half of what happened to it; the real
-change is that **its state moved into the engine**. The old extension held five positional
-params as `$state` plus a Studio-aware `useSound()` hook, and exactly one component in the
-app read them. Those params are engine config — `AudioRuntime` consumes them in every
-build, Studio or not — so they live in `core/audio/voices.ts` (`positionalDefaults`) now
-and this panel is just another caller. Deleted with the move: `soundState.svelte.ts`,
-`useSound.ts`, `index.ts`, and two exports that were never read at all
-(`listenerEnabled`, `defaultSoundState()`).
+The positional fallback params (`ref` / `rolloff` / `max` / `panningModel`) are engine
+config, not panel state — they live in `core/audio/voices.ts` (`positionalDefaults`),
+since `AudioRuntime` consumes them in every build, Studio or not. This panel is just
+another caller.
 
 ## The panel
 
 1. **Buses** — Master fader, then SFX / Music / Ambient with an enable + a volume. These
    write `settingsState.audio` through `audioActions`; `AudioRuntime`'s one sync effect
    pushes that into the real gain nodes. **`on:change`, never `bind:`** — `bind:` writes
-   the state directly and skips the actions that persist to localStorage, which is what
-   the old panel did.
+   the state directly and skips the actions that persist to localStorage.
 
-   > **BOTH RULES APPLY AT ONCE, and taking only the first one breaks the app.** Moving
-   > these checkboxes off `bind:` without also guarding `e.detail.origin === 'internal'`
-   > shipped an infinite loop: svelte-tweakpane-ui dispatches `change` for PROGRAMMATIC
-   > value updates too (`core/Binding.svelte:74`, tagged `origin: 'external'`), so
-   > `Loader.svelte`'s autoplay unlock — which calls `toggleMusic/Ambience/Sfx` — fired
-   > every handler. A **`toggle` is not idempotent**, so the handler flipped each value
-   > straight back, which dispatched again, until Svelte threw
-   > `effect_update_depth_exceeded`. The old panel survived only by accident: its
-   > checkboxes used `bind:` (no handler at all) and its sliders set a _value_, which is
-   > idempotent and converges. Every handler in this panel is guarded, including the
-   > positional ones — `resetPositional()` writes those values too.
+   > **Both rules apply at once, and taking only the first one breaks the app.** Every
+   > `on:change` handler must also guard `e.detail.origin === 'internal'`:
+   > svelte-tweakpane-ui dispatches `change` for programmatic value updates too
+   > (`core/Binding.svelte:74`, tagged `origin: 'external'`), so `Loader.svelte`'s
+   > autoplay unlock (which calls `toggleMusic/Ambience/Sfx`) fires every handler. A
+   > `toggle` is not idempotent, so an unguarded handler flips the value straight back,
+   > which dispatches again — `effect_update_depth_exceeded`. Every handler in this
+   > panel is guarded, including the positional ones (`resetPositional()` writes those
+   > values too).
 
 2. **Positional Defaults** — the engine-wide fallbacks. A sound that declares its own
    `ref` / `rolloff` / `max` / `panningModel` is unaffected by these.
 3. **Inspector** — logs the bus graph, every live voice (sound, bus, gain, rate, playing,
    positional) and, during a capture take, `schedulerDrift()`.
 
-The **logger channel is still `sound`** (`logSound`, 🔊). Deliberately not renamed with the
-extension — it is a persisted channel id with call sites across `core/audio/` and beyond,
-and renaming it buys nothing but churn.
+The logger channel is `sound` (`logSound`, 🔊) — a persisted channel id with call sites
+across `core/audio/` and beyond, kept independent of the extension's own name.
 
 ## Two things that look like omissions and are not
 

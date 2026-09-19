@@ -1,22 +1,17 @@
-// WATER ON THE LENS -- the screen-space droplet effect, ported from Martijn Steinrucken's
-// "Heartfelt" (shadertoy.com/view/ltffzl), demo scaffolding stripped. Drops act as tiny
-// lenses, the wet glass between them is defocused, and the trails they leave are clear
-// streaks. Moved here from a scene mesh (`layers/precipitation/RainLens.svelte`) because a
-// screen-filling quad in the scene pass overwrites every non-`output` MRT attachment,
-// which was silently disabling motion blur in any rain (`lensState.svelte.ts`).
+// Water on the lens — screen-space droplets, ported from Martijn Steinrucken's
+// "Heartfelt" (shadertoy.com/view/ltffzl). Drops act as tiny lenses, the wet glass
+// between them is defocused, and trails are clear streaks. Moved here from a scene
+// mesh because a screen-filling quad in the scene pass overwrites every non-`output`
+// MRT attachment (was silently disabling motion blur in any rain).
 //
-// The chain carries UNBOUNDED linear HDR (unlike the old mesh's framebuffer read), so this
-// effect MIPS an unclamped sun disc into a screen-wide smear without `inputClamp` -- same
-// trap as bloom, same fix. The mip source is an `rtt()` over the clamped chain colour, not
-// the framebuffer (`viewportMipTexture` is meaningless mid-chain).
+// The chain carries unbounded linear HDR, so this mips an unclamped sun disc into a
+// screen-wide smear without `inputClamp` — same trap and fix as bloom.
 //
-// ONLY WHEN MOVING, and that is also why the drops don't fall: airflow, not gravity, so
-// they stream OUTWARD from the point the camera is heading at -- a windscreen, not a
-// window. See "The windshield" in `build` below for the coordinate change that gives it.
-//
-// ORDER 36 -- after everything that models the scene or the air in it (ao 10, dof 30,
-// fogScatter 32, motionBlur 35), before bloom (40, optics: water-scattered light should
-// then bloom).
+// Only active while moving: airflow, not gravity, carries drops outward from the point
+// the camera is heading at (a windscreen, not a window) — see "The windshield" below.
+// Order 36: after everything modelling the scene/air (ao 10, dof 30, fogScatter 32,
+// motionBlur 35), before bloom (40, so water-scattered light blooms too).
+
 import {
 	Fn,
 	atan,
@@ -44,46 +39,29 @@ import type { EffectDef } from '../types';
 import { mipSource } from './mipSource';
 
 export type RainLensParams = {
-	/**
-	 * Zoom of the droplet pattern. The original animates this between 0.4 and 1.0 for its
-	 * demo; a fixed value reads as a fixed piece of glass, which is what this is. Larger =
-	 * drops spread further apart and appear bigger.
-	 *
-	 * IT ONLY SIZES THE STATIC DROPS NOW. The running layers live in log-polar space
-	 * (see "The windshield" in `build`), where a zoom of the pattern is `log(r) + log(k)` —
-	 * a phase shift along the flow and nothing else. Their size is set by `RADIAL_COLUMNS`,
-	 * which is a build constant rather than a param because the seam at ±π only closes on
-	 * an integer.
-	 */
+	/** Zoom of the static droplet pattern — a fixed piece of glass. The running layers'
+	 * size is set by `RADIAL_COLUMNS` instead (a build constant, not a param — see
+	 * "The windshield"), so this only sizes the static drops. */
 	scale: number;
 	/** Multiplier on the refraction offset. 0 keeps the drops but stops them bending. */
 	refraction: number;
 	/**
-	 * Radius of the CLEAR CENTRE, in half-frame-heights: 0.5 is the top and bottom edge,
-	 * ~0.89 the sides of a 16:9 frame, ~1.02 its corners. Coverage ramps from here to
-	 * `+ COVERAGE_BAND` and the effect is absent inside it.
-	 *
-	 * WHY THE MIDDLE IS EXEMPT. Two reasons that happen to agree. The centre of the frame
-	 * is where the airflow comes FROM, so on a real windscreen it is the last place water
-	 * reaches and the first place it leaves — and it is also what the player is looking
-	 * through. A lens that beads over the whole frame equally reads as a dirty screen; one
-	 * that closes in from the edges reads as weather and stays playable.
-	 *
-	 * Measured in FRAME units, not pattern units, so it does not move when `scale` does.
+	 * Radius of the clear centre, in half-frame-heights. Coverage ramps from here to
+	 * `+ COVERAGE_BAND`. The centre is exempt because that's where airflow comes from
+	 * (the last place water reaches on a windscreen) and it's what the player looks
+	 * through — a lens beading over the whole frame reads as a dirty screen, one that
+	 * closes in from the edges reads as weather. Measured in frame units, not pattern
+	 * units, so it doesn't move when `scale` does.
 	 */
 	clearRadius: number;
-	/**
-	 * Mip level sampled for the wet glass BETWEEN drops, at full wetness. The original runs
-	 * 3-6 here for a deliberately misted windscreen; this is tuned much lower, because a
-	 * game frame that goes soft whenever the player moves is unreadable.
-	 */
+	/** Mip level sampled for the wet glass between drops, at full wetness. Tuned much
+	 * lower than the original's demo value — a game frame that goes soft on every move
+	 * is unreadable. */
 	glassBlur: number;
-	/**
-	 * Mip level sampled THROUGH a drop. Lower than `glassBlur` on purpose: a drop is a lens
-	 * and resolves a sharper (if distorted) image than the film around it.
-	 */
+	/** Mip level sampled through a drop — lower than `glassBlur`, since a drop is a
+	 * lens and resolves sharper than the film around it. */
 	dropBlur: number;
-	/** Ceiling on the linear value the lens is allowed to SAMPLE — see `mipSource.ts`. */
+	/** Ceiling on the linear value the lens is allowed to sample — see `mipSource.ts`. */
 	inputClamp: number;
 };
 
@@ -110,31 +88,20 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 		dropBlur: { min: 0, max: 6, step: 0.1 },
 		inputClamp: { min: 0.5, max: 64, step: 0.5 }
 	},
-	// Weather drives this, not the panel: when the glass is dry the effect is left out of
-	// the graph entirely rather than folded in with a zero uniform. It has to be structural
-	// because a dry lens still evaluates the droplet field three times per pixel,
-	// fullscreen — no uniform value avoids that. See `lensActivity`.
+	// Weather drives this, not the panel: when dry the effect is left out of the graph
+	// entirely rather than folded in at zero, since a dry lens still evaluates the
+	// droplet field three times per pixel, fullscreen — no uniform value avoids that.
 	structuralTag: () => (lensActivity.rain ? 1 : 0),
 	note: 'Driven by weather + camera speed, not by these sliders — it only appears when you move through rain, and the drops stream outward from the centre of the frame as a windscreen does. Tuning here is the look of the glass; the wetting behaviour lives in LensDriver.svelte.',
 	build: (ctx, u) => {
-		// Dry glass: not in the graph at all. Returning the colour untouched makes this a
-		// pass-through, the same shape the LUT effect uses before its texture lands.
 		if (!lensActivity.rain) return ctx.color;
 
-		// ── The ported shader ────────────────────────────────────────────────────────
-		//
 		// Everything below is inside `Fn()`: TSL's assignment operators need a stack to
-		// record into and fail SILENTLY outside one (see layers/skyLayer.ts). The port leans
-		// on `.toVar()` / `.addAssign()` heavily, keeping it diffable against the GLSL
-		// original's mutable style.
+		// record into and fail silently outside one (layers/skyLayer.ts). Leans on
+		// `.toVar()`/`.addAssign()` to stay diffable against the GLSL original.
 
-		/**
-		 * The shader's `S(a, b, t)`, written out rather than deferred to TSL's `smoothstep`.
-		 *
-		 * The port needs the DESCENDING form -- `Saw` calls it as `S(1., b, t)` with a > b,
-		 * and so does the main drop -- and WGSL leaves `smoothstep` UNDEFINED when
-		 * edge0 >= edge1. The explicit clamp is defined for both orders.
-		 */
+		/** The shader's `S(a, b, t)`: needs the DESCENDING form (`Saw` calls it with
+		 * a > b), and WGSL leaves `smoothstep` undefined when edge0 >= edge1. */
 		const S = Fn(([a, b, t]: [any, any, any]): any => {
 			const x = t.sub(a).div(b.sub(a)).clamp(0, 1).toVar();
 			return x.mul(x).mul(float(3).sub(x.mul(2)));
@@ -151,7 +118,7 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 
 		const N = Fn(([t]: [any]): any => fract(sin(t.mul(12345.564)).mul(7658.76)));
 
-		/** Rises to 1 at `b`, falls back to 0 at 1 -- one drop's life over its cycle. */
+		/** Rises to 1 at `b`, falls back to 0 at 1 — one drop's life over its cycle. */
 		const Saw = Fn(([b, t]: [any, any]): any => S(float(0), b, t).mul(S(float(1), b, t)));
 
 		/** The small drops that cling in place and slowly fade. */
@@ -168,14 +135,11 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 				.mul(fade);
 		});
 
-		/**
-		 * A layer of drops that run down the glass, each leaving a tapering trail with
-		 * smaller droplets strung along it. Returns (mask, trail).
-		 */
+		/** Drops running down the glass, each leaving a tapering trail with smaller
+		 * droplets strung along it. Returns (mask, trail). */
 		const DropLayer2 = Fn(([uvIn, t]: [any, any]): any => {
-			// The UNSCROLLED coordinate. The original keeps this as `UV` before mutating
-			// `uv`, and uses it for the horizontal wiggle and the trailing droplets, so both
-			// stay pinned to the glass while the drops themselves slide down it.
+			// The unscrolled coordinate — kept for the horizontal wiggle and trailing
+			// droplets, which stay pinned to the glass while the drops slide down it.
 			const uvBase = vec2(uvIn).toVar();
 			const uv = vec2(uvIn).toVar();
 			uv.y.addAssign(t.mul(0.75));
@@ -184,8 +148,7 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 			const grid = a.mul(2);
 			const id = vec2(floor(uv.mul(grid))).toVar();
 
-			// Offset each column by its own random amount, so the drops in neighbouring
-			// columns are not in lockstep.
+			// Offset each column by its own random amount so neighbours aren't in lockstep.
 			uv.y.addAssign(N(id.x));
 			id.assign(vec2(floor(uv.mul(grid))));
 
@@ -211,9 +174,8 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 			const trailFront = S(float(-0.02), float(0.02), st.y.sub(y));
 			const trail = S(r.mul(0.23), r.mul(r).mul(0.15), cd).mul(trailFront).mul(r).mul(r);
 
-			// Droplets strung along the trail, on a grid pinned to the glass. (The original
-			// computes a `droplets`/`trail2` pair it then overwrites unused -- dead code not
-			// reproduced here.)
+			// Droplets strung along the trail, on a grid pinned to the glass. (The
+			// original's unused `droplets`/`trail2` overwrite is dead code, not reproduced.)
 			const dropletY = fract(uvBase.y.mul(10)).add(st.y.sub(0.5));
 			const dd = st.sub(vec2(x, dropletY)).length();
 			const droplets = S(float(0.3), float(0), dd);
@@ -221,59 +183,45 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 			return vec2(mainDrop.add(droplets.mul(r).mul(trailFront)), trail);
 		});
 
-		// ── The windshield ───────────────────────────────────────────────────────────
+		// ── The windshield ──────────────────────────────────────────────────────
 		//
-		// GRAVITY IS NOT WHAT MOVES WATER ON A MOVING WINDSCREEN. Drops land, the airflow
-		// catches them, and they are swept OUTWARD from the point the vehicle is heading
-		// at — which for a forward-facing camera is the centre of the frame. The port's
-		// drops ran straight down, which is what a parked car does; this lens only exists
-		// while the camera is moving (`uWetness` is measured from speed), so down was the
-		// wrong answer in every frame that ever showed it.
+		// Gravity is not what moves water on a moving windscreen: drops land, airflow
+		// catches them, and they sweep outward from the point the vehicle is heading
+		// at — the centre of the frame for a forward-facing camera. The port's drops
+		// ran straight down, which is what a parked car does, and this lens only
+		// exists while the camera is moving, so down was wrong in every frame that
+		// showed it.
 		//
-		// The fix is a change of COORDINATES, not of the shader: the running layers are
-		// evaluated in screen-centred log-polar space, where the field's own "down" axis
-		// IS the radial direction. Every ported line below is untouched and every property
-		// of the original survives — the drops still run in lanes, still leave tapering
-		// trails behind them, still string droplets along those trails — except that the
-		// lanes are now spokes and "behind" points back at the centre of expansion.
+		// The fix is a change of coordinates, not of the shader: the running layers
+		// are evaluated in screen-centred log-polar space, where the field's own
+		// "down" axis IS the radial direction — every ported line survives unchanged,
+		// except lanes become spokes and "behind" points back at the centre.
 		//
-		// WHY LOG-POLAR RATHER THAN PLAIN POLAR. `(θ, log r)` is CONFORMAL: a square cell
-		// maps to a square patch of screen, so drops stay round instead of being stretched
-		// into arcs, and they grow as they travel out — which is the perspective the flow
-		// is a projection of. A constant scroll rate in `log r` is also an accelerating
-		// drop in screen space, exactly as a windscreen looks.
+		// Log-polar rather than plain polar because `(theta, log r)` is conformal: a
+		// square cell maps to a square screen patch, so drops stay round and grow as
+		// they travel out, matching perspective. A constant scroll rate in `log r` is
+		// an accelerating drop in screen space, exactly like a windscreen.
 		//
-		// THE SEAM IS NOT AN APPROXIMATION. At θ = ±π the coordinate jumps by the full
-		// circumference, and the pattern is periodic in x with period 1/12 (`grid.x`), so
-		// the two sides meet cell-for-cell as long as the circumference is an INTEGER
-		// number of columns. `RADIAL_COLUMNS` is that integer, `FLOW_SCALE` is what makes
-		// it so, and the second layer's multiplier is 2 rather than the original's 1.85 for
-		// the same reason. Neighbouring columns carry independent drops anyway (`N(id.x)`
-		// offsets each one), so cell-aligned is all "seamless" has ever meant here.
+		// The seam at theta = +/-pi is exact, not approximate: the pattern is periodic
+		// in x with period 1/12 (`grid.x`), and the two sides meet cell-for-cell as
+		// long as the circumference is an integer number of columns. `RADIAL_COLUMNS`
+		// is that integer and `FLOW_SCALE` is what makes it so.
 		const RADIAL_COLUMNS = 96;
 		const FLOW_SCALE = RADIAL_COLUMNS / (24 * Math.PI);
 
-		/**
-		 * Pattern space → flow space. `x` is the angle around the centre of the frame, `y`
-		 * is the log of the distance from it, NEGATED so that the pattern's own downhill
-		 * direction points outward.
-		 */
+		/** Pattern space -> flow space. `x` is angle around the frame centre, `y` is
+		 * negated log-distance so the pattern's downhill direction points outward. */
 		const flowUV = (p: any) =>
 			vec2(atan(p.y, p.x).mul(FLOW_SCALE), log(p.length().max(1e-3)).mul(-FLOW_SCALE));
 
 		/**
-		 * Static drops (in pattern space, on the glass) plus two running layers (in flow
-		 * space, streaming outward). Returns (mask, trail).
-		 *
-		 * The transform lives HERE, inside the differenced function, so all three
-		 * evaluations share it and the refraction normal is still a screen-space gradient.
+		 * Static drops (pattern space) plus two running layers (flow space). Returns
+		 * (mask, trail). The transform lives here so all three evaluations below share
+		 * it and the refraction normal is still a screen-space gradient.
 		 */
 		const Drops = Fn(([uvIn, t, flow, l0, l1, l2]: [any, any, any, any, any, any]): any => {
-			// The centre of expansion is a singularity: the angular coordinate spins
-			// arbitrarily fast there, so the field aliases into a spinning knot at the exact
-			// centre pixel. This is the guard for THAT, and nothing else — it is a couple of
-			// percent of the frame wide and sits well inside the clear middle that
-			// `coverage` (below) carves out for look reasons.
+			// Guard against the centre-of-expansion singularity (angle spins arbitrarily
+			// fast there) — a couple percent of the frame, inside the clear middle anyway.
 			const r = uvIn.length();
 			const hub = smoothstep(float(0.012), float(0.09), r);
 			const uvFlow = flowUV(uvIn);
@@ -283,75 +231,61 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 			const m2 = DropLayer2(uvFlow.mul(2), flow).mul(l2.mul(hub)).toVar();
 
 			const c = S(float(0.3), float(1), s.add(m1.x).add(m2.x));
-			// `m1.y * l0` and `m2.y * l1` are the original's weights, and they do look like
-			// an off-by-one against l1/l2 -- kept as written, since this only feeds the
-			// blur term and changing it would silently retune the look away from the source.
+			// `m1.y * l0` / `m2.y * l1` look off-by-one against l1/l2 — kept as the
+			// original wrote them; this only feeds the blur term.
 			return vec2(c, m1.y.mul(l0).max(m2.y.mul(l1)));
 		});
 
-		// ── Composition ──────────────────────────────────────────────────────────────
+		// ── Composition ──────────────────────────────────────────────────────────
 
-		// `screenUV` follows the WebGPU convention, y = 0 at the TOP of the screen
-		// (ScreenNode flips WebGL to match). The shader is Shadertoy's, where y = 0 is the
-		// BOTTOM and drops fall by scrolling +y. Rebuilding that convention once here keeps
-		// every ported line below readable against the original instead of scattering sign
-		// flips through the maths.
+		// screenUV has y = 0 at the top (WebGPU convention); the ported shader is
+		// Shadertoy's, y = 0 at the bottom. Flip once here so the ported lines below
+		// stay readable against the original instead of scattering sign flips.
 		const shaderUV = vec2(screenUV.x, screenUV.y.oneMinus());
 
-		// The pattern lives in aspect-corrected space centred on the screen, exactly the
-		// original's `uv = (fragCoord - .5*iResolution.xy) / iResolution.y`.
 		const aspect = screenSize.x.div(screenSize.y);
 		const frameUV = shaderUV.sub(0.5).mul(vec2(aspect, 1));
 		const patternUV = frameUV.mul(u.scale);
 
-		// COVERAGE IS RADIAL — see `clearRadius`. It is applied to the FINAL BLEND rather
-		// than to the drop field, which is the difference between a lens that is clear in
-		// the middle and a lens with no drops in the middle: the field still runs across
-		// the whole frame (drops enter the covered region already formed, instead of
-		// materialising at its boundary), it simply is not composited where the glass is
-		// clear. Cheap, too — the field is evaluated either way, and this is one mix.
+		// Coverage is applied to the final blend rather than the drop field: the field
+		// still runs across the whole frame (drops enter the clear region already
+		// formed) and simply isn't composited where the glass is clear.
 		const COVERAGE_BAND = 0.4;
 		const coverage = smoothstep(u.clearRadius, u.clearRadius.add(COVERAGE_BAND), frameUV.length());
 
-		// TWO CLOCKS, because the drops do two things. `t` is a drop's own life — beading
-		// and fading in place — and it ticks whenever the glass is wet. `flow` is the
-		// airflow that carries the running layers outward, and it all but stops when the
-		// camera does. See `uFlowTime` in lensState.svelte.ts.
+		// Two clocks: `t` is a drop's own life (beading/fading in place), ticking
+		// whenever the glass is wet; `flow` carries the running layers outward and
+		// nearly stops when the camera does (see `uFlowTime` in lensState.svelte.ts).
 		const t = uDropTime;
 		const flow = uFlowTime;
 
-		// Layer weights, as the original derives them from `rainAmount`.
 		const staticDrops = S(float(-0.5), float(1), uWetness).mul(2);
 		const layer1 = S(float(0.25), float(0.75), uWetness);
 		const layer2 = S(float(0), float(0.5), uWetness);
 
 		const c = Drops(patternUV, t, flow, staticDrops, layer1, layer2).toVar();
 
-		// Normals by finite difference -- the original's "expensive" path. The cheap
-		// `dFdx`/`dFdy` variant is genuinely cheaper, but this pattern is built on `floor`
-		// and `fract` grids and screen-space derivatives blow up across every cell boundary,
-		// stamping the grid into the refraction. Three evaluations is the honest price, and
-		// it is also why a dry lens must leave the graph rather than multiply out to zero.
+		// Normals by finite difference — the pattern is built on floor/fract grids
+		// where screen-space derivatives (dFdx/dFdy) would stamp the grid into the
+		// refraction. Three evaluations is the honest price; also why a dry lens must
+		// leave the graph rather than multiply out to zero.
 		const e = float(0.001);
 		const cx = Drops(patternUV.add(vec2(e, 0)), t, flow, staticDrops, layer1, layer2).x;
 		const cy = Drops(patternUV.add(vec2(0, e)), t, flow, staticDrops, layer1, layer2).x;
 		const n = vec2(cx.sub(c.x), cy.sub(c.x)).mul(u.refraction);
 
-		// Blur: heaviest on the bare wet film, clearing along trails (`c.y`) and clearer
-		// still seen through a drop (`c.x`).
+		// Blur: heaviest on bare wet film, clearing along trails (c.y) and clearer
+		// still through a drop (c.x).
 		const focus = mix(u.glassBlur.sub(c.y), u.dropBlur, S(float(0.1), float(0.2), c.x));
 
 		// Back to the renderer's own convention for the sample, undoing the flip above.
 		const refractedUV = shaderUV.add(n);
 		const sampleUV = vec2(refractedUV.x, refractedUV.y.oneMinus());
 
-		// The mip source — mipSource.ts owns the clamp and the configure-in-place rules.
 		const frame = mipSource(ctx, { clamp: u.inputClamp, uv: sampleUV, level: focus });
 
-		// `wetness` was the mesh's `opacityNode` against NormalBlending — the same blend,
-		// written out. Everything the effect does (refraction, blur, drops) arrives through
-		// this one number, and the base term is the UNCLAMPED colour so the sun keeps its
-		// real brightness wherever the lens is thin.
+		// `wetness` was the mesh's opacityNode against NormalBlending, written out. The
+		// base is the unclamped colour so the sun keeps real brightness where thin.
 		return mix(ctx.color, frame, uWetness.mul(coverage));
 	}
 };

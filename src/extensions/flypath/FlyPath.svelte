@@ -81,15 +81,10 @@
 		};
 		if (!editorCamera.state.enabled) editorCamera.setEnabled(true);
 		editorCamera.setControlsSuspended(true);
-		// THE PiP IS A SECOND FULL SCENE RENDER, and it is on by default. Studio's
-		// "Default Camera" pane runs `renderer.render(scene, defaultCamera)` from a task
-		// registered `{ before: autoRenderTask }` (DefaultCamera.svelte), so every frame of
-		// a take pays an extra scene traversal and draw-call submission for a picture that
-		// cannot reach the output — it is blitted into a tweakpane pane, an HTML sibling of
-		// the canvas, and the main pipeline pass overwrites its viewport region before
-		// capture's grab runs anyway. Pure cost per encoded frame, so a take turns it off.
-		// (It does NOT re-render shadow maps: SkyLight sets `shadow.autoUpdate = false` and
-		// Renderer.svelte arms `needsUpdate` in a later stage.)
+		// Studio's Default Camera PiP is a second full scene render every frame that
+		// can never reach the output (blitted into a tweakpane pane, overwritten
+		// before capture's grab runs) — pure cost per encoded frame, so a take turns
+		// it off. See flypath/CLAUDE.md.
 		if (suppressPip) editorCamera.setDefaultCameraEnabled(false);
 		return true;
 	};

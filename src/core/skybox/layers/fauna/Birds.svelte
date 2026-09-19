@@ -1,77 +1,35 @@
 <script lang="ts">
-	// Bird flocks as sky dressing -- a few distant flocks wheeling over the sky plus
-	// some stray birds drifting between them, ported from three.js's
-	// `webgpu_compute_birds` example and rescaled from its 800-unit murmuration to
-	// ambient fauna you notice the way you notice real birds: mostly at the edge of
-	// attention, wheeling far off against the clouds.
+	// Bird flocks as sky dressing — a few distant flocks wheeling over the sky plus some
+	// stray birds drifting between them, ported from three.js's `webgpu_compute_birds`
+	// example and rescaled from its 800-unit murmuration to ambient fauna at the edge
+	// of attention.
 	//
-	// WHY GPU COMPUTE, unlike every other particle layer here. Stars, Rain and Snow are
-	// stateless -- each particle is a pure function of `time`, so a vertex node
-	// synthesises motion at zero per-frame cost. Flocking is not: separation, alignment
-	// and cohesion are O(n²) interactions between PERSISTENT neighbours, so each bird
+	// GPU compute, unlike every other particle layer here: flocking (separation,
+	// alignment, cohesion) is O(n^2) between persistent neighbours, so each bird
 	// carries position, velocity and an attitude vec4 (flap phase, roll, previous
-	// heading) in `instancedArray` storage buffers that two compute passes integrate
-	// every frame. Three buffers exactly, which is what fits under the default
-	// `maxStorageBuffersInVertexStage` (App.svelte requests no `requiredLimits` — see the
-	// attitude-vec4 note below) -- anything else a bird needs to remember goes in the
-	// vec4, and anything that never changes goes in a plain vertex attribute. That is also
-	// why this is the one layer that cannot run on the WebGL2 fallback (three's own example
-	// is marked "TODO: Fix example with WebGL backend"): the task gates on the live backend
-	// and the flock simply never mounts work elsewhere.
+	// heading) in `instancedArray` storage buffers integrated by two compute passes per
+	// frame — three buffers exactly, to fit under the default
+	// `maxStorageBuffersInVertexStage`. The one layer that can't run on the WebGL2
+	// fallback (three's own example is unfixed there); the task gates on the live
+	// backend and never mounts work elsewhere.
 	//
-	// FEW FLOCKS AND STRAYS FROM ONE PASS. Every bird carries its own FLOCK ANCHOR in a
-	// read-only storage buffer, and the centre-pull targets that instead of a shared
-	// origin -- so one compute pass serves several independent flocks (their anchors sit
-	// far apart, well outside the ~12-unit interaction zone, so flocks never merge) plus
-	// single birds anchored to points of their own. A strayed bird that crosses a
-	// flock's zone briefly joins it, which reads as exactly what a stray does.
+	// Several flocks and strays from one pass: every bird carries its own flock anchor
+	// in a read-only storage buffer, and the centre-pull targets that instead of a
+	// shared origin. The anchor is a seed, not a leash — the pull target wanders on
+	// incommensurate sines (a constant pull to a fixed point reads as birds on rails).
 	//
-	// THE ANCHOR IS A SEED, NOT A LEASH. A constant pull to a fixed point is a closed
-	// orbit: with the speed floor, a flock laps the same circuit for as long as you
-	// watch, which reads as birds on rails. The pull target instead WANDERS -- sums of
-	// incommensurate sines seeded per flock, plus a smaller per-bird drift so the flock
-	// is not a rigid formation -- and the pull strength itself breathes on a slow sine.
-	// The paths are quasi-periodic: they never close, and no two flocks wander in
-	// phase. Gust turbulence scaled by the wind channel rides on top.
+	// A bird banks (roll off the yaw rate, applied first in the rotation chain), glides
+	// (a burst cycle drops the flap to a held dihedral, overridden by a climb term) and
+	// has a seeded per-bird size — the three things that stop a flock reading as a
+	// particle system.
 	//
-	// WHAT AN INDIVIDUAL BIRD DOES, which is where a flock stops reading as a particle
-	// system. Three things, all of them per-bird and none of them in the reference:
-	//   - IT BANKS. The reference's heading frame is yaw and pitch only, so its birds
-	//     slide round their turns flat. Roll is driven off the yaw RATE, chased rather
-	//     than snapped, and applied FIRST in the rotation chain because it turns about
-	//     the bird's own forward axis. At this distance a wheeling flock is mostly read
-	//     by its tilt.
-	//   - IT GLIDES. Nothing beats its wings continuously. A slow per-bird burst cycle
-	//     drops the flap to a held dihedral and back, overridden by a climb term -- a
-	//     bird pulling up always beats.
-	//   - IT HAS A SIZE. A seeded per-bird scale, so a flock reads as individuals at
-	//     different depths rather than one stamped sprite repeated.
+	// Bounded, not just placed: no bird below `MIN_ALT` or inside `KEEP_OUT` of the
+	// origin, soft decelerations in the velocity pass and hard clamps in the position
+	// pass. Descriptor-driven like the weather: diurnal, grounded by precipitation/fog
+	// (read as visibility, since sky layers run `fog = false`), bent downwind, plumage
+	// mixed from the key-light hue. Drawn under the cloud deck (2.2 < 2.5).
 	//
-	// BOUNDED, NOT JUST PLACED. The layout keeps the flocks far away, but distance is
-	// enforced rather than hoped for: no bird may go below MIN_ALT (the ground plane
-	// and the scene's furniture live there) or inside KEEP_OUT of the origin (the
-	// cameras sit within ~13 of it) -- soft decelerations in the velocity pass, hard
-	// clamps in the position pass. The centre-pull is likewise a spring that scales
-	// with distance from the target, so weather bends a flock downwind but can never
-	// carry it off.
-	//
-	// DESCRIPTOR-DRIVEN, like the weather it lives in:
-	//   - DAY. Birds are diurnal. They fade out through twilight on the same
-	//     `starVisibility` ramp that fades Stars in, so dusk hands the sky over.
-	//   - STORMS. Real birds land before weather arrives; precipitation or fog thick
-	//     enough grounds the flock. It cannot simply be fogged to the same effect --
-	//     sky layers run `fog = false` by contract (skyLayer.ts) -- so the channel is
-	//     read as visibility instead.
-	//   - WIND. The weather's bearing pushes the flock downwind as an acceleration, so
-	//     a rising wind first bends the flock and only later hides it.
-	//   - LIGHT. The plumage rides the key-light hints: a dark end and a light end of
-	//     the light's hue, mixed per bird by a seeded shade -- mostly near-black and
-	//     mid-grey birds with a few pale ones, the mottle a real flock shows at
-	//     distance, rather than one flat fill colour.
-	//
-	// Drawn UNDER the cloud deck (renderOrder 2.2, deck is 2.5): where the deck is
-	// dense the birds go behind it, which is the look -- they are part of the
-	// skybox's weather, not actors in front of it.
+	// Full rationale: `../CLAUDE.md` under "fauna/".
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';

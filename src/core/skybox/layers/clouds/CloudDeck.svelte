@@ -1,46 +1,23 @@
 <script lang="ts">
-	// The second cloud deck: heavy-weather mass that SkyMesh cannot render.
+	// The second cloud deck: heavy-weather mass with real parallax, which SkyMesh's
+	// plane-projected clouds cannot have (its overcast answers to camera rotation only
+	// and slides with translation like a decal under it).
 	//
-	// WHY IT EXISTS. Originally because SkyMesh's cloud mask saturated past ~0.52
-	// coverage, so `rain`, `snow` and `storm` (0.8-1.0) had nowhere left to go: heavier
-	// weather could only get denser and lower, never *bigger*. **That limit is gone as of
-	// three r186**, which rewrote the field (see Sky.svelte's remap note) -- the dome can
-	// carry the whole channel through to overcast on its own now.
+	// It's a marched slab, not a plane: `steps` slices between two apparent altitudes,
+	// composited front to back with an alpha early-out (three's `webgpu_volume_cloud`
+	// shape), with self-shadowing (one tap toward the key light per slice) free once
+	// there are slices to shadow. No 3D texture — the noise stays analytic and the
+	// slices are sheared apart, so it can scroll with the wind accumulator, which a
+	// baked volume texture couldn't.
 	//
-	// What did NOT change is the reason the mass has to be a slab: SkyMesh projects its
-	// clouds onto a plane at infinity, so its overcast answers to camera ROTATION only and
-	// slides with translation like a decal. This layer is the parallax, and the host for
-	// the in-deck lightning glow. Sky.svelte's ceiling is held under 1 so the dome stays
-	// broken enough for that mass to read in front of it; if storms come out too thick,
-	// raise `massFrom` here rather than lowering the dome further. The faint sheared
-	// cirrus band across the middle of the channel (so `cloudy`/`overcast` gain streaks)
-	// is unaffected either way.
+	// Wind scroll is a self-accumulated UV offset (layers/CLAUDE.md) — SkyMesh's
+	// `cloudSpeed` uniform can't take the channel, since it multiplies absolute elapsed
+	// time.
 	//
-	// IT IS A SLAB, NOT A PLANE. The deck marches `steps` slices between two apparent
-	// altitudes, compositing front to back with the alpha early-out from three's
-	// webgpu_volume_cloud. The motive is PARALLAX, not detail: a plane-projected field
-	// only responds to camera rotation, so under translation it slid along like a decal.
-	// Integrating through a thickness is the only fix for that, and self-shadowing (one
-	// tap toward the key light per slice) comes free once there are slices to shadow.
-	//
-	// What it does NOT do is what the example does: no 3D texture. A 128-cube costs 2 MB
-	// and 2.1M CPU noise calls at boot, and being a ball rather than a tiling volume it
-	// cannot scroll -- which would cost the wind accumulator, a hard requirement. The
-	// noise stays analytic and the slices are sheared apart instead.
-	//
-	// WIND. The deck scrolls on a UV offset it accumulates itself in its task (the
-	// self-accumulation rule, layers/CLAUDE.md) -- SkyMesh's `cloudSpeed` uniform cannot
-	// take the channel, because it multiplies absolute elapsed time.
-	//
-	// Pure descriptor consumer, like every sky layer: reads the `weather` and `light`
-	// hints in a task, writes only its own uniforms. The light hints carry time of day
-	// AND the deck's own attenuation of the key -- a storm at sunset gets warm edges, an
-	// overcast night goes near-black.
-	//
-	// It also flashes: Lightning.svelte publishes each strike to `flashState` and this
-	// layer lights up around it, localized to the strike's azimuth and weighted by its
-	// own cloud structure. That in-deck glow, not a screen wash, is where a storm's
-	// lightning reads from.
+	// Pure descriptor consumer: reads `weather`/`light` hints in a task, writes only its
+	// own uniforms. Also flashes — Lightning.svelte publishes each strike to
+	// `flashState` and this layer lights up around it, localized to the strike's
+	// azimuth, which is where a storm's lightning actually reads from (not the screen wash).
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';

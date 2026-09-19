@@ -141,22 +141,13 @@
 
 		document.body.appendChild(stats.dom);
 
-		// stats-gl hardcodes `position: fixed; top: 0; left: 0` in its own `initializeDOM`,
-		// which parks the panel under the Studio toolbar. Move it to the right edge,
-		// vertically centred — clear of both the toolbar and the bottom-right Default
-		// Camera preview.
-		//
-		// The container has to be given a size first. stats-gl lays every panel out as
-		// `position: absolute` inside it (`left: 0; top: id * 48px`, see `resizePanel`),
-		// so the div itself measures 0x0. That goes unnoticed at `top: 0; left: 0`, but it
-		// makes right/centre anchoring meaningless: the right edge of a zero-width box sits
-		// at the viewport edge and every child then starts *outside* it, and
-		// `translateY(-50%)` of zero height shifts nothing. Measuring the children keeps
-		// this correct as panels are added or removed above.
-		//
-		// Set as individual properties rather than `cssText` so stats-gl's own `opacity`
-		// and `z-index` survive. Nothing rewrites them later: `initializeDOM` runs once
-		// from the constructor, and the resize handler only resizes the panel canvases.
+		// stats-gl hardcodes `position: fixed; top: 0; left: 0`, which parks the panel
+		// under the Studio toolbar — move it to the right edge, vertically centred.
+		// The container needs a size first: stats-gl lays panels out as
+		// `position: absolute` inside it, so the div itself measures 0x0 and
+		// right/centre anchoring would be meaningless without measuring the children.
+		// Set as individual properties, not `cssText`, so stats-gl's own `opacity`
+		// and `z-index` survive.
 		const panels = Array.from(stats.dom.children) as HTMLElement[];
 		const contentWidth = panels.reduce((max, p) => Math.max(max, p.offsetLeft + p.offsetWidth), 0);
 		const contentHeight = panels.reduce((max, p) => Math.max(max, p.offsetTop + p.offsetHeight), 0);
@@ -169,26 +160,14 @@
 		stats.dom.style.transform = 'translateY(-50%)';
 	});
 
-	// stats-gl turns on `renderer.backend.trackTimestamp` for trackGPU/trackCPT, but on a
-	// three WebGPURenderer it only ever *reads* `renderer.info.<queue>.timestamp` — it never
-	// resolves the queries. A pool's `currentQueryIndex` is only rewound inside
-	// `_resolveQueries`, so an unresolved pool fills up and three warns
-	// "WebGPUTimestampQueryPool [<queue>]: Maximum number of queries exceeded".
-	// Resolving here both silences that and is what actually populates the values stats-gl
-	// reads.
-	//
-	// BOTH QUEUES, and the compute one is not optional merely because compute is. three
-	// keeps a SEPARATE POOL PER TYPE -- the render context's uid picks it, `c:` prefix for
-	// compute -- so resolving RENDER never touches the compute pool, and any compute
-	// work (Birds.svelte) fills that one on its own until it warns.
-	//
-	// Tracked per queue rather than under one flag, so a slow queue cannot hold up the
-	// other's turn. Resolving a queue that ran no passes this frame is a no-op inside three
-	// (`currentQueryIndex === 0` returns the last value), so the compute call costs
-	// nothing on frames with no compute passes.
-	//
-	// Fire-and-forget: it must not block the frame, and it rejects harmlessly if the
-	// device is lost or the feature is unsupported.
+	// stats-gl turns on `renderer.backend.trackTimestamp` but only ever reads
+	// `renderer.info.<queue>.timestamp` — it never resolves the queries, so an
+	// unresolved pool fills up and three warns "Maximum number of queries
+	// exceeded". Resolving here silences that and populates the values stats-gl
+	// reads. Both queues, not just render: three keeps a separate pool per
+	// type, so any compute work (Birds.svelte) fills its own pool independently.
+	// Tracked per queue so a slow one can't hold up the other; fire-and-forget,
+	// rejecting harmlessly if the device is lost or the feature unsupported.
 	const TIMESTAMP_QUEUES = [TimestampQuery.RENDER, TimestampQuery.COMPUTE] as const;
 	const resolving = new Set<string>();
 	const resolveGpuTimestamps = () => {

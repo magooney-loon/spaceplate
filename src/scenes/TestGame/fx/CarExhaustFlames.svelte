@@ -33,62 +33,35 @@
 	// Exhaust flames — pops and bangs on nasty downshifts (and limiter bangs),
 	// adapted from three.js's webgpu_tsl_vfx_flames example (TSL VFX, @cmzw_).
 	//
-	// MOUNTING: inside the car's ×2.5 group, so everything below is authored in
-	// MODEL METRES, nose −Z — the same contract as CarHeadlights. The tips are
-	// MEASURED, not eyeballed: decode the GLB's Draco `Nickel_Smooth` mesh (the
-	// chrome exhaust) and cluster the rear-most vertices — two clean rings at
-	// (±0.446, 0.293, 2.053), symmetric about the centreline. Tweak TIP_L/TIP_R
-	// if the model is ever replaced; flip DEBUG_TIPS to see cones at the tips.
+	// Mounted inside the car's x2.5 group, so everything below is model metres,
+	// nose -Z. The tips are measured off the GLB's chrome exhaust mesh, not
+	// eyeballed (see TIP_L/TIP_R; flip DEBUG_TIPS to see cones at the tips).
 	//
-	// SHAPE: three stacked layers per tip, all additive:
-	//   flame — THREE radial planes (0°/60°/120° about the jet axis — two
-	//           crossed planes read as a flat X from halfway angles) + a
-	//           rear-facing blob (what a chase cam dead behind sees)
-	//   ember — sparser white-hot tongues on two crossed planes
-	//   glow  — big soft radial halo that flashes on IGNITION and dies in
-	//           ~150 ms. The same flash value blows the flame's width up at
-	//           birth (width ×(1 + 0.5·flash)) — that initial expansion is
-	//           what makes a pop read as a BANG instead of a torch.
-	//   light — a real PointLight on that same flash, so the bang throws light on
-	//           the road and the car's rear instead of glowing at nothing. One
-	//           lamp for both pipes, permanently mounted; the rules are strict and
-	//           they are at POP_LIGHT_* below. Read them before touching it.
-	// The whole group scales with intensity (the jet stretches rearward), so
-	// the physics task only touches group scale/visible — no per-vertex work
-	// after mount. Each tip gets its OWN material instances (uniform values
-	// differ, the node graphs are identical, so they share compiled programs)
-	// — that is what lets one pipe bang harder than the other.
+	// Three stacked additive layers per tip: flame (radial planes + a
+	// rear-facing blob for a chase cam dead behind), ember (sparser white-hot
+	// tongues), glow (a soft halo that flashes on ignition and dies in ~150ms —
+	// the same flash value blows the flame's width up at birth, which is what
+	// makes a pop read as a bang rather than a torch), and light (a real
+	// PointLight on that same flash so the bang actually lights the road — see
+	// POP_LIGHT_* below, read those before touching it). The group scales with
+	// intensity so the physics task only touches scale/visible after mount.
 	//
-	// NO TWO POPS ALIKE. Every pop rolls a STYLE, and style drives both the
-	// CPU side (amplitude, decay, length, width) and the shader via uStyle:
-	//   0 CRACK — short, sharp, narrow; fastest flicker; can double-bang
-	//   1 BURN  — lazier and longer, slower rolling noise
-	//   2 BALL  — fat fireball, wider than long, biggest white core + embers
-	// On top of that: per-pop random noise phase (uPhase, per tip), per-tip
-	// energy shares (≈18% of pops are effectively one-sided), and crack/ball
-	// can queue a second, smaller bang 60–130 ms later (anti-lag stutter).
+	// No two pops alike: every pop rolls a style (CRACK short/sharp/can
+	// double-bang, BURN lazy/long, BALL fat fireball), plus per-pop noise phase
+	// and per-tip energy shares so one pipe can bang harder than the other.
 	//
-	// TRIGGER (physics task, reads carSim after TestGame's task wrote it — the
-	//   same parent-first ordering CarWheels relies on):
-	//   downshift — gear DROPS INTO a real gear (≥1; N/R transitions never
-	//               pop). Burst size grows with rpm — a money downshift near
-	//               the limiter is a fireball, a lazy 6→5 is a hiccup.
-	//   limiter   — each fuel-cut bounce (rising edge of `limiting`) pops small.
+	// Triggered from the physics task (after TestGame's task writes carSim):
+	// a downshift into a real gear (burst size grows with rpm) or a limiter
+	// fuel-cut bounce (pops small).
 	//
-	// NITROUS: while `carSim.nitrous` flows, two things change. (1) uNitro (a GLOBAL
-	// uniform like uStyle — spray is engine state, not per-pop) crossfades every
-	// layer's palette to a cold one — flame gradient indigo→royal→electric→ice,
-	// icy ember rims, deep-blue glow — so pops that land mid-spray bang BLUE. (2) A
-	// PILOT FLAME: the flow floors both tips' energy (no flash, no style roll — just
-	// a steady jet), which is the continuous blue torch the chase cam reads as "the
-	// system is on", plus a faint steady flash floor so the glow halos stay lit.
+	// Nitrous: while `carSim.nitrous` flows, every layer's palette crossfades
+	// to a cold blue one and a floor on both tips' energy gives a continuous
+	// pilot flame (no flash, no style roll) that reads as "the system is on".
 	//
-	// SMOKE: every bang also coughs puffs — see the smoke section below. Unlike
-	// the flames (car-local jets) the puffs are WORLD-ANCHORED, spawned at the
-	// tip's world position and parented to the scene, so they hang in the air
-	// while the car drives away; and they NORMAL-blend (they dim what is behind
-	// them — the opposite job to the additive flames). Billboards via a camera
-	// quaternion copy in the task.
+	// Every bang also coughs puffs (see the smoke section below) — unlike the
+	// flames these are world-anchored (spawned at the tip's world position,
+	// parented to the scene, so they hang while the car drives away) and
+	// normal-blend rather than additive.
 
 	const DEBUG_TIPS = false;
 
@@ -112,36 +85,22 @@
 	/** 1/s — how fast the ignition flash (glow + width boost) dies. */
 	const FLASH_DECAY = 14;
 
-	// ── The pop LIGHT ───────────────────────────────────────────────────────────
-	// A bang throws light on the road, the barriers and the car's own rear — the
-	// additive quads glow but illuminate nothing, so without this a night pop is a
-	// sticker floating in the dark. Driven by the SAME flash value as the glow
-	// halo, so the light is the bang by construction: full at ignition, gone in
-	// ~150 ms, and floored by the nitrous pilot so a spray keeps a steady blue
-	// wash under the car.
+	// ── The pop light ────────────────────────────────────────────────────────
+	// A bang throws light on the road and the car's own rear — the additive
+	// quads glow but illuminate nothing, so without this a night pop is a
+	// sticker floating in the dark. Driven by the same flash value as the glow
+	// halo, floored by the nitrous pilot so a spray keeps a steady wash under
+	// the car.
 	//
-	// **IT IS MOUNTED PERMANENTLY AND ONLY ITS `intensity` MOVES.** Never gate a
-	// light with `visible`, and never toggle `castShadow`: three's `_projectObject`
-	// skips invisible objects before `renderList.pushLight()`
-	// (`Renderer.js:3082`), and `LightsNode.customCacheKey()` hashes every light's
-	// `id` and `castShadow` — so removing one from the list changes the cache key
-	// of EVERY lit material in the scene and rebuilds all of their shaders. On a
-	// per-pop toggle that is a full recompile several times a second. Modulating
-	// intensity touches a uniform and nothing else. (`CarHeadlights` already does
-	// this — `light.intensity = on ? m.intensity : 0`.)
+	// Mounted permanently — only `intensity` moves. Never gate a light with
+	// `visible` or toggle `castShadow`: the lights array is hashed into every
+	// lit material's cache key, so toggling one recompiles the whole scene's
+	// shaders (`CarHeadlights` follows the same rule). No shadow on this one —
+	// a shadow-casting PointLight is six shadow renders.
 	//
-	// The standing cost is one more light evaluated per fragment of every lit
-	// material, always, even at intensity 0 — there is no way to have the light
-	// available and not pay for it. This was the FIFTH light in the scene (sky
-	// key + sky fill + two headlight projectors; CarTaillights' tail pair has
-	// since taken it to seven), so it is over the three-light guideline in
-	// DOCS/best-practices.md §4; the budget that bought it is §1.1 of
-	// DOCS/testperf.md, which took 313 725 triangles out of the shadow pass. No
-	// shadow on this one — a shadow-casting PointLight is SIX shadow renders.
-	//
-	// ONE light, not one per pipe: two point sources 0.9 m apart, lit for 150 ms,
-	// are not resolvable. The per-pipe asymmetry `fire()` rolls is kept by sliding
-	// this single light toward the dominant pipe instead (see `fire`).
+	// One light, not one per pipe: two sources 0.9m apart lit for 150ms aren't
+	// resolvable. The per-pipe asymmetry is kept by sliding this single light
+	// toward the dominant pipe instead (see `fire`).
 	/** Candela at full flash. Physical falloff (`intensity / d²` at decay 2), same
 	 *  order as the headlights' main beam. Tuned by eye — turn it down if a pop
 	 *  blows out the tarmac at night. */

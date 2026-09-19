@@ -1,13 +1,10 @@
-// THE REGISTRY — sound declarations and their decoded buffers.
+// Sound declarations and their decoded buffers. Pure storage and loading — it plays
+// nothing. `audio.ts` is the facade that turns a declaration into a voice, and
+// `voices.ts` owns the THREE.Audio objects.
 //
-// Pure storage and loading; it plays nothing. `audio.ts` is the facade that turns a
-// declaration into a voice, and `voices.ts` owns the THREE.Audio objects.
-//
-// LOADING IS OURS, not Threlte's `<Audio src>` (`useLoader(AudioLoader)`), for two
-// reasons: it hands back the decoded `AudioBuffer` directly — which is what the
-// `OfflineAudioContext` replay (render.ts) reuses rather than decoding twice — and it gives
-// a real per-sound status in place of the hand-maintained `AUDIO_TOTAL = 5 + …` counter
-// that used to live in GlobalAudio.svelte.
+// Loading is ours, not Threlte's `<Audio src>`: it hands back the decoded `AudioBuffer`
+// directly, which the OfflineAudioContext replay (render.ts) reuses rather than
+// decoding twice.
 
 import { BASE_URL } from '$extensions/settings';
 import { logSound } from '$extensions/logger';
@@ -38,11 +35,9 @@ const summarize = (): void => {
 	readyPromise = null;
 };
 
-/**
- * Resolves once every sound registered SO FAR has settled (loaded or failed). Callers
- * that need a buffer to exist — the music and ambience beds — await this; callers that
- * already poll every frame (weatherAudio) just retry instead.
- */
+/** Resolves once every sound registered so far has settled (loaded or failed). Callers
+ * that need a buffer to exist await this; callers that already poll every frame
+ * (weatherAudio) just retry instead. */
 export const soundsReady = (): Promise<void> => {
 	if (inFlight === 0) return Promise.resolve();
 	readyPromise ??= new Promise<void>((resolve) => {
@@ -67,8 +62,7 @@ const load = (soundId: string, def: SoundDef): void => {
 	const urls = typeof def.url === 'string' ? [def.url] : [...def.url];
 	inFlight += urls.length;
 	void Promise.all(urls.map((url) => decode(soundId, url))).then((decoded) => {
-		// A failed variant is dropped from the draw rather than failing the sound — a
-		// clap must never wait on a fetch, and three takes are still three takes.
+		// A failed variant is dropped from the draw rather than failing the sound.
 		const ok = decoded.filter((b): b is AudioBuffer => b !== null);
 		if (ok.length > 0) buffers.set(soundId, ok);
 		inFlight -= urls.length;
@@ -78,10 +72,8 @@ const load = (soundId: string, def: SoundDef): void => {
 	});
 };
 
-/**
- * Hand the registry the live `AudioContext`. Called once by the runtime, after the
- * listener exists. Anything declared before this point loads now.
- */
+/** Hand the registry the live `AudioContext`. Called once by the runtime, after the
+ * listener exists. Anything declared before this point loads now. */
 export const attachAudioContext = (ctx: AudioContext): void => {
 	if (context) return;
 	context = ctx;

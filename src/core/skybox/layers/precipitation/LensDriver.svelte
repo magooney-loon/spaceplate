@@ -1,22 +1,14 @@
 <script lang="ts">
-	// THE CPU HALF OF BOTH LENSES. Renders nothing: it measures the camera, reads the
+	// The CPU half of both lenses. Renders nothing: measures the camera, reads the
 	// weather, and writes `lensState`'s uniforms, which the two chain effects
-	// (`core/postprocessing/effects/rainLens.ts`, `snowLens.ts`) sample. See
-	// `lensState.svelte.ts` for why the split exists at all.
+	// (`core/postprocessing/effects/rainLens.ts`, `snowLens.ts`) sample. One driver for
+	// both since rain and snow are complementary halves of one `precipitationType`
+	// channel and can only overlap during sleet — a shared measurement is the honest model.
 	//
-	// ONE DRIVER, TWO LENSES, because they were measuring the SAME THING TWICE. Both old
-	// components ran an identical camera-speed task — forward/lateral decomposition,
-	// teleport rejection, the lot — and the copies had already started to drift apart in
-	// their comments. Rain and snow are complementary halves of one `precipitationType`
-	// channel and can only overlap during sleet, so a shared measurement is also the
-	// honest model of them.
-	//
-	// IT MOUNTS INSIDE THE SKY GROUP, where the lens meshes used to. That is deliberate:
-	// the layers only mount in procedural sky mode, so an HDR or cube environment leaves
-	// this unmounted, the uniforms sit at zero and both effects build as pass-throughs —
-	// exactly the behaviour the meshes had. (Weather AUDIO lives outside the layers for
-	// the opposite reason: a looping bed must not stop when the env mode changes. A lens
-	// is visual, so it follows the visuals.)
+	// Mounts inside the sky group, where the lens meshes used to: the layers only mount
+	// in procedural sky mode, so an HDR/cube environment leaves this unmounted and both
+	// effects build as pass-throughs. (Weather audio lives outside the layers for the
+	// opposite reason — a looping bed must not stop when the env mode changes.)
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import { Vector3 } from 'three/webgpu';
 	import { clamp01, descriptor, rainAmount, snowAmount } from '../../model';

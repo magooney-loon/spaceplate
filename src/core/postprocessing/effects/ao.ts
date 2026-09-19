@@ -20,12 +20,9 @@ export type AoParams = {
 	distanceExponent: number;
 	/** How fast occlusion decays with distance. Lower = larger-looking AO. */
 	distanceFallOff: number;
-	/**
-	 * AO render-target size as a fraction of the DRAWING BUFFER. Structural (resizes
-	 * the RT; the node reads it as a plain property, not a uniform). **Multiplies on
-	 * top of Settings ▸ Render Scale, does not replace it** — AO buffer is
-	 * `canvas × dpr × renderScale × this`, so 0.5 on both is a sixteenth of native.
-	 */
+	/** AO render-target size as a fraction of the drawing buffer. Structural. Multiplies
+	 * on top of Settings > Render Scale, does not replace it — AO buffer is
+	 * `canvas x dpr x renderScale x this`, so 0.5 on both is a sixteenth of native. */
 	aoBufferScale: number;
 };
 

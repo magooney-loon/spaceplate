@@ -7,13 +7,10 @@ import type { Object3D } from 'three';
 export type BusId = 'master' | 'music' | 'ambience' | 'sfx' | 'ui';
 
 /**
- * A sound DECLARATION — data, not markup. Registered with `defineSounds()`.
+ * A sound declaration — data, not markup. Registered with `defineSounds()`.
  *
- * `url` is relative to `public/sounds/` (`'click.mp3'`, `'skybox/rain.opus'`); the
- * registry prefixes `BASE_URL` itself, as every static asset path must.
- *
- * **A LIST OF URLS IS A VARIANT SET** — one is drawn at random per play. That is the
- * thunder-take picker and the two exhaust-pop takes, moved into the declaration.
+ * `url` is relative to `public/sounds/`; the registry prefixes `BASE_URL` itself.
+ * A list of urls is a variant set — one is drawn at random per play.
  */
 export type SoundDef = {
 	readonly url: string | readonly string[];
@@ -21,11 +18,8 @@ export type SoundDef = {
 	readonly bus?: BusId;
 	/** Voice-level trim baked into the declaration, multiplied by any per-play volume. */
 	readonly volume?: number;
-	/**
-	 * How many one-shots of this sound may overlap. 1 (the default) is stop-and-restart;
-	 * above 1 is a pool of that depth, oldest stolen on overflow. Loops ignore it — each
-	 * `loop()` gets its own voice and its own handle.
-	 */
+	/** How many one-shots may overlap. 1 (default) is stop-and-restart; above 1 is a pool
+	 * of that depth, oldest stolen on overflow. Loops ignore it. */
 	readonly poly?: number;
 	/** Positional defaults, used when a voice is placed with `at`. Fall back to `positionalDefaults`. */
 	readonly ref?: number;
@@ -34,10 +28,8 @@ export type SoundDef = {
 	readonly panningModel?: PanningModelType;
 	/** Web Audio's distance curve. Defaults to `'inverse'`, the PannerNode's own default. */
 	readonly distanceModel?: DistanceModelType;
-	/**
-	 * A directional source: full level inside `inner` degrees, `outerGain` beyond `outer`,
-	 * aimed down the voice's local +Z (three's convention). Omitted = omnidirectional.
-	 */
+	/** A directional source: full level inside `inner` degrees, `outerGain` beyond `outer`,
+	 * aimed down the voice's local +Z. Omitted = omnidirectional. */
 	readonly cone?: { readonly inner: number; readonly outer: number; readonly outerGain: number };
 };
 
@@ -48,31 +40,17 @@ export type PlayOptions = {
 	rate?: number;
 	/** Cents, applied on top of `rate`. */
 	detune?: number;
-	/**
-	 * Cutoff in Hz for a lowpass on this voice alone. A FRESH BiquadFilterNode per play —
-	 * sharing one across voices is the trap `weatherAudio`'s clap modulation documents.
-	 */
+	/** Cutoff in Hz for a lowpass on this voice alone. A fresh BiquadFilterNode per play. */
 	lowpass?: number;
-	/**
-	 * SCENE seconds to wait before the voice sounds (`core/audio/scheduler.ts`), converted
-	 * to the AudioContext clock and scheduled natively — sample-accurate, not polled on a
-	 * frame boundary.
-	 *
-	 * Scene and context time run at the same rate except while a capture take owns the
-	 * engine clock, and the conversion preserves intervals exactly, so in a normal session
-	 * this is simply "seconds from now".
-	 */
+	/** Scene seconds to wait before the voice sounds, converted to the AudioContext clock
+	 * and scheduled natively — sample-accurate, not polled on a frame boundary. */
 	delay?: number;
-	/** Stop this many SCENE seconds after it starts, rather than at the end of the buffer. */
+	/** Stop this many scene seconds after it starts, rather than at the end of the buffer. */
 	duration?: number;
 	/** Place the voice in the world: a `PositionalAudio` parented to this object. */
 	at?: Object3D;
-	/**
-	 * A local offset inside `at`, in that object's own space — the exhaust tip a pop
-	 * speaks from, the hull point a scrape shriek lands at. Reset to the parent's origin
-	 * when absent, so a pooled voice cannot inherit the previous play's spot. Only
-	 * meaningful with `at`.
-	 */
+	/** A local offset inside `at`, in that object's own space. Reset to the parent's origin
+	 * when absent. Only meaningful with `at`. */
 	position?: [number, number, number];
 	/** Create the voice without starting it. Loops only — a handle you drive yourself. */
 	paused?: boolean;
@@ -101,10 +79,8 @@ export type SoundRef = {
 	loop(options?: PlayOptions): VoiceHandle | null;
 };
 
-/**
- * Everything created through a scope dies with it. A scene takes one on mount and
- * releases it on unmount — one line in place of a hand-written detach function.
- */
+/** Everything created through a scope dies with it — one `release()` in place of a
+ * hand-written detach function. */
 export type AudioScope = {
 	play(soundId: string, options?: PlayOptions): VoiceHandle | null;
 	loop(soundId: string, options?: PlayOptions): VoiceHandle | null;

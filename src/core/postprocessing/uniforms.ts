@@ -16,11 +16,10 @@ export const createUniformBag = <P extends EffectParams>(values: P): UniformBag<
 };
 
 /**
- * In-place value write — the hot path. Never disposes or rebuilds anything.
- *
- * `values` may carry keys the bag does not (the extension state's `enabled` flag, a param
- * removed since the build); those are skipped. Returns whether anything was written, so a
- * caller sweeping several bags can `invalidate()` once for the lot instead of per effect.
+ * In-place value write — the hot path. Never disposes or rebuilds anything. `values`
+ * may carry keys the bag does not (a removed param, the `enabled` flag); those are
+ * skipped. Returns whether anything was written, so a caller sweeping several bags can
+ * `invalidate()` once for the lot instead of per effect.
  */
 export const writeUniformBag = <P extends EffectParams>(
 	bag: UniformBag<P>,

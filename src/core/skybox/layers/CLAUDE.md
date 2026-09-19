@@ -30,8 +30,8 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   construction is right. **Wrong tool for Rain**: its streaks are long thin quads whose
   gradient fills the whole shape, so there are no dead corners to reclaim.
 - **`instancedQuad(count, corners)`** — one shared four-vertex quad + per-instance
-  attributes. Every particle layer used to write each per-particle value four times
-  (Rain 1.52 MB → 0.25 MB instanced). The corner arrives as `positionLocal.xy`. Note
+  attributes, rather than writing each per-particle value four times (Rain: 0.25 MB
+  instanced vs 1.52 MB per-vertex). The corner arrives as `positionLocal.xy`. Note
   instancing does NOT relieve WebGPU's 8-`maxVertexBuffers` cap — that is why Meteors
   still packs its scalars into two vec4s. Escaping it needs storage buffers.
 - **`pinFarPlane(clip)`** — load-bearing, not an optimization. The camera's far plane is
@@ -65,10 +65,9 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 
 - **Draw order** = render queue + `renderOrder`: 1 (Nebula, Stars, Meteors), 2 (Moon),
   2.2 (Birds — under the deck, over the moon), 2.5 (CloudDeck — occludes the moon),
-  2.6 (bolt), 3 (Rain, Snow — nearest), 4 (the faint lightning sky wash),
-  The lens overlays used to sit above all of it at **10 / 11**; they are
-  post-processing chain effects now and no longer participate in draw order at all
-  (see _The lenses left_ below).
+  2.6 (bolt), 3 (Rain, Snow — nearest), 4 (the faint lightning sky wash). The lens
+  overlays are post-processing chain effects and don't participate in draw order at
+  all (see _The lenses left_ below).
 - **Task order** falls back to mount order among `before: autoRenderTask` tasks; the one
   real dependency is Lightning → CloudDeck (flash published and read in the same frame).
 - **Anything that MOVES the camera must run in the main stage, not here.** Six layers
@@ -81,13 +80,13 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   structurally, which is the fix; see `extensions/flypath/CLAUDE.md`.
 - **A "was that a cut?" test is a SPEED, never a per-frame distance.** Rain and
   LensDriver reject an implausible camera step so a teleport does not lean every streak
-  flat or flood the glass; all three call sites (the lens test was duplicated until
-  LensDriver merged the two) compared a raw per-frame distance, which meant 1150
-  u/s at 144Hz and 240 u/s in a 30fps offline capture take — so a flythrough that read as
-  motion live was classified as a cut in the recording of it, and the lens layers stayed
-  dry for the whole take. `TELEPORT_SPEED` (480 u/s = the old figure at 60fps) is the
-  same normalisation `ctx.shutterScale` applies to motion blur, and the same rule the
-  engine clock imposes on every task's `delta` (`core/utils/CLAUDE.md`).
+  flat or flood the glass. `TELEPORT_SPEED` (480 u/s) is a speed rather than a raw
+  per-frame distance precisely so it means the same thing at any frame rate — a
+  per-frame distance threshold means something different at 144Hz than in a 30fps
+  offline capture take, which is what let a flythrough that read as motion live get
+  classified as a cut in the recording of it. Same normalisation `ctx.shutterScale`
+  applies to motion blur, and the same rule the engine clock imposes on every task's
+  `delta` (`core/utils/CLAUDE.md`).
 
 ## Families
 
@@ -99,29 +98,20 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   unresolved glow) must agree — if they drift, the star band and the light band
   separate and the illusion collapses. The band is asymmetric (bulge toward
   `MILKY_WAY_CORE`) on purpose; an even ring is the clearest "generated sky" tell.
-- **The star field does not rotate, so half of it used to be dead weight.** Nothing
-  applies a diurnal rotation — not the sky group, not the layer — and the centres are
+- **The star field does not rotate**, so it's sampled on the visible **spherical cap**
+  rather than the full sphere: nothing applies a diurnal rotation and the centres are
   baked at build time, so a star below the horizon fade's zero point (`HORIZON_MIN`,
-  −0.06) is invisible for the whole session, not just currently. Sampling the full sphere
-  put **52% of the field (3119 of 6000) there**, and `frustumCulled={false}` is mandatory
-  for a far-plane-pinned layer, so every one of them was vertex-shaded on every night
-  frame to come out at opacity zero. The field is sampled on the visible **spherical cap**
-  now — uniform in `cos(theta)` over the restricted range is still uniform by area, so
-  the "band and nest are the only anisotropy" contract is untouched, and a rejection loop
-  would have been the biased way to do it. `count` therefore means **visible** stars
-  (2900), and the CPU build halves too (39 ms → 19 ms — the nest march never runs on a
-  direction that cannot be seen). Add a rotation one day and the cap has to go with it.
+  −0.06) is invisible for the whole session. Uniform in `cos(theta)` over the
+  restricted range is still uniform by area, so the "band and nest are the only
+  anisotropy" contract holds, and a rejection loop would have been the biased way to
+  do it. `count` means **visible** stars (2900). Add a rotation one day and the cap
+  has to go with it.
 - Everything else in the star material is **constant across a star's quad** — altitude,
   airmass, both twinkle lobes, the flicker depth, extinction, the prismatic flutter, the
-  colour — and rode the fragment stage until it was lifted into two `varying()`s (Snow's
-  `flakeAlpha` trap, below). It is a **smaller win here than in Snow and the reason is
-  worth knowing**: a 3–6 px star costs ~25 shaded fragments against 4 vertices, where a
-  snowflake near the lens costs thousands, so lifting the work was close to a wash while
-  half the field still paid vertex cost for nothing. The cap is what makes it worth doing;
-  the two changes belong together. The core/halo falloff is the one genuinely
+  colour — and is lifted into two `varying()`s (Snow's `flakeAlpha` trap, below) rather
+  than riding the fragment stage. The core/halo falloff is the one genuinely
   per-fragment term and is written as **multiplies, not `pow()`** — `disc` is exactly 0
-  over most of the quad and `pow` is `exp2(n·log2(x))`, so the old form leaned on the
-  driver returning 0 rather than NaN from `0 · −inf`.
+  over most of the quad and `pow` is `exp2(n·log2(x))`, which is undefined for `0 · −inf`.
 - Star placement is also rejection-sampled against a build-time CPU port of the
   Shadertoy "Star Nest" march (see Stars.svelte): the fractal's clumping — star
   clouds carved into the band's river, knots/filaments/voids off it — at zero
@@ -142,18 +132,15 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 ### `clouds/`
 
 - CloudDeck is the heavy-weather mass with **parallax**, which SkyMesh's plane-projected
-  clouds cannot have at any coverage. (It was originally there because that layer
-  saturated past ~0.52 coverage; three r186 rewrote the cloud field and removed the
-  saturation — see `Sky.svelte`'s remap note — so the dome now carries the channel and
-  this layer carries the depth.) `NormalBlending` + `BackSide` + **tone-mapped**: a storm deck must be able
-  to DARKEN the sky behind it (additive can only add light) and must live in the dome's
-  exposure space or it survives exposure changes as a stuck-on decal.
+  clouds cannot have at any coverage — the dome carries the coverage channel, this
+  layer carries the depth. `NormalBlending` + `BackSide` + **tone-mapped**: a storm deck
+  must be able to DARKEN the sky behind it (additive can only add light) and must live
+  in the dome's exposure space or it survives exposure changes as a stuck-on decal.
 - **The mass deck is a marched SLAB, not a projected plane** (`steps` slices between two
   apparent altitudes, front to back, alpha early-out at 0.95 — the loop shape from
-  three's `webgpu_volume_cloud`). The motive is parallax, not detail: a plane-projected
-  field only answers to camera _rotation_, so it slid with translation like a decal.
-  Octaves per slice came DOWN to pay for it (fbm3 + fbm2 ridge; the flat version used
-  fbm5) — the slices manufacture the detail the octaves used to.
+  three's `webgpu_volume_cloud`). The motive is parallax: a plane-projected field only
+  answers to camera _rotation_, so it slides with translation like a decal. Octaves per
+  slice are kept low (fbm3 + fbm2 ridge) — the slices manufacture the detail.
   - **No 3D texture, on purpose.** The example's 128³ volume is 2 MB and 2.1M CPU noise
     calls at boot, and it is a ball rather than a tiling field, so it cannot scroll —
     which would cost the wind accumulator, a hard requirement. The noise stays analytic
@@ -175,27 +162,26 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   orthographic depth-ish map (rendered by `HeightField.svelte` looking straight down,
   the sky group hidden for the pass — it is mounted outside and before the group it
   hides). **Contract: `.r` = surface world Y, `.a` = 1 where something was drawn.** Consumers
-  treat `a == 0` as "no surface" = the old fall-through behaviour, so a missing pass
-  degrades gracefully instead of hanging drops in mid-air. **World XZ → map UV is flipped
-  on BOTH axes, for two unrelated reasons**: X because a straight-down `lookAt` with
-  `up = +Z` builds its view basis along world −X, and Z because a render target is
-  sampled with `v = 0` at the top. Only the first was undone for a long time, and the
-  resulting Z mirror was self-concealing — it mirrors about `z = cameraZ`, so it vanishes
-  whenever the camera sits on the world X axis and the scene is symmetric there. The render target is created
+  treat `a == 0` as "no surface", so a missing pass degrades gracefully instead of
+  hanging drops in mid-air. **World XZ → map UV is flipped on BOTH axes, for two
+  unrelated reasons**: X because a straight-down `lookAt` with `up = +Z` builds its
+  view basis along world −X, and Z because a render target is sampled with `v = 0` at
+  the top — a Z mirror here is self-concealing, since it mirrors about `z = cameraZ`
+  and vanishes whenever the camera sits on the world X axis with a symmetric scene.
+  The render target is created
   at module scope so its identity is stable before any material bakes
   `texture(target.texture)` into its node graph — swapping a texture under a live
   material invalidates its cache key.
-- **"In the vertex node" was a claim about the CPU, and it was not true of the GPU.** TSL
-  builds a node in whatever stage CONSUMES it, and **only `AttributeNode` lifts itself to
-  a varying** — arithmetic on top of one is simply re-emitted per stage. `opacityNode` is
-  a fragment node, so naming a motion term in it dragged the whole solve along: Snow was
-  recomputing two `fract` wraps, four sin/cos sway terms, the height-field texture fetch,
+- **TSL builds a node in whatever stage CONSUMES it, and only `AttributeNode` lifts
+  itself to a varying** — arithmetic on top of one is simply re-emitted per stage.
+  `opacityNode` is a fragment node, so naming a motion term in it drags the whole solve
+  along: two `fract` wraps, four sin/cos sway terms, a height-field texture fetch,
   three smoothsteps and two matrix multiplies **per blended fragment**, and at these
-  sprite sizes most fragments arrive in 2×2 quads the rasteriser shades whole. That, not
-  quad area and not instance count, was "snow at 24fps" (`DOCS/best-practices.md` §3.6).
-  The rule: **anything constant across a particle's quad goes through `varying()`**, as
-  one product rather than one varying per term — Snow's `flakeAlpha`. Rain's three
-  materials still have the original shape.
+  sprite sizes most fragments arrive in 2×2 quads the rasteriser shades whole — the
+  real cost behind snow's frame rate (`DOCS/best-practices.md` §3.6), not quad area or
+  instance count. The rule: **anything constant across a particle's quad goes through
+  `varying()`**, as one product rather than one varying per term — Snow's `flakeAlpha`.
+  Rain's three materials still have the original per-fragment shape.
 - Rain/Snow animate entirely in the vertex node (a `fract()` sawtooth through a
   camera-anchored box, zero CPU per particle) — that design is why the height field
   exists as a texture rather than geometry queries. **This is why compute shaders are not
@@ -214,14 +200,13 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   because its virtual camera is a clone and inherits the bit. (LENS_LAYER itself now has
   no residents — see its note in `skyLayer.ts`.)
 - **Every axis of that motion is a self-accumulated distance, never `elapsed × rate`.**
-  Same rule as CloudDeck's scroll — an unbounded elapsed term multiplied by a
-  uniform that moves displaces the whole field by `elapsed × Δrate`. Rain's fall
-  (`uFallTime`) and horizontal drift (`uWindTravel`), and Snow's `uFallTime` /
-  `uWindDrift`, all accumulate. The wind axis was the one that got missed: `fall ×
-uWindSlant` swept the entire drop field sideways for the duration of any weather
-  blend, faster the longer the session had run, then stopped dead when the blend
-  finished. A drift that must be re-evaluated at a past time (Rain's splashes) takes a
-  **rollback distance**, not an absolute one.
+  Same rule as CloudDeck's scroll — an unbounded elapsed term multiplied by a uniform
+  that moves displaces the whole field by `elapsed × Δrate`, which would sweep the
+  entire drop field sideways for the duration of any weather blend and stop dead when
+  it finished. Rain's fall (`uFallTime`) and horizontal drift (`uWindTravel`), and
+  Snow's `uFallTime` / `uWindDrift`, all accumulate instead. A drift that must be
+  re-evaluated at a past time (Rain's splashes) takes a **rollback distance**, not an
+  absolute one.
 - Amounts come from `rainAmount`/`snowAmount` (the `precipitationType` split; sleet
   renders both). Snow's flakes dim with the light hints, so a night snowfall reads
   faint and cool.
@@ -232,25 +217,24 @@ uWindSlant` swept the entire drop field sideways for the duration of any weather
   local density. Both numbers are baked at mount, so `Skybox.svelte` remounts the layer
   on a preset change.
 
-#### The lenses left — and why that is not a relocation
+#### The lenses left — the rendering half lives in postprocessing, not here
 
-`RainLens.svelte` and `SnowLens.svelte` are gone. They were screen-filling quads drawn
-inside the scene pass, described in their own headers as "post-processing in every
-respect EXCEPT that it needs no post-processing pipeline" — which stopped being true
-when the pipeline grew MRT attachments. **Non-`output` attachments do not blend**, so
-one fullscreen quad in the scene pass overwrites the entire `velocity` and `normal`
-buffer. Motion blur is `defaultEnabled` and had been silently degrading to an identity
-transform in any rain; AO would have gone the same way. `core/postprocessing/CLAUDE.md`
-had already written the rule down ("overlays belong after post-processing") — the lenses
-predated it.
+The rain/frost lens meshes are not scene-pass geometry — a fullscreen quad drawn in
+the scene pass would overwrite the entire `velocity` and `normal` MRT attachments
+(**non-`output` attachments do not blend**), silently degrading motion blur to an
+identity transform and doing the same to AO. Overlays belong after post-processing
+(`core/postprocessing/CLAUDE.md`), so the rendering half is
+`core/postprocessing/effects/rainLens.ts` / `snowLens.ts`: they read **linear working
+colour**, not the encoded framebuffer (unbounded HDR, needing bloom's `inputClamp`
+treatment), and their mip source is an `rtt()`, not `viewportMipTexture` (which copies
+whatever target is bound — meaningless mid-chain).
 
-What stayed here is the CPU half:
+What lives here is the CPU half:
 
-- **`LensDriver.svelte`** — measures camera speed once for both lenses (the old
-  components ran the same forward/lateral decomposition twice, and the copies had begun
-  to drift), reads the weather, integrates wetness and frost growth, and writes
-  `lensState`. Renders nothing. Mounted **inside the sky group**, so an HDR or cube
-  environment leaves the lenses off exactly as unmounting the meshes used to.
+- **`LensDriver.svelte`** — measures camera speed once for both lenses, reads the
+  weather, integrates wetness and frost growth, and writes `lensState`. Renders
+  nothing. Mounted **inside the sky group**, so an HDR or cube environment leaves the
+  lenses off along with the rest of the group.
 - **`lensState.svelte.ts`** — `flashState`'s contract with TSL readers: one writer, and
   the shared values are module-scope `uniform()`s so their identity survives a pipeline
   rebuild. `lensActivity` is the one reactive thing in it, and it is a `structuralTag`:
@@ -258,14 +242,7 @@ What stayed here is the CPU half:
   the droplet/crystal fields are evaluated three times per pixel fullscreen and no
   uniform value avoids that. Hysteresis in the driver keeps the latch from thrashing.
 
-The effects themselves are `core/postprocessing/effects/rainLens.ts` and `snowLens.ts`.
-Two things changed in the move that are worth knowing before retuning either: they now
-read **linear working colour** rather than the encoded framebuffer (so the colour-space
-round trip is gone, but the input is unbounded HDR and needs bloom's `inputClamp`
-treatment), and the mip source is an `rtt()` rather than `viewportMipTexture`, which
-copies whatever target is bound and is meaningless mid-chain.
-
-Since then, two more things that are load-bearing rather than taste:
+Two more things that are load-bearing rather than taste:
 
 - **The rain lens is a WINDSCREEN, not a window.** It only exists while the camera is
   driving into the rain, so the force on the water is airflow, not gravity: the running

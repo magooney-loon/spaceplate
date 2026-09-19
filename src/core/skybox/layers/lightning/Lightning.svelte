@@ -1,102 +1,31 @@
 <script lang="ts">
 	// Lightning: the `lightning` channel's renderer. A strike is the bolt, plus a flash
-	// published to `flashState` for the other sky layers. CloudDeck.svelte is the flash's
-	// main consumer -- the deck lights up from the inside around the strike's azimuth, and
-	// that localized glow, not a screen wash, is where the drama lives: the wash here is
-	// deliberately FAINT (at most a tenth of the already-halved envelope) and the
-	// shadowless flash light carries the scene.
+	// published to `flashState` for the other sky layers (CloudDeck lights up from the
+	// inside around the strike's azimuth — the wash here is deliberately faint).
 	//
-	// THE BOLT is a procedural noise path in the classic perlin-lightning construction:
-	// the channel's horizontal offset is a 1-D perlin function of height, f(y), drawn as
-	// DISTANCE TO PATH -- thin bright core, tight glow, broad soft halo -- with the width
-	// slope-compensated so steep sections do not pinch thin. A noise-wobbled gate decides
-	// how far down the strike reaches, per seed. No per-strike geometry: one
-	// camera-anchored quad, just uniforms.
+	// The bolt is a procedural noise path (classic perlin-lightning construction): the
+	// channel's horizontal offset is a 1-D perlin function of height, drawn as distance
+	// to path (thin core, tight glow, broad halo), width slope-compensated so steep
+	// sections don't pinch. Everything is a function of height alone, so it's solved
+	// once per vertex on a subdivided quad and interpolated rather than re-derived per
+	// pixel — see "THE BOLT IS A ONE-DIMENSIONAL FUNCTION" below. Three disjoint bands
+	// (`glow = glowRaw - core`) each carry their own colour for the photographic look.
 	//
-	// THAT `f(y)` IS WHY THE QUAD HAS ROWS. Everything expensive here is a function of
-	// height alone, so it is solved once per vertex and interpolated rather than re-derived
-	// per pixel -- see "THE BOLT IS A ONE-DIMENSIONAL FUNCTION" at the shader below.
+	// Both meshes blend additively and write no destination alpha — see the blend flags
+	// where each material is built; any large additive layer owes the frame this.
 	//
-	// THE THREE BANDS ARE DISJOINT, which is what lets each carry its own COLOUR:
-	// subtracting each band from the next out (`glow = glowRaw - core`) makes them an
-	// annulus set: a hot near-white core that clips to white through the additive
-	// blend, a tight blue-violet glow around it, a broad cool halo beyond -- the
-	// photographic look, and the reason `colorNode` carries the whole spatial structure.
+	// Photosafety: every pulse attacks through a ~45-55ms smoothstep and decays
+	// exponentially, amplitude and density are capped well under WCAG 2.3.1's
+	// three-flashes-per-second line (see the constants below). To tone down further,
+	// lower `flashIntensity`/the WASH_*/envelope constants — do not shorten attack times.
 	//
-	// BOTH MESHES BLEND ADDITIVELY AND WRITE NO ALPHA. Stock `AdditiveBlending` is
-	// `src.a + dst.a` on the alpha channel, so a layer carrying its coverage in
-	// `colorNode` -- as these do, to keep `uBolt`'s 1.25 peak out of alpha's [0,1] clamp
-	// -- emits src.a = 1 for every pixel it covers, lit or not, and stamps a screen-sized
-	// rectangle of alpha into the frame. See the blend flags where each material is built.
+	// The light and both meshes stay mounted (light at intensity 0, meshes drawn at
+	// zero envelope for `WARM_FRAMES`) so their pipelines compile at boot instead of
+	// stuttering on the first real strike — `renderer.compileAsync()` can't substitute,
+	// since it compiles into the default context namespace and the base pass renders
+	// under a private one (`core/postprocessing/CLAUDE.md`, the MRT shader-cache trap).
 	//
-	// THE BUG THAT FOUND THIS IS GONE, and the flag stays anyway. The lens layers used to
-	// be meshes drawn last that sampled the finished frame INCLUDING its alpha, so the
-	// stamp came back as a hard-edged rectangle of over-blurred wet lens on every strike.
-	// They are post-processing chain effects now (`core/postprocessing/effects/rainLens.ts`)
-	// and blend on their own coverage, so nothing downstream reads this alpha any more --
-	// but the frame's alpha is still the canvas's, and a layer that lies about its coverage
-	// is still lying. Any large additive layer owes the frame the same blend.
-	//
-	// WHY NO TWO BOLTS LOOK ALIKE: four per-strike uniforms beyond the path seed and the
-	// ground gate -- `uWander` (how much the channel meanders), `uLean` (a linear tilt,
-	// so it is not always a vertical line), and three `uBranch` vec4s, each a fork that
-	// peels off the main channel at its own height and side, grows its own wander as it
-	// separates, and dies out before the ground. A bolt rolls one to three of them.
-	//
-	// DEPTH. `flashState.strikeDistance` drives the quad's SCALE, the bolt's brightness,
-	// the scene light's share and a per-strike tint: near strikes tower and read blue-
-	// white, distant ones sit small and low with the red-shift of a long air path. The
-	// quad is scaled about its BOTTOM edge rather than its centre, so a distant bolt sits
-	// down near the horizon instead of shrinking toward the middle of the sky.
-	//
-	// None of that touches the photosafety envelope: distance only ever scales DOWN.
-	//
-	// PHOTOSAFETY. Flash-induced seizures come from sharp, large-area luminance steps
-	// (WCAG 2.3.1 fails at three general flashes within any one second). Every constant
-	// below is chosen against that:
-	//   - No step edges: every pulse attacks through a ~45-55 ms smoothstep ramp and
-	//     decays exponentially. The bolt attacks faster (~12 ms) but it is a thin
-	//     small-area element, not the frame.
-	//   - Amplitude: the sky/scene envelope peaks at ~0.55 for bolt strikes and ~0.43 for
-	//     sheets, and the wash multiplies that by at most 0.1.
-	//   - Density: at most 2 pulses per strike, at least 0.6 s between event starts, and
-	//     re-strikes wait 0.45 s -- worst case stays under the three-flashes-per-second
-	//     line with margin, and every ramp is soft on top of that.
-	// To tone it down further, lower `flashIntensity` and the WASH_* / envelope constants;
-	// do not shorten the attack times.
-	//
-	// TIMING. The channel is an intensity, not an event stream, so this component runs
-	// the scheduler: mean inter-event interval falls from ~11 s at the channel's floor to
-	// ~2 s at full storm. Two kinds of event: BOLT strikes (path + flash, can re-strike
-	// the same channel a few hundred ms later) and SHEET strikes (in-cloud flash with no
-	// bolt, softer and slower -- cheap frequency that never strobes).
-	//
-	// WHERE THEY STRIKE. Azimuths are biased toward the camera's forward direction
-	// (triangular spread, dense ahead) -- a bolt you never see may as well not exist --
-	// and both the bolt and the flash light are re-anchored on the active camera every
-	// frame, as Rain is: a strike holds a fixed BEARING wherever the player stands. A
-	// quarter of strikes still land anywhere on the compass; those register through the
-	// deck glow, the wash and the scene light.
-	//
-	// THE LIGHT STAYS MOUNTED at intensity 0. Toggling a light's visibility changes
-	// three's lights-state hash and recompiles every lit material -- a stutter on every
-	// strike. A zero-intensity light costs a uniform slot and nothing else.
-	// (`RenderList.pushLight` has no intensity filter, so a dark light really does stay in
-	// the hash -- the mitigation holds.)
-	//
-	// AND THE MESHES ARE WARMED FOR THE SAME REASON, one level down. `visible === false` is
-	// the FIRST line of the renderer's `_projectObject`: an invisible mesh never enters the
-	// render list, so it has no `RenderObject`, so its node graph has never been built, its
-	// WGSL never generated and its pipeline never created. All of that then happened inside
-	// the frame that showed the first strike -- the stutter people actually saw. `WARM_FRAMES`
-	// below draws both meshes at mount with their envelopes at zero: same material, same
-	// geometry, same pass, so the same cache key, compiled while the Loader veil is still up
-	// and the frame is already paying for boot.
-	//
-	// `renderer.compileAsync()` is NOT the tool here: it compiles into the DEFAULT context
-	// namespace, and the base pass renders under a private one (the MRT shader-cache trap in
-	// `core/postprocessing/CLAUDE.md`), so its output would be a shader nothing ever looks
-	// up. Only a real frame through the real pipeline produces the variant we need.
+	// Full rationale (timing, strike placement, depth scaling): CLAUDE.md in this directory.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { DirectionalLight, Mesh } from 'three/webgpu';
@@ -348,34 +277,17 @@
 	const pathAt = (y: any) =>
 		uWander.mul(perlin1(y.mul(2).add(uSeed)).sub(0.5)).add(uLean.mul(y.sub(0.5)));
 
-	// ── THE BOLT IS A ONE-DIMENSIONAL FUNCTION, AND THAT IS THE WHOLE COST STORY ──────
-	//
-	// Every expensive term above is a function of HEIGHT ALONE: the channel's centre, the
-	// slope that keeps it from pinching, the along-length flicker, and each fork's centre,
-	// life and width. Only the final distance-to-path maths reads x. Evaluated in the
-	// fragment stage that was 68 `sin` per pixel -- `pathAt` twice at six octaves, three
-	// branches and the flicker at four, the ground wobble at six -- across a quad that
-	// covers roughly half the frame at `SCALE_NEAR`, double-sided, additively blended, with
-	// no depth write to reject anything early.
-	//
-	// So they move to the vertex stage and interpolate, exactly as Snow's `flakeAlpha` does
-	// (`../precipitation/Snow.svelte`, and the rule in `../CLAUDE.md`): TSL builds a node in
-	// whatever stage CONSUMES it and only `AttributeNode` lifts itself, so naming any of
-	// this in `colorNode` re-emitted the whole chain per fragment. `varying()` is what
-	// pins it to the vertex stage.
-	//
-	// THE QUAD IS SUBDIVIDED VERTICALLY to carry them (`BOLT_ROWS`), which is what makes the
-	// interpolation faithful rather than merely cheap. `noise1` is LINEAR value noise, so
-	// `perlin1` is already piecewise linear with breakpoints every `1/2^(k+1)` in y for
-	// octave k -- 1/128 at the sixth. 512 rows put four samples inside the finest segment,
-	// and that octave's amplitude is `0.5^6 * uWander` ≈ 0.009 path units against a core
-	// 0.018 wide, so what interpolation rounds off is a fraction of the stroke it sits in.
-	// 1026 vertices and 1024 triangles, once, against ~10^6 fragments.
-	//
-	// THE GROUND WOBBLE STAYS PER-FRAGMENT, deliberately: it is the one noise term that is a
-	// function of x, and resolving it through vertices would need columns fine enough for
-	// its own sixth octave (~6 px at 1080p) -- tens of thousands of triangles to save twelve
-	// of the sixty-eight `sin`. It is the remaining fragment-stage noise on purpose.
+	// The bolt is a one-dimensional function, and that's the whole cost story: every
+	// expensive term above (channel centre, slope, flicker, each fork's centre/life/
+	// width) is f(height) alone — only the final distance-to-path maths reads x. So they
+	// move to the vertex stage and interpolate off a vertically subdivided quad
+	// (`BOLT_ROWS`), same rule as Snow's `flakeAlpha` (`../precipitation/Snow.svelte`,
+	// `../CLAUDE.md`): TSL builds a node in whatever stage consumes it, and only
+	// `AttributeNode` lifts itself, so naming this in `colorNode` re-emits the whole
+	// chain per fragment — `varying()` pins it to the vertex stage instead. 512 rows is
+	// enough for `perlin1`'s finest octave breakpoint (piecewise-linear value noise) to
+	// stay faithful. The ground wobble stays per-fragment deliberately: it's the one
+	// term that's a function of x.
 	const BOLT_ROWS = 512;
 
 	/**

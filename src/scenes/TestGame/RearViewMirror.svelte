@@ -1,53 +1,37 @@
 <script lang="ts">
 	// Rear-view mirror — an NFS-style strip at the top of the screen showing the
-	// road BEHIND the car.
+	// road behind the car.
 	//
-	// WHY NOT A REFLECTOR. DemoScene's mirror floor and three's webgpu_mirror
-	// example are the same `reflector()` TSL node, and neither can do this job:
-	// a planar reflector's image is the ACTIVE camera mirrored across the plane,
-	// and a camera sitting behind the car can only ever see its own side of any
-	// mirror mounted on the car. "What is behind me" needs a camera facing
-	// backwards, so this is one: a second PerspectiveCamera riding the car,
-	// rendered into a small render target, composited as an overlay quad that
-	// tracks the top of the screen. (An ArrayCamera viewport is the other shape
-	// this could take — but it means replacing the app camera Threlte renders
-	// with, which the ChaseCamera's whole borrowing contract exists to avoid.)
+	// Not a reflector: a planar reflector's image is the active camera mirrored
+	// across the plane, and a camera sitting behind the car can only ever see
+	// its own side of a mirror mounted on the car. "What is behind me" needs a
+	// camera facing backwards, so this is one: a second PerspectiveCamera riding
+	// the car, rendered into a small render target, composited as an overlay
+	// quad at the top of the screen.
 	//
-	// THE PASS. A `{ before: autoRenderTask }` task (render stage, after Rapier's
-	// synchronization — the physics-pose rule) fills the RT with
-	// setRenderTarget/clear/render/restore, the same shape as HeightField's pass.
-	// Render-target passes skip the output colour transform, so the RT holds RAW
-	// LINEAR HDR — the quad then re-enters tone mapping through the base pass
-	// like any lit surface, in pipeline AND bypass mode alike. Shadows are NOT
-	// suspended and NOT re-rendered here: the key light's shadow map is armed
-	// once a frame from the main draw, so this pass samples the atlas the main
-	// camera fitted, one frame old. That is deliberate — the cascades are fitted
-	// to whichever camera renders them, and letting this backward-facing camera
-	// fit them would leave the car out of its own shadow map ($core/skybox/
-	// keyShadow.ts). A frame-old shadow inside a rear-view strip is invisible.
-	// (The headlights never cast; LIGHT_CAST_SHADOW.)
+	// The pass is `{ before: autoRenderTask }` (render stage, after Rapier's
+	// synchronization), filling the RT with setRenderTarget/clear/render/restore
+	// (same shape as HeightField's pass). Render-target passes skip the output
+	// colour transform, so the RT holds raw linear HDR and the quad re-enters
+	// tone mapping through the base pass like any lit surface. Shadows are not
+	// re-rendered here — the key light's shadow map is armed once a frame from
+	// the main draw, so this samples the atlas the main camera fitted, one
+	// frame old (invisible inside a small strip; the cascades must stay fitted
+	// to the camera the car is actually driving through, or it'd be left out of
+	// its own shadow map).
 	//
-	// THE OVERLAY QUAD rides the ACTIVE camera on LENS_LAYER — the first
-	// resident of that layer since the rain/frost lenses became post effects
-	// (skyLayer.ts keeps the layer and its reasoning for exactly this). The
-	// active camera enables the bit while this scene is up; internal cameras are
-	// constructed fresh with the layer-0 mask, so nothing re-samples the strip —
-	// the same guarantee the lens quads used to rely on. `transparent` +
-	// renderOrder 999 draws it after the scene's transparents (smoke must not
-	// wash over it); depthTest/Write off, fog off. The casing is a
-	// rounded-rectangle SDF with an alphaTest cutout — discarded fragments
-	// write NOTHING, so the velocity stamp below only covers the visible shape.
-	// KNOWN MRT TRADE (postprocessing/CLAUDE.md §"Non-output attachments do not
-	// blend"): the retained pixels stamp their ~zero velocity over the velocity
-	// attachment under the strip — nothing visible is lost (they are opaque or
-	// the 1px AA band); motion blur leaves the mirror image sharp (a digital
-	// mirror — fine) and AO / bloom-Material-mode see the quad's flat inputs
-	// under it. A pipeline composite would avoid that but is engine surgery for
-	// one scene.
+	// The overlay quad rides the active camera on `LENS_LAYER` — the first
+	// resident since the rain/frost lenses became post effects (skyLayer.ts
+	// keeps the layer for exactly this), so internal cameras never re-sample
+	// the strip. `transparent` + renderOrder 999 draws it after every other
+	// transparent; depthTest/Write off, fog off. Known MRT trade: the retained
+	// pixels stamp near-zero velocity over the attachment underneath, which is
+	// invisible here but is the general cost of an in-scene overlay quad
+	// (`postprocessing/CLAUDE.md`, "non-output attachments don't blend").
 	//
-	// MIRROR SEMANTICS: the image is flipped horizontally — a car overtaking on
-	// the right appears on the right of the strip, as in a real mirror. A plain
-	// backward camera would put it on the left.
+	// The image is flipped horizontally so mirror semantics hold — a car
+	// overtaking on the right appears on the right of the strip, as in a real
+	// mirror; a plain backward camera would put it on the left.
 	//
 	// ON-DEMAND: the task never invalidates. TestGame's follow rig already pins
 	// the render loop while the scene is mounted (testperf.md §2.3), so the

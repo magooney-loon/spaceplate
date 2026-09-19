@@ -1,9 +1,7 @@
 <script lang="ts">
-	// Draws nothing. Gives the slot system its FRAME (the stamp that makes
-	// `justPressed` observable) and the gamepad. Edges are stamped `frameId + 1`, so
-	// this stage must advance BEFORE simulation — a main-stage advance would show an
-	// edge to the render stage one frame before physics saw it — hence a dedicated
-	// stage pinned `before: simulationStage`, mounted INSIDE <PhysicsWorld>.
+	// Gives the slot system its frame (the stamp that makes `justPressed` observable).
+	// Must advance before simulation, or the render stage would see an edge one frame
+	// before physics did — hence its own stage pinned `before: simulationStage`.
 	import { onDestroy } from 'svelte';
 	import { useStage, useTask, useThrelte } from '@threlte/core/webgpu';
 	import { useRapier } from '@threlte/rapier';

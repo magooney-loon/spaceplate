@@ -1,41 +1,23 @@
-// A pool of world-anchored, camera-facing smoke puffs — ONE mesh, ONE material,
-// ONE draw call, shared by TireSmoke and CarExhaustFlames.
+// A pool of world-anchored, camera-facing smoke puffs — one mesh, one material,
+// one draw call, shared by TireSmoke and CarExhaustFlames.
 //
-// WHY THIS EXISTS. Both pools used to be N `THREE.Mesh`es with N material
-// INSTANCES (32 tyre puffs + 16 exhaust puffs), on the theory that identical
-// node graphs share a compiled program. They do — three keys `ProgrammableStage`
-// by generated WGSL source and the render pipeline by (vertex id, fragment id,
-// backend state), so 48 identical graphs collapse to one pipeline
-// (`three/src/renderers/common/Pipelines.js`, `getForRender`). What does NOT
-// collapse is everything upstream of that:
+// Replaces N `THREE.Mesh`es with N material instances (32 tyre puffs + 16
+// exhaust puffs): identical node graphs do share a compiled pipeline, but each
+// material still builds its own node graph (a full NodeBuilder analyze + WGSL
+// generation) the first time it renders — a burnout spawning ~40 puffs/s put
+// 31 of those builds inside the first second of the first slide. Each mesh was
+// also its own draw call and bind group, well over budget with a downshift on top.
 //
-//   • Each material builds its OWN node graph the first time it is rendered —
-//     a full NodeBuilder analyze + WGSL generation on the main thread, per
-//     material, paid at the first frame that material is visible. A burnout
-//     spawns ~40 puffs/s, so 31 of those builds landed inside the first second
-//     of the first slide. THAT is the hitch the boot-warm windows were built to
-//     hide, and they only ever warmed ONE slot each.
-//   • Each mesh is its own draw call, its own bind group and its own entry in
-//     the transparent sort. A burnout plus a downshift was up to 48 extra
-//     transparent draw calls against DOCS/best-practices.md §4's 100/frame.
+// One `BufferGeometry` holding `count` quads (the SkidMarks pattern). Positions
+// are world space, written by `update()`; billboarding is CPU-side (built on
+// the camera's right/up basis). Per-puff values ride a per-vertex `aPuff`
+// attribute (birth, life, strength, seed) written once at spawn — aging is
+// entirely shader-side against `uTime`.
 //
-// THE SHAPE. One `BufferGeometry` holding `count` quads (4 verts + 6 indices
-// each) — the SkidMarks pattern, which already solves exactly this problem in
-// this scene. Positions are WORLD space and written by `update()`; billboarding
-// is CPU-side (the quad is built on the camera's right/up basis), which is the
-// same arithmetic the old per-mesh `quaternion.copy(camera.quaternion)` did,
-// minus 32 matrix compositions. Per-puff values ride a per-vertex `aPuff`
-// attribute (birth, life, strength, seed) written ONCE at spawn — the aging is
-// entirely shader-side against `uTime`, exactly as before.
-//
-// NO BOOT WARM. The mesh is permanently in the graph, so its pipeline compiles
-// on the scene's first rendered frame — behind the entry veil, for free, with
-// no visible-by-default slot, no timed warm window and no "physics steps race
-// the renderer" caveat. Dead puffs are degenerate (all four verts at the same
-// point), so an idle pool costs one draw call and zero fragments.
-//
-// Rules honored (DOCS/best-practices.md §4): one material shared across the
-// pool, no allocation in `update()`, `NodeMaterial` + TSL only.
+// No boot warm needed: the mesh is permanently in the graph, so its pipeline
+// compiles on the scene's first rendered frame behind the entry veil. Dead
+// puffs are degenerate (all four verts at the same point), so an idle pool
+// costs one draw call and zero fragments.
 
 import * as THREE from 'three/webgpu';
 import { attribute, saturate, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';

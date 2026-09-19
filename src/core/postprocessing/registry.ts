@@ -22,14 +22,12 @@ import { ssaaEffect } from './effects/ssaa';
 import { vignetteEffect } from './effects/vignette';
 
 /**
- * THE registry. Display order for panels: base alternates first, then chain, then grade,
- * then AA.
+ * The registry. Display order for panels: base first, then chain, then grade, then AA.
  *
- * A record rather than an array so the param types survive: `EffectParamMap` below is
- * derived from it, which is what lets the extension's state shape be GENERATED instead
- * of hand-listed (it drifted three effects behind when it was). **Each key must equal
- * its def's `id`** — `EffectDef.id` is a plain `string`, so nothing type-checks that;
- * `EFFECTS_BY_ID` keys off `def.id` so a mismatch would only skew the types.
+ * A record rather than an array so the param types survive — `EffectParamMap` below is
+ * derived from it, which is what lets the extension's state shape be generated instead
+ * of hand-listed. Each key must equal its def's `id`; nothing type-checks that, since
+ * `EffectDef.id` is a plain `string`.
  */
 export const EFFECT_REGISTRY = {
 	ssaa: ssaaEffect,
@@ -90,15 +88,12 @@ export interface EnabledSetResolution {
 }
 
 /**
- * Pure policy: given the enabled set and the quality tier, decide what runs —
- * quality 'low' drops everything; at most one base pass and one AA (lowest `order`
- * wins, losers reported); explicit `conflicts` enforced the same way; geometry
- * consumers dropped under a non-default base pass; the MRT set is the union of the
- * survivors' requirements (`requiresValues` overrides `requires` when needs are
- * param-dependent).
- *
- * Pure on purpose: the panel greys things out with it, the builder builds with it.
- * `values` is optional so callers without params still get the static answer.
+ * Pure policy: given the enabled set and quality tier, decide what runs — quality
+ * 'low' drops everything; at most one base pass and one AA (lowest `order` wins,
+ * losers reported); explicit `conflicts` enforced the same way; geometry consumers
+ * dropped under a non-default base pass; the MRT set is the union of the survivors'
+ * requirements. Pure on purpose: the panel greys things out with it, the builder
+ * builds with it.
  */
 export const resolveEnabledSet = (
 	enabled: string[],
@@ -127,11 +122,9 @@ export const resolveEnabledSet = (
 	const requirementsOf = (def: EffectDef<any>): Requirement[] =>
 		def.requiresValues ? def.requiresValues(values?.[def.id] ?? def.params()) : def.requires;
 
-	// Quality gates. Ranked rather than compared against one tier by name, so adding a
-	// middle tier cannot silently turn a gate into a no-op. Currently UNREACHABLE — with
-	// `QualityLevel` being 'low' | 'high', low has already returned above and high
-	// satisfies every possible `minQuality`. The field is kept for the removed effects
-	// that declared it (see "Removed effects" in CLAUDE.md).
+	// Quality gates. Ranked rather than compared by name, so a middle tier can't
+	// silently turn a gate into a no-op. Currently unreachable with only low/high, kept
+	// for the removed effects that declared minQuality (see "Removed effects" in CLAUDE.md).
 	const qualityOk: EffectDef<any>[] = [];
 	for (const def of defs) {
 		if (def.minQuality && QUALITY_RANK[quality] < QUALITY_RANK[def.minQuality]) {
@@ -141,15 +134,10 @@ export const resolveEnabledSet = (
 		}
 	}
 
-	// Mutual exclusion: base passes replace the scene pass and the AAs replace each
-	// other, so within those roles only one can win (lowest order). Chain effects
-	// coexist — only explicit `conflicts` cross-role pairs are exclusive.
-	//
-	// Walked in `order` so the winner is always already decided: a rival is looked for
-	// among the effects that have SURVIVED, never among all the quality-passing ones.
-	// That is what stops an effect that was itself dropped from knocking out a third
-	// (a chain of `conflicts` — A beats B, B must not then beat C), and it settles
-	// equal orders deterministically instead of letting both through.
+	// Mutual exclusion: base and resolve roles allow only one winner (lowest order);
+	// chain effects coexist unless an explicit `conflicts` pair says otherwise. Walked
+	// in order and matched only against SURVIVORS, so an effect already dropped can't
+	// knock out a third, and equal orders resolve deterministically.
 	const survivors: EffectDef<any>[] = [];
 	for (const def of qualityOk.slice().sort((a, b) => a.order - b.order)) {
 		const exclusive = def.role === 'base' || def.role === 'resolve';
@@ -193,11 +181,8 @@ export const resolveEnabledSet = (
 	};
 };
 
-/**
- * The structural fingerprint of the current configuration — everything a graph
- * rebuild depends on, as one string. Param drags that are NOT structural must not
- * change this; structural params (loop counts, texture sizes) must.
- */
+/** The structural fingerprint of the current configuration — everything a graph
+ * rebuild depends on, as one string. Non-structural param drags must not change this. */
 export const structuralKeyOf = (enabled: string[], values: EffectValues): string =>
 	enabled
 		.slice()

@@ -51,16 +51,14 @@
 		return renderer;
 	};
 
-	// THE BACKBUFFER SIZE, AND THEREFORE THE FILL BILL. Everything fill-rate-bound in this
-	// engine — the precipitation fields above all, but also the mirror floor's
-	// full-resolution reflection pass and every post-processing pass — scales with the
-	// square of this number. It is the cheapest lever there is, and the only one that
-	// costs sharpness rather than content.
+	// The backbuffer size, and therefore the fill bill: everything fill-rate-bound
+	// in this engine (precipitation, the mirror floor's reflection pass, every
+	// post-processing pass) scales with the square of this number — the cheapest
+	// lever there is, and the only one that costs sharpness rather than content.
 	//
-	// The preset picks the BASE: full device pixel ratio on 'high' (uncapped on purpose —
-	// a Retina panel that can afford it should get it), 1 on 'low'. `renderScale` is then
-	// a plain multiplier on top, so it composes with the preset instead of fighting it and
-	// its default of 1 reproduces the old behaviour exactly on both.
+	// The preset picks the base (full device pixel ratio on 'high', 1 on 'low');
+	// `renderScale` is a plain multiplier on top, composing with the preset
+	// rather than fighting it.
 	const dpr = $derived.by(() => {
 		if (typeof window === 'undefined') return 1;
 		const deviceDPR = window.devicePixelRatio || 1;
@@ -73,14 +71,11 @@
 
 <Loader />
 
-<!-- autoRender is OFF: the RenderPipeline in core/utils/Renderer.svelte drives
-     rendering via its own task ({ after: autoRenderTask }, webgpu-notes.md §2). A
-     Canvas option on purpose — toggling it from an $effect self-invalidates (§3.1).
-     `shadows` is set to PCFShadowMap because Threlte's DEFAULT is PCFSoftShadowMap,
-     which three's WebGPURenderer has REMOVED — the first render of a frame would
-     warn and self-heal back to PCFShadowMap (the stack lands in HeightField's pass,
-     the frame's first renderer.render). A number keeps shadowMap.enabled true; this
-     is the exact value the fallback picks, so nothing visual moves. -->
+<!-- autoRender is off: core/utils/Renderer.svelte drives rendering via its own task
+     ({ after: autoRenderTask }). A Canvas option on purpose — toggling it from an
+     $effect self-invalidates. `shadows` is PCFShadowMap because Threlte's default,
+     PCFSoftShadowMap, was removed from three's WebGPURenderer — the first render
+     would warn and self-heal back to this value anyway, so nothing visual moves. -->
 {#if capabilityState.tier !== 'none'}
 	<Canvas {createRenderer} {dpr} autoRender={false} shadows={PCFShadowMap}>
 		<!-- The engine clock + frame-rate cap (core/utils/engineClock.ts) — wraps

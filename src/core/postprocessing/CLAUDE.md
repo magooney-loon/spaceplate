@@ -434,15 +434,15 @@ added to everything the beams are not. Its slider stops at 0.5 rather than 1 for
 reason: past ~0.2 every value is a white-out, and the useful band deserves the resolution
 more than the reach does.
 
-**It carries a structural latch, and unlike the abandoned screen-space attempt it is
-entitled to one.** Nothing about its cost is skippable from inside the shader: the targets
-are allocated and both the march and the blur run from `updateBefore`, outside it, so a
-uniform branch (the `afterimage`/`sunShafts` bargain) would save nothing. And its gate —
-haze × key elevation — is a **slow** signal that crosses once and stays across, with no
-camera term in it at all, which is exactly the property the screen-space version could not
-have (see below). `resolutionScale` (0.5) is the cost lever; it is a shadow-atlas tap per
-step per pixel and the result is dithered and then blurred, so it loses very little at
-half size.
+**It carries a structural latch.** Nothing about its cost is skippable from inside the
+shader: the targets are allocated and both the march and the blur run from
+`updateBefore`, outside it, so a uniform branch (the `afterimage` bargain) would save
+nothing. Its gate — haze × key elevation — is a **slow** signal that crosses once and
+stays across, with no camera term in it: a latch may only ever watch a signal like
+that, since one that swings with the camera (heading, position) would recompile the
+pipeline every time it crossed the threshold. `resolutionScale` (0.5) is the cost
+lever; it is a shadow-atlas tap per step per pixel and the result is dithered and then
+blurred, so it loses very little at half size.
 
 **It is nevertheless OFF by default, which `fogScatter` — same latch, same bargain — is
 not.** The difference is not cost, because the latch already makes that zero in clear air.
@@ -451,25 +451,6 @@ front of it, which is most of the frame, so the whole image brightens and desatu
 moment the sky asks for shafts. A latched effect that costs nothing until it fires is still
 a look the first time it fires, and this one changes every existing scene. Same call `ao`
 makes, for the same reason.
-
-### The screen-space version, and why it was dropped
-
-An earlier attempt (`sunShafts`) faked this: a radial smear of the bright sky away from
-the sun's projected position, masked to sky pixels so geometry punched the holes that
-separate the beams. It was finished and it worked, and it was still wrong in three ways
-that are worth keeping, because they are properties of the technique and not bugs:
-
-- **It popped and swung with the camera.** A smear from an on-screen point cannot survive
-  that point leaving the frame, so the effect had to fade out at the frame edge — i.e.
-  exactly when driving turns the car. The raymarch has no such term.
-- **Its natural gate included the camera's heading**, which is a fast signal, so latching
-  on it recompiled the post pipeline about twice a lap — **with the log showing an
-  identical effects list each time**, because the tag is in `structuralKeyOf` and not in
-  the printed list. That is what the symptom looks like, and it is the general rule: **a
-  latch may only watch a signal that crosses once and stays across.**
-- **It read as washed out**, because a broad additive glow added on top of bloom is a
-  brightness, not a shape. `depthAwareBlend` mixes toward the light colour instead, and the
-  occlusion is real, so the shafts have edges.
 
 ## LUTs (`luts.svelte.ts`)
 
@@ -495,9 +476,9 @@ daylight (`core/skybox/model/CLAUDE.md`).
 
 - **Off by default.** It is a real per-frame cost on a frame that may already render the
   scene five times, and it changes every existing scene's look.
-- **It multiplies the composite, not the indirect term** — separating that needs the
-  `diffuse` attachment removed with the old effects. Directly-lit surfaces darken
-  slightly; that is the known error of every screen-space AO, not a bug.
+- **It multiplies the composite, not the indirect term** — separating that would need a
+  `diffuse` MRT attachment, which nothing currently requests. Directly-lit surfaces
+  darken slightly; that is the known error of every screen-space AO, not a bug.
 - **Its params live on the node, not in a factory call** (`ao()` takes only depth,
   normal, camera). The bag's `uniform()`s are **assigned onto the node before setup** —
   `setup()` is lazy and reads `this.radius` & co. then, so assignment after a build
@@ -511,15 +492,12 @@ daylight (`core/skybox/model/CLAUDE.md`).
   DemoScene's reflector.
 - **The precipitation fields still perturb it**, via the no-blending rule below: they
   are thousands of small transparent quads in the scene pass, each punching its own
-  normal through. This used to be far worse — the two lens layers were _screen-filling_
-  quads that wiped the buffer outright, which is what adding AO surfaced (see `rainLens`
-  below). The prePass question under "Removed effects" is the real fix.
+  normal through. The prePass question under "Removed effects" is the real fix.
 
-## Removed effects: pixelation, ssgi, ssr, traa (ao was revived)
+## Not built: pixelation, ssgi, ssr, traa (ao is the one revived so far)
 
-Cut wholesale after being built — a **scope decision, not a defeat**: the shared root
-cause (the shader-cache trap) was found and fixed, so they could have been finished.
-What a revival restores:
+A scope decision, not a technical block — the shader-cache trap that would have hit
+all of them is already fixed. What reviving one of these needs:
 
 - MRT rows (`normal` is now live — `ao` re-added it): `traa` (depth, velocity), `ssgi` (depth,
   normal, velocity, diffuse), `ssr` (depth, normal, metalrough), `denoise` (depth,
@@ -539,29 +517,25 @@ What a revival restores:
 Not built: `anamorphic` (no shipped node — the example composes a custom high-pass `Fn`,
 bloom, tint, add; budget it as real work).
 
-## Scene transitions — built, and it IS a crossfade
+## Scene transitions — a real crossfade, via a frozen frame
 
 `effects/sceneTransition.ts` + `transitionState.svelte.ts` + `TransitionDriver.svelte`.
-The old plan here said a true A→B crossfade was impossible because `TransitionNode`
-needs both scenes rendering and `{#if}` routing unmounts the outgoing one. **A frozen
-frame retires that objection**: side A is an `rtt()` of the chain colour captured on the
-outgoing scene's last frame, side B is the live scene, and the mix is a real crossfade
-between them. Nothing renders twice.
+`TransitionNode`-style crossfading needs both scenes rendering at once, which `{#if}`
+routing can't do (the outgoing scene unmounts). The fix: side A is an `rtt()` of the
+chain colour captured on the outgoing scene's last frame, side B is the live scene, and
+the mix is a real crossfade between them. Nothing renders twice.
 
 - **Captured and mixed IN THE CHAIN** (order 60, last, pre-tonemap) so both sides are
   linear working colour and the frozen frame goes through the same grade, AA and output
   transform as the live one, every frame. At mix 1 the screen therefore _is_ the frame
   that was captured. A canvas grab (`copyFramebufferToTexture`) would be display-referred
   and could not be mixed at this point without tone-mapping it twice.
-- **THREE PHASES, AND THE MIDDLE ONE IS A LOADING SCREEN.** The first version held the
-  frozen frame up for the whole load and tried to keep it alive with a push-in and a
-  blur riding seconds-covered. That fails exactly where it matters: those move on
-  RENDERED frames, and a heavy scene's entry is mostly main-thread stalls (GLB parse,
-  texture decode, three's synchronous pipeline creation) during which nothing is drawn
-  at all — so the motion stopped precisely when the player needed proof the app was
-  alive, and a long load then revealed a mip-2, 45%-grey, 30%-zoomed plate into a sharp
-  scene. The sequence is now **dip → hold → reveal**: the plate dissolves to flat black
-  in `veilSeconds` _before_ the swap, the load and the warm happen under that flat cover
+- **Three phases, and the middle one is a loading screen: dip → hold → reveal.** A heavy
+  scene's entry is mostly main-thread stalls (GLB parse, texture decode, three's
+  synchronous pipeline creation) during which nothing renders at all, so any motion
+  riding the frozen frame itself (a push-in, a blur) would freeze right when the player
+  needs proof the app is alive. Instead the plate dissolves to flat black in
+  `veilSeconds` _before_ the swap, the load and the warm happen under that flat cover
   with `Loader.svelte`'s veil as the whole picture, and the veil dissolves into the live
   scene at the end.
 - **The degradation rides `uTransitionVeil` (dip progress), never a clock.** Push-in,
