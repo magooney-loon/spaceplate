@@ -42,8 +42,8 @@ pipeline itself never imports from here except the state (via Renderer.svelte).
 
 Base passes (mutually exclusive): `ssaa`, `retro` — else the default `pass()`. Chain:
 `ao`, `dof`, `fogScatter`, `godrays`, `motionBlur`, `rainLens`, `snowLens`, `bloom`,
-`afterimage`, `vignette`, `sceneTransition`. Grade (**not** exclusive): `lut`. AA (mutually
-exclusive): `smaa`, `fxaa`.
+`anamorphic`, `afterimage`, `vignette`, `sceneTransition`. Grade (**not** exclusive):
+`lut`. AA (mutually exclusive): `smaa`, `fxaa`.
 
 `pixelation`, `ssgi`, `ssr` and `traa` were **removed** — files deleted, not
 disabled. Don't re-add one by half-measures: `$core/postprocessing/CLAUDE.md`

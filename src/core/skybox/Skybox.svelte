@@ -15,6 +15,7 @@
 	import CloudDeck from './layers/clouds/CloudDeck.svelte';
 	import Lightning from './layers/lightning/Lightning.svelte';
 	import HeightField from './layers/precipitation/HeightField.svelte';
+	import DustMotes from './layers/atmosphere/DustMotes.svelte';
 	import type { Group } from 'three/webgpu';
 	import { descriptor, skyActions, CHANNEL_NAMES } from './model';
 	import { SKY_LAYER_USERDATA } from './layers/skyLayer';
@@ -124,9 +125,9 @@
 
 	     DRAW order is the render queue + renderOrder: the dome is opaque, everything
 	     else transparent, settled by renderOrder 1 (Nebula, Stars, Meteors), 2 (Moon),
-	     2.2 (Birds), 2.5 (CloudDeck), 2.6 (the bolt), 3 (Rain, Snow) and 4 (the
-	     lightning wash) -- the deck over the moon because a deck occludes it,
-	     precipitation last because it is nearest.
+	     2.2 (Birds), 2.5 (CloudDeck), 2.6 (the bolt), 3 (Rain, Snow), 3.2 (Dust Motes)
+	     and 4 (the lightning wash) -- the deck over the moon because a deck occludes
+	     it, near-camera layers last because they are nearest.
 
 	     TASK order falls back to mount order among the `before: autoRenderTask` tasks,
 	     and ONE dependency lives here: Lightning publishes the flash to `flashState`
@@ -155,6 +156,10 @@
 			<Rain count={precipitation.rain} splashCount={precipitation.splashes} />
 			<Snow count={precipitation.snow} />
 		{/key}
+		<!-- Sparse, near-camera, backlit only -- see layers/CLAUDE.md's `atmosphere/`
+		     family note and the component header for why this is neither precipitation
+		     nor a dome layer. -->
+		<DustMotes />
 		<!-- The CPU half of both lens effects. Renders NOTHING -- the lenses themselves are
 		     post-processing chain effects now (rainLens.ts / snowLens.ts); this measures the
 		     camera and the weather and writes the uniforms they read. It is here, inside the

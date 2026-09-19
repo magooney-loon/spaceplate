@@ -5,6 +5,7 @@
 import type { QualityLevel } from '$extensions/settings/types';
 import type { EffectDef, EffectValues, MrtRequirement, Requirement } from './types';
 import { afterimageEffect } from './effects/afterimage';
+import { anamorphicEffect } from './effects/anamorphic';
 import { aoEffect } from './effects/ao';
 import { bloomEffect } from './effects/bloom';
 import { dofEffect } from './effects/dof';
@@ -40,6 +41,7 @@ export const EFFECT_REGISTRY = {
 	rainLens: rainLensEffect,
 	snowLens: snowLensEffect,
 	bloom: bloomEffect,
+	anamorphic: anamorphicEffect,
 	afterimage: afterimageEffect,
 	vignette: vignetteEffect,
 	// Last in the chain: it composites the frozen previous scene over everything the

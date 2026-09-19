@@ -78,6 +78,15 @@ export const LENS_LAYER = 1;
  */
 export const PRECIPITATION_LAYER = 2;
 
+/**
+ * The layer near-camera AMBIENT decoration fields render on (dust motes today) —
+ * `PRECIPITATION_LAYER`'s reasoning, generalised to any layer whose instance count is
+ * cheap through the main viewport but pure noise in a tiny cube-capture face. A few
+ * hundred sub-pixel sparkles are not the periodic-hitch shape precipitation was, but
+ * they buy the baked env map nothing either, so the same exclusion applies for free.
+ */
+export const AMBIENT_LAYER = 3;
+
 // ── Geometry ───────────────────────────────────────────────────────────────────
 
 /** Centred billboard: the quad spans -1..1 on both axes around the particle centre. */

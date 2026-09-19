@@ -10,6 +10,7 @@ precipitation/   — Rain, Snow, HeightField + heightField.ts, LensDriver + lens
                    (the CPU half of the two lens POST effects — see below)
 lightning/       — Lightning + flashState.ts
 fauna/           — Birds (GPU-compute flock)
+atmosphere/      — DustMotes: near-camera ambient decoration, not precipitation
 ```
 
 All layers are **descriptor consumers**: they read slices of `descriptor` from tasks,
@@ -65,9 +66,9 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 
 - **Draw order** = render queue + `renderOrder`: 1 (Nebula, Stars, Meteors), 2 (Moon),
   2.2 (Birds — under the deck, over the moon), 2.5 (CloudDeck — occludes the moon),
-  2.6 (bolt), 3 (Rain, Snow — nearest), 4 (the faint lightning sky wash). The lens
-  overlays are post-processing chain effects and don't participate in draw order at
-  all (see _The lenses left_ below).
+  2.6 (bolt), 3 (Rain, Snow), 3.2 (DustMotes — nearest), 4 (the faint lightning sky
+  wash). The lens overlays are post-processing chain effects and don't participate in
+  draw order at all (see _The lenses left_ below).
 - **Task order** falls back to mount order among `before: autoRenderTask` tasks; the one
   real dependency is Lightning → CloudDeck (flash published and read in the same frame).
 - **Anything that MOVES the camera must run in the main stage, not here.** Six layers
@@ -392,3 +393,35 @@ Two more things that are load-bearing rather than taste:
   in the fragment stage, the same lift Meteors' brightness rides.
 - Scale ratios come from three.js's `webgpu_compute_birds` (zone ≈ 6 wingspans, speed
   15× the limit at integration) — retune against those, not against each other.
+
+### `atmosphere/`
+
+- **`DustMotes` is neither precipitation nor a dome layer**, which is why it is its own
+  family rather than filed under either: it doesn't fall with any purpose
+  (precipitation's whole vertex-node recipe is built around a purposeful fall), and it
+  isn't at radius 1000 (a mote only reads a few metres from the lens, so it uses
+  `billboardClip`'s honest depth like Rain/Snow, not `pinFarPlane`).
+- **The look is one dot product.** A mote's brightness is `viewDir · keyDirection`
+  (camera-to-mote, dotted with the SAME `descriptor.light.direction` `SkyFog`'s
+  `sunInscatter` term reads), raised to a sharpness exponent — nearly invisible face-on,
+  lit up the moment the camera looks toward the sun or moon. That is the entire
+  "dust in a sunbeam" effect; it needs no shadow volume and no relation to `godrays` at
+  all, which is what makes it cheap enough to leave enabled by default.
+- **Motion is Snow's fract-wrap recipe with the fall speed turned almost off** and a
+  per-mote sine wobble on all three axes standing in for the wander snow's coherent
+  swirl gives it. Wind drift is a fifth of Snow's rate (`WIND_RATE` 0.4 vs 1.1) and
+  phased per-mote rather than by position — dust has no shared "sheet" the way a
+  flurry does.
+- **The weather gate is a single `opacity` uniform**, not per-instance culling like
+  Snow's `alive`: at 260 sparse instances there is no field density worth thinning,
+  only an ambiance to dim out in rain, snow, fog or a stiff wind. `windPenalty` has a
+  floor (no cut below wind 0.35) so a light breeze doesn't kill the effect outright.
+- **Hue and magnitude are separate varyings**, same split as Snow's `flakeAlpha` but
+  two terms instead of one: `moteColor` (a vec3, pale ambient grey mixed toward the
+  key's own colour by the rim term) can't fold into the same scalar product as the
+  brightness terms, so it gets its own lift. Both are still vertex-stage-constant per
+  mote — only the disc's inverse-distance speck is genuinely per-fragment.
+- **On `AMBIENT_LAYER`** (`skyLayer.ts`), `PRECIPITATION_LAYER`'s reasoning applied to a
+  different layer: a few hundred sub-pixel sparkles are not precipitation's
+  periodic-hitch shape, but they are pure noise in a 128² cube-capture face and buy the
+  baked env map nothing, so the same exclusion applies.

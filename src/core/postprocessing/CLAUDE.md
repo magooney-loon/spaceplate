@@ -15,9 +15,9 @@ luts.svelte.ts — LUT catalogue + async load cache (three's nine example LUTs, 
 transitionState.svelte.ts — the scene transition's shared state: the mix uniform, the
                  snapshot registration, and the cover/reveal API the scene switch awaits
 TransitionDriver.svelte — its one writer: capture, hold, dissolve. Mount inside <Canvas>
-effects/*.ts   — 16 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, godrays,
+effects/*.ts   — 17 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, godrays,
                  motionBlur, rainLens, snowLens, bloom (+lensflare sub-toggle),
-                 afterimage, vignette, sceneTransition (chain) · lut (grade) ·
+                 anamorphic, afterimage, vignette, sceneTransition (chain) · lut (grade) ·
                  smaa, fxaa (AA)
 effects/mipSource.ts — NOT an effect: the blurred-copy-of-the-frame helper fogScatter,
                  rainLens and snowLens share, holding the clamp-what-you-sample and
@@ -33,8 +33,8 @@ Four `PassRole`s exist because a flat enable-grid cannot express the relationshi
   asks `basePass.getMRT()` instead of assuming the default — a base pass may provision
   attachments the registry never asked for (pixelationPass did exactly that).
 - **chain** (in fold order: `ao` 10, `dof` 30, `fogScatter` 32, `godrays` 33,
-  `motionBlur` 35, `rainLens` 36, `snowLens` 37, `bloom` 40, `afterimage` 45,
-  `vignette` 50, `sceneTransition` 60) — plain
+  `motionBlur` 35, `rainLens` 36, `snowLens` 37, `bloom` 40, `anamorphic` 41,
+  `afterimage` 45, `vignette` 50, `sceneTransition` 60) — plain
   colour-in/colour-out, folded in `order` threading `ctx.color`. The progression is
   scene → air → shutter → lens → eye, and the numbers are the only thing enforcing it:
   **two effects sharing an `order` are separated by nothing but their position in
@@ -513,8 +513,48 @@ all of them is already fixed. What reviving one of these needs:
 - `ssr` takes the RAW base-pass beauty — `SSRNode` derives its camera from
   `colorNode.passNode`, which a computed chain node does not have.
 
-Not built: `anamorphic` (no shipped node — the example composes a custom high-pass `Fn`,
-bloom, tint, add; budget it as real work).
+## `anamorphic` — a second, independently-thresholded `BloomNode`
+
+Thin horizontal lens streaks off bright highlights (headlights, chrome, the sun/moon
+disc). Not the shipped `LensflareNode` (that's `bloom`'s ghost sub-toggle — radial ghosts
+along the screen-centre vector) and not a mode of `bloom` itself: it needs its own
+`BloomNode` instance with `highPassFn` overridden, and `highPassFn` is per-instance state,
+so the main bloom effect (stock, isotropic extraction) can't share one with this (stock,
+horizontal-only extraction) — three's own `webgpu_postprocessing_anamorphic` example is
+built the same way, one `bloom()` call with a swapped-in highpass.
+
+- **The override runs at a different TIME than the rest of `build()`.** `highPassFn` is
+  assigned a `Fn`, not called — `BloomNode.setup()` calls it later, on first actual build
+  (not synchronously inside our effect's `build()`). The custom highpass has to
+  materialise its thresholded bright-pass as a real texture (`rtt()`) before it can
+  sample it at the SHIFTED uvs the horizontal loop needs — a procedural expression node
+  has no arbitrary-uv `.sample()`. That texture is the same "RTTNode has no `dispose()`"
+  trap `godrays.ts`'s `convertToTexture` hits, except the reference to dispose isn't
+  available where `ctx.track` is normally called — it's produced inside a closure three
+  invokes on its own schedule. Fixed the same way regardless: a `let` captured by the
+  closure, read lazily by the `dispose` thunk handed to `ctx.track` — the read happens on
+  the NEXT rebuild, well after `setup()` has run and populated it.
+- **Clamped before extraction, same reason as `bloom.ts`'s `inputClamp`**: the chain
+  carries unbounded linear radiance (the sun disc, a raw headlight emissive), and without
+  a ceiling a single hot pixel streaks the width of the frame at any sane `threshold`.
+- **`radius` is fixed at 0, not exposed.** `BloomNode`'s own post-extraction blur is
+  isotropic — any of it blurs the streak vertically too, undoing the "thin line" the
+  horizontal loop exists to produce. All of the spread comes from `stretch` (tap pitch)
+  and `samples` (loop bound, structural — a baked count, like `godrays`' `blurSigma`).
+- **Threshold defaults much higher than `bloom`'s global mode** (2 vs 0.22, against an
+  `inputClamp` of 8): this effect is for hotspots worth a line across the frame, not
+  general scene brightness. The addon example's own defaults (strength 1.5, threshold
+  0.55) were the first thing retuned against TestGame — at that threshold nearly every
+  lit surface streaked, which reads as a haze laid over the image, not a lens artefact.
+  Strength came down 10x alongside it; the two together are what turns "every bright
+  thing has a line" into "the sun and the headlights do."
+- Reads `ctx.color` AFTER `bloom` has folded (order 41), not bloom's own bright-pass —
+  an independent extraction means the streaks exist even with `bloom` itself disabled,
+  and the two thresholds mean different things (bloom's picks a glow radius, this one
+  picks which highlights earn a line).
+- **On by default**, unlike `godrays`/`ao`: cheap (quarter-res, one unlatched horizontal
+  loop, nothing to gate), and at the tuned defaults restrained enough that a frame with
+  no real hotspot in it shows nothing rather than a look change.
 
 ## Scene transitions — a real crossfade, via a frozen frame
 
