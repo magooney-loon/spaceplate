@@ -279,7 +279,12 @@ export const carDebugHud = $state({
 	/** The chassis hull vs. the world — see `carSim`'s own hull* fields. */
 	hullContact: false,
 	hullHitDv: 0,
-	hullSlideMs: 0
+	hullSlideMs: 0,
+	/** World-unit position, straight off `carSim.body*` — the same numbers the
+	 *  minimap buckets, at debug precision instead of half-a-unit. */
+	posX: 0,
+	posY: 0,
+	posZ: 0
 });
 
 const HUD_INTERVAL = 1 / 30;
@@ -386,6 +391,12 @@ function publishDebug(suspension: Suspension): void {
 	if (d.hullHitDv !== hullHitDv) d.hullHitDv = hullHitDv;
 	const hullSlideMs = q(carSim.hullSlideMs, 2);
 	if (d.hullSlideMs !== hullSlideMs) d.hullSlideMs = hullSlideMs;
+	const posX = q(carSim.bodyX, 2);
+	if (d.posX !== posX) d.posX = posX;
+	const posY = q(carSim.bodyY, 2);
+	if (d.posY !== posY) d.posY = posY;
+	const posZ = q(carSim.bodyZ, 2);
+	if (d.posZ !== posZ) d.posZ = posZ;
 	for (let i = 0; i < 4; i++) {
 		const load = q(suspension.loadRatio(i), 2);
 		if (d.load[i] !== load) d.load[i] = load;

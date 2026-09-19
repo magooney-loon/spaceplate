@@ -47,6 +47,18 @@
 			<span class="tag">{carView.mode.toUpperCase()}</span>
 		</div>
 
+		<!-- POSITION: the chassis body's own world-unit pose, straight off
+		     `carSim.body*` (same numbers the minimap buckets, at debug precision). -->
+		<h4>position</h4>
+		<dl>
+			<dt>x</dt>
+			<dd>{carDebugHud.posX.toFixed(2)}</dd>
+			<dt>y</dt>
+			<dd>{carDebugHud.posY.toFixed(2)}</dd>
+			<dt>z</dt>
+			<dd>{carDebugHud.posZ.toFixed(2)}</dd>
+		</dl>
+
 		<!-- DRIVELINE: which end is driven, and what it is doing. `spin` is the
 		     driven contact patch's overspeed over the road — the number the rig's
 		     driven wheels actually roll at. -->

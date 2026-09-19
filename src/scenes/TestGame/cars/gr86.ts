@@ -326,7 +326,7 @@ export const gr86 = {
 		scale: 2.5,
 		/** Hand-tuned spawn pose, world units / radians. */
 		spawn: {
-			position: [15, 2, 0],
+			position: [15, 1, 0],
 			rotation: [0, 0, 0]
 		},
 		/** The GLB's wheel materials are `WheelFLMtl` etc — prefix match. */
