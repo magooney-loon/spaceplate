@@ -95,6 +95,20 @@ export const carSim = {
 	 *  step, clamped at μ·g like everything else — so it saturates exactly when
 	 *  the tyres do, and a car sliding at the limit stops leaning harder. */
 	accelLat: 0,
+	/** 0..1 — smoothed rain wetness (sim/controller.ts). 0 = dry; scales every μ
+	 *  the driving model reads, uniformly, so it never touches the stability
+	 *  rule. Debug-panel only today — not a gameplay signal by itself. */
+	wetness: 0,
+
+	// ── Lap timing — a start/finish gate at the spawn line (sim/lapTimer.ts) ──
+	/** s — running since the last valid crossing (or spawn/restart). */
+	lapTime: 0,
+	/** s — the last completed lap this session. -1 = none yet. */
+	lastLapTime: -1,
+	/** s — the best completed lap, persisted across sessions. -1 = none yet. */
+	bestLapTime: -1,
+	/** Valid crossings this session. */
+	lapCount: 0,
 
 	// ── Car pose (world) ────────────────────────────────────────────────────────
 	/** The chassis body's world pose — translation + rotation as a quaternion,
@@ -232,7 +246,14 @@ export const carHud = $state({
 	 *  telemetry's. */
 	mapX: 0,
 	mapZ: 0,
-	mapYaw: 0
+	mapYaw: 0,
+
+	// ── Lap timing — see carSim's own fields for the source. ──────────────────
+	/** s, quantised to 0.1 — the running clock. */
+	lapTime: 0,
+	lastLapTime: -1,
+	bestLapTime: -1,
+	lapCount: 0
 });
 
 /**
@@ -271,6 +292,8 @@ export const carDebugHud = $state({
 	clutch: 0,
 	/** The live lateral μ, and the tyre's full one for comparison. */
 	muLat: 0,
+	/** 0..1 — smoothed rain wetness; 0 dry, scales every μ above. */
+	wetness: 0,
 	/** N (world force units) — total upward force the four springs handed Rapier. */
 	springForce: 0,
 	/** Per corner: PHYSICAL compression 0..1, and whether the ray found ground. */
@@ -337,6 +360,14 @@ export function publishCarHud(dt: number, suspension?: Suspension): void {
 	if (carHud.mapX !== mapX) carHud.mapX = mapX;
 	if (carHud.mapZ !== mapZ) carHud.mapZ = mapZ;
 	if (carHud.mapYaw !== mapYaw) carHud.mapYaw = mapYaw;
+
+	// Lap timing — the running clock quantised like everything else here;
+	// last/best/count only ever change on a crossing, so they are cheap copies.
+	const lapTime = Math.round(carSim.lapTime * 10) / 10;
+	if (carHud.lapTime !== lapTime) carHud.lapTime = lapTime;
+	if (carHud.lastLapTime !== carSim.lastLapTime) carHud.lastLapTime = carSim.lastLapTime;
+	if (carHud.bestLapTime !== carSim.bestLapTime) carHud.bestLapTime = carSim.bestLapTime;
+	if (carHud.lapCount !== carSim.lapCount) carHud.lapCount = carSim.lapCount;
 }
 
 /** Round to `places` decimals — the debug panel's quantiser. Coarser than the
@@ -379,6 +410,8 @@ function publishDebug(suspension: Suspension): void {
 	if (d.clutch !== clutch) d.clutch = clutch;
 	const muLat = q(carSim.muLat, 2);
 	if (d.muLat !== muLat) d.muLat = muLat;
+	const wetness = q(carSim.wetness, 2);
+	if (d.wetness !== wetness) d.wetness = wetness;
 	const springForce = Math.round(suspension.force);
 	if (d.springForce !== springForce) d.springForce = springForce;
 	if (d.hullContact !== carSim.hullContact) d.hullContact = carSim.hullContact;
@@ -448,6 +481,11 @@ export function resetCarTelemetry(): void {
 	carSim.loose = 0;
 	carSim.muLat = 0;
 	carSim.clutch = 1;
+	carSim.wetness = 0;
+	carSim.lapTime = 0;
+	carSim.lastLapTime = -1;
+	carSim.bestLapTime = -1;
+	carSim.lapCount = 0;
 	carSim.bodyX = 0;
 	carSim.bodyY = 0;
 	carSim.bodyZ = 0;
@@ -494,6 +532,7 @@ export function resetCarTelemetry(): void {
 	d.loose = 0;
 	d.clutch = 0;
 	d.muLat = 0;
+	d.wetness = 0;
 	d.springForce = 0;
 	d.hullContact = false;
 	d.hullHitDv = 0;

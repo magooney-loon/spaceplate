@@ -18,6 +18,7 @@
 	import CarEngineAudio from './audio/CarEngineAudio.svelte';
 	import CarWheels from './fx/CarWheels.svelte';
 	import DebugRig from './debug/DebugRig.svelte';
+	import LapGate from './debug/LapGate.svelte';
 	import ChaseCamera from './ChaseCamera.svelte';
 	import RearViewMirror from './RearViewMirror.svelte';
 	import SkidMarks from './fx/SkidMarks.svelte';
@@ -523,6 +524,13 @@
 			<T.Object3D name="ChaseAnchor" position={[0, 1.6, 0]} bind:ref={chaseAnchor} />
 		</RigidBody>
 	</T.Group>
+
+	<!-- The lap gate, drawn — the start/finish segment sim/lapTimer.ts tests,
+	     world-anchored at the spawn and never moving again. A scene sibling, not
+	     cargo: like the rig it self-gates on the B view ('rig' + 'both'), and it
+	     reads the timer's own gate object so the two cannot disagree. See
+	     debug/LapGate.svelte. -->
+	<LapGate view={carView.mode} lapTimer={controller.lapTimer} {suspension} />
 
 	<!-- Borrows the app camera while this scene is current and hands it back on the
 	     way out — see ChaseCamera.svelte. Outside the car's group: it is a rig, not cargo. -->

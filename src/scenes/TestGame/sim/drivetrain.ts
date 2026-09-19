@@ -348,8 +348,18 @@ export function createDrivetrain(spec: CarSpec) {
 	 * @param dt      step length, seconds
 	 * @param speedMs road speed along the nose, signed, m/s
 	 * @param tune    the selected setup — read fresh every step, never cached
+	 * @param grip    0..1 surface grip multiplier — the controller's rain-
+	 *                wetness term (1 = dry). A TRACK condition, not a setup, so
+	 *                it lives outside `tune` and only ever scales `tireMuLong`
+	 *                uniformly (safe under the stability rule: no sign in it).
 	 */
-	function step(dt: number, speedMs: number, input: DriveInput, tune: HandlingTune): DriveOutput {
+	function step(
+		dt: number,
+		speedMs: number,
+		input: DriveInput,
+		tune: HandlingTune,
+		grip: number
+	): DriveOutput {
 		state.shifted = false;
 		state.launched = false;
 		const rolling = Math.abs(speedMs);
@@ -575,7 +585,7 @@ export function createDrivetrain(spec: CarSpec) {
 		// just last step's force), layout-aware — cars/spec.ts. Handbrake locks
 		// the rears, so they drive nothing.
 		const drivenLoad = drivenAxleLoad(spec, prevDrive);
-		const traction = input.handbrake ? 0 : tune.tireMuLong * drivenLoad;
+		const traction = input.handbrake ? 0 : tune.tireMuLong * grip * drivenLoad;
 
 		// What the tyre hands the road. Gripping, it passes the engine's request up to
 		// the limit. SLIDING, it gives full μ along the way the wheels are turning and
