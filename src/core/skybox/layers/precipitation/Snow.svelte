@@ -31,8 +31,8 @@
 	// Everything except the `speck` falloff is constant over one flake, so it is computed
 	// ONCE PER VERTEX and interpolated (`flakeAlpha` below). The value is identical at all
 	// of the instance's vertices, so interpolating it is exact, not an approximation.
-	// **Rain's three materials still have the original shape** -- same trap, same fix
-	// available, deliberately left for its own change.
+	// **Rain's three materials (Rain.svelte) now follow the same rule** -- same trap,
+	// same fix, applied there too.
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import type { Mesh } from 'three/webgpu';

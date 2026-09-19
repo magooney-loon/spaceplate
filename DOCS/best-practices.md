@@ -408,8 +408,10 @@ puzzle the table above left open — snow costing more than rain with _fewer_ pa
 and note that the table cannot see this: it counts triangles, which the fix does not
 change. **Re-measure snow with a frame timer, not a triangle counter.** One `varying()` carrying the product moves all of it to the vertex
 stage (`Snow.svelte`'s `flakeAlpha`); the value is identical at every vertex of an
-instance, so interpolating it is exact. **Rain's three materials still have the same
-shape** — same fix available, left for its own change.
+instance, so interpolating it is exact. **Rain's three materials (streaks, rings,
+bursts) now carry the same fix** (`Rain.svelte`'s `streakAlpha`/`ringAlpha`/`burstAlpha`
++ `rimV`) — the height-field sample, the collision/wrap terms and the burst's backlight
+dot product all moved to the vertex stage the same way.
 
 The rest is genuine overdraw: alpha-blended billboards with `depthWrite = false`, every
 fragment blended whether it contributes or not. Four knobs, in order of effect, all now

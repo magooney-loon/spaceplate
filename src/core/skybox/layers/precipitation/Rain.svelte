@@ -41,6 +41,7 @@
 		sqrt,
 		step,
 		uniform,
+		varying,
 		vec3,
 		vec4
 	} from 'three/tsl';
@@ -528,17 +529,25 @@
 			const nearFade = smoothstep(float(NEAR_FADE_START), float(NEAR_FADE_END), viewDistance);
 
 			streakMaterial.colorNode = uStreakTint;
+			// EVERYTHING HERE EXCEPT `taper`/`edgeFade` IS CONSTANT ACROSS THE STREAK'S QUAD
+			// (Snow's `flakeAlpha` trap, layers/CLAUDE.md): `m.wrapFade` and `m.below` come out
+			// of `motionOf`'s height-field sample, and without a `varying()` a fragment-stage
+			// consumer re-runs that whole solve per pixel. One varying carrying the product,
+			// not one per term, since they are only ever multiplied together.
 			// `below.oneMinus()` is the collision: the streak stops existing the instant it
 			// reaches the surface, and the ring and burst take over from the same solution.
-			streakMaterial.opacityNode = opacity
-				.mul(taper)
-				.mul(edgeFade)
-				.mul(m.wrapFade)
-				.mul(m.below.oneMinus())
-				.mul(nearFade)
-				// Per-drop brightness: uniform opacity flattens the field into one plane of
-				// identical marks; a spread gives it depth for free.
-				.mul(aBright);
+			const streakAlpha = varying(
+				opacity
+					.mul(m.wrapFade)
+					.mul(m.below.oneMinus())
+					.mul(nearFade)
+					// Per-drop brightness: uniform opacity flattens the field into one plane of
+					// identical marks; a spread gives it depth for free.
+					.mul(aBright)
+			);
+			// `taper`/`edgeFade` read the interpolated quad corner, so they stay genuinely
+			// per-fragment -- they ARE the streak's shape.
+			streakMaterial.opacityNode = streakAlpha.mul(taper).mul(edgeFade);
 		}
 
 		// The splash layers run over the first `splashCount` drops. `subarray` is a VIEW,
@@ -670,20 +679,26 @@
 			// The flash mixes the ripple's water-blue toward white -- an impact is a moment
 			// of bright scatter, not a tinted ring from frame one.
 			ringMaterial.colorNode = mix(vec3(0.62, 0.72, 0.84), vec3(1, 1, 1), flash).mul(uLight);
-			ringMaterial.opacityNode = opacity
-				.mul(active)
-				.mul(m.alive)
-				.mul(m.wrapFade)
-				.mul(glow)
-				// Squared, so the ring holds its brightness while it is still tight and then
-				// goes quickly, instead of lingering as a wide grey halo.
-				.mul(pow(progress.oneMinus(), float(2)))
-				.mul(m.aRandoms.y)
-				// A touch brighter than the old 0.6 -- a smaller ring at the same brightness
-				// reads as fainter even though it covers the same fraction of its own quad;
-				// this keeps it punchy rather than washing out into the ground at the new
-				// scale.
-				.mul(0.72);
+			// `active`/`m.alive`/`m.wrapFade`/`progress`/`m.aRandoms.y` are all constant across
+			// the ring's quad (instance attributes plus a height-field sample from `motionOf`,
+			// same trap as the streaks above) -- `glow` is the one genuinely per-fragment term,
+			// since it reads the interpolated radial corner (`r`/`rWarped`).
+			const ringAlpha = varying(
+				opacity
+					.mul(active)
+					.mul(m.alive)
+					.mul(m.wrapFade)
+					// Squared, so the ring holds its brightness while it is still tight and then
+					// goes quickly, instead of lingering as a wide grey halo.
+					.mul(pow(progress.oneMinus(), float(2)))
+					.mul(m.aRandoms.y)
+					// A touch brighter than the old 0.6 -- a smaller ring at the same brightness
+					// reads as fainter even though it covers the same fraction of its own quad;
+					// this keeps it punchy rather than washing out into the ground at the new
+					// scale.
+					.mul(0.72)
+			);
+			ringMaterial.opacityNode = ringAlpha.mul(glow);
 		}
 
 		// ── The burst ────────────────────────────────────────────────────────────────
@@ -765,17 +780,26 @@
 			// a glint is light arriving at the lens, the same "inscatter adds, it doesn't
 			// lerp" reasoning `godrays`' composite uses (postprocessing/CLAUDE.md), just
 			// small enough here that the distinction is mostly `.add` vs `mix` in the code.
+			// `rim` reads `local`, which is built from `progress`/`m.x`/`m.z`/`aShape` alone --
+			// no corner term -- so despite the `normalize`/`dot`/`pow` chain it is constant
+			// across the droplet's quad. Lifted so that chain runs once per vertex, not once
+			// per fragment.
+			const rimV = varying(rim);
 			burstMaterial.colorNode = vec3(0.6, 0.7, 0.82)
 				.mul(uLight)
-				.add(vec3(1, 1, 0.96).mul(rim).mul(0.7));
-			burstMaterial.opacityNode = opacity
-				.mul(active)
-				.mul(m.alive)
-				.mul(m.wrapFade)
-				.mul(speck)
-				.mul(progress.oneMinus())
-				.mul(m.aRandoms.y)
-				.mul(0.8);
+				.add(vec3(1, 1, 0.96).mul(rimV).mul(0.7));
+			// `speck` is the one per-fragment term here -- it reads the interpolated corner
+			// (`d2`); everything else is instance-constant, same trap as the streaks/ring above.
+			const burstAlpha = varying(
+				opacity
+					.mul(active)
+					.mul(m.alive)
+					.mul(m.wrapFade)
+					.mul(progress.oneMinus())
+					.mul(m.aRandoms.y)
+					.mul(0.8)
+			);
+			burstMaterial.opacityNode = burstAlpha.mul(speck);
 		}
 
 		return {

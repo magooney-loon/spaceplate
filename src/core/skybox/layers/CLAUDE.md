@@ -200,7 +200,7 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   real cost behind snow's frame rate (`DOCS/best-practices.md` §3.6), not quad area or
   instance count. The rule: **anything constant across a particle's quad goes through
   `varying()`**, as one product rather than one varying per term — Snow's `flakeAlpha`.
-  Rain's three materials still have the original per-fragment shape.
+  Rain's three materials (streaks, rings, bursts) now follow the same rule.
 - Rain/Snow animate entirely in the vertex node (a `fract()` sawtooth through a
   camera-anchored box, zero CPU per particle) — that design is why the height field
   exists as a texture rather than geometry queries. **This is why compute shaders are not
