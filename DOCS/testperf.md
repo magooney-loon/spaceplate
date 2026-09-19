@@ -325,6 +325,29 @@ next to the GLB. Neither is a small change. **Do not confuse this with the
 in-frame stutters**; they have different symptoms — this one is a single freeze
 at the loading veil.
 
+> **The "a worker" fix is smaller than it sounds — scope it before starting.**
+> `<Collider shape="trimesh" args={c.args} />` in `Track.svelte` is
+> `@threlte/rapier`; mounting it calls `world.createCollider(ColliderDesc.trimesh(...))`
+> **synchronously, into the one shared Rapier WASM instance the whole physics
+> world lives in.** That native call — the actual BVH build over up to 190 681
+> triangles for `Metal` — cannot move to a worker without running a second WASM
+> instance there and merging its state back through Rapier's snapshot API
+> (`world.takeSnapshot()` / `World.restoreSnapshot()`), which `@threlte/rapier`
+> has no plumbing for and which does not compose with an existing world that
+> already has dynamic bodies in it. A worker can only ever move
+> `buildTrackColliders`'s JS loop (the GLB traverse + per-vertex matrix bake
+> that produces the `Float32Array`/`Uint32Array` args) off the main thread —
+> the trimesh/BVH construction itself stays put regardless.
+>
+> **Not measured which half of the stall that JS loop actually is.** Before
+> spending the effort: instrument `buildTrackColliders` and the `<Collider>`
+> mounts separately (`performance.now()` brackets are fine here — this is
+> outside any frame task) and see the real split. If the JS bake is a small
+> fraction of the freeze, a worker buys little and the offline-precompute route
+> (ship baked arrays as a binary next to the GLB, skip the JS loop AND let
+> Rapier build straight from typed arrays with no traverse) is the one worth
+> doing — it also removes the GLB-traverse cost the worker plan does not touch.
+
 ### 2.2 The car is 324 640 triangles in 29 draw calls
 
 Twenty-nine meshes, twenty-nine materials, a fully modelled interior and engine
