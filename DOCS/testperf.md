@@ -301,11 +301,22 @@ Ranked by (value × how cheap), same as `best-practices.md` §3.
 
 ### 2.1 Scene entry is a synchronous stall
 
-`buildTrackColliders` walks the 31 MB track GLB, allocates a baked `Float32Array`
-per mesh and transforms **313 725 triangles' worth of vertices** in JS, and then
-Rapier builds a BVH per trimesh — all on the main thread, all inside one
-`$derived`, all while the player waits. This is the entry hitch, and it is
-separate from every frame-path item above.
+`buildTrackColliders` walks the track GLB, allocates a baked `Float32Array` per
+collidable mesh and transforms its vertices in JS, and then Rapier builds a BVH
+per trimesh — all on the main thread, all inside one `$derived`, all while the
+player waits. This is the entry hitch, and it is separate from every frame-path
+item above.
+
+> **Update: the half-measure below is done, and the number above was the whole
+> track's count, not the collider's.** `world/trackColliders.ts` already filters
+> to `TRIMESH_MATERIALS = ['Asphalt', 'Metal']` plus a `Ground` floor — `Decals`
+> (31 572 tris) and `Leafs_Mat` (71 982) were never in the collidable set to
+> begin with (see the scene's `CLAUDE.md`, "Colliders — the hard-won rules").
+> `Ground` is 2 triangles and does not even reach the trimesh path — it becomes
+> an analytical cuboid floor (bounds only, no BVH). So the actual stall today is
+> **Asphalt (19 488) + Metal (190 681) = 210 169 triangles**, transformed and
+> built into two trimesh BVHs, not 313 725. Real, and still worth fixing below —
+> just smaller than this section used to say.
 
 The honest fixes are a worker (`best-practices.md` §3.5 — this is exactly the
 "anything that would otherwise produce a visible hitch at scene entry" case it
@@ -313,11 +324,6 @@ names) or precomputing the collider arrays offline and shipping them as a binary
 next to the GLB. Neither is a small change. **Do not confuse this with the
 in-frame stutters**; they have different symptoms — this one is a single freeze
 at the loading veil.
-
-Cheaper half-measure available first: `Decals` (31 572 tris, painted flat on the
-road) and possibly `Leafs_Mat` (71 982) almost certainly do not need to be
-collidable at all. That is a third of the collider build and a third of the
-static BVH, for a gameplay question someone has to answer.
 
 ### 2.2 The car is 324 640 triangles in 29 draw calls
 
