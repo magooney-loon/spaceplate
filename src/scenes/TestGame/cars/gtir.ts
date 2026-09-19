@@ -224,8 +224,8 @@ export const gtir = {
 		tyreHalfWidth: 0.0925,
 		/** Hand-placed near the rear bumper's dual tip openings, RAW GLB units. */
 		exhaustTips: [
-			[-0.55, 0.75, 4.45],
-			[0.55, 0.75, 4.45]
+			[1.25, 0.75, 4.5],
+			[1.25, 0.75, 4.5]
 		],
 		/** Hand-placed on the hood ahead of the windshield base, RAW GLB units —
 		 *  the real GTI-R's own intercooler hood scoop sits here, so the vent

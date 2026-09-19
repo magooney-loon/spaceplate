@@ -223,8 +223,8 @@ export const rs3 = {
 		tyreHalfWidth: 0.1225,
 		/** Hand-placed at the rear bumper's oval tip openings. */
 		exhaustTips: [
-			[-0.32, 0.22, 2.05],
-			[0.32, 0.22, 2.05]
+			[-0.48, 0.15, 2.2],
+			[0.48, 0.15, 2.2]
 		],
 		/** Hand-placed at the cowl corners, same spirit as the GR86's. */
 		purgeVents: [
@@ -233,8 +233,8 @@ export const rs3 = {
 		],
 		lamp: {
 			x: 0.62,
-			y: 0.58,
-			z: -2.02,
+			y: 0.52,
+			z: -1.8,
 			pitch: -0.045,
 			/** Matrix LED headlights — cool white. */
 			color: [0.85, 0.92, 1.0]
