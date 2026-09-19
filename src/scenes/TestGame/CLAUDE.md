@@ -1146,7 +1146,21 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   puffs are DEGENERATE (four verts on a point) rather than hidden. The one
   accepted difference: puffs in a pool do not sort against each other by
   depth, because they are one mesh — at these alphas it reads as more stable,
-  not wrong.
+  not wrong. **The MOTTLE is three noise octaves, not two**: roil + clump as
+  before, plus a third, much finer read of the same `perlinTex` (already
+  bound — no new texture load) at its own scale/drift, blended in narrowly
+  (0.75..1) as a detail pass rather than a third source of erosion holes.
+  Scaled down from `webgpu_volume_fire.html`'s (vendored three.js-dev example)
+  raymarched "detail noise multiplies base density" idea to one extra texture
+  sample — needed because TireSmoke's HEAT (below) can now grow a puff past 2x,
+  big enough for the original two frequencies to read as one smooth blob
+  again. **`ageTint`, optional per pool**: a colour a puff is BORN at, mixed
+  toward `color` across its life by the same age `t` erosion uses — one flat
+  tint for a puff's whole life is the sticker tell restated in colour instead
+  of alpha, and fresh material doesn't always look like dispersed material
+  (TireSmoke uses it: sootier off the rubber, pale gray once thinned). Omitted
+  by every other consumer (exhaust cough, nitrous jet, impact dust) — flat
+  reads fine for those, so it costs them nothing.
 - **`TireSmoke.svelte` (fx/) is the squeal made visible** — a `puffPool` of 64,
   spawned CONTINUOUSLY at the contact patches while a wheel slides: rate =
   2 + 8×intensity puffs/s per wheel, so a brief squeak is a wisp and a burnout
@@ -1175,7 +1189,9 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   ceiling (the POOL bullet below — a two-wheel burnout wants ~26 of the 64
   alive, a four-wheel slide ~52), and a bigger puff costs fill rate, not ring
   slots, so it cannot cause the early-recycle popping raising either of those
-  would. World-anchored at TestGame root
+  would. Uses `puffPool`'s `ageTint`: a sootier, burnt-rubber gray at birth
+  mixing to the pale dispersed gray as the puff ages, rather than one flat
+  tint for its whole life. World-anchored at TestGame root
   (`target={chaseAnchor}`, same body-space wheel offsets as SkidMarks — both
   from the spec's geometry via `wheelPatches`, one shared source). The task runs
   `{ before: autoRenderTask }`, i.e. after Rapier's synchronization, so a puff

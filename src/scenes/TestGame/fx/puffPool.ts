@@ -20,7 +20,7 @@
 // costs one draw call and zero fragments.
 
 import * as THREE from 'three/webgpu';
-import { attribute, saturate, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
+import { attribute, mix, saturate, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
 import { perlinNoise, voronoiNoise } from './noiseTextures';
 
 export interface PuffPoolConfig {
@@ -33,8 +33,18 @@ export interface PuffPoolConfig {
 	 * small and short-lived enough that the environment never reads wrong.
 	 */
 	lit: boolean;
-	/** Linear albedo. */
+	/** Linear albedo — what a puff has faded to by the end of its life. */
 	color: readonly [number, number, number];
+	/**
+	 * Optional colour a puff is BORN at, mixed toward `color` across its life
+	 * (by `t`, the same 0..1 age `fadeIn`/`fadeOut`/erosion use). One flat tint
+	 * for a puff's whole life is the "sticker" tell restated in colour instead
+	 * of alpha: fresh material and dispersed material rarely look the same —
+	 * tyre smoke is sootier/darker off the rubber than the pale gray it thins
+	 * to. Omit for a constant colour (the exhaust cough, the nitrous jet, the
+	 * impact dust all read fine flat; this is opt-in per pool).
+	 */
+	ageTint?: readonly [number, number, number];
 	/** Peak alpha per puff — overlaps are what build a cloud's density. */
 	alphaPeak: number;
 	/** 1/s-ish shape constant on the tail: bigger = the puff clears sooner. */
@@ -188,6 +198,11 @@ export function createPuffPool(cfg: PuffPoolConfig): PuffPool {
 
 	// Age: born fast, gone before the ring recycles the quad.
 	const t = uTime.sub(aPuff.x).div(aPuff.y);
+	if (cfg.ageTint) {
+		const born = vec3(cfg.ageTint[0], cfg.ageTint[1], cfg.ageTint[2]);
+		const faded = vec3(cfg.color[0], cfg.color[1], cfg.color[2]);
+		material.colorNode = mix(born, faded, saturate(t));
+	}
 	const fadeIn = saturate(t.mul(5));
 	const fadeOut = saturate(t.oneMinus().mul(cfg.fadeOut));
 	// Soft blob: radial falloff to nothing before the quad's corner.
@@ -206,10 +221,25 @@ export function createPuffPool(cfg: PuffPoolConfig): PuffPool {
 		.mul(cfg.clumpScale)
 		.add(vec2(seed.mul(1.7), seed));
 	const clump = texture(cellularTex, clumpUv).r;
+	// A third, much finer octave (webgpu_volume_fire's "detail noise" idea,
+	// scaled down to one texture read instead of a raymarched volume): at
+	// puffPool's normal sizes roil+clump alone read fine, but TireSmoke's HEAT
+	// can now grow a puff past 2x — big enough that the same two frequencies
+	// start reading as one smooth blob again. Reusing perlinTex (already
+	// bound) at a much tighter scale and its own drift breaks that up without
+	// another texture load; the narrow 0.75..1 range keeps it a detail pass,
+	// not a third layer of holes on top of erosion's.
+	const detailUv = uv()
+		.mul(cfg.roilScale * 3.4)
+		.add(vec2(seed.mul(-2.1).sub(uTime.mul(cfg.roilDrift[0] * 1.6)), seed.mul(4.3)));
+	const detail = texture(perlinTex, detailUv).r;
 
-	// The MOTTLE, 0..1 — the puff is never a clean disc. Both noises in one
-	// field, because the erosion below needs a single density to cut against.
-	const mottle = saturate(roil.mul(1.45)).mul(clump.mul(0.55).add(0.45));
+	// The MOTTLE, 0..1 — the puff is never a clean disc. All three noises in
+	// one field, because the erosion below needs a single density to cut
+	// against.
+	const mottle = saturate(roil.mul(1.45))
+		.mul(clump.mul(0.55).add(0.45))
+		.mul(detail.mul(0.25).add(0.75));
 
 	// EROSION — the thing that stops a puff reading as a fading sticker. The cut
 	// level climbs from BELOW zero (nothing eaten at birth, so a new puff is a

@@ -83,7 +83,10 @@
 	const pool = createPuffPool({
 		count: POOL,
 		lit: true,
-		color: [0.78, 0.78, 0.8], // rubber smoke is white-gray
+		color: [0.78, 0.78, 0.8], // rubber smoke is white-gray, once it's thinned out
+		// Fresh off the tyre it's sootier — a burnt-rubber gray, not yet the pale
+		// gray it dilutes to as it disperses. Mixed in by age (fx/puffPool.ts).
+		ageTint: [0.42, 0.39, 0.37],
 		alphaPeak: 0.24, // per puff — overlaps build the cloud's density
 		fadeOut: 1.4,
 		roilScale: 1.5,
