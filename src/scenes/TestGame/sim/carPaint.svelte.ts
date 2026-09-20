@@ -11,7 +11,7 @@
 //
 // PAINTS is read fresh from `currentCar()` on every call, NOT snapshotted at
 // module load: this module is a singleton (imported once for the process),
-// but the Garage shop (sim/carGarageShop.svelte.ts) can switch cars mid-
+// but the Garage shop (sim/garageShop.svelte.ts) can switch cars mid-
 // session, and each car has its own order sheet. A stale snapshot from
 // whichever car booted first would silently fail every `selectPaint` call
 // for every other car (the id would never be found in the wrong list).
@@ -25,7 +25,7 @@ function currentPaints(): readonly PaintOption[] {
 
 /** The selected paint's id + the finish it wears (the paint's factory finish
  *  until the shop's chips say otherwise). Reset to the new car's default on
- *  a car switch by TestGame.svelte's mount (see garage.svelte.ts). */
+ *  a car switch by PlayerCar.svelte's mount (see garage.svelte.ts). */
 export const carPaint = $state<{ id: string; finish: PaintFinish }>({
 	id: currentPaints()[0]?.id ?? '',
 	finish: currentPaints()[0]?.finish ?? 'solid'

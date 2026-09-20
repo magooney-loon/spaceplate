@@ -67,6 +67,16 @@ const LEVEL_SLEW = 8;
 /** Below this weight a layer is silent — pause it rather than hiss at ~0. */
 const AUDIBLE_WEIGHT = 0.004;
 
+// THE CAR'S OWN NUMBERS ARE RE-READ AT EVERY init, NEVER SNAPSHOTTED AT MODULE
+// LOAD — the trap carPaint.svelte.ts's header documents, and this module fell
+// into it. These are module singletons, so a load-time `currentCar()` captures
+// whichever car the registry's default names (cars/garage.svelte.ts keeps one
+// so module-load readers are boot-safe), and this module is imported long
+// before the player has picked anything: the RS3 and the GTI-R would both have
+// spent the session voiced with the GR86's anchors, pitch and rev range. They
+// are seeded here for safety and reassigned in initCarAudio, which runs on
+// every car mount.
+
 /**
  * The rpm each layer's recording sits at on THIS car's tacho — the
  * pitch-tracking anchors (per-car: the spec's `audio.layerRpm`). The two
@@ -76,11 +86,11 @@ const AUDIBLE_WEIGHT = 0.004;
  * dial them BY EAR: a wrong anchor is a layer that speaks in the wrong octave
  * while it holds the crossfade.
  */
-const LAYER_RPM = currentCar().audio.layerRpm;
+let LAYER_RPM = currentCar().audio.layerRpm;
 /** Per-car voice: scales every layer's rate, shifting the shared bed. */
-const PITCH_SCALE = currentCar().audio.pitchScale;
-/** This car's rpm bounds — read once; the car is constant for a session. */
-const HW = currentCar().hardware;
+let PITCH_SCALE = currentCar().audio.pitchScale;
+/** This car's rpm bounds. */
+let HW = currentCar().hardware;
 
 /** Safety clamps for the derived rates (idle dips and limiter overshoots). */
 const RATE_MIN = 0.7;
@@ -339,6 +349,13 @@ function triggerScrapeHit(severity: number): void {
 export const initCarAudio = (carScope: AudioScope, at: CarAnchors): void => {
 	scope = carScope;
 	anchors = at;
+	// The car the voices are about — read HERE, not at module load: this runs on
+	// every car mount, so a Garage switch re-voices the bed against the new
+	// spec's tacho instead of keeping the booting car's (see the LAYER_RPM block).
+	const spec = currentCar();
+	LAYER_RPM = spec.audio.layerRpm;
+	PITCH_SCALE = spec.audio.pitchScale;
+	HW = spec.hardware;
 	for (let i = 0; i < BED_IDS.length; i++) {
 		bed[i] = scope.loop(carSounds[BED_IDS[i]].soundId, { at: at.engineBay, paused: true });
 	}

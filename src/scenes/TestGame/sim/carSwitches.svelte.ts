@@ -117,7 +117,7 @@ export const applyCarToggle = (action: CarToggleSlot): void => {
 //
 // The HUD's Restart button can't reach the scene's locals (HUD and scene are
 // siblings — SceneHud.svelte / Scene.svelte mount them separately), so it bumps
-// a token here and TestGame.svelte's $effect puts the car back at its spawn pose.
+// a token here and PlayerCar.svelte's $effect puts the car back at its spawn pose.
 // A token, not a flag, so it works twice in a row. Not a slot: it is a BUTTON in the
 // HUD, not something the player binds a key to.
 

@@ -18,14 +18,14 @@
 	// nitrous burst always looks like nitrous, a fast straight always looks like
 	// speed, and neither amplifies the other.
 	//
-	// WHY A COMPONENT AND NOT A PHYSICS-TASK LINE IN TestGame.svelte: the write is
+	// WHY A COMPONENT AND NOT A PHYSICS-TASK LINE IN PlayerCar.svelte: the write is
 	// per RENDER frame, not per physics step (a uniform written more than once per
 	// drawn frame is written for nothing),
 	// and this keeps the scene's driving task free of post-processing wiring — the
 	// same separation LensDriver.svelte has from the weather model.
 	//
 	// SMOOTHING ON TOP OF THE FLOW: the nitrous flow itself ramps 8/s in, 4/s out
-	// (TestGame.svelte), but a smear should BLOOM and then LINGER a little past the
+	// (PlayerCar.svelte), but a smear should BLOOM and then LINGER a little past the
 	// spray — trails that cut dead with the bottle read as a glitch, not a lens.
 	// Asymmetric one-pole, the same shape LensDriver uses for wetting/drying. The
 	// speed half runs its OWN, much slower pole — it should read as the trail
@@ -113,7 +113,7 @@
 
 	// A spray/speed trail interrupted by leaving the scene must not leave its boost
 	// smeared over the next one — hard-set on teardown, the same pattern
-	// TestGame.svelte's own exit effect uses.
+	// PlayerCar.svelte's own exit effect uses.
 	$effect(() => () => {
 		nitrousLevel = 0;
 		speedLevel = 0;

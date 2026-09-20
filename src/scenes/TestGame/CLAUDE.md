@@ -9,9 +9,21 @@ engine architecture — do not generalise from this code into `core/` or
 scene via `Scene.svelte` / `SceneHud.svelte`.
 
 ```
-TestGame.svelte         — the scene: world + car composition + the physics-task
-                         shell; the driving model itself is sim/controller.ts,
-                         the map is world/Track.svelte
+TestGame.svelte         — the scene's COMPOSITION layer and nothing else: the
+                         shared GLB decoders, <Track />, the scene-wide input
+                         map (live for the whole visit, so a car switch never
+                         churns it) and the gate + `{#key carGarage.currentId}`
+                         that mount PlayerCar
+PlayerCar.svelte        — THE CAR: the GLB, the chassis RigidBody + hull
+                         collider, the driving physics task, the suspension's
+                         visual half, the paint, the fx and the camera rigs.
+                         Everything here reads `currentCar()` once at init, so
+                         this whole component is what a Garage pick remounts —
+                         and why the track, which is car-agnostic, stays up
+                         across one (the key used to sit on <TestGame /> in
+                         Scene.svelte and rebuilt the map every time). The
+                         driving model itself is sim/controller.ts; the map is
+                         world/Track.svelte
 units.ts                — UNITS_PER_METER + G: the SI ↔ world boundary (track
                          scale) — scene-wide, so it stays at the root rather
                          than under any one area (sim/fx/cars/audio/debug all
@@ -49,12 +61,16 @@ shops/                  — the TOP BAR shop overlays: paint + change-car, same
                          this is the one spot the badge already says the
                          make). THE FIRST CAR IS A CHOICE: until
                          carGarage.picked the bar holds itself open with no
-                         close (the pick IS the entry — see "Multi-car");
+                         close and NO CARD IS HIGHLIGHTED (the highlight is
+                         gated on `picked`, not on the registry default
+                         `currentId` carries — otherwise the GR86 reads as
+                         already chosen on the one screen where nothing is;
+                         the pick IS the entry — see "Multi-car");
                          after that picking a
-                         car writes carGarage.currentId; Scene.svelte keys the
-                         TestGame mount on that id, so the pick REMOUNTS the
-                         scene fresh against the new spec (garage.svelte.ts's
-                         header) — the same rebuild a scene re-entry does
+                         car writes carGarage.currentId; TestGame.svelte keys
+                         its <PlayerCar /> mount on that id, so the pick
+                         REMOUNTS THE CAR fresh against the new spec
+                         (garage.svelte.ts's header) while the track stays up
 cameras/                — the two camera / render-target components, as
                          opposed to the reactive-state HUD readouts above
   ChaseCamera.svelte    — chase cam; borrows the app camera (rules below) + the
@@ -275,7 +291,8 @@ world/                  — THE MAP: everything map-shaped (one track so far —
 
 Everything car-specific is DATA in `cars/`; the code (sim/, fx/, audio/, the
 cluster, the scene) is car-agnostic and reads `currentCar()` once per mount
-(TestGame.svelte's own top-level script) — see the "Switching cars" note
+(PlayerCar.svelte's own top-level script, and each fx component's) — see the
+"Switching cars" note
 below for what "per mount" means now that there's a Garage.
 **Adding a car** is: one `cars/<id>.ts` exporting a `CarSpec` (see `types.ts`
 for every field and its contract), plus one entry in `CARS` (garage.svelte.ts).
@@ -313,30 +330,44 @@ match an unrelated material.
 Engine audio files are SHARED across cars — a new car voices them via
 `audio.layerRpm` (where each layer sits on ITS tacho) + `audio.pitchScale`.
 
-**The first car is chosen, not defaulted.** `carGarage.picked` (garage.svelte.ts)
-starts false: TestGame's ONE car gate (`{#if picked && $carModel}` around the
-whole car subtree — body, fx, chase camera, mirror) keeps nothing car-shaped
-mounted while the world/track runs normally, and Garage.svelte holds itself
-open (`open || !picked`) with no close button — the session opens on the live
-world and the "Choose your car" bar, and any card (including the GR86 the
-`currentId` default names, which keeps module-load readers like
-carPaint/carAudio boot-safe) is a real take-delivery: picking the default
-REVEALS the already-built car; picking any other flips currentId and rides the
-same keyed remount a garage switch does. The app camera idles at its boot
-vantage (core/Camera.svelte) until ChaseCamera mounts with the car and borrows
-it. `picked` is session state like every other latch — re-entering the scene
-keeps the car; only a reload asks again.
+**The first car is chosen, not defaulted, and NOTHING is built until it is.**
+`carGarage.picked` (garage.svelte.ts) starts false, and TestGame's ONE car gate
+— `{#if carGarage.picked}` around `<PlayerCar />`, which IS the whole car
+subtree (body, fx, chase camera, mirror) — keeps nothing car-shaped mounted
+while the world/track runs normally: no spec read, no GLB fetch, no hull, no
+controller. Garage.svelte holds itself open (`open || !picked`) with no close
+button, so the session opens on the live world and the "Choose your car" bar,
+and every card is an equal take-delivery — the pick MOUNTS the car, it never
+merely reveals one that was already built.
+
+**`currentId` still carries a registry default and that is not a pick.** It
+exists so the module singletons that read `currentCar()` at import time
+(`sim/carTelemetry.svelte.ts`'s defaults, `audio/carAudio.ts`'s seeds) are
+boot-safe. Nothing may PRESENT it as a choice: the Garage's selected highlight
+is gated on `picked`, and so are the HUD's car readouts (CarCluster, DebugHud)
+and the Restart / Paint Shop buttons — all of them would otherwise be showing
+the default car's spec for a car nobody has taken. The app camera idles at its
+boot vantage (core/Camera.svelte) until ChaseCamera mounts with the car and
+borrows it. `picked` is session state like every other latch — re-entering the
+scene keeps the car; only a reload asks again.
 
 **Switching cars** is the Garage shop (Garage.svelte, HUD button, same shape
 as the paint shop): picking a car writes `carGarage.currentId`
-(garage.svelte.ts), and Scene.svelte keys its `<TestGame />` mount on that id
-— so a pick unmounts and remounts the whole scene against the new spec, the
-same rebuild a scene re-entry does. Nothing about that is car-code's problem
-EXCEPT the one module-level singleton that used to snapshot the booting car's
-data at import time: `sim/carPaint.svelte.ts`'s order sheet is read fresh
-from `currentCar()` on every call now, not captured once, and TestGame.svelte
-resets the latched paint id on mount if it isn't on the new car's sheet — see
-both files' own headers before adding another car-keyed singleton.
+(garage.svelte.ts), and **TestGame.svelte keys its `<PlayerCar />` mount on
+that id** — so a pick unmounts and remounts the CAR against the new spec,
+and only the car. The key used to sit on `<TestGame />` in `Scene.svelte`,
+which rebuilt the entire scene: every car switch re-attached the track GLB's
+scene graph, rebuilt its trimesh colliders, re-walked it for the wetness/shadow
+policy and re-contoured the minimap (~35 ms), none of which is car work. The
+track is car-agnostic and now stays up across a switch. Two things ARE car
+code's problem, and both are the same module-singleton trap:
+`sim/carPaint.svelte.ts`'s order sheet is read fresh from `currentCar()` on
+every call (never captured once) and `PlayerCar.svelte` resets the latched
+paint id on mount if it isn't on the new car's sheet; `audio/carAudio.ts`'s
+tacho anchors / pitch scale / rev range are re-read in `initCarAudio`, which
+runs per car mount — as module-load consts they had frozen the booting car's
+voice onto every other car for the session. See all three files' headers
+before adding another car-keyed singleton.
 
 `layout` is spec-level plumbing: RWD is the fully implemented, validated model.
 Two things read it, and both must: the drivetrain's driven-axle LOAD
@@ -921,7 +952,7 @@ touching anything on the frame path. The one rule that lives here because it is
 a scene-content decision, not an engine one:
 
 **`castShadow` is a policy, never a blanket flag — the car's half lives in
-`TestGame.svelte`, the track's half in `world/Track.svelte`.** A blanket
+`PlayerCar.svelte`, the track's half in `world/Track.svelte`.** A blanket
 `castShadow = receiveShadow = true` on every mesh in both GLBs is wrong in
 both directions at once. `SkyLight` is a `SunLight`
 fitting two cascades to the view camera (`core/skybox/CLAUDE.md`), so an
@@ -946,7 +977,7 @@ anything more invasive. Full numbers: `testperf.md` §1.1's update note.
 ## The suspension — the car leans, the physics doesn't
 
 `sim/suspension.ts` is the ONE owner of the car's body attitude, and its three
-consumers are the car MODEL (TestGame.svelte poses the visual group), the WHEELS
+consumers are the car MODEL (PlayerCar.svelte poses the visual group), the WHEELS
 (`fx/CarWheels.svelte`) and the debug rig — one owner because the lean must be
 the same lean everywhere; owned by the rig alone, the skeleton would lean and
 the car drawn over it would not. It is a PER-CAR
@@ -990,11 +1021,12 @@ inherit the GR86's ride.
   torsion). `CarWheels` adds it in `positionNode`, divided by `visualScale`
   because the module speaks world units and the baked wheel geometry is model
   metres — the same conversion the roll rate does in the other direction.
-- **The update task lives on the SCENE, not on a child.** Two children need the
-  pose and one of them (DebugRig) is only mounted in two of the three view modes,
-  so the owner has to be something always mounted — and registering it on the
-  scene also makes it run FIRST, since tasks sharing a constraint fall back to
-  mount order and parents mount before children. Render stage, never physics: the
+- **The update task lives on the CAR's root (`PlayerCar.svelte`), not on a
+  child.** Two children need the pose and one of them (DebugRig) is only mounted
+  in two of the three view modes, so the owner has to be something mounted for
+  as long as the car is — and registering it there also makes it run FIRST,
+  since tasks sharing a constraint fall back to mount order and parents mount
+  before children. Render stage, never physics: the
   CarWheels rule (`ceil(accumulator / rate)` substeps per frame is never
   constant, so a spring integrated in physics time pulses against the body Rapier
   is interpolating underneath it).
@@ -1505,7 +1537,7 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
 - **`sim/hullContacts.ts` is the one place that reads what the chassis hull is
   actually TOUCHING** — not the ground contact (the raycast springs in
   `suspension.ts` are), but kerbs, barrier bases, a fence scrape. Polled once
-  per physics step from TestGame.svelte's own `usePhysicsTask` (right after
+  per physics step from PlayerCar.svelte's own `usePhysicsTask` (right after
   `controller.step`, needs the hull's `bind:collider` as well as the body) and
   published onto `carSim.hullContact*` for anyone to read — `debug/DebugRig.svelte`
   (flashes/tints the hull) and `fx/CarImpacts.svelte` (sparks/dust) both
@@ -1566,7 +1598,7 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   polls from a `usePhysicsTask`, not a render task — `hullHitSeq` can rise and
   `hullContact` can come and go entirely inside one physics step, and this
   runs AFTER `hullContacts.ts` publishes for that same step because
-  TestGame.svelte (which owns that publish) mounts first — tasks sharing a
+  PlayerCar.svelte (which owns that publish) mounts first — tasks sharing a
   constraint fall back to mount order. Ballistics + streak-building stay a
   `{ before: autoRenderTask }` task (fx/puffPool.ts's camera-basis rule).
   Pooled, hoisted callbacks, `autoInvalidate: false` — §4 throughout.

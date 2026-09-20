@@ -96,7 +96,7 @@
 	//
 	// So the fix (`1.1` in testperf.md) was: THE CAR CASTS, THE WORLD RECEIVES —
 	// the car's half of the policy (its CAR_NON_CASTERS list) is in
-	// TestGame.svelte, and for a while the shadow pass drew the car alone.
+	// PlayerCar.svelte, and for a while the shadow pass drew the car alone.
 	//
 	// THE CORRECTNESS HALF OF THAT ARGUMENT EXPIRED with three r186: `SkyLight`
 	// is a `SunLight` now and its two cascades are fitted to the VIEW CAMERA

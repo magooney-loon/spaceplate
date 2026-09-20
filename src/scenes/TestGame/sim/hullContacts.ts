@@ -217,7 +217,7 @@ let wasTouching = false;
 let hitCooldown = 0;
 
 /**
- * Called once per physics step, from TestGame.svelte's own `usePhysicsTask`
+ * Called once per physics step, from PlayerCar.svelte's own `usePhysicsTask`
  * right after `controller.step` — needs the hull COLLIDER (`bind:collider`,
  * not just the body) because a manifold lives between two colliders, and the
  * BODY for the centre-of-mass/velocity the contact-point maths above needs.

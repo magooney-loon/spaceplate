@@ -30,22 +30,29 @@
 		>
 			← Back to Menu
 		</button>
-		<button
-			onclick={() => {
-				engineSounds.click.play();
-				requestCarRestart();
-			}}
-		>
-			↻ Restart
-		</button>
-		<button
-			onclick={() => {
-				engineSounds.click.play();
-				togglePaintShop();
-			}}
-		>
-			◈ Paint Shop
-		</button>
+		<!-- Restart and the Paint Shop need a car to act on — before the first
+		     pick there is none (TestGame.svelte mounts no car subtree at all), and
+		     the paint bar would be showing the DEFAULT spec's order sheet for a
+		     car the player hasn't taken. The Garage button below stays, though the
+		     shop is already holding itself open at that point. -->
+		{#if carGarage.picked}
+			<button
+				onclick={() => {
+					engineSounds.click.play();
+					requestCarRestart();
+				}}
+			>
+				↻ Restart
+			</button>
+			<button
+				onclick={() => {
+					engineSounds.click.play();
+					togglePaintShop();
+				}}
+			>
+				◈ Paint Shop
+			</button>
+		{/if}
 		<button
 			onclick={() => {
 				engineSounds.click.play();
@@ -67,16 +74,20 @@
 		</p>
 	</div>
 
-	<!-- Speed / gear / rpm — bottom right. Keyed on the garage's chosen car, same
-	     as Scene.svelte keys <TestGame />: CarCluster reads its car's spec ONCE
-	     at mount (maxRpm, hasTurbo, shift points…), and this HUD is routed on
-	     `visibleScene`, not on the car — switching cars via the Garage never
-	     remounts it on its own, so without this key the cluster would keep
-	     showing the PREVIOUS car's dial forever (e.g. a turbo car's boost gauge
-	     stuck reading NO TURBO after switching off the GR86). -->
-	{#key carGarage.currentId}
-		<CarCluster />
-	{/key}
+	<!-- Speed / gear / rpm — bottom right. Gated on the pick, then keyed on the
+	     chosen car, for the same reason TestGame.svelte gates and keys the car
+	     subtree: there are no instruments before there is a car (the dial would
+	     be the DEFAULT spec's, reading zero for a car nobody is driving), and
+	     CarCluster reads its car's spec ONCE at mount (maxRpm, hasTurbo, shift
+	     points…). This HUD is routed on `visibleScene`, not on the car, so
+	     without the key the cluster would keep showing the PREVIOUS car's dial
+	     forever (e.g. a turbo car's boost gauge stuck reading NO TURBO after
+	     switching off the GR86). -->
+	{#if carGarage.picked}
+		{#key carGarage.currentId}
+			<CarCluster />
+		{/key}
+	{/if}
 
 	<!-- Launch flash — upper middle of the screen (between centre and top, so
 	     it clears the car the chase cam frames), one-shot when a rev-match
@@ -95,12 +106,15 @@
 	     panel renders nothing. The corner is anchored at the BOTTOM so the map
 	     holds its place and the panel grows upward into the free screen. -->
 	<div class="corner">
-		<!-- Same stale-spec hazard as CarCluster above: DebugHud reads its car's
-		     spec once at mount too. TrackMinimap doesn't (car-agnostic), so it
-		     stays outside the key. -->
-		{#key carGarage.currentId}
-			<DebugHud />
-		{/key}
+		<!-- Same gate and the same stale-spec hazard as CarCluster above: DebugHud
+		     reads its car's spec once at mount too, and has nothing to say before
+		     there is a car. TrackMinimap doesn't (car-agnostic — it draws the
+		     track, which is up from the first frame), so it stays outside both. -->
+		{#if carGarage.picked}
+			{#key carGarage.currentId}
+				<DebugHud />
+			{/key}
+		{/if}
 		<TrackMinimap />
 	</div>
 
@@ -112,8 +126,10 @@
 
 	<!-- The garage — self-gates on garageShop.open (sim/garageShop.svelte).
 	     Picking a car writes carGarage.currentId (cars/garage.svelte.ts);
-	     Scene.svelte keys the TestGame mount on that id, so the pick remounts
-	     the scene fresh against the new car's spec. -->
+	     TestGame.svelte keys its <PlayerCar /> mount on that id, so the pick
+	     remounts the car fresh against the new spec and leaves the track up.
+	     It also holds itself open until the FIRST pick — which is why this one
+	     is not gated on carGarage.picked like the buttons above. -->
 	<Garage />
 </div>
 

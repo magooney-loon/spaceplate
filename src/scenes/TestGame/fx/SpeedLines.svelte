@@ -62,7 +62,7 @@
 	);
 
 	// Interrupted by leaving the scene — hard-set on teardown, the same pattern
-	// TestGame.svelte's own exit effect and CarAfterimage.svelte use.
+	// PlayerCar.svelte's own exit effect and CarAfterimage.svelte use.
 	$effect(() => () => {
 		level = 0;
 		uSpeedLinesBoost.value = 0;

@@ -1,0 +1,494 @@
+<script lang="ts">
+	import { untrack } from 'svelte';
+	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
+	import { useGltf } from '@threlte/extras';
+	import { Collider, RigidBody, useRapier, usePhysicsTask } from '@threlte/rapier';
+	import {
+		CoefficientCombineRule,
+		type Collider as RapierCollider,
+		type RigidBody as RapierRigidBody
+	} from '@dimforge/rapier3d-compat';
+	import * as THREE from 'three/webgpu';
+	import type { Mesh } from 'three/webgpu';
+	import type { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+	import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+	import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+	import { logGltf } from '$extensions/logger';
+	import CarHeadlights from './fx/CarHeadlights.svelte';
+	import CarTaillights from './fx/CarTaillights.svelte';
+	import CarExhaustFlames from './fx/CarExhaustFlames.svelte';
+	import NitrousPurge from './fx/NitrousPurge.svelte';
+	import CarEngineAudio from './audio/CarEngineAudio.svelte';
+	import CarWheels from './fx/CarWheels.svelte';
+	import DebugRig from './debug/DebugRig.svelte';
+	import ChaseCamera from './cameras/ChaseCamera.svelte';
+	import RearViewMirror from './cameras/RearViewMirror.svelte';
+	import SkidMarks from './fx/SkidMarks.svelte';
+	import TireSmoke from './fx/TireSmoke.svelte';
+	import CarAfterimage from './fx/CarAfterimage.svelte';
+	import SpeedLines from './fx/SpeedLines.svelte';
+	import CarImpacts from './fx/CarImpacts.svelte';
+	import { carRestart, carView } from './sim/carSwitches.svelte';
+	import { currentCar } from './cars';
+	import { carPaint, currentPaintOption } from './sim/carPaint.svelte';
+	import { UNITS_PER_METER } from './units';
+	import { createCarController } from './sim/controller';
+	import { buildCarHull, chassisMassProperties } from './cars/hull';
+	import { createBodyPaintMaterial, applyBodyPaint } from './cars/paintMaterial';
+	import { resetCarTelemetry, publishCarPose } from './sim/carTelemetry.svelte';
+	import { pollHullContacts, resetHullContacts } from './sim/hullContacts';
+
+	// THE PLAYER'S CAR — everything car-shaped in one component: the GLB, the
+	// chassis body and its hull collider, the driving task, the suspension's
+	// visual half, the paint, the fx and the camera rigs that need a car to
+	// point at. The car's facts are DATA in cars/ (see cars/types.ts — adding a
+	// car is a spec file + a registry entry, not component edits) and the
+	// driving model itself lives in sim/ (controller.ts owns the physics task's
+	// brain, drivetrain.ts the engine/gearbox, handling.ts the tune contract).
+	//
+	// WHY THIS IS ITS OWN COMPONENT: switching cars means rebuilding every
+	// car-specific object — `currentCar()` is read once at init here, and so are
+	// the drivetrain, the suspension, the loaded GLB and each fx component's own
+	// spec reads. So TestGame.svelte mounts this under `{#key
+	// carGarage.currentId}` and a pick tears exactly this subtree down and
+	// builds it again against the new spec. The scene around it — the track GLB,
+	// its colliders, its minimap build — is car-agnostic and STAYS UP: the key
+	// used to sit on `<TestGame />` in Scene.svelte, which rebuilt the whole map
+	// (a re-parse of the track's scene graph, its trimesh colliders and the
+	// ~35 ms minimap contour) on every car change.
+
+	let {
+		decoders
+	}: {
+		decoders: {
+			dracoLoader: DRACOLoader;
+			meshoptDecoder: typeof MeshoptDecoder;
+			ktx2Loader: KTX2Loader;
+		};
+	} = $props();
+
+	const car = currentCar();
+	// T.Group's position/rotation props want mutable tuples; the spec's are
+	// readonly data. Widened once, here, at the only consumer.
+	const spawnPosition = [...car.model.spawn.position] as [number, number, number];
+	const spawnRotation = [...car.model.spawn.rotation] as [number, number, number];
+
+	// carPaint is a latched choice that survives a Restart and a scene exit —
+	// by design (carPaint.svelte.ts) — but it does NOT know about a car
+	// SWITCH, because it's a module singleton and the Garage shop can point
+	// `currentCar()` at a whole different order sheet. Reset it here, once,
+	// only when the latched id isn't on THIS car's sheet at all (a fresh
+	// spawn, or a switch away from a car that had it) — an id that's still
+	// valid (the same car, or two cars sharing an id) must survive untouched.
+	if (!car.model.paints.some((paint) => paint.id === carPaint.id)) {
+		carPaint.id = car.model.paints[0]?.id ?? '';
+		carPaint.finish = car.model.paints[0]?.finish ?? 'solid';
+	}
+
+	// The decoders are the SCENE's (TestGame.svelte builds one DRACO/KTX2/Meshopt
+	// set and hands it to the track and the car alike). untrack for Track.svelte's
+	// reason: they are fixed per mount and useGltf is an init-time hook anyway.
+	const carModel = useGltf(
+		car.model.url,
+		untrack(() => decoders)
+	);
+
+	// The chassis hull — the car's collider computed from its own GLB (see
+	// cars/hull.ts): every mesh except the wheels, decimated to a few thousand
+	// world-unit points. Rebuilt only when the model changes; undefined only if
+	// the GLB had no non-wheel meshes at all.
+	const carHull = $derived($carModel?.scene ? buildCarHull($carModel.scene, car) : undefined);
+
+	// The hull collider's EXPLICIT mass properties (mass + COM + inertia + frame —
+	// the full set Threlte's Collider needs or it falls back to geometry-derived
+	// `setMass`): COM from cogHeight × the weight-bias lever, yaw inertia from the
+	// spec, pitch/roll as locked-axis placeholders. See cars/hull.ts.
+	const carMassProps = $derived(carHull ? chassisMassProperties(car, carHull) : undefined);
+
+	$effect(() => {
+		if ($carModel?.scene) logGltf.info(`TestGame car loaded (${car.label})`);
+	});
+
+	// ── Shadow casting is a POLICY, not a blanket flag — the car's half ────────
+	//
+	// The scene's rule: THE CAR CASTS, THE WORLD RECEIVES. The track's half of
+	// the policy — and the story of why the track does not cast (it used to be a
+	// correctness bug, since three r186 it is purely the cost of re-rendering
+	// 313 725 triangles into the shadow map once per cascade) — lives in
+	// world/Track.svelte (TRACK_CASTS_SHADOWS). Here, the car casts except for:
+	/** Car materials that are interior or engine: never part of the car's
+	 *  silhouette, so they cast nothing the bodywork doesn't already cast.
+	 *  117 176 of the model's 324 640 triangles, and 14 of its 29 meshes, out of
+	 *  the shadow pass for no visible difference. */
+	const CAR_NON_CASTERS = new Set([
+		'Engine',
+		'Engine_Alpha',
+		'Interior_Plastic',
+		'Interior_Accents',
+		'Leather',
+		'Leather_2',
+		'Seat',
+		'Seat_Belt',
+		'Carpet',
+		'Carpet_2',
+		'Speaker',
+		'Screen',
+		'Screen_2',
+		'Mirror'
+	]);
+
+	const materialName = (mesh: Mesh): string =>
+		(mesh.material as THREE.Material | undefined)?.name ?? '';
+
+	$effect(() => {
+		const root = $carModel?.scene;
+		if (!root) return;
+		root.traverse((obj) => {
+			const mesh = obj as Mesh;
+			if (!mesh.isMesh) return;
+			mesh.castShadow = !CAR_NON_CASTERS.has(materialName(mesh));
+			mesh.receiveShadow = true;
+		});
+	});
+
+	// ── The driving task — everything model-shaped lives in sim/controller.ts ───
+	// The header there carries the full driving-model rules (yaw-rate control,
+	// the stability argument, the grip cap); the markup below carries the
+	// body/collider contract (enabledRotations, the hull collider). The PEDALS
+	// are read straight off the input map inside that task — the map itself is
+	// the scene's (TestGame.svelte activates it for the whole visit, so a car
+	// switch never churns it), and so are the LATCHED switches.
+
+	let carBody = $state.raw<RapierRigidBody>();
+	/** The chassis hull collider — `sim/hullContacts.ts` reads its contact
+	 *  manifolds every physics step to publish `carSim.hullContact*`. */
+	let carCollider = $state.raw<RapierCollider>();
+	/** What ChaseCamera follows — an empty parented to the chassis body, see below. */
+	let chaseAnchor = $state.raw<THREE.Object3D>();
+	/** The visual car group (model + fx) — see the rig-view effect below. */
+	let visualRoot = $state.raw<THREE.Group>();
+
+	// The controller needs the Rapier world, not just the body: the car's ground
+	// contact is four RAYCASTS now (sim/suspension.ts), and a raycast is a world
+	// query. `useRapier` has to be called during component init like any hook.
+	const { world } = useRapier();
+	const controller = createCarController(car, world);
+	// The controller's suspension instance (created from the same spec — per car,
+	// like its drivetrain). The task below advances its VISUAL half; the physics
+	// half is stepped from inside the controller's own resetForces.
+	const suspension = controller.suspension;
+
+	usePhysicsTask((delta) => {
+		const body = carBody;
+		if (!body) return;
+		controller.step(delta, body);
+		// Reads the hull's contact manifolds, not events — see sim/hullContacts.ts's
+		// header for why. Runs in the physics task, not per rendered frame: an
+		// impulse spike lives inside one step and a render-stage poll would miss it.
+		pollHullContacts(world, carCollider, body, delta);
+		// The chassis pose, same step — world-anchored fx (CarImpacts' spark bounce
+		// volume) tests against the car's volume at it.
+		publishCarPose(body);
+	});
+
+	// ── The body leans (sim/suspension.ts) ───────────────────────────────────
+	//
+	// The PHYSICS car cannot pitch or roll — `enabledRotations` leaves only yaw
+	// free, for the reasons in the markup below — so the lean is the MODEL's, and
+	// this is where it gets applied. The suspension springs run off the driving
+	// model's own accelerations (carSim.accelFwd/accelLat) and hand back one
+	// body-space attitude; the visual group takes it, and the wheels take the
+	// matching counter-travel (CarWheels) so the tyres stay on the road while the
+	// car moves around them.
+	//
+	// THIS TASK IS THE SUSPENSION'S VISUAL HALF'S ONE OWNER, and it lives on the
+	// CAR's root rather than in a child because two children need it — the car
+	// model and the debug rig, and the rig is only mounted in two of the three
+	// view modes. Registering it here means it always runs, and runs FIRST: among
+	// tasks sharing a constraint the DAG falls back to mount order, and parents
+	// mount before children (src/CLAUDE.md), so CarWheels and DebugRig both read
+	// a pose that was rebuilt this frame.
+	//
+	// Render stage, not physics — same rule as CarWheels and the rig: the substep
+	// count per rendered frame is `ceil(accumulator / rate)` and therefore never
+	// constant, so a spring integrated in physics time pulses against the body
+	// Rapier is smoothly interpolating underneath it.
+	const { invalidate, autoRenderTask } = useThrelte();
+
+	useTask(
+		(delta) => {
+			suspension.update(delta);
+			const root = visualRoot;
+			if (!root) return;
+			root.position.y = -suspension.heave;
+			root.rotation.set(suspension.pitch, 0, suspension.roll);
+			// The car leaning IS a visual change and this is its one reason; a
+			// settled car at rest costs nothing.
+			if (suspension.moved) invalidate();
+		},
+		{ before: autoRenderTask, autoInvalidate: false }
+	);
+
+	// ── Paint — the order sheet on the body panels ───────────────────────────
+	//
+	// The shop (HUD, sim/carPaint.svelte) only picks WHICH paint and finish;
+	// applying that to the loaded GLB is scene work (cars/paintMaterial.ts —
+	// its header has the why). One material instance, never disposed: useGltf
+	// caches the scene, so a remount finds it already on the panels and reuses it.
+	const bodyPaint = createBodyPaintMaterial(car);
+
+	// Re-runs on model load AND on every paint-shop selection (the option read
+	// tracks carPaint.id, the finish read tracks carPaint.finish — colour and
+	// finish are chosen independently in the shop).
+	$effect(() => {
+		const root = $carModel?.scene;
+		if (!root) return;
+		applyBodyPaint(root, car, bodyPaint, currentPaintOption(), carPaint.finish);
+		// Render on demand: a re-spray the renderer never sees is not a re-spray.
+		invalidate();
+	});
+
+	// ── Rig view (B): hide the MODEL, keep everything else alive ──────────────
+	//
+	// 'rig' hides the car's MESHES so the debug skeleton (debug/DebugRig.svelte)
+	// is the car. It hides meshes, never the group: the headlights' projectors and
+	// the exhaust pop's PointLight live inside this subtree, and toggling a
+	// LIGHT's visibility removes it from the render list — which is part of every
+	// lit material's cache key and recompiles the scene's materials (the
+	// POP_LIGHT_* rule in fx/CarExhaustFlames.svelte). Only meshes that are
+	// VISIBLE at the moment of hiding are recorded and restored: a blanket
+	// hide-all/restore-all re-shows the GLB's merged wheel meshes that CarWheels
+	// keeps hidden after baking its own — and since CarWheels mutates the SHARED
+	// material, those re-shown meshes roll with it: duplicate ghost wheels.
+	let hiddenByRig: THREE.Mesh[] = [];
+	$effect(() => {
+		const root = visualRoot;
+		const mode = carView.mode;
+		for (const mesh of hiddenByRig) mesh.visible = true;
+		hiddenByRig = [];
+		if (root && mode === 'rig') {
+			root.traverse((obj) => {
+				const mesh = obj as THREE.Mesh;
+				if (!mesh.isMesh || !mesh.visible) return; // already-hidden stays hidden
+				mesh.visible = false;
+				hiddenByRig.push(mesh);
+			});
+		}
+	});
+
+	// Restart button (HUD → carRestart token): pose and motion back to the
+	// captured spawn, nothing else — gear/lights/instruments are left alone and
+	// self-correct from the body next step. The controller's own spawnCaptured
+	// guard drops a stale token from an earlier mount: the body is a fresh one
+	// at the authored pose then, and the controller's spawn copy is still zeroed
+	// until its first step captures it.
+	$effect(() => {
+		if (carRestart.token === 0) return;
+		const body = carBody;
+		if (body) controller.restart(body);
+		// The springs hold state across a teleport otherwise — a car restarted
+		// mid-brake respawns nose-down and bobs back up.
+		suspension.reset();
+		// Same reason: the hit edge-detector must not carry a pre-teleport Δv
+		// spike into the fresh spawn.
+		resetHullContacts();
+	});
+
+	// Unmount parks the instruments — this runs on a scene exit AND on a Garage
+	// switch (the key above this component remounts it), so the next car starts
+	// against parked telemetry rather than the last one's. The HUD unmounts with
+	// the scene, but the mirror is module state and would otherwise still read
+	// 180 km/h on the way back in. The pedals need nothing here: the scene's
+	// `useInputMap` release zeroes every slot.
+	$effect(() => {
+		return () => {
+			controller.park();
+			resetCarTelemetry();
+			suspension.reset();
+			resetHullContacts();
+		};
+	});
+</script>
+
+<!-- The outer group is the spec's spawn pose (RigidBody reads its world
+     transform at creation); the visual scale lives on the children so the BODY
+     speaks world units while the collider args below stay in model metres.
+     Gated on the GLB alone — the "has the player taken delivery yet" gate is
+     the mount of this whole component (TestGame.svelte). -->
+{#if $carModel}
+	<T.Group name={car.model.name} rotation={spawnRotation} position={spawnPosition}>
+		<!-- linearDamping is 0 on purpose: aero drag and rolling resistance are in the
+		     drivetrain now, and a blanket damping term on top of them is the same loss
+		     counted twice (it was also what capped the old top speed). gravityScale is
+		     UNITS_PER_METER because the shared <World> pulls at 9.8 units/s², which in
+		     this 2.5-units-to-the-metre track is 3.9 m/s² — moon gravity, and a car that
+		     floats over every kerb. Scene-local: the global value belongs to DemoScene too.
+		     enabledRotations: only yaw (world Y) is free — see sim/controller.ts's
+		     header for why pitch had to be locked too, not just roll. -->
+		<RigidBody
+			bind:rigidBody={carBody}
+			type="dynamic"
+			linearDamping={0}
+			angularDamping={1.5}
+			gravityScale={UNITS_PER_METER}
+			enabledRotations={[false, true, false]}
+			ccd={true}
+		>
+			<T.Group bind:ref={visualRoot} scale={car.model.scale}>
+				<T is={$carModel.scene} />
+				<!-- Steerable/rolling wheels — shader-driven, see fx/CarWheels.svelte.
+				     visualScale must match this group's scale: the roll rate divides
+				     world speed by the world-space wheel radius. -->
+				<CarWheels scene={$carModel.scene} visualScale={car.model.scale} {suspension} />
+				<!-- Car-local units on purpose (nose is -Z — see fx/CarHeadlights.svelte). -->
+				<CarHeadlights />
+				<!-- Tail glow + brake flare on the GLB's own lamp material — see
+				     fx/CarTaillights.svelte. Car-local model metres like its siblings. -->
+				<CarTaillights scene={$carModel.scene} />
+				<!-- Exhaust pops on downshifts/limiter — tips from the car's spec, see
+				     fx/CarExhaustFlames.svelte. Car-local model metres like its siblings. -->
+				<CarExhaustFlames />
+				<!-- Nitrous purge — the pedal held with the spray gate shut vents the
+				     line at the hood; vents from the car's spec, see fx/NitrousPurge.svelte.
+				     Car-local model metres like its siblings. -->
+				<NitrousPurge />
+				<!-- Engine audio — positional rpm bed + lift-off one-shot, task-ticked from
+				     carSim (audio/CarEngineAudio.svelte / carAudio.ts). -->
+				<CarEngineAudio />
+			</T.Group>
+
+			<!-- Chassis: ONE ROUNDED CONVEX HULL computed from the GLB itself
+			     (cars/hull.ts builds the point cloud — every mesh except the wheels,
+			     whose tyre bottoms would make the body a ground contact and fight the
+			     raycast springs that ARE the contact). Replaces the authored
+			     roundCuboid: the collider now follows the real silhouette — tapered
+			     greenhouse, raked windshield, nose and tail — instead of a full-width
+			     slab to 4 cm under the roof. Not <AutoColliders>: that is per-mesh
+			     (29 colliders — seats, glass, engine — each silly on its own) and would
+			     hull the wheels into ground contacts.
+			     WORLD SCALE 1 ON PURPOSE: the points are PRE-BAKED to world units
+			     (×model.scale) in hull.ts and this Collider sits directly under the
+			     RigidBody with no scaled group, because Threlte's scaleColliderArgs
+			     vertex-scales `convexHull` args but NOT `roundConvexHull` — it falls
+			     into the positional [x,y,z] branch and would multiply the point array
+			     by a scalar (the old roundCuboid fourth-arg quirk's bigger sibling).
+			     The MARGIN (hull.ts HULL_MARGIN, 5 cm model) is a small edge FILLET:
+			     Rapier DILATES round hulls by the border radius, so every edge —
+			     nose, tail, belly, roofline — carries a ~0.13-unit fillet that
+			     GLANCES off kerbs and barrier bases instead of face-stopping. The
+			     point cloud is REAL surface vertices ONLY (what AutoColliders
+			     feeds convexHull, decimated — no synthetic bbox corners: those put
+			     phantom roof-height points at the nose/tail tips and were exactly
+			     the boxy-too-big hull). The BELLY is CLAMPED to pay for the
+			     dilation: points below the line are lifted so the dilated bottom
+			     stays on the old box's ~13 cm bump-stop line — the margin can never
+			     push the hull below the springs' reach and make the body a ground
+			     contact. The doors sit at 0.91 + 0.05 = 0.96 (the old box's 0.95),
+			     the mirrors a touch wider still (see hull.ts).
+			     MASS: still the sole mass carrier, now with EXPLICIT properties —
+			     mass + centerOfMass + principalAngularInertia + angularInertiaLocalFrame
+			     (Threlte takes that branch only when ALL THREE extras are present;
+			     otherwise it silently `setMass`es and derives from geometry). The COM
+			     is the spec's own (cogHeight, the 53/47 lever rule) and the yaw inertia
+			     is the spec's hardware.yawInertia — steering is DIRECT setAngvel
+			     control, so these scale contact response (barrier hits), never the
+			     driving model. Pitch/roll are locked (enabledRotations) so their
+			     inertia components are box-equivalent placeholders from the hull's
+			     bounds. All world-unit/kg·wu² — the units.ts boundary, applied in
+			     hull.ts's chassisMassProperties. Friction props carry what
+			     the box ran (1 × Multiply → the track collider's own μ): contacts are
+			     bump stop and barrier hits, never grip — that lives in the
+			     drivetrain/task and the raycast springs.
+			     NOT the ground contact — the springs are; the hull's belly rides
+			     ~13 cm off the rest line (clamped, see above) and meets geometry
+			     only on real hits. -->
+			{#if carHull && carMassProps}
+				<Collider
+					bind:collider={carCollider}
+					shape="roundConvexHull"
+					args={[carHull.points, carHull.margin]}
+					mass={car.hardware.mass}
+					centerOfMass={carMassProps.centerOfMass}
+					principalAngularInertia={carMassProps.principalAngularInertia}
+					angularInertiaLocalFrame={carMassProps.angularInertiaLocalFrame}
+					friction={0.36}
+					frictionCombineRule={CoefficientCombineRule.Min}
+				/>
+			{/if}
+
+			<!-- THERE ARE NO WHEEL COLLIDERS. The car's ground contact is FOUR
+			     RAYCAST SPRINGS (sim/suspension.ts), cast down at `wheelPatches` from
+			     the controller's physics step; their summed force is what holds the
+			     car up, and the chassis hull above is now purely the bump stop and
+			     the thing that hits barriers.
+
+			     This replaced four frictionless ball colliders at the same patches. The
+			     balls were geometrically right — the tyres kissed the road, and a ball
+			     rolled over the asphalt↔dirt lip where the old box belly caught — but a
+			     rigid ball is an infinitely stiff spring, and `enabledRotations` leaves
+			     the body no pitch or roll to absorb an uneven contact with. A 3 cm kerb
+			     under ONE wheel therefore had to lift the whole car 3 cm inside a single
+			     step: that was the stutter, and it got worse with speed because the
+			     contact was discovered further into the lip each step. A spring takes
+			     ~0.2 s over the same lip, and a ray cannot manufacture a ghost contact
+			     at a trimesh's internal edges the way a shape sweep can.
+
+			     The ride height did not move: the spring's static sag is built into its
+			     rest length, so equilibrium still sits the hub exactly one tyre radius
+			     above the road. What the rays hit is filtered the same way the balls
+			     were — the body itself is excluded, and the track's colliders are still
+			     only Asphalt/Metal trimesh + the Ground floor (world/trackColliders.ts). -->
+
+			<!-- The debug skeleton — wheels/driveline/suspension at the spec's
+			     patches, steered and rolled from the same carSim values as CarWheels,
+			     struts riding the shared suspension, chassis drawn as the collider's
+			     own hull wireframe. It takes the VIEW MODE rather than a boolean,
+			     because it draws two layers: the skeleton in both 'rig' and 'both',
+			     and the analysis overlays (suspension rays, CG vectors, friction
+			     circle) only in 'rig', where there is no car for them to bury.
+			     B cycles model → rig → both; it never touches physics. -->
+			<DebugRig view={carView.mode} {suspension} hull={carHull} />
+
+			<!-- What the chase camera looks at. An empty inside the RigidBody rather than
+			     the visual group: this level is UNSCALED, so the offset is world units and
+			     stays put if the visual scale ever changes; and its world transform is the
+			     body's own pose, which is what the camera should track (the visual group
+			     carries the model's offsets). ~1.6 up = the car's middle, not its floor. -->
+			<T.Object3D name="ChaseAnchor" position={[0, 1.6, 0]} bind:ref={chaseAnchor} />
+		</RigidBody>
+	</T.Group>
+
+	<!-- Borrows the app camera while this scene is current and hands it back on the
+	     way out — see ChaseCamera.svelte. Outside the car's group: it is a rig, not cargo. -->
+	<ChaseCamera target={chaseAnchor} />
+
+	<!-- Rear-view strip — a backward camera on the car filling a small RT,
+	     composited as a top-of-screen overlay on the active camera.
+	     See RearViewMirror.svelte. -->
+	<RearViewMirror target={chaseAnchor} />
+
+	<!-- Skid marks — world-anchored ring buffer of rubber quads laid at the tyre
+	     patches while the car slides (same anchor: its parent is the body, the space
+	     the wheel offsets live in). See fx/SkidMarks.svelte. -->
+	<SkidMarks target={chaseAnchor} {suspension} />
+
+	<!-- Tyre smoke — continuous puffs at the contact patches while a wheel
+	     slides (burnout / drift / hard brake / max cornering). World-anchored
+	     like the marks; same anchor trick. See fx/TireSmoke.svelte. -->
+	<TireSmoke target={chaseAnchor} {suspension} />
+
+	<!-- Impact & scrape sparks — reads the hull-contact signal `sim/hullContacts.ts`
+	     already publishes onto `carSim` each physics step: a HIT is a rising edge
+	     (burst + dust cough), a SCRATCH is pressed-and-sliding (continuous spark
+	     stream). World-anchored like the marks: sparks are shed and stay where the
+	     car scraped. See fx/CarImpacts.svelte. -->
+	<CarImpacts hull={carHull} />
+
+	<!-- Renders nothing — drives the afterimage effect's runtime boost from the
+	     nitrous flow AND road speed. See fx/CarAfterimage.svelte. -->
+	<CarAfterimage />
+
+	<!-- Renders nothing — drives the speed-lines effect's runtime boost from the
+	     model's own forward acceleration. See fx/SpeedLines.svelte. -->
+	<SpeedLines />
+{/if}

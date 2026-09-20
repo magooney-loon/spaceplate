@@ -1,9 +1,10 @@
 // The Garage shop's open state — the change-car counterpart to the paint
 // shop (carPaint.svelte.ts's `paintShop`). Garage.svelte writes
 // `carGarage.currentId` directly (cars/garage.svelte.ts owns that state) when
-// a car is picked; Scene.svelte keys the TestGame mount on that id, so a pick
-// remounts the scene fresh against the new car's spec — see garage.svelte.ts's
-// header for why a remount is what "switching cars" means here.
+// a car is picked; TestGame.svelte keys its <PlayerCar /> mount on that id, so
+// a pick remounts the CAR fresh against the new spec while the track stays up —
+// see garage.svelte.ts's header for why a remount is what "switching cars"
+// means here.
 //
 // NOTE the shop ALSO shows while `!carGarage.picked` regardless of `open`
 // (Garage.svelte's gate) — the first car is a choice, not a default; `open`

@@ -25,7 +25,7 @@ export type CarLayout = 'rwd' | 'fwd' | 'awd';
 export type TorquePoint = readonly [rpm: number, nm: number];
 
 /** How a paint hits the light — mapped to material params (metalness /
- *  roughness / clearcoat / iridescence) in TestGame.svelte, so a finish is
+ *  roughness / clearcoat / iridescence) in cars/paintMaterial.ts, so a finish is
  *  the same look on every car. */
 export type PaintFinish = 'solid' | 'metallic' | 'pearl' | 'shift';
 
@@ -294,7 +294,7 @@ export type CarSpec = {
 		halfTrack: number;
 		/** m — wheel-centre height in model space. The WHEEL-CONTACT colliders'
 		 *  mount height: their bottoms are the car's only ground contact, so the
-		 *  resting tyres kiss the road (see TestGame.svelte). */
+		 *  resting tyres kiss the road (see PlayerCar.svelte). */
 		hubY: number;
 		/** m — front axle centre, z in model space (negative: ahead of the origin). */
 		frontAxleZ: number;

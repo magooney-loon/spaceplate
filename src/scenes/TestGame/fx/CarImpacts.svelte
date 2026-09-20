@@ -32,7 +32,7 @@
 	// render task — `hullHitSeq` can tick and `hullContact` can come and go
 	// entirely inside one physics step, and a render-stage poll would coalesce
 	// several steps into one read and miss one. It runs after
-	// `sim/hullContacts.ts` publishes for the same step because TestGame.svelte
+	// `sim/hullContacts.ts` publishes for the same step because PlayerCar.svelte
 	// mounts (and so registers its own physics task) before this component
 	// does — tasks sharing a constraint fall back to mount order (src/CLAUDE.md).
 	// Ballistics + streak-building stay a `{ before: autoRenderTask }` task

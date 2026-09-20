@@ -46,7 +46,7 @@ export const carSim = {
 	 *  value here — how much of one a car can hold is its tune's business. */
 	drift: 0,
 	/** 0..1 — share of the lateral grip budget the current corner demands: the
-	 *  sideways-bleed demand over the μ·g cap it's clamped to (TestGame.svelte).
+	 *  sideways-bleed demand over the μ·g cap it's clamped to (controller.ts).
 	 *  Pins at 1 exactly at max banking (v·ω = μ·g at the yaw cap), sits well under
 	 *  it in a normal corner. The tyre-squeal driver reads this (carAudio): a
 	 *  planted limit cornering lights no drift angle and no TC lamp — the load
@@ -61,7 +61,7 @@ export const carSim = {
 	brake: 0,
 	handbrake: false,
 	limiting: false,
-	/** 0..1 — nitrous FLOW right now (ramped in TestGame.svelte's task, not raw
+	/** 0..1 — nitrous FLOW right now (ramped in the controller's task, not raw
 	 *  key state). Read by CarExhaustFlames to tint the flames blue and hold the
 	 *  pilot jet while the system sprays. */
 	nitrous: 0,
@@ -434,7 +434,7 @@ function publishDebug(suspension: Suspension): void {
 
 /** The pose half of the feed — the chassis body's world translation and
  *  rotation, straight off Rapier, written onto `carSim` every physics step from
- *  TestGame.svelte's own task (right after `pollHullContacts`, so pose and hull
+ *  PlayerCar.svelte's own task (right after `pollHullContacts`, so pose and hull
  *  contact describe the same step). Out-param scratch for the translation —
  *  `worldCom`'s own zero-allocation pattern; `rotation()` mirrors
  *  hullContacts.ts and takes the small allocation instead. */

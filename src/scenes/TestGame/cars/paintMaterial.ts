@@ -1,5 +1,5 @@
 // The paint the car wears, applied to its own GLB — extracted from
-// TestGame.svelte the way hull.ts's collider math was: a car-agnostic
+// PlayerCar.svelte the way hull.ts's collider math was: a car-agnostic
 // function over (root, spec), called from the scene's own effect.
 //
 // The GLB ships painted in whatever the export baked (Track bRED); the shop
@@ -9,7 +9,7 @@
 // here. The shared paint material is SWAPPED for a MeshPhysicalMaterial
 // because clearcoat and iridescence are what separate a solid from a pearl
 // and a colour-shift — and it KEEPS the GLB's material name so the shadow
-// policy (TestGame.svelte's CAR_NON_CASTERS) still reads it. One instance,
+// policy (PlayerCar.svelte's CAR_NON_CASTERS) still reads it. One instance,
 // never disposed: useGltf caches the scene, so a remount finds it already on
 // the panels and reuses it. Metalness stays modest on purpose — the scene has
 // no environment map (sky key + fill lights only), and a high metalness with

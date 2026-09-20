@@ -4,7 +4,6 @@
 	import MainMenu from '$scenes/MainMenu/MainMenu.svelte';
 	import DemoScene from '$scenes/DemoScene/DemoScene.svelte';
 	import TestGame from '$scenes/TestGame/TestGame.svelte';
-	import { carGarage } from '$scenes/TestGame/cars';
 </script>
 
 {#if sceneState.currentScene === 'mainMenu'}
@@ -20,16 +19,11 @@
 {/if}
 
 {#if sceneState.currentScene === 'testGame'}
+	<!-- NOT keyed on the garage's chosen car: the car-specific subtree is
+	     TestGame's own <PlayerCar />, and the key that remounts it on a pick
+	     lives there, so a car switch leaves the track (and its colliders and
+	     minimap) standing. See TestGame/cars/garage.svelte.ts. -->
 	<T.Group name="TestGame" position={[0, -0.7572, 0]}>
-		<!-- Keyed on the garage's chosen car (TestGame/cars/CLAUDE.md's "Garage"
-		     section) — everything car-specific builds once at TestGame's mount,
-		     so switching cars from the Garage shop remounts this subtree fresh.
-		     The FIRST pick rides the same key: until it happens TestGame mounts
-		     against the default spec with its car subtree hidden (carGarage.picked
-		     gate in TestGame.svelte — the world/track is up either way), and a
-		     first pick of any other car flips currentId, which remounts here. -->
-		{#key carGarage.currentId}
-			<TestGame />
-		{/key}
+		<TestGame />
 	</T.Group>
 {/if}

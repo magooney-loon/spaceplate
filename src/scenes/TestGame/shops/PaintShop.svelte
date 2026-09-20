@@ -9,7 +9,7 @@
 	// swatches (the spec's order sheet), finish chips beside the title, and the
 	// HUD's Paint Shop button is the only way in or out (no key — pointer UI).
 	//
-	// Selecting applies instantly (TestGame.svelte's paint effect watches
+	// Selecting applies instantly (PlayerCar.svelte's paint effect watches
 	// carPaint.id/finish) and picks up the code's FACTORY finish; the chips
 	// then override the finish without touching the colour — Solar Shift's
 	// flip on Yuzu yellow is one chip away.
@@ -20,10 +20,10 @@
 	// `paints` is `$derived`, NOT a plain const read once at mount — this
 	// component lives in the HUD (SceneHud.svelte), which routes on
 	// `sceneState.visibleScene` and does NOT remount when the Garage switches
-	// cars (only the 3D scene does, via Scene.svelte's `{#key
+	// cars (only the car subtree does, via TestGame.svelte's `{#key
 	// carGarage.currentId}`). A plain `currentCar().model.paints` would freeze
 	// on whichever car was active when the HUD first mounted — the GR86's
-	// sheet, forever, once TestGame.svelte itself is showing a different car
+	// sheet, forever, once the scene itself is showing a different car
 	// (same staleness carPaint.svelte.ts's own PAINTS used to have).
 
 	const paints = $derived(currentCar().model.paints);

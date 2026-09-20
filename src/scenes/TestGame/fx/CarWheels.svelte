@@ -58,7 +58,7 @@
 	const uRollRear = uniform(0);
 	// SUSPENSION TRAVEL, in MODEL METRES, one component per wheel in the same
 	// order as `wheelPatches` and as the quadrant split below (x < split first).
-	// The body leans (TestGame.svelte poses the visual group off sim/suspension);
+	// The body leans (PlayerCar.svelte poses the visual group off sim/suspension);
 	// the wheels are the contact balls and must NOT go with it, so this is the
 	// counter-offset that keeps each tyre on the road. Uploading four numbers is
 	// what makes the wheels visibly work in the arches instead of the whole car

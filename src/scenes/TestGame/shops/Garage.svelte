@@ -7,14 +7,17 @@
 	// The garage — a TOP BAR, same shape as PaintShop.svelte: no backdrop, the
 	// world stays interactive around it, only the bar itself catches clicks.
 	// One row of car cards, each showing exactly what's IN the spec (nothing
-	// invented here) — picking one writes carGarage.currentId, which Scene.svelte
-	// is keyed on, so the pick remounts TestGame fresh against the new car.
+	// invented here) — picking one writes carGarage.currentId, which
+	// TestGame.svelte keys its <PlayerCar /> on, so the pick remounts the car
+	// fresh against the new spec (the track stays up).
 	//
 	// THE FIRST CAR IS A CHOICE: until carGarage.picked the bar holds itself
 	// open (open || !picked below) and shows no close — there is nothing to go
 	// back TO — so the session starts with the player taking delivery, not with
-	// a defaulted spawn. Every card is takeable on that first screen, the
-	// GR86 default included; after that the shop is an ordinary toggle again.
+	// a defaulted spawn. NO CARD IS SELECTED on that first screen (the highlight
+	// is gated on `picked` below, not on the registry default `currentId`
+	// carries), and every card is an equal take-delivery; after that the shop is
+	// an ordinary toggle and the highlight means "what you're driving".
 
 	const RPM_PER_RAD_S = 60 / (2 * Math.PI);
 
@@ -71,9 +74,14 @@
 
 		<div class="cars">
 			{#each Object.entries(CARS) as [id, spec] (id)}
+				<!-- SELECTED means "the car you are driving", so it needs the pick as
+				     well as the id: `currentId` carries a default (cars/garage.svelte.ts
+				     keeps it non-null for the module-load readers), and on its own it
+				     lit that car's card up on the very first screen — the GR86 reading
+				     as already chosen on a bar whose whole point is that nothing is. -->
 				<button
 					class="option"
-					class:selected={id === carGarage.currentId}
+					class:selected={carGarage.picked && id === carGarage.currentId}
 					onclick={() => pick(id as CarId)}
 				>
 					<img class="logo" src={spec.logo} alt="" width="320" height="320" />
