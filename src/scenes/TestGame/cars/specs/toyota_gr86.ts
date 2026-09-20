@@ -24,6 +24,7 @@ import type { CarSpec } from '../types';
 export const toyota_gr86 = {
 	id: 'toyota_gr86',
 	label: 'Toyota GR86',
+	modelLabel: 'GR86',
 	logo: `${BASE_URL}models/testgame/toyota.png`,
 	layout: 'rwd',
 

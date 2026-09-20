@@ -48,6 +48,10 @@ export type CarSpec = {
 	id: string;
 	/** Shown wherever the car is named (HUD, logs). */
 	label: string;
+	/** The model name ALONE, no manufacturer — "GR86", not "Toyota GR86". The
+	 *  Garage card pairs this with `logo` instead of repeating the make in
+	 *  text next to the badge that already says it. */
+	modelLabel: string;
 	/** Absolute URL to the manufacturer's badge (usually
 	 *  `${BASE_URL}models/testgame/<make>.png`) — the Garage HUD card's logo.
 	 *  A transparent PNG, pre-cropped and padded to the same square canvas as

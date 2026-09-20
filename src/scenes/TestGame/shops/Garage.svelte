@@ -65,7 +65,7 @@
 					onclick={() => pick(id as CarId)}
 				>
 					<img class="logo" src={spec.logo} alt="" width="320" height="320" />
-					<span class="label">{spec.label}</span>
+					<span class="label">{spec.modelLabel}</span>
 					<span class="layout">{LAYOUT_LABEL[spec.layout]}</span>
 					<span class="stats">
 						{Math.round(peakPowerKw(spec))} kW / {Math.round(peakPowerKw(spec) * 1.34102)} hp
@@ -164,8 +164,8 @@
 	}
 
 	.logo {
-		width: 2.75rem;
-		height: 2.75rem;
+		width: 3.75rem;
+		height: 3.75rem;
 		object-fit: contain;
 	}
 

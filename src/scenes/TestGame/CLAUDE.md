@@ -43,7 +43,11 @@ shops/                  — the TOP BAR shop overlays: paint + change-car, same
                          gear count/layout, nothing invented here), headed by
                          the manufacturer's badge (spec.logo — a plain <img>,
                          pre-cropped to a common square so every card lines up
-                         without per-logo CSS). Picking a
+                         without per-logo CSS) with the MODEL name alone under
+                         it (spec.modelLabel — "GR86", not "Toyota GR86"; the
+                         full `label` still names the car everywhere else,
+                         this is the one spot the badge already says the
+                         make). Picking a
                          car writes carGarage.currentId; Scene.svelte keys the
                          TestGame mount on that id, so the pick REMOUNTS the
                          scene fresh against the new spec (garage.svelte.ts's

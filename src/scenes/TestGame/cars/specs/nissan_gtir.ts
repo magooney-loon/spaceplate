@@ -91,6 +91,7 @@ const tune: HandlingTune = {
 export const nissan_gtir = {
 	id: 'nissan_gtir',
 	label: 'Nissan Pulsar GTI-R',
+	modelLabel: 'Pulsar GTI-R',
 	logo: `${BASE_URL}models/testgame/nissan.png`,
 	layout: 'fwd',
 
