@@ -10,6 +10,7 @@
 	import { togglePaintShop } from './sim/carPaint.svelte';
 	import { toggleGarageShop } from './sim/garageShop.svelte';
 	import { carHud } from './sim/carTelemetry.svelte';
+	import { carGarage } from './cars';
 
 	// The launch flash's tier names — latched at the catch (carSim.launchTier),
 	// never read off the live revs. The boost itself is continuous; the names
@@ -66,8 +67,16 @@
 		</p>
 	</div>
 
-	<!-- Speed / gear / rpm — bottom right. -->
-	<CarCluster />
+	<!-- Speed / gear / rpm — bottom right. Keyed on the garage's chosen car, same
+	     as Scene.svelte keys <TestGame />: CarCluster reads its car's spec ONCE
+	     at mount (maxRpm, hasTurbo, shift points…), and this HUD is routed on
+	     `visibleScene`, not on the car — switching cars via the Garage never
+	     remounts it on its own, so without this key the cluster would keep
+	     showing the PREVIOUS car's dial forever (e.g. a turbo car's boost gauge
+	     stuck reading NO TURBO after switching off the GR86). -->
+	{#key carGarage.currentId}
+		<CarCluster />
+	{/key}
 
 	<!-- Launch flash — upper middle of the screen (between centre and top, so
 	     it clears the car the chase cam frames), one-shot when a rev-match
@@ -86,7 +95,12 @@
 	     panel renders nothing. The corner is anchored at the BOTTOM so the map
 	     holds its place and the panel grows upward into the free screen. -->
 	<div class="corner">
-		<DebugHud />
+		<!-- Same stale-spec hazard as CarCluster above: DebugHud reads its car's
+		     spec once at mount too. TrackMinimap doesn't (car-agnostic), so it
+		     stays outside the key. -->
+		{#key carGarage.currentId}
+			<DebugHud />
+		{/key}
 		<TrackMinimap />
 	</div>
 

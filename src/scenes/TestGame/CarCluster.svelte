@@ -21,12 +21,15 @@
 	//   tacho / gear / speed  the drivetrain, straight off the mirror
 	//   N2O                   the BOTTLE LEVEL, like the pressure gauge on a real
 	//                         bottle: full reads full, falls as you spray
-	//   BOOST/VAC             manifold pressure DERIVED FROM THE PEDAL (see
+	//   BOOST/VAC             manifold pressure DERIVED FROM THE PEDAL AND REVS (see
 	//                         `manifoldBar`) — a display model of a real quantity off
-	//                         a real input, not an invented signal. The GR86 is
-	//                         naturally aspirated (spec `cluster.hasTurbo`), so the
-	//                         needle lives in the vacuum half and the boost half of
-	//                         the dial is drawn dead.
+	//                         a real input, not an invented signal. A turbo car (spec
+	//                         `cluster.hasTurbo`) spools with revs and goes positive at
+	//                         high throttle; the GR86 is naturally aspirated, so its
+	//                         needle only ever lives in the vacuum half. A car with no
+	//                         turbo has no boost gauge to read, so the whole gauge is
+	//                         OFF — dark face, no needle, no readout — the same
+	//                         treatment the rest of the pod gets when the ignition is off.
 	//
 	// ── No tweening, anywhere ────────────────────────────────────────────────────
 	// No CSS or Svelte transitions (repo convention): the needle moves because the
@@ -142,15 +145,14 @@
 	const n2oTrack = arcFrom(MINI_CX, N2O_CY, A0, A0 + SWEEP, MINI_R);
 	/** Zero bar sits at the top of the boost dial — vacuum left, boost right. */
 	const BOOST_ZERO = A0 + SWEEP / 2;
-	/** The three printed marks on the boost dial: −, 0, +. */
+	/** The three printed marks on the boost dial: −, 0, +. A car with no turbo never
+	 *  draws any of this — the whole gauge is off — so there is no per-mark dead state
+	 *  to track here any more. */
 	const BOOST_MARKS = [
-		{ text: '−', at: polarPoint(MINI_CX, BOOST_CY, A0 + 13, MINI_R - 13), dead: false },
-		{ text: '0', at: polarPoint(MINI_CX, BOOST_CY, BOOST_ZERO, MINI_R - 15), dead: false },
-		{ text: '+', at: polarPoint(MINI_CX, BOOST_CY, A0 + SWEEP - 13, MINI_R - 13), dead: !HAS_TURBO }
+		{ text: '−', at: polarPoint(MINI_CX, BOOST_CY, A0 + 13, MINI_R - 13) },
+		{ text: '0', at: polarPoint(MINI_CX, BOOST_CY, BOOST_ZERO, MINI_R - 15) },
+		{ text: '+', at: polarPoint(MINI_CX, BOOST_CY, A0 + SWEEP - 13, MINI_R - 13) }
 	];
-	/** The half of the boost dial this car can never reach — drawn dead, not hidden:
-	 *  the scale is the gauge's, and a naturally aspirated car simply never gets there. */
-	const boostDeadPath = arcFrom(MINI_CX, BOOST_CY, BOOST_ZERO, A0 + SWEEP, MINI_R);
 	/** The bottle's low zone — the bottom fifth of the N2O sweep. */
 	const n2oLowPath = arcFrom(MINI_CX, N2O_CY, A0, at(0.2), MINI_R);
 
@@ -211,16 +213,25 @@
 	// MANIFOLD PRESSURE, bar relative to atmosphere, as a DISPLAY MODEL off the real
 	// pedal and rpm: a throttle plate is a restriction, so a closed throttle at high
 	// rpm is the deepest vacuum (~-0.85 bar on overrun), idle sits around -0.55, and
-	// wide open is barely under atmosphere. Engine off = 0, because a stopped engine
-	// pumps nothing. This is not a sim number and must never be fed back into one —
-	// the drivetrain models torque, not airflow. It is here because a gauge that
-	// answers to your right foot is the whole point of a boost gauge, and the
+	// wide open is barely under atmosphere — every car sees this half, turbo or not.
+	// A TURBO CAR (spec `cluster.hasTurbo`) also gets a positive half: the turbo
+	// SPOOLS with revs (nothing below ~35% of the tacho, ramping to full boost at
+	// redline) and only makes boost once the throttle plate is open, so `spool` and
+	// `throttle` both gate it. Engine off = 0, because a stopped engine (and a dead
+	// turbo) pumps nothing. This is not a sim number and must never be fed back into
+	// one — the drivetrain models torque, not airflow. It is here because a gauge
+	// that answers to your right foot is the whole point of a boost gauge, and the
 	// previous parked needle with "N/A" under it answered to nothing.
 	const revFrac = $derived(Math.min(carHud.rpm / maxRpm, 1));
-	const manifoldBar = $derived(lit ? -(1 - carHud.throttle) * (0.5 + 0.35 * revFrac) : 0);
+	const vacuumBar = $derived(-(1 - carHud.throttle) * (0.5 + 0.35 * revFrac));
+	const spool = $derived(Math.max(0, (revFrac - 0.35) / 0.65));
+	const boostBar = $derived(HAS_TURBO ? carHud.throttle * spool * 0.9 : 0);
+	const manifoldBar = $derived(lit ? vacuumBar + boostBar : 0);
 	/** Full scale each way, so 0 lands exactly at the top of the sweep. */
 	const BOOST_FS = 1;
-	const boostAngle = $derived(at((manifoldBar / BOOST_FS + 1) / 2));
+	/** A car with no turbo has the needle PARKED at zero, not swinging on vacuum —
+	 *  the gauge is off, and an off gauge doesn't move. */
+	const boostAngle = $derived(HAS_TURBO ? at((manifoldBar / BOOST_FS + 1) / 2) : BOOST_ZERO);
 	const boostFill = $derived(
 		Math.abs(boostAngle - BOOST_ZERO) < 0.5
 			? ''
@@ -320,22 +331,20 @@
 		</defs>
 
 		<!-- ── Boost / vacuum ──────────────────────────────────────────────── -->
-		<g class="gauge">
+		<!-- A car with no turbo has nothing this gauge could ever read, so it ships
+		     OFF: same face, same position, needle parked, no readout, dark like the
+		     rest of the pod on a dead ignition. -->
+		<g class="gauge" class:off={!HAS_TURBO}>
 			<circle class="face" cx={MINI_CX} cy={BOOST_CY} r={MINI_BEZEL} />
 			<circle class="rim" cx={MINI_CX} cy={BOOST_CY} r={MINI_BEZEL} />
 			<path class="mini-track" d={boostTrack} />
-			{#if !HAS_TURBO}
-				<path class="mini-dead" d={boostDeadPath} />
-			{/if}
 			{#if boostFill}
 				<path class="mini-fill boost" d={boostFill} />
 			{/if}
 			<g class="scale">
 				{@render miniScale(BOOST_CY)}
 				{#each BOOST_MARKS as mark (mark.text)}
-					<text class="mini-mark" class:dead={mark.dead} x={mark.at[0]} y={mark.at[1]}>
-						{mark.text}
-					</text>
+					<text class="mini-mark" x={mark.at[0]} y={mark.at[1]}>{mark.text}</text>
 				{/each}
 			</g>
 			<g transform="rotate({boostAngle} {MINI_CX} {BOOST_CY})">
@@ -343,10 +352,13 @@
 				<path class="mini-needle" d={BOOST_NEEDLE} />
 			</g>
 			<circle class="mini-hub" cx={MINI_CX} cy={BOOST_CY} r="3" />
-			<text class="mini-value" x={MINI_CX} y={BOOST_CY + 15}>{boostReadout}</text>
-			<text class="mini-label" x={MINI_CX} y={BOOST_CY + 25}>
-				{HAS_TURBO ? 'BOOST' : 'VAC · BAR'}
-			</text>
+			{#if HAS_TURBO}
+				<text class="mini-value" x={MINI_CX} y={BOOST_CY + 15}>{boostReadout}</text>
+			{/if}
+			<!-- BOOST is the gauge's own printed label, same as a real dial — it
+			     stays put whether the gauge is live or dark; the off state already
+			     says "nothing to read here", it doesn't need a second label for it. -->
+			<text class="mini-label" x={MINI_CX} y={BOOST_CY + 25}>BOOST</text>
 		</g>
 
 		<!-- ── N2O bottle ──────────────────────────────────────────────────── -->
@@ -754,8 +766,7 @@
 	/* ── Mini gauges ──────────────────────────────────────────────────────── */
 	.mini-track,
 	.mini-fill,
-	.mini-low,
-	.mini-dead {
+	.mini-low {
 		fill: none;
 		stroke-linecap: round;
 	}
@@ -765,10 +776,12 @@
 		stroke-width: 4;
 	}
 
-	/* The half of the boost dial a naturally aspirated engine cannot reach. */
-	.mini-dead {
-		stroke: rgba(255, 255, 255, 0.04);
-		stroke-width: 4;
+	/* A gauge with nothing to read, like the boost gauge on a car with no turbo —
+	   same face and needle, just dead: dim and desaturated, same treatment the
+	   whole cluster gets on a dead ignition (.cluster.dark). */
+	.gauge.off {
+		opacity: 0.4;
+		filter: saturate(0.3);
 	}
 
 	.mini-low {
@@ -831,10 +844,6 @@
 		font-weight: 700;
 		text-anchor: middle;
 		dominant-baseline: middle;
-	}
-
-	.mini-mark.dead {
-		fill: rgba(255, 255, 255, 0.18);
 	}
 
 	.mini-value {
