@@ -12,11 +12,13 @@ index.ts                    — barrel re-exports
 
 ## The panel is two columns, and the layout is CSS over tweakpane's DOM
 
-`Effects` is the right-hand column; `Base Pass`, `Weather`, `Grade` and `Anti-Aliasing`
-stack in the left one. **`Weather` is a panel grouping, not a role** — `fogScatter`,
-`godrays`, `rainLens` and `snowLens` are ordinary chain effects to the builder, but their
-`enabled` flag means "let the sky decide" and their params shape something invisible until
-it rains (or hazes over), so among bloom and vignette they read as dead controls.
+`Effects` is the right-hand column; `Base Pass`, `Weather`, `Scene Transition`, `Grade`
+and `Anti-Aliasing` stack in the left one. **`Weather` and `Scene Transition` are panel
+groupings, not roles** — `fogScatter`, `godrays`, `rainLens`, `snowLens` and
+`sceneTransition` are ordinary chain effects to the builder, but their `enabled` flag
+means "let the sky decide" (weather) or "the scene switch's cover" (transition) rather
+than a look tuned alongside bloom and vignette, so each gets pulled into its own folder
+on the left instead of sitting in the right-hand `Effects` grid.
 
 The columns are a CSS grid over the pane's blade container, not markup, and that is
 forced rather than chosen: a `Folder` or `Slider` attaches itself to the pane through

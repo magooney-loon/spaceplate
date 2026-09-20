@@ -69,13 +69,19 @@
 			column: 'left',
 			defs: byRole('chain').filter((def) => WEATHER_IDS.has(def.id))
 		},
+		{
+			title: 'Scene Transition',
+			expanded: false,
+			column: 'left',
+			defs: byRole('chain').filter((def) => def.id === 'sceneTransition')
+		},
 		{ title: 'Grade', expanded: true, column: 'left', defs: byRole('grade') },
 		{ title: 'Anti-Aliasing', expanded: true, column: 'left', defs: byRole('resolve') },
 		{
 			title: 'Effects',
 			expanded: true,
 			column: 'right',
-			defs: byRole('chain').filter((def) => !WEATHER_IDS.has(def.id))
+			defs: byRole('chain').filter((def) => !WEATHER_IDS.has(def.id) && def.id !== 'sceneTransition')
 		}
 	];
 
@@ -110,8 +116,10 @@
 						<Folder title={def.label + (suppressed ? ' (off)' : '')} expanded={settings.enabled}>
 							<Checkbox
 								value={settings.enabled}
-								on:change={() =>
-									postprocessingActions.setEnabled(def.id as EffectId, !settings.enabled)}
+								on:change={(e) => {
+									if (e.detail.origin === 'internal')
+										postprocessingActions.setEnabled(def.id as EffectId, e.detail.value as boolean);
+								}}
 								label="Enabled"
 							/>
 							{#if settings.enabled && params.length > 0}
