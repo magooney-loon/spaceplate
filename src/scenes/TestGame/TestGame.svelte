@@ -22,7 +22,8 @@
 	import RearViewMirror from './cameras/RearViewMirror.svelte';
 	import SkidMarks from './fx/SkidMarks.svelte';
 	import TireSmoke from './fx/TireSmoke.svelte';
-	import NitrousAfterimage from './fx/NitrousAfterimage.svelte';
+	import CarAfterimage from './fx/CarAfterimage.svelte';
+	import SpeedLines from './fx/SpeedLines.svelte';
 	import CarImpacts from './fx/CarImpacts.svelte';
 	import { applyCarToggle, carRestart, carView } from './sim/carSwitches.svelte';
 	import { CAR_TOGGLE_SLOTS, carControls } from './sim/carControls';
@@ -488,6 +489,10 @@
 	<CarImpacts hull={carHull} />
 
 	<!-- Renders nothing — drives the afterimage effect's runtime boost from the
-	     nitrous flow. See fx/NitrousAfterimage.svelte. -->
-	<NitrousAfterimage />
+	     nitrous flow AND road speed. See fx/CarAfterimage.svelte. -->
+	<CarAfterimage />
+
+	<!-- Renders nothing — drives the speed-lines effect's runtime boost from the
+	     model's own forward acceleration. See fx/SpeedLines.svelte. -->
+	<SpeedLines />
 {/if}

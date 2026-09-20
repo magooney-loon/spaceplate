@@ -15,7 +15,7 @@ export type AfterimageParams = {
 /**
  * Runtime damp modulation, 0…~0.9 — adds onto the panel's `damp` floor. Module-scope
  * `uniform()` so identity survives rebuilds; written per frame by a scene-side driver
- * (e.g. TestGame's NitrousAfterimage.svelte), 0 with no driver mounted.
+ * (e.g. TestGame's CarAfterimage.svelte), 0 with no driver mounted.
  */
 export const uAfterimageBoost = uniform(0);
 

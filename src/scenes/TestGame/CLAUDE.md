@@ -202,8 +202,17 @@ fx/                     — the car's visual effects
                          volume; sparks run IN the contact interface (slide
                          share + jitter, NO normal kick — the published normal
                          points INTO the car) and bounce off the body
-  NitrousAfterimage.svelte — renders nothing; drives the afterimage effect's runtime
-                         boost from the nitrous flow (the lensState contract)
+  CarAfterimage.svelte  — renders nothing; drives the afterimage effect's runtime
+                         boost (the lensState contract) from TWO independently-eased
+                         sources that ADD — the nitrous flow and road speed above
+                         ~70 km/h, so a nitrous burst at speed is the deepest trail
+                         the car ever shows
+  SpeedLines.svelte     — renders nothing; drives the speed-lines ("tunnel wind")
+                         effect's runtime boost from the model's own forward
+                         acceleration (`carSim.accelFwd`, not a derived speed) — a
+                         floored launch or a hard pull in a low gear snaps the
+                         periphery in, lifting eases it back out (same lensState
+                         contract, see core/postprocessing/effects/speedLines.ts)
 debug/                  — the debug TOOL, both halves: the 3D rig and its readout.
                          Both are on the same B switch (`carView`), and the HUD
                          one is the only HTML component outside the HUD shell —
@@ -411,9 +420,14 @@ out); the controller's task owns the live level (it refills even while parked),
 the smoothed flow and the telemetry publish. `carSim.nitrous` (flow) and
 `carSim.nitrousTank` (level)
 drive the blue flames, the cluster's N2O gauge, the chase camera's FOV kick and
-the afterimage smear (`NitrousAfterimage.svelte` easing `uAfterimageBoost` — the
+the afterimage smear (`CarAfterimage.svelte` easing `uAfterimageBoost` — the
 effect is default-enabled at damp 0, so the smear only exists while nitrous
-does).
+sprays or the car is over ~70 km/h; the two sources add, so a burst at speed is
+the deepest trail the car ever shows). Acceleration also drives the "tunnel
+wind" speed-lines effect (`SpeedLines.svelte` easing `uSpeedLinesBoost` off
+`carSim.accelFwd`) — a floored launch or a hard pull in a low gear pulls the
+frame's periphery in; lifting eases it back out. Neither effect is nitrous-
+specific — both are already live on a hard, ordinary accelerator stab.
 
 Held with that gate SHUT (no throttle, or N/R — the standstill/not-driving half
 of the same pedal) the kit PURGES instead: the controller's `purging` vents the

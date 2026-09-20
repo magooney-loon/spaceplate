@@ -15,8 +15,8 @@ luts.svelte.ts — LUT catalogue + async load cache (three's nine example LUTs, 
 transitionState.svelte.ts — the scene transition's shared state: the mix uniform, the
                  snapshot registration, and the cover/reveal API the scene switch awaits
 TransitionDriver.svelte — its one writer: capture, hold, dissolve. Mount inside <Canvas>
-effects/*.ts   — 17 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, godrays,
-                 motionBlur, rainLens, snowLens, bloom (+lensflare sub-toggle),
+effects/*.ts   — 18 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, godrays,
+                 motionBlur, rainLens, snowLens, speedLines, bloom (+lensflare sub-toggle),
                  anamorphic, afterimage, vignette, sceneTransition (chain) · lut (grade) ·
                  smaa, fxaa (AA)
 effects/mipSource.ts — NOT an effect: the blurred-copy-of-the-frame helper fogScatter,
@@ -33,15 +33,15 @@ Four `PassRole`s exist because a flat enable-grid cannot express the relationshi
   asks `basePass.getMRT()` instead of assuming the default — a base pass may provision
   attachments the registry never asked for (pixelationPass did exactly that).
 - **chain** (in fold order: `ao` 10, `dof` 30, `fogScatter` 32, `godrays` 33,
-  `motionBlur` 35, `rainLens` 36, `snowLens` 37, `bloom` 40, `anamorphic` 41,
-  `afterimage` 45, `vignette` 50, `sceneTransition` 60) — plain
+  `motionBlur` 35, `rainLens` 36, `snowLens` 37, `speedLines` 38, `bloom` 40,
+  `anamorphic` 41, `afterimage` 45, `vignette` 50, `sceneTransition` 60) — plain
   colour-in/colour-out, folded in `order` threading `ctx.color`. The progression is
   scene → air → shutter → lens → eye, and the numbers are the only thing enforcing it:
   **two effects sharing an `order` are separated by nothing but their position in
   `EFFECT_REGISTRY`**, which is how `fogScatter` sat at bloom's 40 (and therefore behind
   the weather lenses) until it was moved to 32. Some are TSL `Fn`s,
-  not node classes (`motionBlur`, `vignette`, our `dof`) — no instance holds uniforms,
-  so **the uniform bag is the only way to animate them**.
+  not node classes (`motionBlur`, `vignette`, `speedLines`, our `dof`) — no instance
+  holds uniforms, so **the uniform bag is the only way to animate them**.
 - **grade** (`lut`) — after the chain, before resolve, **not** mutually exclusive.
   Added so a LUT and AA can coexist; grading is orthogonal to anti-aliasing.
 - **resolve** (`smaa`, `fxaa`) — AA, at most one (two is wasteful and worse-looking).
@@ -117,15 +117,28 @@ schedules the task again to decay them.
   contract, one extra wrinkle: the driver also owns a RESOURCE (the snapshot `rtt()`),
   which the effect hands over on every build and `Renderer.svelte` clears to `null`
   before every rebuild — a node that dies with its build must never be poked afterwards.
-- **`afterimage`** — nitrous trails (TestGame's `NitrousAfterimage.svelte`
-  writes `uAfterimageBoost` from the car's spray flow). The OPPOSITE latch
+- **`afterimage`** — nitrous trails PLUS a small road-speed trail (TestGame's
+  `CarAfterimage.svelte` writes `uAfterimageBoost` from `carSim.nitrous` and
+  `carSim.speedMs` — two independently-eased sources that ADD, so a nitrous burst
+  at speed is the deepest smear the car ever shows). The OPPOSITE latch
   decision: enabled by DEFAULT with `damp` 0 (a pure passthrough — the node is a
   bright-pass feedback buffer, so damp 0 trails nothing), and the boost adds onto
   the panel's floor inside the shader, clamped at 0.96. No structural latch,
-  because every flip is a graph rebuild and a rebuild per nitrous burst is a
-  hitch; the always-on cost is one fullscreen composite fetch, which is the price
-  of a hitch-free smear. Drivers ease the boost (asymmetric attack/release) so
-  trails bloom in and evaporate rather than cut with the bottle.
+  because every flip is a graph rebuild and a rebuild per nitrous burst (or every
+  crossing of the speed trail's threshold) is a hitch; the always-on cost is one
+  fullscreen composite fetch, which is the price of a hitch-free smear. Drivers
+  ease each source on its own asymmetric attack/release so trails bloom in and
+  evaporate rather than cut sharply.
+- **`speedLines`** — the "tunnel wind" sense-of-speed effect: the frame's
+  periphery pulls radially toward the centre while the middle stays sharp,
+  driven by TestGame's `fx/SpeedLines.svelte` off `carSim.accelFwd` (the model's
+  own forward acceleration, not a derived speed) into `uSpeedLinesBoost`. Same
+  contract as `afterimage`: default-enabled at `intensity` 0 (an identity
+  resample, not a passthrough — the sampling loop still runs, same bargain
+  `motionBlur`/`anamorphic` already make), boost adds onto the panel floor,
+  clamped in the shader. No structural latch for the same reason afterimage
+  has none: accelerating and lifting happens continuously while driving, and a
+  latch may only watch a signal that crosses once and stays across.
 
 ## Rebuild discipline
 
@@ -250,6 +263,15 @@ abs(viewZ + focus)))`. The bokeh `DepthOfFieldNode` is not used — performance 
   `convertToTexture` its input; our wrapper does (an RTT when fed a computed node,
   e.g. anything after the basic DoF), otherwise it throws `inputNode.sample is not a
 function`. It also multiplies by **`ctx.shutterScale`** — see below.
+- **`speedLines.ts`** — a one-sided radial pull toward the frame centre (`convertToTexture`
+  + a fixed sample loop, `motionBlur`'s pattern for the same reason: a computed chain
+  node upstream needs a real texture before it can be sampled at shifted uvs). Deliberately
+  NOT symmetric: every sample walks from the true pixel (`t=0`, colour never fully lost)
+  toward the centre (`t=1`), never past it — a pull both ways cancels its own streak. The
+  mask (`smoothstep(innerRadius, 1, dist)`) keeps the middle of the frame clean since
+  that's where the eye is actually looking; `(uv - 0.5)` doubles as both the pull
+  direction and (via its own magnitude) part of the distance falloff, so there's no
+  separate radius curve to keep in sync with the mask.
 
 ### Velocity is per-frame, not per-second — multiply by `ctx.shutterScale`
 

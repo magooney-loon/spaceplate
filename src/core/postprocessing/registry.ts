@@ -19,6 +19,7 @@ import { retroEffect } from './effects/retro';
 import { sceneTransitionEffect } from './effects/sceneTransition';
 import { snowLensEffect } from './effects/snowLens';
 import { smaaEffect } from './effects/smaa';
+import { speedLinesEffect } from './effects/speedLines';
 import { ssaaEffect } from './effects/ssaa';
 import { vignetteEffect } from './effects/vignette';
 
@@ -40,6 +41,7 @@ export const EFFECT_REGISTRY = {
 	motionBlur: motionBlurEffect,
 	rainLens: rainLensEffect,
 	snowLens: snowLensEffect,
+	speedLines: speedLinesEffect,
 	bloom: bloomEffect,
 	anamorphic: anamorphicEffect,
 	afterimage: afterimageEffect,

@@ -41,9 +41,9 @@ pipeline itself never imports from here except the state (via Renderer.svelte).
 ## Effects (registry-driven)
 
 Base passes (mutually exclusive): `ssaa`, `retro` — else the default `pass()`. Chain:
-`ao`, `dof`, `fogScatter`, `godrays`, `motionBlur`, `rainLens`, `snowLens`, `bloom`,
-`anamorphic`, `afterimage`, `vignette`, `sceneTransition`. Grade (**not** exclusive):
-`lut`. AA (mutually exclusive): `smaa`, `fxaa`.
+`ao`, `dof`, `fogScatter`, `godrays`, `motionBlur`, `rainLens`, `snowLens`, `speedLines`,
+`bloom`, `anamorphic`, `afterimage`, `vignette`, `sceneTransition`. Grade (**not**
+exclusive): `lut`. AA (mutually exclusive): `smaa`, `fxaa`.
 
 `pixelation`, `ssgi`, `ssr` and `traa` were **removed** — files deleted, not
 disabled. Don't re-add one by half-measures: `$core/postprocessing/CLAUDE.md`
@@ -121,9 +121,16 @@ model is lit from the inside by the whole sky. Off by default — read its secti
 - `afterimage` is the one effect that is DEFAULT-ENABLED with a zero look: `damp`
   defaults 0 (a passthrough — the node trails only bright pixels), and runtime
   drivers add a boost on top inside the shader (`uAfterimageBoost`; TestGame's
-  nitrous is the writer, via `NitrousAfterimage.svelte`). The panel `damp` is the
-  standing floor — see "Runtime-modulated effects" in
+  nitrous flow AND road speed are both writers into it, via `CarAfterimage.svelte`).
+  The panel `damp` is the standing floor — see "Runtime-modulated effects" in
   `$core/postprocessing/CLAUDE.md` for why it deliberately has no activity latch.
+- `speedLines` is DEFAULT-ENABLED at `intensity` 0 — the periphery-pulling "tunnel
+  wind" effect, driven at runtime by TestGame's own forward acceleration
+  (`uSpeedLinesBoost`; TestGame's `fx/SpeedLines.svelte` is the writer). Same
+  no-latch reasoning as `afterimage`: it adds onto the panel floor inside the
+  shader, and driving is continuous enough that a latch would rebuild the graph
+  constantly. `innerRadius` is how much of the middle of the frame stays clean;
+  `reach` is how far the periphery pulls at full boost.
 - Params with `def.options` (the LUT choice, the bloom mode/lensflare) render as a
   `List`, not a `Slider`, and are written through `setParam` rather than `bind:` — that
   is the hook `def.paramDefaults` uses to re-seed siblings on a choice change. Sliders

@@ -374,7 +374,7 @@
 		invalidate();
 	});
 
-	// The POWER RAMP — NitrousAfterimage's task pattern: `autoInvalidate: false`, and
+	// The POWER RAMP — CarAfterimage's task pattern: `autoInvalidate: false`, and
 	// the loop woken only while the value is actually moving; settled is free. The
 	// lamps are dimmed, never hidden (an invisible light re-keys every lit material's
 	// cache and recompiles the lot); the additive cards are hidden by `visible`, whose
