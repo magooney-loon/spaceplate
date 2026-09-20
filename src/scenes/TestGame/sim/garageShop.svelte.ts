@@ -5,6 +5,10 @@
 // remounts the scene fresh against the new car's spec — see garage.svelte.ts's
 // header for why a remount is what "switching cars" means here.
 //
+// NOTE the shop ALSO shows while `!carGarage.picked` regardless of `open`
+// (Garage.svelte's gate) — the first car is a choice, not a default; `open`
+// alone is the post-first-pick toggle.
+//
 // Same module rules as carPaint/carSwitches: read from UI/effects (reactive
 // through $state), never from the physics task.
 

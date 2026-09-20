@@ -47,7 +47,10 @@ shops/                  — the TOP BAR shop overlays: paint + change-car, same
                          it (spec.modelLabel — "GR86", not "Toyota GR86"; the
                          full `label` still names the car everywhere else,
                          this is the one spot the badge already says the
-                         make). Picking a
+                         make). THE FIRST CAR IS A CHOICE: until
+                         carGarage.picked the bar holds itself open with no
+                         close (the pick IS the entry — see "Multi-car");
+                         after that picking a
                          car writes carGarage.currentId; Scene.svelte keys the
                          TestGame mount on that id, so the pick REMOUNTS the
                          scene fresh against the new spec (garage.svelte.ts's
@@ -99,8 +102,9 @@ cars/                   — THE GARAGE: everything car-specific is data here
                          the loaded GLB (material swap + colour/finish props).
                          Scene work, not shop work — see its own header for
                          why this can't live in shops/PaintShop.svelte
-  garage.svelte.ts      — CARS registry + carGarage.currentId ($state, written
-                         by Garage.svelte) + currentCar()
+  garage.svelte.ts      — CARS registry + carGarage ($state: currentId written
+                         by Garage.svelte, picked = the first-car gate —
+                         see "Multi-car" below) + currentCar()
   index.ts              — barrel (directory imports can't resolve .svelte.ts)
 sim/                    — the driving model, car-agnostic
   controller.ts         — the physics task's brain: drivetrain + nitrous gameplay +
@@ -308,6 +312,20 @@ rather than widening `wheelMaterialPrefix` into something that could also
 match an unrelated material.
 Engine audio files are SHARED across cars — a new car voices them via
 `audio.layerRpm` (where each layer sits on ITS tacho) + `audio.pitchScale`.
+
+**The first car is chosen, not defaulted.** `carGarage.picked` (garage.svelte.ts)
+starts false: TestGame's ONE car gate (`{#if picked && $carModel}` around the
+whole car subtree — body, fx, chase camera, mirror) keeps nothing car-shaped
+mounted while the world/track runs normally, and Garage.svelte holds itself
+open (`open || !picked`) with no close button — the session opens on the live
+world and the "Choose your car" bar, and any card (including the GR86 the
+`currentId` default names, which keeps module-load readers like
+carPaint/carAudio boot-safe) is a real take-delivery: picking the default
+REVEALS the already-built car; picking any other flips currentId and rides the
+same keyed remount a garage switch does. The app camera idles at its boot
+vantage (core/Camera.svelte) until ChaseCamera mounts with the car and borrows
+it. `picked` is session state like every other latch — re-entering the scene
+keeps the car; only a reload asks again.
 
 **Switching cars** is the Garage shop (Garage.svelte, HUD button, same shape
 as the paint shop): picking a car writes `carGarage.currentId`

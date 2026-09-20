@@ -23,7 +23,11 @@
 	<T.Group name="TestGame" position={[0, -0.7572, 0]}>
 		<!-- Keyed on the garage's chosen car (TestGame/cars/CLAUDE.md's "Garage"
 		     section) — everything car-specific builds once at TestGame's mount,
-		     so switching cars from the Garage shop remounts this subtree fresh. -->
+		     so switching cars from the Garage shop remounts this subtree fresh.
+		     The FIRST pick rides the same key: until it happens TestGame mounts
+		     against the default spec with its car subtree hidden (carGarage.picked
+		     gate in TestGame.svelte — the world/track is up either way), and a
+		     first pick of any other car flips currentId, which remounts here. -->
 		{#key carGarage.currentId}
 			<TestGame />
 		{/key}

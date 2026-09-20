@@ -28,7 +28,7 @@
 	import { applyCarToggle, carRestart, carView } from './sim/carSwitches.svelte';
 	import { CAR_TOGGLE_SLOTS, carControls } from './sim/carControls';
 	import { useInputMap } from '$extensions/input';
-	import { currentCar } from './cars';
+	import { currentCar, carGarage } from './cars';
 	import { carPaint, currentPaintOption } from './sim/carPaint.svelte';
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
@@ -318,8 +318,16 @@
 
 <!-- Player car. The outer group is the spec's spawn pose (RigidBody reads its
      world transform at creation); the visual scale lives on the children so the
-     BODY speaks world units while the collider args below stay in model metres. -->
-{#if $carModel}
+     BODY speaks world units while the collider args below stay in model metres.
+     Gated on carGarage.picked too: until the player has taken delivery of their
+     first car (the Garage shop holds itself open then) NOTHING here mounts —
+     the track above is already up, the app camera idles at its boot vantage,
+     and the first pick either reveals this subtree as-built (the default GR86)
+     or, for any other car, flips currentId and remounts the keyed scene
+     (Scene.svelte) fresh against that spec. Everything car-bound in this file —
+     the chase camera, the mirror, the fx — lives under this one gate, so no
+     car-less component ever sees a missing target. -->
+{#if carGarage.picked && $carModel}
 	<T.Group name={car.model.name} rotation={spawnRotation} position={spawnPosition}>
 		<!-- linearDamping is 0 on purpose: aero drag and rolling resistance are in the
 		     drivetrain now, and a blanket damping term on top of them is the same loss

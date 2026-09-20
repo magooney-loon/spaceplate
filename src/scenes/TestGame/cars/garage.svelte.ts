@@ -3,6 +3,14 @@
 // new one is one spec file there + one entry here, and the scene/sim/FX code
 // does not change (see types.ts for the contract).
 //
+// `carGarage.picked` is the first-car gate: false until the player has taken
+// delivery, so TestGame's car subtree stays hidden (its `{#if picked &&
+// $carModel}` gate — the world/track is up either way) and Garage.svelte holds
+// itself open — the first car is a CHOICE, not a default. The first pick (any
+// card, including the default GR86's) sets it; it is session state like every
+// other latch here, so re-entering the scene keeps the car and only a reload
+// asks again.
+//
 // `carGarage.currentId` is $state so the Garage shop (Garage.svelte, opened
 // from the HUD like the paint shop) can switch it. Nothing that reads
 // `currentCar()` is reactive to that write directly — every car-specific
@@ -26,7 +34,10 @@ export const CARS = {
 
 export type CarId = keyof typeof CARS & string;
 
-export const carGarage = $state<{ currentId: CarId }>({ currentId: 'toyota_gr86' });
+export const carGarage = $state<{ currentId: CarId; picked: boolean }>({
+	currentId: 'toyota_gr86',
+	picked: false
+});
 
 /** The spec of the car the demo is running. Constant today; still read once at
  *  init, never per frame. */

@@ -9,6 +9,12 @@
 	// One row of car cards, each showing exactly what's IN the spec (nothing
 	// invented here) — picking one writes carGarage.currentId, which Scene.svelte
 	// is keyed on, so the pick remounts TestGame fresh against the new car.
+	//
+	// THE FIRST CAR IS A CHOICE: until carGarage.picked the bar holds itself
+	// open (open || !picked below) and shows no close — there is nothing to go
+	// back TO — so the session starts with the player taking delivery, not with
+	// a defaulted spawn. Every card is takeable on that first screen, the
+	// GR86 default included; after that the shop is an ordinary toggle again.
 
 	const RPM_PER_RAD_S = 60 / (2 * Math.PI);
 
@@ -40,21 +46,27 @@
 	};
 
 	function pick(id: CarId) {
-		if (id === carGarage.currentId) {
+		// The same-car early-out is for the post-first-pick case only (picking the
+		// car you're driving just closes the bar): before the first pick even the
+		// default's card is a real take-delivery, so it must not short-circuit.
+		if (carGarage.picked && id === carGarage.currentId) {
 			close();
 			return;
 		}
 		engineSounds.click.play();
 		carGarage.currentId = id;
+		carGarage.picked = true;
 		garageShop.open = false;
 	}
 </script>
 
-{#if garageShop.open}
+{#if garageShop.open || !carGarage.picked}
 	<div class="shop" role="dialog" aria-label="Garage">
 		<div class="head">
-			<h2>Garage</h2>
-			<button class="close" onclick={close} aria-label="Close garage">✕</button>
+			<h2>{carGarage.picked ? 'Garage' : 'Choose your car'}</h2>
+			{#if carGarage.picked}
+				<button class="close" onclick={close} aria-label="Close garage">✕</button>
+			{/if}
 		</div>
 
 		<div class="cars">
