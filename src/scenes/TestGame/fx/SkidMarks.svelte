@@ -5,7 +5,7 @@
 	import { attribute, clamp, positionWorld, smoothstep, texture, uniform, vec2 } from 'three/tsl';
 	import { perlinNoise } from './noiseTextures';
 	import { currentCar } from '../cars';
-	import { wheelPatches } from '../cars/spec';
+	import { wheelPatches, drivenAxles } from '../cars/spec';
 	import { UNITS_PER_METER } from '../units';
 	import { carSim } from '../sim/carTelemetry.svelte';
 	import type { Suspension } from '../sim/suspension';
@@ -16,10 +16,12 @@
 	// intensity, uTime uniform), so nothing is re-uploaded to age a mark.
 	//
 	// INTENSITY is the squeal driver's twin (carAudio.ts — the loosest source
-	// wins, never a sum), minus the two sources that are not actually sliding:
-	// cornering load sings but does not scrub rubber, and the launch's chirp is
-	// the drop, not a locked tyre. Rears additionally get wheelspin, the
-	// handbrake and the launch — an RWD car marks from the back.
+	// wins, never a sum), minus the one source that is not actually sliding:
+	// cornering load sings but does not scrub rubber. Wheelspin and the launch
+	// chirp go to whichever axle the spec's `layout` actually drives
+	// (drivenAxles) — an RWD car marks from the back, FWD from the front, AWD
+	// both. The handbrake stays rear-only regardless of layout (it locks the
+	// rear wheels whatever drives the car).
 	//
 	// Rules honored (DOCS/best-practices.md §4): one draw call, no allocation in
 	// the task body (every vector/array below is pre-allocated), autoInvalidate
@@ -32,6 +34,12 @@
 	// From the car's spec (geometry.axleZ / halfTrack) via the shared wheelPatches
 	// helper — the smoke's twin layout, one source.
 	const WHEELS = wheelPatches(currentCar());
+	// Which axle(s) can actually wheelspin/chirp — same source as TireSmoke and
+	// DebugRig's driveline. w >= 2 (rear) below is only ever right for an RWD car.
+	const [FRONT_DRIVEN, REAR_DRIVEN] = drivenAxles(currentCar());
+	/** Per wheel (FL, FR, RL, RR) — whether IT can wheelspin, for the standstill
+	 *  burnout creep below (that used to assume "rear", i.e. RWD). */
+	const DRIVEN = [FRONT_DRIVEN, FRONT_DRIVEN, REAR_DRIVEN, REAR_DRIVEN];
 	// The mark height is the EMPIRICALLY TUNED LIFT, restored: a road line
 	// derived from the wheel-contact colliders (hubY − wheelRadius + epsilon)
 	// checked out against rapier in isolation but rendered UNDER the surface
@@ -51,7 +59,7 @@
 	const TAIL_MAX = 0.25; // a tapering tail is never longer than this
 	const FADE_IN = 0.25; // s — a mark arrives at full darkness almost at once
 	const LIFETIME = 15; // s — then it is gone; keep in sync with the TSL below
-	const BURNOUT_ON = 0.55; // rear intensity + near-standstill = the burnout case
+	const BURNOUT_ON = 0.55; // driven-wheel intensity + near-standstill = the burnout case
 	const BURNOUT_RATE = 1.5; // world units/s the lay point creeps along the nose
 
 	// ── Geometry: a fixed ring of INDEXED quads, overwritten oldest-first ───────
@@ -289,10 +297,16 @@
 				Math.min(Math.max(speed / 4, 0), 1);
 			const hand = carSim.handbrake ? 0.8 * Math.min(Math.max(speed / 10, 0), 1) : 0;
 			const hard = carSim.brake * Math.min(Math.max(speed / 6, 0), 1);
+			// Wheelspin and the launch chirp are DRIVEN-axle events — fold into
+			// whichever axle(s) the layout drives instead of always the rear.
+			const spinRear = REAR_DRIVEN ? spin : 0;
+			const spinFront = FRONT_DRIVEN ? spin : 0;
+			const launchRear = REAR_DRIVEN ? carSim.launch * 0.8 : 0;
+			const launchFront = FRONT_DRIVEN ? carSim.launch * 0.8 : 0;
 			// × ground contact — no rubber laid mid-jump.
 			const rearI =
-				Math.max(spin, slide, hand, carSim.launch * 0.8, hard * 0.9) * carSim.contactRear;
-			const frontI = Math.max(slide * 0.8, hard) * carSim.contactFront;
+				Math.max(spinRear, slide, hand, launchRear, hard * 0.9) * carSim.contactRear;
+			const frontI = Math.max(spinFront, slide * 0.8, launchFront, hard) * carSim.contactFront;
 
 			body.updateWorldMatrix(true, false);
 			const e = body.matrixWorld.elements;
@@ -365,7 +379,7 @@
 				let lz = last[w * 2 + 1];
 				let dx = _v.x - lx;
 				let dz = _v.z - lz;
-				if (Math.hypot(dx, dz) < SEG_MIN && w >= 2 && rearI > BURNOUT_ON && speed < 3) {
+				if (Math.hypot(dx, dz) < SEG_MIN && DRIVEN[w] && intensity > BURNOUT_ON && speed < 3) {
 					lx += fwdX * BURNOUT_RATE * delta;
 					lz += fwdZ * BURNOUT_RATE * delta;
 					dx = _v.x - lx;

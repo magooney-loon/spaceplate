@@ -3,7 +3,7 @@
 	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
 	import * as THREE from 'three/webgpu';
 	import { currentCar } from '../cars';
-	import { wheelPatches } from '../cars/spec';
+	import { wheelPatches, drivenAxles } from '../cars/spec';
 	import { UNITS_PER_METER } from '../units';
 	import { clamp as numClamp } from '../sim/carMath';
 	import { carSim } from '../sim/carTelemetry.svelte';
@@ -17,8 +17,10 @@
 	// is a wisp. The intensity is the squeal/marks driver's TWIN (carAudio.ts /
 	// SkidMarks.svelte — loosest source wins, never a sum), here with ALL SIX
 	// sources including cornering load (max banking sings hot enough to smoke a
-	// little): rears get wheelspin/slide/handbrake/launch/brake/cornering,
-	// fronts slide/brake/cornering — an RWD car smokes from the back.
+	// little): wheelspin goes to whichever axle the spec's `layout` actually
+	// drives (drivenAxles) — rear-only smokes from the back, front-only from the
+	// front, AWD from all four; slide/handbrake/launch/brake/cornering are
+	// unaffected by layout and split rear-biased/front as before.
 	//
 	// LIT, not unlit (the skid-marks lesson): near-white albedo on a
 	// MeshStandardNodeMaterial, so the smoke is bright gray against day asphalt
@@ -41,6 +43,14 @@
 
 	// ── Layout (body space — the shared wheelPatches twin of SkidMarks) ──────
 	const WHEELS = wheelPatches(currentCar());
+	// Which axle(s) wheelspin actually happens on — the spec's `layout`, same
+	// source DebugRig's driveline reads. Wheelspin is a DRIVEN-axle event, so a
+	// spinning tyre on the undriven axle is not a thing that can happen; without
+	// this an FWD/AWD burnout still smoked the rear the way an RWD one does.
+	const [FRONT_DRIVEN, REAR_DRIVEN] = drivenAxles(currentCar());
+	/** Per wheel (FL, FR, RL, RR), whether IT can wheelspin — what the fling
+	 *  velocity below scales on, instead of the old "rear always spins" guess. */
+	const DRIVEN = [FRONT_DRIVEN, FRONT_DRIVEN, REAR_DRIVEN, REAR_DRIVEN];
 	// How far outboard of the wheel's own centreline a puff is born: half the
 	// tyre's width (the same measured number SkidMarks' ribbon uses) plus a
 	// little for the fender lip. A puff spawned ON the centreline starts inside
@@ -120,14 +130,25 @@
 			const spin = numClamp((carSim.slip - 0.15) / 0.35, 0, 1);
 			const slide =
 				numClamp((Math.abs(carSim.drift) - 0.1396) / 0.2967, 0, 1) * numClamp(speed / 4, 0, 1);
+			// The handbrake locks the REAR wheels whatever the layout (same rule
+			// DebugRig's driveline and carAudio follow), so it stays rear-only.
 			const hand = carSim.handbrake ? 0.8 * numClamp(speed / 10, 0, 1) : 0;
 			const hard = carSim.brake * numClamp(speed / 6, 0, 1);
 			const lat = numClamp(carSim.latLoad, 0, 1);
+			// Wheelspin AND the launch chirp are DRIVEN-axle events — an FWD car
+			// spins/chirps its fronts, an AWD car both, never the axle with no
+			// engine behind it. `spin`/`launch` fold into whichever axle(s) the
+			// spec's layout actually drives instead of always the rear.
+			const spinRear = REAR_DRIVEN ? spin : 0;
+			const spinFront = FRONT_DRIVEN ? spin : 0;
+			const launchRear = REAR_DRIVEN ? carSim.launch * 0.8 : 0;
+			const launchFront = FRONT_DRIVEN ? carSim.launch * 0.8 : 0;
 			// × ground contact — a tyre in the air has nothing to smoke against.
 			const rearI =
-				Math.max(spin, slide, hand, carSim.launch * 0.8, hard * 0.9, lat * 0.8) *
+				Math.max(spinRear, slide, hand, launchRear, hard * 0.9, lat * 0.8) *
 				carSim.contactRear;
-			const frontI = Math.max(slide * 0.8, hard, lat * 0.9) * carSim.contactFront;
+			const frontI =
+				Math.max(spinFront, slide * 0.8, launchFront, hard, lat * 0.9) * carSim.contactFront;
 
 			// ── Spawn: rate scales with intensity; a wisp is one puff, a burnout
 			// is a stream. Velocity = lazy rise + the lagged car motion (smoke
@@ -162,13 +183,13 @@
 					const side = WHEELS[w][0] > 0 ? 1 : -1;
 					_v.set(WHEELS[w][0] + side * SMOKE_OUTBOARD, 0.1 + SMOKE_LIFT + ground, WHEELS[w][1]);
 					body.localToWorld(_v);
-					const roll = w >= 2 ? 0.8 + 0.8 * Math.random() : 0.3;
+					const roll = DRIVEN[w] ? 0.8 + 0.8 * Math.random() : 0.3;
 					// The same idea as `roll` — a spinning tyre flings smoke off its own
 					// rotation — but OUTWARD rather than rearward: a rolling tyre throws
 					// smoke off its whole radius, not just backward off its tread. This is
 					// what actually carries a puff clear of the fender rather than just
 					// starting there and drifting back into it.
-					const kick = (w >= 2 ? 0.7 : 0.4) * (0.7 + 0.6 * Math.random());
+					const kick = (DRIVEN[w] ? 0.7 : 0.4) * (0.7 + 0.6 * Math.random());
 					const heatK = heat[w];
 					pool.spawn(
 						_v.x + (Math.random() - 0.5) * 0.4,
