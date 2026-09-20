@@ -204,9 +204,10 @@ fx/                     — the car's visual effects
                          points INTO the car) and bounce off the body
   CarAfterimage.svelte  — renders nothing; drives the afterimage effect's runtime
                          boost (the lensState contract) from TWO independently-eased
-                         sources that ADD — the nitrous flow and road speed above
-                         ~70 km/h, so a nitrous burst at speed is the deepest trail
-                         the car ever shows
+                         sources combined with `Math.max`, not summed — the nitrous
+                         flow and road speed above ~50 km/h — so nitrous at speed
+                         reads as nitrous and a fast straight with no nitrous still
+                         reads as something, but neither amplifies the other
   SpeedLines.svelte     — renders nothing; drives the speed-lines ("tunnel wind")
                          effect's runtime boost from the model's own forward
                          acceleration (`carSim.accelFwd`, not a derived speed) — a
@@ -422,8 +423,9 @@ the smoothed flow and the telemetry publish. `carSim.nitrous` (flow) and
 drive the blue flames, the cluster's N2O gauge, the chase camera's FOV kick and
 the afterimage smear (`CarAfterimage.svelte` easing `uAfterimageBoost` — the
 effect is default-enabled at damp 0, so the smear only exists while nitrous
-sprays or the car is over ~70 km/h; the two sources add, so a burst at speed is
-the deepest trail the car ever shows). Acceleration also drives the "tunnel
+sprays or the car is over ~50 km/h; the two sources take whichever is louder,
+never stacking, so a nitrous burst at speed still just reads as nitrous).
+Acceleration also drives the "tunnel
 wind" speed-lines effect (`SpeedLines.svelte` easing `uSpeedLinesBoost` off
 `carSim.accelFwd`) — a floored launch or a hard pull in a low gear pulls the
 frame's periphery in; lifting eases it back out. Neither effect is nitrous-

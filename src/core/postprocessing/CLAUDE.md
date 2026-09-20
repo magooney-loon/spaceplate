@@ -117,18 +117,20 @@ schedules the task again to decay them.
   contract, one extra wrinkle: the driver also owns a RESOURCE (the snapshot `rtt()`),
   which the effect hands over on every build and `Renderer.svelte` clears to `null`
   before every rebuild — a node that dies with its build must never be poked afterwards.
-- **`afterimage`** — nitrous trails PLUS a road-speed trail (TestGame's
-  `CarAfterimage.svelte` writes `uAfterimageBoost` from `carSim.nitrous` and
-  `carSim.speedMs` — two independently-eased sources that ADD, so a nitrous burst
-  at speed is the deepest smear the car ever shows). The OPPOSITE latch
-  decision: enabled by DEFAULT with `damp` 0 (a pure passthrough — the node is a
-  bright-pass feedback buffer, so damp 0 trails nothing), and the boost adds onto
-  the panel's floor inside the shader, clamped at 0.96. No structural latch,
-  because every flip is a graph rebuild and a rebuild per nitrous burst (or every
-  crossing of the speed trail's threshold) is a hitch; the always-on cost is one
-  fullscreen composite fetch, which is the price of a hitch-free smear. Drivers
-  ease each source on its own asymmetric attack/release so trails bloom in and
-  evaporate rather than cut sharply.
+- **`afterimage`** — nitrous trails OR a road-speed trail, whichever is louder
+  (TestGame's `CarAfterimage.svelte` writes `uAfterimageBoost` from `carSim.nitrous`
+  and `carSim.speedMs` — two independently-eased sources combined with `Math.max`,
+  not a sum: they used to add, and a nitrous burst above the speed trail's own
+  threshold pushed the combined damp past the curve's useful range and just looked
+  broken. `Math.max` keeps each source's own tuned strength exactly what it reads
+  as alone). The OPPOSITE latch decision: enabled by DEFAULT with `damp` 0 (a pure
+  passthrough — the node is a bright-pass feedback buffer, so damp 0 trails
+  nothing), and the boost adds onto the panel's floor inside the shader, clamped at
+  0.96. No structural latch, because every flip is a graph rebuild and a rebuild
+  per nitrous burst (or every crossing of the speed trail's threshold) is a hitch;
+  the always-on cost is one fullscreen composite fetch, which is the price of a
+  hitch-free smear. Drivers ease each source on its own asymmetric attack/release
+  so trails bloom in and evaporate rather than cut sharply.
 - **`speedLines`** — the "tunnel wind" sense-of-speed effect: the frame's
   periphery pulls radially toward the centre while the middle stays sharp,
   driven by TestGame's `fx/SpeedLines.svelte` off `carSim.accelFwd` (the model's

@@ -5,11 +5,18 @@
 	// renders nothing and owns no state anyone else can see; all it does is turn
 	// TWO independent sources into one eased boost value:
 	//   - `carSim.nitrous` (the already-ramped spray flow) — the big, deliberate smear.
-	//   - road speed above `SPEED_START_KMH` — a slightly lighter trail that builds in
-	//     as the car gets properly fast, so the sense of speed doesn't only exist
-	//     while spraying nitrous. The two ADD (a nitrous burst at speed is the biggest
-	//     smear the car ever shows), each on its OWN easing so a gearshift's momentary
-	//     lift off the accelerator can't flicker the speed half.
+	//   - road speed above `SPEED_START_KMH` — a trail that builds in as the car gets
+	//     properly fast, so the sense of speed doesn't only exist while spraying
+	//     nitrous — each on its OWN easing so a gearshift's momentary lift off the
+	//     accelerator can't flicker the speed half.
+	//
+	// THE TWO TAKE THE LOUDEST, NOT THE SUM. They used to add (a nitrous burst at
+	// speed was meant to read as the deepest trail the car ever shows), but a spray
+	// above ~70 km/h — the ordinary case, not an edge case — pushed the combined
+	// value past the damp curve's useful range and just looked broken. `Math.max`
+	// keeps each source's own tuned strength exactly what it reads as alone: a
+	// nitrous burst always looks like nitrous, a fast straight always looks like
+	// speed, and neither amplifies the other.
 	//
 	// WHY A COMPONENT AND NOT A PHYSICS-TASK LINE IN TestGame.svelte: the write is
 	// per RENDER frame, not per physics step (a uniform written more than once per
@@ -44,18 +51,19 @@
 	/** Seconds for it to evaporate after the spray ends — slower on purpose. */
 	const NITROUS_RELEASE_TAU = 0.45;
 
-	/** km/h where the speed trail starts waking up. */
-	const SPEED_START_KMH = 70;
-	/** km/h where it reaches its own ceiling — short of any car's governed top speed,
-	 * so the trail is fully in by the time a straight actually feels fast. */
-	const SPEED_FULL_KMH = 150;
+	/** km/h where the speed trail starts waking up — ordinary cruising, not a top-
+	 * gear straight, since this is the source that has to carry the effect on a lap
+	 * with no nitrous in it at all. */
+	const SPEED_START_KMH = 50;
+	/** km/h where it reaches its own ceiling — attainable in normal driving, not
+	 * only at the very top of the speedo. */
+	const SPEED_FULL_KMH = 120;
 	/** Boost at max speed — close to the nitrous ceiling rather than a token fraction
 	 * of it: the node is BRIGHT-PASS feedback (only pixels above ~0.1 linear persist
-	 * at all), and trail length scales like 1/(1-damp), so 0.3 here was too thin an
-	 * exponential to read as anything on an ordinary daylit frame — it only ever
-	 * showed on the very brightest highlights, and even those cleared in a couple of
-	 * frames. 0.6 gives the same kind of persistence nitrous's own high end does. */
-	const SPEED_MAX_BOOST = 0.6;
+	 * at all), and trail length scales like 1/(1-damp), so anything much lower reads
+	 * as nothing on an ordinary daylit frame. Safe to run this close to nitrous's own
+	 * ceiling now that the two take the louder one instead of adding. */
+	const SPEED_MAX_BOOST = 0.7;
 	/** Seconds to build in — still gradual (it should read as accumulating speed, not
 	 * snapping in), but fast enough to actually be seen before the car changes speed
 	 * again. */
@@ -63,9 +71,6 @@
 	/** Seconds to fade once the car drops back under the threshold. */
 	const SPEED_RELEASE_TAU = 0.8;
 
-	/** Combined ceiling — stays comfortably under afterimage.ts's own 0.96 clamp so
-	 * the panel's standing floor still has headroom on top. */
-	const BOOST_CEILING = 0.95;
 	/** Below this a source is settled; stop easing it. */
 	const SETTLED = 0.001;
 
@@ -87,7 +92,7 @@
 			if (nitrousSettled && speedSettled) {
 				nitrousLevel = nitrousTarget;
 				speedLevel = speedTarget;
-				const boost = Math.min(nitrousLevel + speedLevel, BOOST_CEILING);
+				const boost = Math.max(nitrousLevel, speedLevel);
 				if (uAfterimageBoost.value !== boost) {
 					uAfterimageBoost.value = boost;
 					invalidate();
@@ -100,7 +105,7 @@
 			const speedTau = speedTarget > speedLevel ? SPEED_ATTACK_TAU : SPEED_RELEASE_TAU;
 			speedLevel += (speedTarget - speedLevel) * (1 - Math.exp(-delta / speedTau));
 
-			uAfterimageBoost.value = Math.min(nitrousLevel + speedLevel, BOOST_CEILING);
+			uAfterimageBoost.value = Math.max(nitrousLevel, speedLevel);
 			invalidate();
 		},
 		{ autoInvalidate: false }

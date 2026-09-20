@@ -121,7 +121,8 @@ model is lit from the inside by the whole sky. Off by default — read its secti
 - `afterimage` is the one effect that is DEFAULT-ENABLED with a zero look: `damp`
   defaults 0 (a passthrough — the node trails only bright pixels), and runtime
   drivers add a boost on top inside the shader (`uAfterimageBoost`; TestGame's
-  nitrous flow AND road speed are both writers into it, via `CarAfterimage.svelte`).
+  nitrous flow and road speed are both sources feeding it, via `CarAfterimage.svelte`
+  — combined with `Math.max`, not summed, so one doesn't amplify the other).
   The panel `damp` is the standing floor — see "Runtime-modulated effects" in
   `$core/postprocessing/CLAUDE.md` for why it deliberately has no activity latch.
 - `speedLines` is DEFAULT-ENABLED at `intensity` 0 — the periphery-pulling "tunnel
