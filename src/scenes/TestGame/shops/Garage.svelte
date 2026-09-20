@@ -13,7 +13,7 @@
 	const RPM_PER_RAD_S = 60 / (2 * Math.PI);
 
 	/** kW at the torque curve's hardest-working authored point — the curve's
-	 *  peaks sit exactly at its own points (see cars/gr86.ts's header), so this
+	 *  peaks sit exactly at its own points (see cars/specs/toyota_gr86.ts's header), so this
 	 *  needs no interpolation between them. */
 	function peakPowerKw(spec: CarSpec): number {
 		let peak = 0;

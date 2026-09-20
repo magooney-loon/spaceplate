@@ -4,7 +4,7 @@
 // RWD GR86 and the AWD RS3). As DATA (cars/types.ts is the contract).
 // Headline numbers (power/torque/0-60/weight/top speed) are the real car's,
 // given directly; everything else is a best-real-world-estimate researched
-// the same way gr86.ts's numbers were, in SI units — nothing here knows
+// the same way toyota_gr86.ts's numbers were, in SI units — nothing here knows
 // about world units (../units.ts is the track's scale, shared by every car).
 //
 // Geometry (wheelbase, track, hub height, axle positions, wheel radius) is
@@ -26,14 +26,14 @@
 // The GLB's wheel assembly is ALREADY one material spanning all four wheels
 // (`Nissanrnn141990pulsargtirwh0031_diff`) with no other material sharing its
 // name — `model.wheelMaterialPrefix` below matches it directly, no asset
-// rename needed (contrast cars/rs3.ts, whose wheel assembly split across
+// rename needed (contrast cars/specs/audi_rs3.ts, whose wheel assembly split across
 // four separately-named materials and DID need one).
 //
 // One tune, the default setup — see `tune` below.
 
 import { BASE_URL } from '$extensions/settings';
-import type { CarSpec } from './types';
-import type { HandlingTune } from '../sim/handling';
+import type { CarSpec } from '../types';
+import type { HandlingTune } from '../../sim/handling';
 
 /** model-units → real metres for THIS car's non-metric GLB (see header). */
 const GLB_UNITS_PER_METRE = 3.7762377487779153;
@@ -88,8 +88,8 @@ const tune: HandlingTune = {
 	powerPush: 0.35
 };
 
-export const gtir = {
-	id: 'gtir',
+export const nissan_gtir = {
+	id: 'nissan_gtir',
 	label: 'Nissan Pulsar GTI-R',
 	layout: 'fwd',
 
@@ -200,7 +200,7 @@ export const gtir = {
 		],
 
 		/** Aftermarket wet nitrous kit — same "not real hardware" accessory
-		 *  every car in this demo carries (see gr86.ts). */
+		 *  every car in this demo carries (see toyota_gr86.ts). */
 		nitrousTorqueGain: 0.4,
 		nitrousCapacity: 4,
 		nitrousRegen: 1 / 14,
@@ -276,7 +276,7 @@ export const gtir = {
 			rotation: [0, 0, 0]
 		},
 		/** Matches `Nissanrnn141990pulsargtirwh0031_diff` and nothing else in
-		 *  this GLB — no asset rename needed (contrast cars/rs3.ts). */
+		 *  this GLB — no asset rename needed (contrast cars/specs/audi_rs3.ts). */
 		wheelMaterialPrefix: 'Nissan',
 		wheelRadiusFallback: 0.284,
 		paintMaterial: 'GTI-R_Paint',
@@ -323,4 +323,4 @@ export const gtir = {
 	tune
 } as const satisfies CarSpec;
 
-export type Gtir = typeof gtir;
+export type NissanGtir = typeof nissan_gtir;

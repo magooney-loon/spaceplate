@@ -1,6 +1,7 @@
 // The garage — the car registry and which car the demo currently runs. Three
-// cars today (GR86, RS3, GTI-R); a new one is one spec file + one entry here,
-// and the scene/sim/FX code does not change (see types.ts for the contract).
+// cars today (GR86, RS3, GTI-R, files named `<make>_<model>.ts` in specs/); a
+// new one is one spec file there + one entry here, and the scene/sim/FX code
+// does not change (see types.ts for the contract).
 //
 // `carGarage.currentId` is $state so the Garage shop (Garage.svelte, opened
 // from the HUD like the paint shop) can switch it. Nothing that reads
@@ -15,15 +16,17 @@
 // frame, which is also the rule for everything else the physics task touches.
 
 import type { CarSpec } from './types';
-import { gr86 } from './gr86';
-import { rs3 } from './rs3';
-import { gtir } from './gtir';
+import { toyota_gr86, audi_rs3, nissan_gtir } from './specs';
 
-export const CARS = { gr86, rs3, gtir } as const satisfies Record<string, CarSpec>;
+export const CARS = {
+	toyota_gr86,
+	audi_rs3,
+	nissan_gtir
+} as const satisfies Record<string, CarSpec>;
 
 export type CarId = keyof typeof CARS & string;
 
-export const carGarage = $state<{ currentId: CarId }>({ currentId: 'gr86' });
+export const carGarage = $state<{ currentId: CarId }>({ currentId: 'toyota_gr86' });
 
 /** The spec of the car the demo is running. Constant today; still read once at
  *  init, never per frame. */

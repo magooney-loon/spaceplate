@@ -3,7 +3,7 @@
 // real car's, given directly; everything else the spec needs that wasn't
 // given (torque curve shape, individual gear ratios, wheelbase, weight bias,
 // CoG height, brakes, drag) is a best-real-world-estimate researched the same
-// way gr86.ts's numbers were, in SI units — nothing here knows about world
+// way toyota_gr86.ts's numbers were, in SI units — nothing here knows about world
 // units (../units.ts is the track's scale, shared by every car). The 6-speed
 // manual gearbox is as specified — the real RS3 ships a 7-speed S tronic
 // dual-clutch, but this demo models every car through the same manual/auto
@@ -11,7 +11,7 @@
 //
 // Geometry (wheelbase, track, hub height, axle positions, wheel radius) is
 // MEASURED off the GLB itself (2018_audi_rs_3_sportback_compressed.glb),
-// the same way gr86.ts's were — the model is authored in real metres (a
+// the same way toyota_gr86.ts's were — the model is authored in real metres (a
 // 2.636 m measured wheelbase against the real car's 2.631 m), so
 // `model.scale` is the same `UNITS_PER_METER` every other car in this scene
 // uses. exhaustTips/purgeVents/lamp/tailLamp are HAND-PLACED from the body's
@@ -29,8 +29,8 @@
 // One tune, the default setup — see `tune` below.
 
 import { BASE_URL } from '$extensions/settings';
-import type { CarSpec } from './types';
-import type { HandlingTune } from '../sim/handling';
+import type { CarSpec } from '../types';
+import type { HandlingTune } from '../../sim/handling';
 
 const tune: HandlingTune = {
 	// AWD puts all four tyres to work under power — more longitudinal bite
@@ -85,8 +85,8 @@ const tune: HandlingTune = {
 	powerPush: 0.18
 };
 
-export const rs3 = {
-	id: 'rs3',
+export const audi_rs3 = {
+	id: 'audi_rs3',
 	label: 'Audi RS3 Sportback',
 	layout: 'awd',
 
@@ -199,7 +199,7 @@ export const rs3 = {
 		],
 
 		/** Aftermarket wet nitrous kit — same "not real hardware" accessory
-		 *  every car in this demo carries (see gr86.ts). Smaller proportional
+		 *  every car in this demo carries (see toyota_gr86.ts). Smaller proportional
 		 *  gain than the GR86's — this engine already makes big power stock. */
 		nitrousTorqueGain: 0.35,
 		nitrousCapacity: 4,
@@ -331,4 +331,4 @@ export const rs3 = {
 	tune
 } as const satisfies CarSpec;
 
-export type Rs3 = typeof rs3;
+export type AudiRs3 = typeof audi_rs3;

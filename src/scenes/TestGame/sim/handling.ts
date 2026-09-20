@@ -1,5 +1,5 @@
 // The handling CONTRACT + the cornering model's rules. The TUNE itself is
-// per-car data (the GR86's lives in cars/gr86.ts) — one tune per car, the
+// per-car data (the GR86's lives in cars/specs/toyota_gr86.ts) — one tune per car, the
 // grip/drift switch is gone: a car ships with the setup it ships with. See
 // CLAUDE.md's "One tune per car" section for what the knobs mean and the
 // stability rule (NOTHING here may depend on the SIGN of the slip angle

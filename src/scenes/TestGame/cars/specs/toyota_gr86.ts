@@ -19,10 +19,10 @@
 // measured figures in the prose predate revisions).
 
 import { BASE_URL } from '$extensions/settings';
-import type { CarSpec } from './types';
+import type { CarSpec } from '../types';
 
-export const gr86 = {
-	id: 'gr86',
+export const toyota_gr86 = {
+	id: 'toyota_gr86',
 	label: 'Toyota GR86',
 	layout: 'rwd',
 
@@ -489,4 +489,4 @@ export const gr86 = {
 	}
 } as const satisfies CarSpec;
 
-export type Gr86 = typeof gr86;
+export type ToyotaGr86 = typeof toyota_gr86;

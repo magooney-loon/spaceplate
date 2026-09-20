@@ -56,9 +56,13 @@ cameras/                — the two camera / render-target components, as
 cars/                   — THE GARAGE: everything car-specific is data here
   types.ts              — CarSpec: the contract (hardware/suspension/geometry/
                          model/audio/cluster/tune + layout 'rwd'|'fwd'|'awd')
-  gr86.ts               — the GR86 spec: real-car hardware, measured geometry,
+  specs/                — the three cars' DATA, one file each, named
+                         `<make>_<model>.ts` — everything else in cars/ is
+                         layout-agnostic code, this is the only place a new
+                         car's own numbers go
+    toyota_gr86.ts      — the GR86 spec: real-car hardware, measured geometry,
                          the handling tune (values + inline comments = source of truth)
-  rs3.ts                — the Audi RS3 Sportback spec (AWD, 6-speed as given):
+    audi_rs3.ts         — the Audi RS3 Sportback spec (AWD, 6-speed as given):
                          real headline numbers (power/torque/0-60/top speed/
                          weight), everything else researched the same way;
                          geometry MEASURED off its GLB, which — unlike the
@@ -66,7 +70,7 @@ cars/                   — THE GARAGE: everything car-specific is data here
                          materials (tire/brake/disk/hub) RENAMED at the asset
                          level to share one prefix (see its own header).
                          One grip-biased tune — see its `tune` comment
-  gtir.ts               — the Nissan Pulsar GTI-R spec (FWD as specified —
+    nissan_gtir.ts      — the Nissan Pulsar GTI-R spec (FWD as specified —
                          the real car is AWD; FWD is this demo's deliberate
                          drivetrain-variety choice, 5-speed as given). Its GLB
                          is the one exception to "GLBs are authored in
@@ -74,6 +78,8 @@ cars/                   — THE GARAGE: everything car-specific is data here
                          its geometry fields and `model.scale` carry an extra
                          conversion factor documented in its own header.
                          One grip-biased tune — see its `tune` comment
+    index.ts            — barrel — the three consts + their (unused elsewhere)
+                         per-car types, so garage.svelte.ts imports one path
   spec.ts               — spec math: gearRatio/rpmInGear/engineTorque +
                          layout-aware drivenAxleLoad/drivenAxles + centerOfMass +
                          wheelPatches (shared layout)
@@ -267,18 +273,18 @@ it IS the model (the hull is computed at load).
 `model.lampMaterial` is the ONE OPTIONAL piece of that contract: the lamp-
 housing material name, front+rear merged into one mesh, for
 fx/CarTaillights.svelte's glow — a car without a matching material (or
-without the field at all, cars/gtir.ts) still gets the real SpotLight throw
+without the field at all, cars/specs/nissan_gtir.ts) still gets the real SpotLight throw
 onto the road, just no glowing housing on the model. If a car's GLB shipped
-that material with no emissive baked in at all (cars/rs3.ts's didn't), bake
+that material with no emissive baked in at all (cars/specs/audi_rs3.ts's didn't), bake
 one in at the ASSET level rather than faking the look in code: append the new
-image/texture as raw bytes after the existing buffer (see rs3.ts's own header
+image/texture as raw bytes after the existing buffer (see audi_rs3.ts's own header
 for the exact method) so Draco-compressed geometry elsewhere in the same file
 is never re-encoded and can't drift. **The GLB is also assumed
 authored in real metres** (`units.ts`'s header) so `model.scale` can just be
-`UNITS_PER_METER` — cars/gtir.ts's GLB isn't, and carries its own conversion
+`UNITS_PER_METER` — cars/specs/nissan_gtir.ts's GLB isn't, and carries its own conversion
 factor instead; see its header before assuming every car's geometry fields
 are as simple as the GR86's. If the wheel assembly's materials don't already
-share one case-insensitive prefix in the source file (cars/rs3.ts's didn't —
+share one case-insensitive prefix in the source file (cars/specs/audi_rs3.ts's didn't —
 tire/brake/disk/hub were four separate names), rename them at the ASSET level
 (the JSON chunk's material name strings only — geometry/Draco data untouched)
 rather than widening `wheelMaterialPrefix` into something that could also
@@ -317,9 +323,9 @@ and handbrake-while-driven — the model does not simulate an actual front/rear
 torque distribution (AWD's `drivenAxleLoad` is one number, the full static
 weight, not a split), and the handbrake still just locks the rear on every
 layout (real on a real FWD car too, so not obviously wrong, just unmodelled
-either way). cars/gtir.ts (FWD) ships `powerPush: 0.35` — push understeer as
+either way). cars/specs/nissan_gtir.ts (FWD) ships `powerPush: 0.35` — push understeer as
 its whole character, no rear-slip terms borrowed in (`throttleLoose`/
-`driftAlign` stay 0, same as before) — and cars/rs3.ts (AWD) ships a lighter
+`driftAlign` stay 0, same as before) — and cars/specs/audi_rs3.ts (AWD) ships a lighter
 `powerPush: 0.18` alongside a real `brakeLoose`/`driftAlign`/`handbrakeAlign`
 now (trail-brake or the handbrake can still provoke it, planted means it
 catches itself quickly after, not that it can't move at all). Both started
@@ -434,7 +440,7 @@ zeroes the pedals; the lights you left on stay on.
 
 ONE dynamic body for the chassis (no per-wheel suspension). The longitudinal half
 is a real drivetrain — torque curve → clutch → gearbox → traction limit at the
-driven axle (`sim/drivetrain.ts`, all SI, numbers in the car's spec `cars/gr86.ts`).
+driven axle (`sim/drivetrain.ts`, all SI, numbers in the car's spec `cars/specs/toyota_gr86.ts`).
 Steering is DIRECT yaw-rate control — the target is the lesser of what the front wheels
 geometrically point at (v·tan δ / wheelbase) and what the tyres can hold
 (μ·g / v). Pitch AND roll are both disabled on the body
@@ -450,7 +456,7 @@ the drivetrain on the chassis being upright, a flipped car could still drive.)
 
 ### One tune per car
 
-`cars/gr86.ts` is the HARDWARE (engine, gearbox, mass, aero, brakes) and never varies.
+`cars/specs/toyota_gr86.ts` is the HARDWARE (engine, gearbox, mass, aero, brakes) and never varies.
 `sim/handling.ts` is the TUNE CONTRACT — tyre μ, the steering rack, and the oversteer
 knobs — and every car carries exactly ONE tune (its spec's `tune`): what a car ships
 with is the setup it drives. The GR86 used to carry a Grip/Drift pair switched by a
@@ -469,7 +475,7 @@ physics step**.
 > the spec). The specific MEASURED figures throughout this
 > section (peak yaw °/s, circle diameters, settle times) predate those revisions and
 > haven't been re-measured — treat them as illustrating the mechanism, not as
-> current numbers. The spec's own inline comments (in `cars/gr86.ts`) are the
+> current numbers. The spec's own inline comments (in `cars/specs/toyota_gr86.ts`) are the
 > source of truth.
 
 - **The street half is the car** (0-60 in 5.7 s, 140 mph governed — both the
