@@ -24,9 +24,10 @@
 		select,
 		uniform
 	} from 'three/tsl';
-	import { clamp01, descriptor, lerp } from './model';
+	import { clamp01, descriptor, lerp, rainAmount } from './model';
 	import { flashState } from './layers/lightning/flashState';
 	import { fogScatterActivity, uFogFar, uFogNear, uFogScatter } from './fogScatter.svelte';
+	import { uWeatherCool, uWeatherDesaturate } from './weatherGrade.svelte';
 
 	interface Props {
 		/**
@@ -72,6 +73,28 @@
 		 */
 		clearGroundFogShare?: number;
 		/**
+		 * How much ground fog a full downpour throws up on its own, as a fraction of
+		 * `groundFogDensity` — the shallow haze of bounce spray that makes heavy rain read
+		 * as HITTING something rather than passing through it. Rain's splash layers draw
+		 * the individual impacts; this is the churned air above them, which no number of
+		 * rings can produce.
+		 *
+		 * It is an approximation in one specific way worth knowing: it is global, while
+		 * the spray is really only over surfaces the rain is reaching. The height field
+		 * knows where those are and `scene.fog` does not, and under a roof the drops
+		 * already stop — so the error is a little haze in a covered space, which reads as
+		 * damp air rather than as a bug.
+		 */
+		rainSprayShare?: number;
+		/**
+		 * SCALE HEIGHT of the spray specifically, and the reason it cannot simply be folded
+		 * into `groundFogFalloffRange`: that range grows with weight because a thicker fog
+		 * BANK is a deeper one, and spray is the opposite — a downpour churns a couple of
+		 * metres of air at the surface however hard it falls. Folding spray into the same
+		 * weight would make heavy rain produce a bank that swallows trees.
+		 */
+		rainSprayFalloff?: number;
+		/**
 		 * How much forward-scattered key light the fog glows with when you look TOWARD the
 		 * sun (or the moon — `descriptor.light` is one vector across the crossover). 0 is the
 		 * old flat-coloured fog. This is the term that makes a misty sunrise read as a
@@ -106,6 +129,8 @@
 		groundFogFalloffRange = [3, 11],
 		groundFogBase = 0,
 		clearGroundFogShare = 0.35,
+		rainSprayShare = 0.45,
+		rainSprayFalloff = 1.4,
 		sunInscatter = 0.5,
 		inscatterSharpness = 6,
 		flashFogLift = 0.85
@@ -251,12 +276,25 @@
 
 			// The ground layer answers to the same two signals as the band (weather channel,
 			// day-curve haze scaled down); it deepens with its density.
-			const groundWeight = clamp01(Math.max(fogWeight, clearHaze * clearGroundFogShare));
+			const bankWeight = clamp01(Math.max(fogWeight, clearHaze * clearGroundFogShare));
+
+			// RAIN SPRAY, the third signal and the only one that is not fog — see
+			// `rainSprayShare`. Unioned with the bank as TRANSMITTANCES, the same way the
+			// node itself combines its range and height factors: two independent things in
+			// the air, not one taking the max over the other.
+			const spray = clamp01(rainAmount(descriptor.weather)) * clamp01(rainSprayShare);
+			const groundWeight = 1 - (1 - bankWeight) * (1 - spray);
 			groundDensityNode.value = groundFogDensity * groundWeight;
-			groundFalloffNode.value = Math.max(
-				0.01,
-				lerp(groundFogFalloffRange[0], groundFogFalloffRange[1], groundWeight)
-			);
+
+			// DEPTH FOLLOWS THE BANK, then is pulled back toward the spray's own shallow
+			// scale height by whatever SHARE of the layer the spray contributed. So rain in
+			// clear air is ankle-deep churn, rain inside a fog bank is still the bank's
+			// depth (the deeper of the two wins, rather than the two averaging into
+			// something that is neither), and no rain at all reproduces the old expression
+			// exactly — `spray` 0 makes the share 0 and the lerp an identity.
+			const bankDepth = lerp(groundFogFalloffRange[0], groundFogFalloffRange[1], bankWeight);
+			const sprayShare = groundWeight > 0 ? (spray * (1 - bankWeight)) / groundWeight : 0;
+			groundFalloffNode.value = Math.max(0.01, lerp(bankDepth, rainSprayFalloff, sprayShare));
 			groundBaseNode.value = groundFogBase;
 
 			// FORWARD SCATTERING toward the key. Three gates, all of them in TS rather than
@@ -294,6 +332,20 @@
 			uFogFar.value = fog.far;
 			uFogScatter.value = fogWeight;
 
+			// THE WEATHER GRADE (weatherGrade.svelte.ts + the post effect of the same name),
+			// driven from here for the reason `godrays` is driven from `SkyLight`: this task
+			// already has every signal it needs in hand, and a sibling driver would only
+			// re-read the same channels a frame later.
+			//
+			// Both weathers desaturate; only precipitation cools. Fog takes the colour of
+			// whatever is lighting it — a fog bank at sunset is warm — so cooling it would
+			// fight the inscatter lobe computed a few lines above. Rain is the term that
+			// earns the cool tint, and the two are unioned as transmittances on the
+			// desaturation axis exactly as the ground layer's two signals are.
+			const precipitation = clamp01(rainAmount(descriptor.weather));
+			uWeatherDesaturate.value = 1 - (1 - precipitation) * (1 - fogWeight * 0.6);
+			uWeatherCool.value = precipitation;
+
 			// The activity latch, with hysteresis so a fog blend cannot rebuild the pipeline
 			// graph on every frame it spends near the threshold.
 			const scattering = fogScatterActivity.active
@@ -320,6 +372,12 @@
 			// the lens drivers follow. Hard-set to rest, and drop the effect from the graph.
 			uFogScatter.value = 0;
 			fogScatterActivity.active = false;
+
+			// Same rule for the grade, which has no latch to drop it from the graph and so
+			// would otherwise hold whatever the last procedural frame's weather happened to
+			// be over an HDR environment forever. At rest these two ARE the identity.
+			uWeatherDesaturate.value = 0;
+			uWeatherCool.value = 0;
 
 			scene.fog = previousFog;
 			// Handed back too, or an HDR/cubemap environment would keep rendering the

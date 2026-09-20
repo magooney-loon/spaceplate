@@ -15,10 +15,10 @@ luts.svelte.ts — LUT catalogue + async load cache (three's nine example LUTs, 
 transitionState.svelte.ts — the scene transition's shared state: the mix uniform, the
                  snapshot registration, and the cover/reveal API the scene switch awaits
 TransitionDriver.svelte — its one writer: capture, hold, dissolve. Mount inside <Canvas>
-effects/*.ts   — 18 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, godrays,
+effects/*.ts   — 19 EffectDefs: ssaa, retro (base) · ao, dof, fogScatter, godrays,
                  motionBlur, rainLens, snowLens, speedLines, bloom (+lensflare sub-toggle),
-                 anamorphic, afterimage, vignette, sceneTransition (chain) · lut (grade) ·
-                 smaa, fxaa (AA)
+                 anamorphic, afterimage, weatherGrade, vignette, sceneTransition (chain) ·
+                 lut (grade) · smaa, fxaa (AA)
 effects/mipSource.ts — NOT an effect: the blurred-copy-of-the-frame helper fogScatter,
                  rainLens and snowLens share, holding the clamp-what-you-sample and
                  configure-uvNode/levelNode-in-place rules in one place
@@ -34,7 +34,8 @@ Four `PassRole`s exist because a flat enable-grid cannot express the relationshi
   attachments the registry never asked for (pixelationPass did exactly that).
 - **chain** (in fold order: `ao` 10, `dof` 30, `fogScatter` 32, `godrays` 33,
   `motionBlur` 35, `rainLens` 36, `snowLens` 37, `speedLines` 38, `bloom` 40,
-  `anamorphic` 41, `afterimage` 45, `vignette` 50, `sceneTransition` 60) — plain
+  `anamorphic` 41, `afterimage` 45, `weatherGrade` 48, `vignette` 50,
+  `sceneTransition` 60) — plain
   colour-in/colour-out, folded in `order` threading `ctx.color`. The progression is
   scene → air → shutter → lens → eye, and the numbers are the only thing enforcing it:
   **two effects sharing an `order` are separated by nothing but their position in
@@ -90,6 +91,20 @@ schedules the task again to decay them.
   `LensDriver.svelte`; DRY effects leave the graph entirely via the
   `lensActivity` structural latch, because a dry lens still evaluates the droplet
   field three times per pixel, fullscreen.
+- **`weatherGrade`** — the colour half of rain: what a storm does to the frame's
+  saturation and temperature, which no number of drops can draw. Same driver
+  (`SkyFog`'s task, into `$core/skybox/weatherGrade.svelte`) and same shape as
+  `fogScatter`, with the OPPOSITE latch decision — `afterimage`'s bargain, not the
+  lenses'. A latch may only watch a signal that crosses once and stays across, and a
+  weather blend walks the precipitation channel slowly across any threshold we pick, so
+  a latch here recompiles the pipeline repeatedly through a shower. At rest both
+  uniforms are 0, `saturation(rgb, 1)` is an identity and the mix weight is 0, so the
+  cost of never hitching is one saturation and one mix. The cool tint is **multiplied,
+  not mixed toward** — a mix pulls the frame toward a fixed colour and lifts the blacks
+  (a washed-out storm rather than a cold one), while a multiply is what a filter in
+  front of a lens does. Folded at 48: after `bloom`/`anamorphic`, so the grade cannot
+  move which highlights earn a glow or a streak, and before `vignette`, so the lens
+  falloff darkens a graded frame rather than being graded itself.
 - **`fogScatter`** — the fog band and the weather's `fog` channel, written by
   `SkyFog.svelte`'s task into `$core/skybox/fogScatter.svelte.ts`. Same shape as the
   lenses, including the latch (an inactive scatter still allocates a full-frame target

@@ -200,7 +200,11 @@
 
 		// WRAP FADE, as Snow/Rain: the box's outer shell fades out so a mote recycling to
 		// the opposite face is already invisible when it jumps.
-		const shell = x.abs().div(halfWidth).max(z.abs().div(halfDepth)).max(finalY.abs().div(halfHeight));
+		const shell = x
+			.abs()
+			.div(halfWidth)
+			.max(z.abs().div(halfDepth))
+			.max(finalY.abs().div(halfHeight));
 		const wrapFade = smoothstep(float(0.75), float(1), shell).oneMinus();
 
 		// THE BACKLIGHT TERM — the effect's whole reason to exist. `viewDir` is
@@ -224,11 +228,7 @@
 		// of it — a dry-ambient mote and a sunbeam-caught one should not be the same white.
 		const moteColor = varying(mix(vec3(0.55, 0.6, 0.68), uKeyColor, rim.clamp(0, 1)));
 		const moteMagnitude = varying(
-			uAmbientGlow
-				.add(rim.mul(uKeyRadiance).mul(aBoost))
-				.mul(twinkle)
-				.mul(wrapFade)
-				.mul(nearFade)
+			uAmbientGlow.add(rim.mul(uKeyRadiance).mul(aBoost)).mul(twinkle).mul(wrapFade).mul(nearFade)
 		);
 
 		// THE SPECK: inverse-distance falloff, same construction as Snow's (skyLayer.ts's

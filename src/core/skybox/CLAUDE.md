@@ -12,6 +12,7 @@ SkyLight.svelte   — the descriptor-driven key light (sun→moon crossover), a 
 keyShadow.ts      — who arms the one shadow render per frame, and from which camera
 SkyFog.svelte     — scene.fog from the day curve + fog channel
 fogScatter.svelte.ts — the uniforms SkyFog feeds the `fogScatter` post effect
+weatherGrade.svelte.ts — the uniforms SkyFog feeds the `weatherGrade` post effect
 godrays.svelte.ts — the key light + uniforms SkyLight feeds the `godrays` post effect
 model/            — the pure model + the sky façade (descriptor, skyActions, skyMeta)
 layers/           — every renderer that draws on/around the dome
@@ -34,6 +35,20 @@ Two factors, unioned as transmittances (`1 - (1 - range)(1 - height)`):
   `clearGroundFogShare`, which lets the day curve's own haze peak (dawn/dusk) produce
   valley mist with no `setWeather` call at all. It deepens with its density: thin mist is
   shallow, a fog bank is deep.
+
+**Rain spray rides the height term, and pulls its two knobs in OPPOSITE directions**
+(`rainSprayShare`). Heavy rain throws up a shallow haze of bounce spray — the thing that
+makes a downpour read as hitting something rather than passing through it, and something
+no number of Rain's impact rings can draw. It adds real density, but it must not deepen
+the layer: `groundFogFalloffRange` grows with weight because a thicker fog BANK is a
+deeper one, while a downpour churns a couple of metres of air at the surface however hard
+it falls. So the bank and the spray are unioned as transmittances for the DENSITY, while
+the DEPTH follows the bank alone and is then pulled back toward `rainSprayFalloff` by the
+spray's share of the total — rain in clear air is ankle-deep churn, rain inside a fog bank
+is still the bank's depth, and no rain at all reproduces the old expression exactly. It is
+global while the spray is really only over surfaces the rain reaches (the height field
+knows, `scene.fog` cannot) — the error is a little haze in a covered space, which reads as
+damp air.
 
 ### The height term is our own integral, NOT `exponentialHeightFogFactor`
 
@@ -94,6 +109,21 @@ gives the bank a SHAPE instead of lighting the scene while the air it travels th
 stays dead — the same event as the deck's inside-lighting and the dome's own flash wash.
 Uniform, not directional: a bank lit from inside has no single direction, and the
 envelope is already amplitude-capped at the source.
+
+### The weather also grades the frame (`weatherGrade`)
+
+A storm that leaves every lit surface as saturated as it was at noon reads as an effect
+switched on, not as weather. `SkyFog`'s task drives a late chain effect
+(`core/postprocessing/effects/weatherGrade.ts`) through `weatherGrade.svelte.ts` — driven
+from here for the reason `godrays` is driven from `SkyLight`: this task already holds
+every signal, and a sibling driver would only re-read the same channels a frame later.
+
+**Both weathers desaturate; only precipitation cools.** Fog takes the colour of whatever
+is lighting it — a fog bank at sunset is warm — so cooling it would fight the inscatter
+lobe computed a few lines above in the same task. **It carries no activity latch**, unlike
+`fogScatter` next to it: a latch may only watch a signal that crosses once and stays
+across, and a weather blend walks the channel slowly across any threshold we pick. It
+takes `afterimage`'s bargain instead — always in the graph, an exact identity at rest.
 
 **Both of those terms are ABSORPTION.** The scattering half — a fog bank taking the edge
 off what is inside it, rather than only paling it — is a post-processing effect

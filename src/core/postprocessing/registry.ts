@@ -22,6 +22,7 @@ import { smaaEffect } from './effects/smaa';
 import { speedLinesEffect } from './effects/speedLines';
 import { ssaaEffect } from './effects/ssaa';
 import { vignetteEffect } from './effects/vignette';
+import { weatherGradeEffect } from './effects/weatherGrade';
 
 /**
  * The registry. Display order for panels: base first, then chain, then grade, then AA.
@@ -45,6 +46,7 @@ export const EFFECT_REGISTRY = {
 	bloom: bloomEffect,
 	anamorphic: anamorphicEffect,
 	afterimage: afterimageEffect,
+	weatherGrade: weatherGradeEffect,
 	vignette: vignetteEffect,
 	// Last in the chain: it composites the frozen previous scene over everything the
 	// chain produced, and wants the vignette (and the rest) applied to both sides alike.

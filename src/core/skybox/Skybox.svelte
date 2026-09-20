@@ -10,6 +10,7 @@
 	import Meteors from './layers/celestial/Meteors.svelte';
 	/* 	import Birds from './layers/fauna/Birds.svelte'; */
 	import Rain from './layers/precipitation/Rain.svelte';
+	import RainCurtains from './layers/precipitation/RainCurtains.svelte';
 	import Snow from './layers/precipitation/Snow.svelte';
 	import LensDriver from './layers/precipitation/LensDriver.svelte';
 	import CloudDeck from './layers/clouds/CloudDeck.svelte';
@@ -134,15 +135,17 @@
 
 	     DRAW order is the render queue + renderOrder: the dome is opaque, everything
 	     else transparent, settled by renderOrder 1 (Nebula, Stars, Meteors), 2 (Moon),
-	     2.2 (Birds), 2.5 (CloudDeck), 2.6 (the bolt), 3 (Rain streaks, Snow), 3.1
-	     (Rain rings), 3.2 (Rain burst), 3.3 (Dust Motes) and 4 (the lightning wash)
-	     -- the deck over the moon because a deck occludes it, near-camera layers
-	     last because they are nearest.
+	     2.2 (Birds), 2.5 (CloudDeck), 2.55 (RainCurtains — below the deck they fall
+	     from, in front of the bolt's own plane), 2.6 (the bolt), 3 (Rain streaks,
+	     Snow), 3.1 (Rain rings), 3.2 (Rain burst), 3.25 (Rain near field), 3.3 (Dust
+	     Motes) and 4 (the lightning wash) -- the deck over the moon because a deck
+	     occludes it, near-camera layers last because they are nearest.
 
 	     TASK order falls back to mount order among the `before: autoRenderTask` tasks,
-	     and ONE dependency lives here: Lightning publishes the flash to `flashState`
-	     and CloudDeck reads it, so Lightning mounts first and the deck lights up the
-	     same frame the bolt appears.
+	     and the dependencies that live here all point the same way: Lightning publishes
+	     the flash to `flashState` and CloudDeck, RainCurtains and Rain all read it, so
+	     Lightning mounts first and every one of them lights up in the same frame the
+	     bolt appears.
 
 	     None of these reach the environment map: Sky bakes the dome mesh alone, so no
 	     layer burns a hotspot into the ambient term. -->
@@ -160,6 +163,11 @@
 		<!-- <Birds /> -->
 		<Lightning />
 		<CloudDeck radius={1000} />
+		<!-- Distant rain, as a veil on the horizon band rather than as particles: the
+		     storm's geography, which the camera-boxed Rain layer cannot express at any
+		     count. Outside the {#key} below because it bakes no counts — it is one
+		     cylinder and a shader, so a preset change has nothing to reset. -->
+		<RainCurtains radius={1000} />
 		<!-- Remounted on preset change: counts are baked at mount (see PRECIPITATION).
 		     A visible reset of the curtain, on a settings click only. -->
 		{#key precipitation}

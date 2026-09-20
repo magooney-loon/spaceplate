@@ -6,7 +6,8 @@ Every renderer that draws on/around the dome, grouped by family:
 skyLayer.ts      — shared plumbing (see below) — ALL layers use it
 celestial/       — Stars, Moon, Meteors, Nebula + milkyWay.ts
 clouds/          — CloudDeck
-precipitation/   — Rain, Snow, HeightField + heightField.ts, LensDriver + lensState.svelte.ts
+precipitation/   — Rain, RainCurtains, Snow, HeightField + heightField.ts,
+                   LensDriver + lensState.svelte.ts
                    (the CPU half of the two lens POST effects — see below)
 lightning/       — Lightning + flashState.ts
 fauna/           — Birds (GPU-compute flock)
@@ -66,12 +67,14 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 
 - **Draw order** = render queue + `renderOrder`: 1 (Nebula, Stars, Meteors), 2 (Moon),
   2.2 (Birds — under the deck, over the moon), 2.5 (CloudDeck — occludes the moon),
-  2.6 (bolt), 3 (Rain streaks, Snow), 3.1 (Rain rings), 3.2 (Rain burst), 3.3
+  2.55 (RainCurtains — below the deck they fall from), 2.6 (bolt), 3 (Rain streaks,
+  Snow), 3.1 (Rain rings), 3.2 (Rain burst), 3.25 (Rain near field), 3.3
   (DustMotes — nearest), 4 (the faint lightning sky wash). The lens overlays are
   post-processing chain effects and don't participate in draw order at all (see
   _The lenses left_ below).
-- **Task order** falls back to mount order among `before: autoRenderTask` tasks; the one
-  real dependency is Lightning → CloudDeck (flash published and read in the same frame).
+- **Task order** falls back to mount order among `before: autoRenderTask` tasks; the
+  dependencies all point one way — Lightning publishes the flash and CloudDeck,
+  RainCurtains and Rain each read it in the same frame, so Lightning mounts first.
 - **Anything that MOVES the camera must run in the main stage, not here.** Six layers
   anchor themselves to `camera.current` in a `before: autoRenderTask` task (Rain, Snow,
   LensDriver, HeightField, Lightning, SkyFog), and a camera driver competing for
@@ -229,6 +232,54 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 - Amounts come from `rainAmount`/`snowAmount` (the `precipitationType` split; sleet
   renders both). Snow's flakes dim with the light hints, so a night snowfall reads
   faint and cool.
+- **A drop is a LENS, so the streaks carry a forward-scattering lobe** toward the key
+  (`uBacklight`) ADDED on top of their ambient tint — the same dot product `DustMotes`,
+  Rain's own burst glint and `SkyFog`'s `sunInscatter` take, and for the same reason
+  (inscattered light is light arriving, so it adds and never mixes). It is what makes
+  backlit rain blaze and frontlit rain nearly vanish, which is the whole look of rain on
+  film. Two things are deliberately unlike `SkyFog`'s otherwise-identical lobe: the
+  exponent is far broader (2.5 vs 6 — a streak is the smear of a whole fall, not a point
+  glint, and at 6 the curtain only lights within a few degrees of the key), and the gain
+  IS gated on the key's attenuated intensity, because fog scatters light that reached it
+  from anywhere while a drop can only forward-scatter light that actually arrived.
+- **Lightning lights the rain**, via `flashState` — the same capped envelope the deck,
+  the fog and the dome already share, applied uniformly (air lit from inside has no
+  single direction). Streak tint lifts toward white, splash light response lifts with
+  it, and the distant curtains lift too.
+- **The gust CURL is applied to the drawn head, deliberately outside `motionOf`.** The
+  `fract` wrap in there is what pins a drop to a world position, and it is only a wrap
+  while its argument stays linear in the anchor — a displacement folded inside unpins
+  the whole field. It is also **faded to zero at the surface**, which is not decoration:
+  the splash layers read the UNPERTURBED solution, so an un-faded curl lands a streak a
+  hand's width from its own splash. Wind shear says the same thing physically.
+- **Rain's near field ("hero drops") is a separate box, and has to be.** What reads at
+  arm's length is a sparse foreground of big out-of-focus streaks, and a uniform 70-unit
+  box puts essentially none of its drops there — a subset flag on the main field cannot
+  produce them, since the drops would have to happen to be nearby. It is Snow's "flakes
+  per unit³ near the camera" rule taken to its limit: ~110 instances in 10 units beats
+  9000 in 70 for this job. It is also **not a `motionOf` client**, which is what makes it
+  cheap: at that range the height field has nothing to say that matters, and a drop below
+  the floor is hidden BY the floor for free (the layer projects honest depth, so scene
+  geometry depth-tests it away). Its cost is fill rate per instance, not instance count —
+  `heroCount` is the first knob to turn down, and 0 removes the layer.
+- **`RainCurtains` is the storm's GEOGRAPHY**, and the one precipitation layer that is
+  not a particle field. Rain's box is 70 units: inside it there is weather, outside it
+  nothing, so a storm has no size and you cannot watch one arrive. At a kilometre an
+  individual drop is far smaller than a pixel, so the honest (and far cheaper) answer is
+  a shader — one open-ended cylinder at dome distance, far-plane pinned, shafts drawn
+  into the horizon band. Three things in it are load-bearing:
+  - **A cylinder, not CloudDeck's sphere**, purely as cost: the effect only ever occupies
+    a band above the horizon, and a sphere rasterizes the whole sky to draw it.
+  - **The seam closes by construction.** Every shaft frequency is an INTEGER multiple of
+    the azimuth, which is exactly periodic over a full turn, so the pattern meets itself
+    at `atan`'s ±π branch cut with no blend region. Same requirement `rainLens`'s
+    `RADIAL_COLUMNS` solves, reached cheaply because here we choose the frequencies.
+  - **It must fade out in fog, and nothing else will do it.** `fog = false` is the
+    sky-layer material contract, so without an explicit `1 - fog` gate the curtains hang
+    in front of their own fog bank at a kilometre while visibility is a hundred metres.
+- **The spray above the splashes is `SkyFog`'s job, not a layer's** (`rainSprayShare` —
+  see `../CLAUDE.md`). The rings and bursts draw individual impacts; the churned air over
+  them is a ground-fog term, and no number of rings produces it.
 - **What reads is flakes per unit³ near the camera, not instance count.** Snow's box was
   64×40×64, which spent a third of the field on flakes 25-45 units out — two or three
   pixels each, at the price of a full instance and a full blend. Shrinking the box faster
