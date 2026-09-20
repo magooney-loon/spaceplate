@@ -482,7 +482,10 @@ export const gr86 = {
 		// HOLD before the catch fully takes over, then settles instead of
 		// spinning. The steady-state angle lands well under this, a little past
 		// half.
-		maxDriftAngle: 1.9
+		maxDriftAngle: 1.9,
+		// 0 — RWD: the front axle isn't driven, so it has nothing to spend
+		// twice over. Kept explicit rather than assumed (handling.ts).
+		powerPush: 0
 	}
 } as const satisfies CarSpec;
 

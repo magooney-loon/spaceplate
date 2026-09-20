@@ -43,10 +43,11 @@ const MODEL_SCALE = 2.5 / GLB_UNITS_PER_METRE;
 
 const tune: HandlingTune = {
 	// Modest tyres for a ~1.2 t hot hatch: the driven fronts also do the
-	// steering, so their grip budget is spent twice over.
+	// steering, so their grip budget is spent twice over — see `powerPush`
+	// below for what that costs the car at the limit.
 	tireMuLong: 1.0,
-	// Equal to the static cap — the plain physical model (no kinetic grease
-	// until FWD handling feel is written).
+	// Equal to the static cap — the plain physical model (no kinetic grease;
+	// this car's handling feel is push understeer, not a drift vocabulary).
 	slideMuLong: 1.0,
 	tireMuLat: 1.05,
 	latGripGain: 1.5,
@@ -56,6 +57,9 @@ const tune: HandlingTune = {
 	// GR86's RWD 0.5.
 	slipGripLoss: 0.4,
 	looseBase: 0,
+	// 0 — no engineered rear looseness: this car's power character is push
+	// understeer at the FRONT (`powerPush`), not a rear-slip drift vocabulary
+	// it doesn't have the driveline for.
 	throttleLoose: 0,
 	brakeLoose: 0,
 
@@ -67,11 +71,21 @@ const tune: HandlingTune = {
 	yawResponse: 8.5,
 
 	// A light car's handbrake swings the tail more readily than the GR86's.
+	// Unchanged by the understeer work below: the rear locks the same way on
+	// every car regardless of what drives the front.
 	handbrakeYawBoost: 2.4,
 	powerYawBoost: 1,
 	driftAlign: 0,
 	handbrakeAlign: 0,
-	maxDriftAngle: 0.75
+	maxDriftAngle: 0.75,
+	// THE CHARACTER: a driven front axle spends its tyre twice over (steering
+	// AND propulsion), so power washes the nose wide rather than rotating the
+	// tail — real front-wheel-drive push, and still the stronger of the two
+	// driven-front cars' (the RS3 splits its drive load across both axles;
+	// this one spends its whole budget at the front). Was 0.7 — that cut the
+	// yaw cap hard enough mid-corner to fight the wheel rather than read as
+	// push; still the car's whole character, just earned less abruptly.
+	powerPush: 0.35
 };
 
 export const gtir = {

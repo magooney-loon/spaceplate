@@ -455,7 +455,15 @@ export function createCarController(spec: CarSpec, world: World) {
 		// The planted car: the lesser of the geometric and grip-limited rate, both
 		// scaled by the boost (see CLAUDE.md's yaw-authority bullets).
 		const yawDemand = ((speedMs * Math.tan(carSim.steerAngle)) / hw.wheelbase) * boost;
-		const yawCap = (latGrip * boost * G) / Math.max(absSpeed, YAW_MIN_SPEED);
+		// PUSH UNDERSTEER: a driven front axle spending its budget on propulsion
+		// has less left to turn with, so the CAP comes down — never the demand,
+		// or the two would shrink together and the clamp below would never bind.
+		// Gated on the layout (frontDriven), not on the tune alone: `out.powerLoad`
+		// already means "the driven axle's own load", so this is a no-op on the
+		// GR86's rear-driven front by construction, and `tune.powerPush` is 0
+		// there anyway (see handling.ts).
+		const push = frontDriven ? tune.powerPush * out.powerLoad : 0;
+		const yawCap = ((latGrip * boost * G) / Math.max(absSpeed, YAW_MIN_SPEED)) * (1 - push);
 		// The auto-catch, scaled by how much rear grip is left — a spinning tyre
 		// aligns nothing (CLAUDE.md's `driftAlign` bullet). Zero on a purely
 		// kinematic tune (the FWD/AWD specs).

@@ -99,6 +99,22 @@ export interface HandlingTune {
 	 * spinning. The steady-state drift angle lands a little under this.
 	 */
 	maxDriftAngle: number;
+
+	// ── Understeer ───────────────────────────────────────────────────────────
+	/**
+	 * 0…1 — how much a DRIVEN FRONT axle's own power load pulls the yaw CAP
+	 * down, never the demand: `powerYawBoost`'s push-wide opposite. A driven
+	 * front tyre spends its budget twice over (steering AND propulsion), so
+	 * under power it has less lateral grip to turn with — the car's heading
+	 * rotates slower than the wheel angle asks and the nose runs wide, which
+	 * is understeer without any new term touching the SIGN of the slip angle
+	 * (the stability rule above still holds: this multiplies a cap, same as
+	 * `powerYawBoost` does, it just multiplies it down instead of up). Reads
+	 * `drivenAxles(spec)` at the call site, so it is a no-op on a spec whose
+	 * front isn't driven — 0 on the RWD tune, where it would never apply
+	 * anyway, kept explicit rather than assumed.
+	 */
+	powerPush: number;
 }
 
 /** Lateral μ the cornering model runs on — the yaw cap and the sideways bleed share it. */

@@ -302,17 +302,35 @@ Two things read it, and both must: the drivetrain's driven-axle LOAD
 (`spec.ts` `drivenAxleLoad`: RWD rear-bias + transfer, FWD front-bias −
 transfer, AWD full weight) and the debug rig's driveline (`spec.ts`
 `drivenAxles` — which axle, as `[front, rear]`; a hard-coded driveline would draw
-an FWD spec with a live rear axle it does not have). But FWD and AWD HANDLING FEEL
-(front-slip understeer, torque split, handbrake-while-
-driven) is deliberately unwritten — the current model is rear-slip-centric
-(looseness, driftAlign, "the fronts are never the axle that lets go") and
-should not be guessed at without the cars to tune against. cars/rs3.ts (AWD)
-and cars/gtir.ts (FWD) exist now and exercise the LOAD/driveline plumbing for
-real, but each ships the plain kinematic tune — the grip/drift switch is gone,
-so there is no slot for a rear-slip drift vocabulary faking a
-front-slip character this engine can't yet compute honestly. Don't treat
-either car's numbers as a validated AWD/FWD handling feel — they're a
-starting point for whoever writes that model, same as the GR86 was for RWD.
+an FWD spec with a live rear axle it does not have). FWD/AWD HANDLING FEEL
+(a car whose driven axle is at the front) now has ONE mechanism of its own,
+`handling.ts`'s `powerPush`: a driven front axle spends its tyre budget twice
+over (steering AND propulsion), so under power `controller.ts` pulls the YAW
+CAP down (never the demand — the two must not shrink together, or the clamp
+never binds) by `tune.powerPush × out.powerLoad`, gated on `drivenAxles(spec)`
+so it is a no-op on the GR86's rear-driven front. That is push-wide
+understeer, not a new drift vocabulary, and it is safe under the stability
+rule below without touching it: it multiplies a cap by a load-derived
+fraction, the same shape `powerYawBoost` already uses, just downward and off
+`powerLoad` rather than `loose`. **What is still unwritten** is torque split
+and handbrake-while-driven — the model does not simulate an actual front/rear
+torque distribution (AWD's `drivenAxleLoad` is one number, the full static
+weight, not a split), and the handbrake still just locks the rear on every
+layout (real on a real FWD car too, so not obviously wrong, just unmodelled
+either way). cars/gtir.ts (FWD) ships `powerPush: 0.35` — push understeer as
+its whole character, no rear-slip terms borrowed in (`throttleLoose`/
+`driftAlign` stay 0, same as before) — and cars/rs3.ts (AWD) ships a lighter
+`powerPush: 0.18` alongside a real `brakeLoose`/`driftAlign`/`handbrakeAlign`
+now (trail-brake or the handbrake can still provoke it, planted means it
+catches itself quickly after, not that it can't move at all). Both started
+at roughly double this (0.7 / 0.35) and came down a first-playtest step: a
+cap cut that size mid-corner fought the wheel instead of reading as push.
+**Neither car's numbers are measured against a real one** — GR86's tune has
+the 0-60/top-speed/measured-slip-angle validation `CLAUDE.md`'s driving-model
+section describes; RS3/GTI-R's `powerPush` values are still a first pass sized
+by feel, not by driving either car and comparing it to anything against a
+real reference. Re-tune further before trusting either number the way the
+GR86's are trusted.
 
 ## Controls
 

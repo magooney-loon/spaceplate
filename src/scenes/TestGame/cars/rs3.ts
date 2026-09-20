@@ -47,8 +47,14 @@ const tune: HandlingTune = {
 	// moment of slip bleeds less lateral grip than a RWD/FWD car's.
 	slipGripLoss: 0.3,
 	looseBase: 0,
+	// 0 — power never loosens the REAR here (that would be power-oversteer,
+	// not the planted quattro character); the understeer half below is what
+	// power actually does to this car.
 	throttleLoose: 0,
-	brakeLoose: 0,
+	// A trail-brake tap is the deliberate provoke: braking moves load off the
+	// rear the same as it does on the GR86, just weighted down from its 0.75
+	// — planted resists it, doesn't refuse it.
+	brakeLoose: 0.32,
 
 	// A touch less lock than the GR86 — a longer wheelbase wants a slightly
 	// wider turn radius to feel natural.
@@ -59,11 +65,24 @@ const tune: HandlingTune = {
 	yawResponse: 9,
 
 	handbrakeYawBoost: 2.0,
-	// 1 and 0 — the plain kinematic model, same as every grip-biased tune.
+	// 1 — power never boosts yaw authority here; see `powerPush` below for
+	// what power actually does (the opposite: it pulls the cap DOWN).
 	powerYawBoost: 1,
-	driftAlign: 0,
-	handbrakeAlign: 0,
-	maxDriftAngle: 0.7
+	// A real auto-catch now the car can actually be provoked (trail-brake,
+	// handbrake) — planted means it recovers quickly once let go, not that it
+	// can't be unsettled at all.
+	driftAlign: 2.6,
+	// Catches a handbrake stop instead of letting it skate — the GR86's 2.2,
+	// a shade over for the AWD's extra stability.
+	handbrakeAlign: 2.4,
+	maxDriftAngle: 0.7,
+	// The quattro character: power pushes the nose wide rather than rotating
+	// the tail — light, since only part of the drive load is up front (AWD
+	// splits the traction limit's use across both driven axles, unlike the
+	// GTI-R's FWD spending its whole budget at the front). Was 0.35 — same
+	// fix as the GTI-R's: too much cap cut mid-corner reads as fighting the
+	// car, not as planted.
+	powerPush: 0.18
 };
 
 export const rs3 = {
