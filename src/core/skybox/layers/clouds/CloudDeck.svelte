@@ -115,6 +115,10 @@
 	// Horizontal key-light direction, fed to the shader as a sampling offset so the deck
 	// can shade itself: brighter on the side facing the light, like a real cloud would.
 	const uLightDir = uniform(new THREE.Vector2(1, 0));
+	// Full 3D key direction (unit, world space) for the silver-lining term below --
+	// `uLightDir` is a UV-space sampling offset and can't answer "is the camera looking
+	// toward the sun", which is a view-ray question, not a shading-offset one.
+	const uSunDir = uniform(new THREE.Vector3(0, 1, 0));
 	// Lightning, from flashState: `flash` is the softened envelope Lightning publishes
 	// (photosafety-capped at the source -- do not re-amplify), `flashDir` the strike
 	// direction. The deck localizes the glow around it.
@@ -198,9 +202,17 @@
 		// flat-bottomed, as cumulus sit on their condensation level -- and tapers the
 		// top: a silhouette, not a slice sandwich.
 		const sliceDensity = Fn(([uv, hf]: [any, any]) => {
-			const n = fbm3(uv.add(seedOffset));
 			const r = fbm2(uv.mul(1.9).add(vec2(19.3, 7.1)));
 			const ridge = r.mul(2).sub(1).abs().oneMinus();
+			// DOMAIN WARP, for free: `r` and `ridge` are already-paid-for samples of the
+			// same low-frequency field (a tent function of `r`, not a copy of it, so the
+			// pair traces a curve rather than a straight line and the offset isn't just a
+			// uniform diagonal shift). Feeding that back as a coordinate offset before the
+			// base fbm3 sample is the standard cheap way out of "value-noise blob": it
+			// bends the sampling grid instead of adding an octave, so cumulus silhouettes
+			// stop reading as smooth potatoes without one extra noise tap.
+			const warp = vec2(r, ridge).sub(0.5).mul(0.4);
+			const n = fbm3(uv.add(warp).add(seedOffset));
 			const mass = n.mul(0.68).add(ridge.mul(ridge).mul(0.32));
 
 			const threshold = float(0.74).sub(uStrength.mul(0.34));
@@ -272,7 +284,8 @@
 				});
 			});
 
-			// The march's own coverage, reused below as the lightning term's structure weight.
+			// The march's own coverage, reused below as the structure weight for both the
+			// silver lining and the lightning term.
 			const mask = massAlphaAcc;
 			const massWeight = uStrength.mul(horizonFade);
 			const massAlpha = massAlphaAcc.mul(massWeight);
@@ -281,6 +294,18 @@
 			// premultiplied by hand. Both terms take the same weight, so the divide leaves
 			// the colour itself untouched.
 			const massPremul = massColorAcc.mul(massWeight);
+
+			// SILVER LINING: the forward-scatter lobe every other atmospheric layer here
+			// carries (SkyFog's sunInscatter, DustMotes, Rain's backlight) but the mass
+			// march never had one -- SkyMesh's own r186 clouds do (Sky.svelte's header),
+			// so the slab was the one cloud layer with no lit rim. Same dot-product idiom:
+			// brightest looking straight at the key, near zero looking away. Weighted by
+			// `mask*(1-mask)`, which peaks at half coverage -- a real cloud's THIN,
+			// translucent edge, not its opaque core (which blocks the light it would need
+			// to rim-light) or clear sky (mask 0, gets none).
+			const edgeWeight = mask.mul(mask.oneMinus()).mul(4);
+			const rim = pow(dot(dir, uSunDir).max(0), float(10)).mul(edgeWeight);
+			const silverLining = lit.mul(rim).mul(2.4);
 
 			// ── Cirrus band ──────────────────────────────────────────────────────────
 			// Sheared UV (stretched 1:3.2) reads as wind-smears; scrolls faster and sits
@@ -316,7 +341,7 @@
 				.mul(align.mul(1.25).add(0.06))
 				.mul(float(0.35).add(mask.mul(0.65)));
 
-			return vec4(color.add(flash), totalAlpha);
+			return vec4(color.add(flash).add(silverLining), totalAlpha);
 		});
 
 		material.colorNode = deck();
@@ -364,6 +389,7 @@
 			const d = descriptor.light.direction;
 			const len = Math.hypot(d.x, d.z) || 1;
 			uLightDir.value.set(d.x / len, d.z / len);
+			uSunDir.value.set(d.x, d.y, d.z);
 
 			uStrength.value = strength;
 			uWisp.value = wisp;

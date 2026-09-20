@@ -158,6 +158,18 @@ deck, moon or a flash never burns a hotspot into the ambient term.
   - `steps` is baked into the shader (a TSL `Loop` count), so it is a mount-time
     constant; `opticalDepth` is what makes the deck denser, and it is divided by `steps`
     so the look is step-count independent.
+  - **Silhouettes are domain-warped, for free.** `sliceDensity` already computes `r`
+    (the low-frequency field behind the ridge term); `vec2(r, ridge) - 0.5` is fed back
+    as a coordinate offset before the base `fbm3` sample — the standard cheap fix for
+    "value-noise blob" — at zero extra noise taps, since `r`/`ridge` were already paid
+    for.
+  - **The march carries a silver-lining term**, the one forward-scatter lobe the deck
+    was missing (every other atmospheric layer has one — `SkyFog`'s `sunInscatter`,
+    `DustMotes`, Rain's backlight — and so does SkyMesh's own r186 cloud field). Same
+    dot-product idiom against the key's full 3D direction (`uSunDir`, distinct from
+    `uLightDir`'s UV-space shadow-sampling offset), weighted by `mask*(1-mask)` so it
+    peaks at a cloud's thin, translucent EDGE rather than its opaque core (which blocks
+    the light it would need to rim-light) or clear sky (`mask` 0).
 - **Wind scroll is a self-accumulated UV offset. Never drive `SkyMesh.cloudSpeed` with
   `wind`** — that uniform is multiplied by absolute elapsed time inside SkyMesh, so
   changing it teleports the whole cloud pattern. The deck accumulates its own offset in
