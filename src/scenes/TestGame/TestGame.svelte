@@ -18,8 +18,8 @@
 	import CarEngineAudio from './audio/CarEngineAudio.svelte';
 	import CarWheels from './fx/CarWheels.svelte';
 	import DebugRig from './debug/DebugRig.svelte';
-	import ChaseCamera from './ChaseCamera.svelte';
-	import RearViewMirror from './RearViewMirror.svelte';
+	import ChaseCamera from './cameras/ChaseCamera.svelte';
+	import RearViewMirror from './cameras/RearViewMirror.svelte';
 	import SkidMarks from './fx/SkidMarks.svelte';
 	import TireSmoke from './fx/TireSmoke.svelte';
 	import NitrousAfterimage from './fx/NitrousAfterimage.svelte';
@@ -28,11 +28,11 @@
 	import { CAR_TOGGLE_SLOTS, carControls } from './sim/carControls';
 	import { useInputMap } from '$extensions/input';
 	import { currentCar } from './cars';
-	import type { PaintFinish } from './cars/types';
 	import { carPaint, currentPaintOption } from './sim/carPaint.svelte';
 	import { UNITS_PER_METER } from './units';
 	import { createCarController } from './sim/controller';
 	import { buildCarHull, chassisMassProperties } from './cars/hull';
+	import { createBodyPaintMaterial, applyBodyPaint } from './cars/paintMaterial';
 	import Track from './world/Track.svelte';
 	import { resetCarTelemetry, publishCarPose } from './sim/carTelemetry.svelte';
 	import { pollHullContacts, resetHullContacts } from './sim/hullContacts';
@@ -234,94 +234,19 @@
 
 	// ── Paint — the order sheet on the body panels ───────────────────────────
 	//
-	// The GLB ships painted in whatever the export baked (Track bRED); the shop
-	// (the HUD's Paint Shop button — sim/carPaint.svelte) re-sprays it without a
-	// re-export. The shared paint material is SWAPPED for a MeshPhysicalMaterial
-	// because clearcoat and iridescence are what separate a solid from a pearl
-	// and a colour-shift — and it KEEPS the GLB's material name so the shadow
-	// policy above still reads it. One instance, never disposed: useGltf caches
-	// the scene, so a remount finds it already on the panels and reuses it.
-	// Metalness stays modest on purpose — the scene has no environment map (sky
-	// key + fill lights only), and a high metalness with nothing to reflect just
-	// darkens the colour; the flake reads through the clearcoat highlights.
-	const FINISHES: Record<
-		PaintFinish,
-		{
-			metalness: number;
-			roughness: number;
-			clearcoat: number;
-			clearcoatRoughness: number;
-			iridescence: number;
-			iridescenceIOR: number;
-			iridescenceThicknessRange: [number, number];
-		}
-	> = {
-		solid: {
-			metalness: 0.05,
-			roughness: 0.42,
-			clearcoat: 1,
-			clearcoatRoughness: 0.1,
-			iridescence: 0,
-			iridescenceIOR: 1.3,
-			iridescenceThicknessRange: [100, 400]
-		},
-		metallic: {
-			metalness: 0.55,
-			roughness: 0.46,
-			clearcoat: 1,
-			clearcoatRoughness: 0.08,
-			iridescence: 0,
-			iridescenceIOR: 1.3,
-			iridescenceThicknessRange: [100, 400]
-		},
-		pearl: {
-			metalness: 0.45,
-			roughness: 0.42,
-			clearcoat: 1,
-			clearcoatRoughness: 0.07,
-			iridescence: 0.3,
-			iridescenceIOR: 1.5,
-			iridescenceThicknessRange: [120, 420]
-		},
-		shift: {
-			metalness: 0.5,
-			roughness: 0.36,
-			clearcoat: 1,
-			clearcoatRoughness: 0.05,
-			iridescence: 1,
-			iridescenceIOR: 1.9,
-			iridescenceThicknessRange: [100, 800]
-		}
-	};
-
-	const bodyPaint = new THREE.MeshPhysicalMaterial({ name: car.model.paintMaterial });
+	// The shop (HUD, sim/carPaint.svelte) only picks WHICH paint and finish;
+	// applying that to the loaded GLB is scene work (cars/paintMaterial.ts —
+	// its header has the why). One material instance, never disposed: useGltf
+	// caches the scene, so a remount finds it already on the panels and reuses it.
+	const bodyPaint = createBodyPaintMaterial(car);
 
 	// Re-runs on model load AND on every paint-shop selection (the option read
-	// tracks carPaint.id, the finish lookup reads carPaint.finish — colour and
-	// finish are chosen independently in the shop). The traverse re-walk is
-	// cheap and idempotent — the swap is a no-op after the first run.
+	// tracks carPaint.id, the finish read tracks carPaint.finish — colour and
+	// finish are chosen independently in the shop).
 	$effect(() => {
 		const root = $carModel?.scene;
 		if (!root) return;
-		const target = car.model.paintMaterial.toLowerCase();
-		root.traverse((obj) => {
-			const mesh = obj as Mesh;
-			const material = mesh.material as THREE.Material | undefined;
-			if (!mesh.isMesh || !material || material.name.toLowerCase() !== target) return;
-			if (material !== bodyPaint) mesh.material = bodyPaint;
-		});
-		const option = currentPaintOption();
-		const finish = FINISHES[carPaint.finish];
-		// .set('#rrggbb') converts sRGB→linear — the space a glTF baseColorFactor
-		// lives in, and what the swatch's hex promises on screen.
-		bodyPaint.color.set(option.hex);
-		bodyPaint.metalness = finish.metalness;
-		bodyPaint.roughness = finish.roughness;
-		bodyPaint.clearcoat = finish.clearcoat;
-		bodyPaint.clearcoatRoughness = finish.clearcoatRoughness;
-		bodyPaint.iridescence = finish.iridescence;
-		bodyPaint.iridescenceIOR = finish.iridescenceIOR;
-		bodyPaint.iridescenceThicknessRange = finish.iridescenceThicknessRange;
+		applyBodyPaint(root, car, bodyPaint, currentPaintOption(), carPaint.finish);
 		// Render on demand: a re-spray the renderer never sees is not a re-spray.
 		invalidate();
 	});

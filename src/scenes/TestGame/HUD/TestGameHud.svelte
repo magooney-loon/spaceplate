@@ -2,15 +2,15 @@
 	import { sceneActions } from '$extensions/scene';
 	import { engineSounds } from '$core';
 	import CarCluster from './CarCluster.svelte';
-	import PaintShop from './PaintShop.svelte';
-	import Garage from './Garage.svelte';
-	import TrackMinimap from './TrackMinimap.svelte';
-	import DebugHud from './debug/DebugHud.svelte';
-	import { requestCarRestart } from './sim/carSwitches.svelte';
-	import { togglePaintShop } from './sim/carPaint.svelte';
-	import { toggleGarageShop } from './sim/garageShop.svelte';
-	import { carHud } from './sim/carTelemetry.svelte';
-	import { carGarage } from './cars';
+	import PaintShop from '../shops/PaintShop.svelte';
+	import Garage from '../shops/Garage.svelte';
+	import TrackMinimap from '../world/TrackMinimap.svelte';
+	import DebugHud from '../debug/DebugHud.svelte';
+	import { requestCarRestart } from '../sim/carSwitches.svelte';
+	import { togglePaintShop } from '../sim/carPaint.svelte';
+	import { toggleGarageShop } from '../sim/garageShop.svelte';
+	import { carHud } from '../sim/carTelemetry.svelte';
+	import { carGarage } from '../cars';
 
 	// The launch flash's tier names — latched at the catch (carSim.launchTier),
 	// never read off the live revs. The boost itself is continuous; the names

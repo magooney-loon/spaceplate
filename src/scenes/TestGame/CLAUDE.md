@@ -12,11 +12,32 @@ scene via `Scene.svelte` / `SceneHud.svelte`.
 TestGame.svelte         — the scene: world + car composition + the physics-task
                          shell; the driving model itself is sim/controller.ts,
                          the map is world/Track.svelte
-PaintShop.svelte        — the paint shop: a TOP BAR (no backdrop, world stays
+units.ts                — UNITS_PER_METER + G: the SI ↔ world boundary (track
+                         scale) — scene-wide, so it stays at the root rather
+                         than under any one area (sim/fx/cars/audio/debug all
+                         import it)
+HUD/                    — the screen-space HUD stack: shell, gauges, minimap
+                         anchor point (the minimap component itself lives in
+                         world/, next to the map data it draws)
+  TestGameHud.svelte    — HUD shell (controls hint, back-to-menu, restart) + the
+                         upper-middle launch flash (STREET / JUICY / PERFECT) +
+                         the bottom-left `.corner` column, which is what ANCHORS
+                         the minimap and the debug readout (neither positions
+                         itself — they share that corner)
+  CarCluster.svelte     — bottom-right instrument cluster: ONE svg gauge pod —
+                         tacho + shift lights + seven-segment gear window + backlit
+                         LCD speed readout, flanked by a boost/vacuum gauge and the
+                         live N2O bottle gauge; dial facts from the spec
+  clusterSegments.ts    — the cluster's seven-segment geometry (segment polygons +
+                         the glyph table), so the digital windows draw their unlit
+                         segments too instead of being text in a big font
+shops/                  — the TOP BAR shop overlays: paint + change-car, same
+                         shape as each other, both opened from the HUD shell
+  PaintShop.svelte      — the paint shop: a TOP BAR (no backdrop, world stays
                          interactive) — order-sheet swatches + finish chips
                          (solid/metallic/pearl/shift, factory finish resets on
                          colour select), selection applies live
-Garage.svelte           — the change-car shop: a TOP BAR, same shape as
+  Garage.svelte         — the change-car shop: a TOP BAR, same shape as
                          PaintShop — one card per CARS entry showing exactly
                          what's in its spec (power/torque/weight/top speed/
                          gear count/layout, nothing invented here). Picking a
@@ -24,11 +45,14 @@ Garage.svelte           — the change-car shop: a TOP BAR, same shape as
                          TestGame mount on that id, so the pick REMOUNTS the
                          scene fresh against the new spec (garage.svelte.ts's
                          header) — the same rebuild a scene re-entry does
-TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart) + the
-                         upper-middle launch flash (STREET / JUICY / PERFECT) +
-                         the bottom-left `.corner` column, which is what ANCHORS
-                         the minimap and the debug readout (neither positions
-                         itself — they share that corner)
+cameras/                — the two camera / render-target components, as
+                         opposed to the reactive-state HUD readouts above
+  ChaseCamera.svelte    — chase cam; borrows the app camera (rules below) + the
+                         nitrous FOV kick, the launch dolly kick and the shift jolt
+  RearViewMirror.svelte — NFS-style rear-view strip: a backward camera on the car
+                         fills a small RT (top-of-screen overlay quad on the active
+                         camera, LENS_LAYER's first resident since the lens effects
+                         moved into the post pipeline)
 cars/                   — THE GARAGE: everything car-specific is data here
   types.ts              — CarSpec: the contract (hardware/suspension/geometry/
                          model/audio/cluster/tune + layout 'rwd'|'fwd'|'awd')
@@ -53,6 +77,15 @@ cars/                   — THE GARAGE: everything car-specific is data here
   spec.ts               — spec math: gearRatio/rpmInGear/engineTorque +
                          layout-aware drivenAxleLoad/drivenAxles + centerOfMass +
                          wheelPatches (shared layout)
+  hull.ts               — the chassis collider computed from the car's own GLB
+                         at load: one rounded convex hull over every mesh but
+                         the wheels, decimated to ≤8k points, plus the explicit
+                         mass properties Threlte's Collider needs (mass/COM/
+                         inertia/frame) — see CLAUDE.md's colliders section
+  paintMaterial.ts      — the FINISHES table + applying a paint-shop pick to
+                         the loaded GLB (material swap + colour/finish props).
+                         Scene work, not shop work — see its own header for
+                         why this can't live in shops/PaintShop.svelte
   garage.svelte.ts      — CARS registry + carGarage.currentId ($state, written
                          by Garage.svelte) + currentCar()
   index.ts              — barrel (directory imports can't resolve .svelte.ts)
@@ -205,24 +238,10 @@ world/                  — THE MAP: everything map-shaped (one track so far —
   trackMapState.svelte.ts — the outline's handoff to the HUD (scene is inside
                          <Canvas>, HUD is outside it); written twice a visit,
                          not per frame
-TrackMinimap.svelte     — bottom-left track map: the outline above, plus the car
+  TrackMinimap.svelte   — bottom-left track map: the outline above, plus the car
                          from `carHud.mapX/mapZ/mapYaw`. CarCluster's palette and
                          drawn-glow rules, and its NO PANEL CHROME call too — the
                          map floats, with a drawn shadow pass for contrast
-ChaseCamera.svelte      — chase cam; borrows the app camera (rules below) + the
-                         nitrous FOV kick, the launch dolly kick and the shift jolt
-RearViewMirror.svelte   — NFS-style rear-view strip: a backward camera on the car
-                         fills a small RT (top-of-screen overlay quad on the active
-                         camera, LENS_LAYER's first resident since the lens effects
-                         moved into the post pipeline)
-CarCluster.svelte       — bottom-right instrument cluster: ONE svg gauge pod —
-                         tacho + shift lights + seven-segment gear window + backlit
-                         LCD speed readout, flanked by a boost/vacuum gauge and the
-                         live N2O bottle gauge; dial facts from the spec
-clusterSegments.ts      — the cluster's seven-segment geometry (segment polygons +
-                         the glyph table), so the digital windows draw their unlit
-                         segments too instead of being text in a big font
-units.ts                — UNITS_PER_METER + G: the SI ↔ world boundary (track scale)
 ```
 
 ## Multi-car — the spec is the car

@@ -3,9 +3,9 @@
 	import { CameraControls, useFollow } from '@threlte/extras';
 	import CameraControlsImpl from 'camera-controls';
 	import * as THREE from 'three/webgpu';
-	import { carSim } from './sim/carTelemetry.svelte';
-	import { clamp, damp } from './sim/carMath';
-	import { HULL_HIT_FLASH_TIME } from './sim/hullContacts';
+	import { carSim } from '../sim/carTelemetry.svelte';
+	import { clamp, damp } from '../sim/carMath';
+	import { HULL_HIT_FLASH_TIME } from '../sim/hullContacts';
 
 	// Third-person / bird chase camera for the car.
 	//

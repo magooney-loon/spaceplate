@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { engineSounds } from '$core';
-	import { currentCar } from './cars';
-	import type { PaintFinish } from './cars/types';
-	import { carPaint, paintShop, selectFinish, selectPaint } from './sim/carPaint.svelte';
+	import { currentCar } from '../cars';
+	import type { PaintFinish } from '../cars/types';
+	import { carPaint, paintShop, selectFinish, selectPaint } from '../sim/carPaint.svelte';
 
 	// The paint shop — a TOP BAR, not a modal: no backdrop, the world stays
 	// interactive around it, and only the bar itself catches clicks. One row of

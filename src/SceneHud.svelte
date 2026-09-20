@@ -9,7 +9,7 @@
 	import { settingsState, overlayState } from '$extensions/settings';
 	import MainMenuHud from '$scenes/MainMenu/MainMenuHud.svelte';
 	import DemoSceneHud from '$scenes/DemoScene/DemoSceneHud.svelte';
-	import TestGameHud from '$scenes/TestGame/TestGameHud.svelte';
+	import TestGameHud from '$scenes/TestGame/HUD/TestGameHud.svelte';
 	import SettingsHud from '$scenes/MainMenu/SettingsHud.svelte';
 
 	/**

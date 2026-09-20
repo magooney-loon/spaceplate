@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { carIgnition } from './sim/carSwitches.svelte';
-	import { carHud } from './sim/carTelemetry.svelte';
-	import { trackMapState } from './world/trackMapState.svelte';
-	import { worldToMap } from './world/trackMap';
+	import { carIgnition } from '../sim/carSwitches.svelte';
+	import { carHud } from '../sim/carTelemetry.svelte';
+	import { trackMapState } from './trackMapState.svelte';
+	import { worldToMap } from './trackMap';
 
 	// Bottom-left minimap: the circuit from above, with the car on it.
 	//

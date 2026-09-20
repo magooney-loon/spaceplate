@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { engineSounds } from '$core';
-	import { CARS, carGarage } from './cars';
-	import type { CarId, CarSpec } from './cars';
-	import { garageShop } from './sim/garageShop.svelte';
+	import { CARS, carGarage } from '../cars';
+	import type { CarId, CarSpec } from '../cars';
+	import { garageShop } from '../sim/garageShop.svelte';
 
 	// The garage — a TOP BAR, same shape as PaintShop.svelte: no backdrop, the
 	// world stays interactive around it, only the bar itself catches clicks.

@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { currentCar } from './cars';
-	import { carHud } from './sim/carTelemetry.svelte';
+	import { currentCar } from '../cars';
+	import { carHud } from '../sim/carTelemetry.svelte';
 	import {
 		carGearbox,
 		carIgnition,
 		carLights,
 		carTc,
 		carUnits
-	} from './sim/carSwitches.svelte';
+	} from '../sim/carSwitches.svelte';
 	import { GLYPHS, SEGMENT_IDS, glyphs, segmentCell, type SegmentCell } from './clusterSegments';
 
 	// Bottom-right instrument cluster: an aftermarket gauge pod — a big tacho with a
