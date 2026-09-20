@@ -652,9 +652,9 @@ export function createDrivetrain(spec: CarSpec) {
 
 		// ── Lateral grip left over for the cornering model ───────────────────
 		// The handbrake takes it all the way to the drift end; wheelspin takes a
-		// chunk of it, which is how a rear-drive car steps out under power. How big
-		// a chunk is the setup's call — 0.55 (Grip) leaves 45% of the tyre under
-		// total wheelspin, which is not loose enough to slide on power alone.
+		// chunk of it, which is how a rear-drive car steps out under power. How
+		// big a chunk is the tune's call (`slipGripLoss` — the GR86's 0.62 leaves
+		// 38% of the tyre under total wheelspin, loose enough to slide on power).
 		// `looseBase` is a small flat cut, `brakeLoose` is trail-braking oversteer
 		// (braking moves load off the rear axle, and a lighter rear tyre has less
 		// lateral grip to give), and `throttleLoose` is the friction circle above. All

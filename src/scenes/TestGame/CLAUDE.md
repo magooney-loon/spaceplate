@@ -414,8 +414,10 @@ the drivetrain on the chassis being upright, a flipped car could still drive.)
 `sim/handling.ts` is the TUNE CONTRACT — tyre μ, the steering rack, and the oversteer
 knobs — and every car carries exactly ONE tune (its spec's `tune`): what a car ships
 with is the setup it drives. The GR86 used to carry a Grip/Drift pair switched by a
-key; the switch is retired and its tune is the normal-RWD blend of the two — planted
-until provoked, playful once provoked (traction control is the player's G switch
+key; the switch is retired and its tune is the normal-RWD blend of the two, biased
+toward the Drift half — planted until provoked, and once provoked the tail throws
+on the throttle and a standstill hold in 1st lights the rears (traction control is
+the player's G switch
 now, and it ships OFF — see Controls). The FWD/AWD specs
 ship the plain kinematic baseline while their handling feel stays unwritten — see
 "Multi-car"). The controller and `drivetrain.step()` read `spec.tune` **fresh every
@@ -434,13 +436,14 @@ physics step**.
   drivetrain's, unaffected by this file), tuned friendlier than the real car for
   cornering grip and steering response. `looseBase` is 0, so nothing below wakes
   up until an input earns it.
-- **The drift half is the arcade vocabulary at half strength** (the reference is
-  NFS Underground 2): the throttle and brake loosen the rear through the friction
-  circle, the handbrake swings it, and an assist pulls the nose back so a slide is
-  something you hold rather than survive. It costs almost nothing in a straight
-  line — the looseness comes from the friction circle rather than from throwing
-  away rear traction, and with the TC switch off (as it ships) the low-gear
-  wheelspin is real too.
+- **The drift half is the arcade vocabulary, near enough the old Drift tune's
+  own strength** (the reference is NFS Underground 2): the throttle and brake
+  loosen the rear through the friction circle, the handbrake swings it, and an
+  assist pulls the nose back so a slide is something you hold rather than
+  survive. It costs almost nothing in a straight line — the looseness comes
+  from the friction circle rather than from throwing away rear traction — and
+  with the TC switch off (as it ships) the low-gear wheelspin and the standing
+  burnout are real too.
 
 > **The stability rule: nothing may depend on the SIGN of the slip angle except
 > `driftAlign`.** This is the one that has already been got wrong. An oversteer
@@ -472,7 +475,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
     ratio that makes the tune feel good is **2° coasting against 32° on the
     throttle** — looseness has to be EARNED by an input, never baked into the tyre.
     It also caps `driftAlign`, so raising it loosens the car twice over.
-  - `throttleLoose` (0.45) is **the friction circle and the main drift control** —
+  - `throttleLoose` (0.7) is **the friction circle and the main drift control** —
     scaled by the drivetrain's `powerLoad`, the share of the rear's grip budget the
     drive force is spending. A tyre has one budget; grip spent pushing the car
     along is not available to hold it sideways, and that is true well before the
@@ -485,7 +488,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
     dropping `tireMuLong` far enough to fix that cost 2.4 s off 0-60. The friction
     circle costs nothing: `tireMuLong` stays at 1.0 and the straight-line numbers
     barely move.
-  - `brakeLoose` (0.55) is **trail-braking oversteer and the deliberate entry** —
+  - `brakeLoose` (0.75) is **trail-braking oversteer and the deliberate entry** —
     the big-brake kit moves ~2 800 N (nearly half the static rear load) off the
     rear axle. Tap ↓ into the corner to set the car, then ↑ to hold the angle; measured, a 0.4 s
     tap peaks at 23° and holds ~20° while the car drives out of it.
@@ -528,12 +531,15 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   one.** The fronts are never the axle that lets go, and it is the fronts that set
   how fast a car can rotate — capping rotation with the _rear's_ lost grip makes
   the car unable to turn at exactly the moment it should be sliding.
-- **The street bias is real, and it is worth knowing by how much**: `tireMuLong`
-  1.0 means only 1st gear ever beats rear traction, and `slipGripLoss` 0.5 costs
-  half the lateral tyre under _total_ wheelspin. The TC switch (G, ships off)
-  is the ECU's half of the bargain: on, wheelspin tops out at the spec's
-  `tcSlipSpeed` (2 m/s, slip 0.2, ~10% of that cost); off, the full half is live
-  and power deepens a slide.
+- **The street bias is real, but the drift half is live: `tireMuLong` 0.75 is
+  the BURNOUT GATE** — a standstill full-throttle hold in 1st passes
+  `clutchMinBite` 0.45 × ~244 Nm × the 1st reduction ≈ 4.7 kN against
+  `muLong × 5.9 kN` of static rear traction, so below ~0.78 the rears light up
+  from a standstill (at 1.0 the car hooked and just launched). 2nd steps out
+  under WOT, 3rd+ hooks (the transfer term wins up there). `slipGripLoss` 0.62
+  costs ~62% of the lateral tyre under total wheelspin; the TC switch (G, ships
+  off) is the ECU's half — on, spin tops out at the spec's `tcSlipSpeed` (2 m/s,
+  slip 0.2, ~12% of that cost).
 - **Full lock is per-car, so `carSim.steerAngle` is published in radians** and
   `CarWheels` renders that. Re-deriving `steer × maxSteerAngle` at the consumer
   would show a re-derived lock, not the one the physics steered at.
@@ -572,7 +578,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   _units_/s², which on this track is 3.9 m/s². Validated against the real GR86
   (0-60 mph 5.7 s, 6.1 published; 140 mph governed; redline in 1st at ~50 km/h) —
   measured on the retired Grip tune (μ_long 1.05 and TC always on; the current
-  one runs 1.0 with the TC switch shipping off), so re-measure before quoting.
+  one runs 0.75 with the TC switch shipping off), so re-measure before quoting.
 - **Physics runs at a FIXED rate — 60 Hz by default** (`physicsState.framerate`;
   the Studio panel also offers 120 and 200). Fixed is what makes it deterministic;
   the number itself is a cost/resolution choice, not a repeatability one. A
