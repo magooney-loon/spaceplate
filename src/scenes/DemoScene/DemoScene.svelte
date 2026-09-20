@@ -10,6 +10,7 @@
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
 	import SpawnedBodies from './SpawnedBodies.svelte';
 	import { LENS_LAYER } from '$core/skybox/layers/skyLayer';
+	import { applyWetness } from '$core';
 	import { registerMirrorFloor, unregisterMirrorFloor } from './mirrorFloor';
 	import { DEMO_QUALITY } from './demoQuality';
 	import { settingsState } from '$extensions/settings';
@@ -46,6 +47,12 @@
 	const floorMaterial = new THREE.MeshStandardNodeMaterial();
 	floorMaterial.color.set('gray');
 	floorMaterial.emissiveNode = reflection.rgb.clamp(0, 1).mul(0.25);
+	// Wet ground. LAST, after the colour is set, so `applyWetness` picks up the material's
+	// own colour as the dry base (see its header). It patches albedo and roughness only,
+	// so the reflector sitting in `emissiveNode` is untouched — and since the floor's
+	// roughness drops as it wets, the mirror it already has is exactly what the water is
+	// for.
+	applyWetness(floorMaterial);
 
 	// The same floor without the reflector node, swapped in for the duration of the cube
 	// captures in DemoPhysicsBodies — see mirrorFloor.ts for what that saves (it is the
@@ -53,6 +60,8 @@
 	// floor lit and shadowed as usual, just not mirroring.
 	const floorCaptureMaterial = new THREE.MeshStandardNodeMaterial();
 	floorCaptureMaterial.color.set('gray');
+	// Wet too, or the floor's albedo would jump every time a cube capture swapped it in.
+	applyWetness(floorCaptureMaterial);
 
 	let floorMesh = $state.raw<THREE.Mesh>();
 	$effect(() => {

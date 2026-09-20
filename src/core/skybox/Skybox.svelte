@@ -13,6 +13,7 @@
 	import RainCurtains from './layers/precipitation/RainCurtains.svelte';
 	import Snow from './layers/precipitation/Snow.svelte';
 	import LensDriver from './layers/precipitation/LensDriver.svelte';
+	import WetnessDriver from './layers/precipitation/WetnessDriver.svelte';
 	import CloudDeck from './layers/clouds/CloudDeck.svelte';
 	import Lightning from './layers/lightning/Lightning.svelte';
 	import HeightField from './layers/precipitation/HeightField.svelte';
@@ -118,6 +119,14 @@
 <!-- The key light is descriptor-driven and mounts in every mode: an HDR or cubemap
      environment still needs a sun. Shadow resolution follows the graphics preset. -->
 <SkyLight {shadowMapSize} />
+
+<!-- Ground water, and the second thing here that mounts in EVERY environment mode. It
+     renders nothing: it integrates the film and the pooling that every material patched
+     with `applyWetness()` reads. Outside the procedural group on purpose — a scene's
+     materials go on being rendered whatever is in the sky, so a driver that unmounted
+     with the sky would freeze them and then have to dump the whole floor's albedo in one
+     frame on teardown. Same reasoning that puts the weather audio outside the layers. -->
+<WetnessDriver />
 
 <!-- Environment texture mode -->
 {#if environmentState.mode === 'environment' && activeEnvTexture}

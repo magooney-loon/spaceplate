@@ -162,6 +162,11 @@ Full rules live in `src/core/skybox/CLAUDE.md` (plus `model/`, `layers/` and
 - **`invalidate()` has one owner per reason**: the driver task covers the pure descriptor
   consumers (Sky, SkyFog, SkyLight, Moon — they must not invalidate themselves);
   TSL-`time`-animated layers and Lightning gate their own, on visibility.
+- **Wet ground is the one part of the sky tree a SCENE calls into** rather than just
+  mounting: `applyWetness(material)` from `$core` wires the weather into a material's
+  albedo and roughness. Wetness is a property of a SURFACE, so no post effect can do it
+  — see `core/skybox/layers/CLAUDE.md`. `DemoScene`'s floor and `TestGame`'s track are
+  the two callers today.
 - `extensions/skybox/` is **panel-only** (time + weather + env mode + ⚡ Strike Now via
   `requestStrike()` from `$core/skybox/layers/lightning/flashState`). The env-mode state
   itself lives in `core/skybox/environment/` — `Skybox.svelte` consumes it in every

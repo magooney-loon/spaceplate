@@ -8,7 +8,9 @@ celestial/       — Stars, Moon, Meteors, Nebula + milkyWay.ts
 clouds/          — CloudDeck
 precipitation/   — Rain, RainCurtains, Snow, HeightField + heightField.ts,
                    LensDriver + lensState.svelte.ts
-                   (the CPU half of the two lens POST effects — see below)
+                   (the CPU half of the two lens POST effects — see below),
+                   WetnessDriver + wetSurface.svelte.ts + wetSurface.ts
+                   (wet ground — the one thing here a SCENE calls into)
 lightning/       — Lightning + flashState.ts
 fauna/           — Birds (GPU-compute flock)
 atmosphere/      — DustMotes: near-camera ambient decoration, not precipitation
@@ -280,6 +282,62 @@ deck, moon or a flash never burns a hotspot into the ambient term.
 - **The spray above the splashes is `SkyFog`'s job, not a layer's** (`rainSprayShare` —
   see `../CLAUDE.md`). The rings and bursts draw individual impacts; the churned air over
   them is a ground-fog term, and no number of rings produces it.
+
+#### Wet ground (`wetSurface.ts` + `wetSurface.svelte.ts` + `WetnessDriver.svelte`)
+
+**Wetness cannot be a post effect**, which is why this is the one thing in `layers/` a
+scene has to CALL rather than just mount (`applyWetness(material)`, re-exported from
+`$core`). It is not a property of the frame, it is a property of a surface, and the two
+things it changes feed the lighting rather than sit on top of it — a screen-space pass
+has neither the normal nor the BRDF to do it with.
+
+- **Two terms, and they are the physics, not a look.** Wet DARKENS (a water film traps
+  light by total internal reflection — less escapes, so the surface reads darker and a
+  little more saturated; this is why wet asphalt is nearly black) and it SMOOTHS (the
+  film fills the microscopic roughness, so reflections sharpen). Everything people
+  reach for instead — a blue tint, an emissive lift, a fresnel hack — is an attempt to
+  fake the second without paying for it. We do not have to: the engine already bakes a
+  real environment map, so dropping roughness genuinely puts the sky in the floor.
+- **The puddle mask is `normalWorldGeometry`, NOT the height field**, and the height
+  field was the obvious wrong answer. It is a camera-following 70-unit map that
+  `HeightField.svelte` skips entirely below `precipitation <= 0.01` — so it goes stale
+  through exactly the drying period when puddles are most visible. The geometric normal
+  is always available, free, needs no map footprint, works at any world scale, and
+  answers the actual question (water pools where it is level). Geometric rather than
+  shaded, so a normal map's bumps cannot punch holes in a flat puddle.
+- **Ripples are a ROUGHNESS modulation, not a normal perturbation.** Cheap (no
+  `normalNode` to compose with the material's own normal map, no tangent basis), and
+  honest: what rain on standing water does to a reflection is SCATTER it, and roughness
+  is the scattering term in the BRDF. Perturbing the normal moves the reflection around
+  instead, which is swell, not drizzle.
+- **There is no activity latch and there cannot be one.** A latch is a pipeline-graph
+  decision; these are MATERIAL terms compiled into every wet material's node graph, so
+  "leaving them out" means recompiling the scene's materials — the most expensive
+  rebuild the engine has. At rest every term is an exact identity instead.
+- **The driver mounts OUTSIDE the sky group**, unlike `LensDriver` beside it. The lens
+  is the camera's glass and rightly vanishes with the procedural sky; ground water is a
+  property of the world, and the scene's materials go on rendering whatever is in the
+  sky. Inside the group it would freeze mid-scene and have to hard-reset on teardown,
+  dumping the whole floor's albedo in one frame. Weather audio is outside the layers
+  for the same reason.
+- **Four time constants, and the ordering is the design**: film wets in seconds and
+  dries in tens of them; pooling takes a sustained downpour and outlasts the rain by
+  longer still. That asymmetry is what makes weather feel like it has a memory rather
+  than tracking the channel.
+- **It works on a plain GLB material too**, because `NodeLibrary.fromMaterial` copies
+  every enumerable key onto the node material it builds — so an own `colorNode` carries
+  across. That copy happens ONCE, on first build, onto a DIFFERENT object, which is the
+  one real constraint: call it before the material has rendered a frame, and don't
+  expect a later assignment to the original to take.
+- **`applyWetness` is idempotent, and that is load-bearing rather than tidy.** It takes
+  the material's EXISTING node as its dry base, so a second call makes the first call's
+  output the second's input and the surface darkens again — permanently, and only on a
+  scene RE-ENTRY, since `useGltf` caches GLBs and hands back the same material objects.
+  The guard is a module-level `WeakSet` inside the helper, deliberately not left to
+  callers: a guard scoped to a component instance is thrown away by exactly the remount
+  that causes the bug.
+- Rain's impact rings read `uPuddles` (and only that, never the film): a ring on
+  standing water is a ripple, a ring on merely damp ground has nothing to ripple.
 - **What reads is flakes per unit³ near the camera, not instance count.** Snow's box was
   64×40×64, which spent a third of the field on flakes 25-45 units out — two or three
   pixels each, at the price of a full instance and a full blend. Shrinking the box faster

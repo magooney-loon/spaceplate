@@ -63,6 +63,7 @@
 	} from '../../model';
 	import { flashState } from '../lightning/flashState';
 	import { sampleHeightField, sampleHeightFieldSlope } from './heightField';
+	import { uPuddles } from './wetSurface.svelte';
 	import {
 		billboardClip,
 		instancedQuad,
@@ -341,6 +342,12 @@
 	const FLASH_STREAK_LIFT = 0.8;
 	/** The same event on the splashes, as a bounded multiplier on their light response. */
 	const FLASH_SPLASH_LIFT = 1.1;
+
+	/**
+	 * How much brighter an impact ring is on fully pooled ground. A drop landing in
+	 * standing water throws a real ripple; the same drop on dry ground barely marks it.
+	 */
+	const RING_PUDDLE_LIFT = 0.7;
 
 	/** Seconds for the camera-velocity smoother to cover ~63% of a step change. */
 	const VELOCITY_SMOOTHING = 0.12;
@@ -875,6 +882,14 @@
 					// this keeps it punchy rather than washing out into the ground at the new
 					// scale.
 					.mul(0.72)
+					// A RING ON STANDING WATER IS A RIPPLE; a ring on dry ground is a stain.
+					// `uPuddles` is the same pooling term `applyWetness` reads, so the splashes
+					// and the surface they land on cannot disagree about how wet the world is.
+					// Additive on a floor of 1 rather than a mix, so dry ground is unchanged and
+					// this only ever adds -- and it is the layer's ONLY dependency on the wet
+					// state, deliberately: a splash reading the film as well would brighten
+					// against a merely damp surface, where there is nothing to ripple.
+					.mul(uPuddles.mul(RING_PUDDLE_LIFT).add(1))
 			);
 			ringMaterial.opacityNode = ringAlpha.mul(glow);
 		}

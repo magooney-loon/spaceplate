@@ -46,6 +46,10 @@ export {
 	off as offSky
 } from './skybox/model';
 export type { SkyDescriptor, PhaseName, DayKeyframe, ClockKind } from './skybox/model';
+// Wet ground. The one part of the sky tree a SCENE calls into rather than just mounting:
+// wetness is a property of a surface, so it has to be wired into that surface's material.
+export { applyWetness } from './skybox/layers/precipitation/wetSurface';
+export type { WetnessOptions } from './skybox/layers/precipitation/wetSurface';
 
 // utils/
 export { default as Loader } from './utils/Loader.svelte';

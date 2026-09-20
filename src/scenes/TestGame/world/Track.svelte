@@ -9,6 +9,7 @@
 	import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 	import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 	import { BASE_URL } from '$extensions/settings';
+	import { applyWetness } from '$core';
 	import { logGltf } from '$extensions/logger';
 	import { buildTrackColliders } from './trackColliders';
 	import { buildTrackMap } from './trackMap';
@@ -128,6 +129,21 @@
 			if (!mesh.isMesh) return;
 			mesh.castShadow = TRACK_CASTS_SHADOWS && TRACK_CASTERS.has(materialName(mesh));
 			mesh.receiveShadow = true;
+
+			// WET TRACK. Here rather than at the engine, because which surfaces get wet is
+			// scene content — and here rather than in a list, because the puddle mask sorts
+			// it out for free: it gates on the GEOMETRIC normal pointing up, so the asphalt
+			// and the dirt pool and the barriers and the foliage (vertical, near enough)
+			// only take the water FILM. Run inside the traverse that already exists rather
+			// than as a second walk of 300k triangles' worth of nodes.
+			//
+			// Before the first render, which is the one hard constraint on a non-node
+			// material — see `applyWetness`'s header. This effect runs on the frame the GLB
+			// resolves, ahead of it being drawn. Re-patching a shared material (or the same
+			// cached GLB on a scene re-entry) is `applyWetness`'s own problem, not ours.
+			for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+				if (m) applyWetness(m);
+			}
 		});
 	});
 
