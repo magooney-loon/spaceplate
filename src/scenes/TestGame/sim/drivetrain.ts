@@ -492,10 +492,22 @@ export function createDrivetrain(spec: CarSpec) {
 				// the limiter. Whatever mismatch `revMatchRate` fails to close by the
 				// time the disc bites is the SHOCK the car feels (below): a clean
 				// match is silent, a lazy one kicks.
+				//
+				// THE BLIP IS A DRIVER AID and rides the TC switch: TC off (as it
+				// ships) and a manual box gets NO help — the full mismatch lands as
+				// shock, which is the shift-lock drift entry on a downshift and a
+				// jolt on a hold-it-to-the-limiter upshift unless you lift or blip it
+				// yourself (a throttle tap inside the window is the keyboard's
+				// heel-toe). The AUTOMATIC is exempt — its match is the box's own
+				// competence, not a nanny, and an auto that thumped every shift
+				// would just read as broken.
 				const free = hw.idleRpm + throttle * (hw.limiterRpm - hw.idleRpm);
 				const rate = throttle > 0 ? hw.freeRevRate : hw.freeDropRate;
 				state.rpm += (free - state.rpm) * damp(rate, dt);
-				state.rpm += (Math.max(hw.idleRpm, gearRpm) - state.rpm) * damp(hw.revMatchRate, dt);
+				if (input.tc || input.auto) {
+					state.rpm +=
+						(Math.max(hw.idleRpm, gearRpm) - state.rpm) * damp(hw.revMatchRate, dt);
+				}
 			} else {
 				const slipping =
 					launchHold > 0 ? launchHold : hw.idleRpm + throttle * (hw.launchRpm - hw.idleRpm);

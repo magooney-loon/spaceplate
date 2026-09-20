@@ -25,8 +25,10 @@ export const carLights = $state({
 export const carIgnition = $state({ on: true, ready: true });
 
 /**
- * Traction control — one toggle, default OFF. Read fresh every physics step
- * through the drivetrain's `tc` input (the same pattern as the gearbox's
+ * Traction control — one toggle, default OFF, and really the DRIVER-AIDS
+ * switch: off also means no auto-blip on the manual box's shifts (the
+ * drivetrain gates the rev-match on this latch). Read fresh every physics
+ * step through the drivetrain's `tc` input (the same pattern as the gearbox's
  * `auto`), so flipping it mid-corner is legal and instant. On, the ECU
  * catches the driven wheels at the spec's `tcSlipSpeed`; off, nothing trims
  * the surplus torque — wheelspin is the driver's to manage.

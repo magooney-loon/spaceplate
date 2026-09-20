@@ -135,7 +135,9 @@ export const gr86 = {
 		clutchOpen: 0.45,
 		/** 1/s — a decent H-pattern driver blipping. Over the ~0.13 s the clutch is
 		 *  open this closes ~85% of the mismatch, so a normal shift is smooth and
-		 *  a big gear jump still lands with a thump. */
+		 *  a big gear jump still lands with a thump. A DRIVER AID, gated on the TC
+		 *  switch in the drivetrain: TC off (as it ships) and a manual box gets no
+		 *  blip — tap the throttle inside the shift window to do it yourself. */
 		revMatchRate: 14,
 		/** 0.7 of the raw physical shock — the FA24's flywheel is light and the
 		 *  full figure at a big mismatch chirps the rears on every downshift.

@@ -161,7 +161,9 @@ export type CarSpec = {
 		 *  the clutch is open: the blip on a downshift, the drop on an upshift.
 		 *  Bigger is a cleaner box; whatever it fails to close is the shock below.
 		 *  It matters more here than in a real car because the throttle is a KEY —
-		 *  nothing makes a keyboard driver lift for an upshift. */
+		 *  nothing makes a keyboard driver lift for an upshift. A DRIVER AID:
+		 *  applied only with the TC switch on (the automatic is exempt — its own
+		 *  competence); TC off + manual means the raw mismatch lands as SHOCK. */
 		revMatchRate: number;
 		/** How much of the clutch-drop SHOCK the car feels, 0 = none, 1 = the raw
 		 *  physical figure (the engine's inertia over the engagement time). The

@@ -299,9 +299,12 @@ starting point for whoever writes that model, same as the GR86 was for RWD.
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
 Shift nitrous, L headlights, K main beam, G traction control (TC — one toggle,
-SHIPS OFF: on, the ECU catches wheelspin at the spec's `tcSlipSpeed`; off, the
-surplus spins the driven wheels for real — and the cluster's TC chip burns
-steady RED while it is off, going dark until the ECU works once switched on),
+SHIPS OFF, and really the driver-aids switch: on, the ECU catches wheelspin at
+the spec's `tcSlipSpeed` AND the box auto-blips its shifts; off, the surplus
+spins the driven wheels for real and a manual box gets no blip — the clutch
+shock is yours to manage, a throttle tap mid-shift doing the heel-toe — while
+the cluster's TC chip burns steady RED while it is off, going dark until the
+ECU works once switched on),
 H gearbox mode
 (manual ↔ automatic — the H-pattern you are giving up; free of both Studio's
 bare-letter binds and the engine's Ctrl+H, which needs the modifier),
@@ -673,7 +676,12 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
     impose. That is the blip on a downshift and the drop on an upshift, and it
     matters more here than in a real car because the throttle is a KEY — nothing
     makes a keyboard driver lift, so without it every upshift re-engaged straight
-    off the limiter.
+    off the limiter. **The blip is a driver aid and rides the TC switch**: TC off
+    (as it ships) and a MANUAL box gets no help — the full mismatch lands as the
+    clutch SHOCK, which is the shift-lock drift entry on a downshift and a jolt
+    on a hold-it-to-the-limiter upshift unless you lift or blip it yourself (a
+    throttle tap inside the 0.28 s window is the keyboard's heel-toe). The
+    AUTOMATIC is exempt — its match is the box's own competence, not a nanny.
   - **Whatever the match fails to close is the SHOCK** (`clutchShock`): the
     engine's own inertia over the engagement time, signed by the mismatch —
     engine faster than the gear shoves the car, slower is the engine-braking

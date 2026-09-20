@@ -79,9 +79,10 @@ export const carControls = defineInputMap({
 
 		lights: { label: 'Headlights', group: 'Car', defaults: [key('KeyL'), pad('directionalLeft')] },
 		highBeam: { label: 'Main Beam', group: 'Car', defaults: [key('KeyK'), pad('directionalTop')] },
-		/** Traction control on/off — the G the handling switch vacated. The latch
-		 * itself (default OFF) is `carTc` in carSwitches.svelte.ts, like every
-		 * other toggle's default. */
+		/** Traction control on/off — the G the handling switch vacated, and
+		 * really the driver-aids switch: off also kills the manual box's
+		 * auto-blip. The latch itself (default OFF) is `carTc` in
+		 * carSwitches.svelte.ts, like every other toggle's default. */
 		tc: { label: 'Traction Control', group: 'Car', defaults: [key('KeyG'), pad('directionalRight')] },
 		/** M collides with Studio's bare-letter binds — accepted, and flagged in Settings. */
 		ignition: { label: 'Ignition', group: 'Car', defaults: [key('KeyM'), pad('clusterTop')] },
