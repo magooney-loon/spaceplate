@@ -121,7 +121,7 @@ export const carControls = defineInputMap({
 		lights:    { label: 'Headlights',      group: 'Car', defaults: [key('KeyL')] },
 		highBeam:  { label: 'Main Beam',       group: 'Car', defaults: [key('KeyK')] },
 		ignition:  { label: 'Ignition',        group: 'Car', defaults: [key('KeyM')] },
-		handling:  { label: 'Handling Setup',  group: 'Car', defaults: [key('KeyG')] },
+		tc:        { label: 'Traction Control', group: 'Car', defaults: [key('KeyG')] },
 		view:      { label: 'View / Debug Rig', group: 'Car', defaults: [key('KeyB')] }
 	}
 });
@@ -406,7 +406,7 @@ validated (0-60 5.7 s, the yaw figures, the stability rule) and none of it may m
 ±1 or 0 for key input. Analog throttle/brake off a trigger is available afterwards
 (`value()`), and taking it is a separate, deliberate tuning change — not part of this.
 
-Left alone: `carLights`, `carIgnition`, `carHandling`, `carView`, `carRestart` and every
+Left alone: `carLights`, `carIgnition`, `carView`, `carRestart` and every
 consumer of them. They are game state and stay game state. They also keep their current
 survives-`reset`, survives-Restart semantics for free, because the engine never touches them.
 

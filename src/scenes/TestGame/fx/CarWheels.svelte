@@ -339,8 +339,8 @@
 	useTask(
 		(delta) => {
 			// Already in radians — the rack fraction AND the tune's full lock are both the
-			// physics task's, so multiplying them out here again would show the Grip lock
-			// while the Drift tune was steering at 0.62 rad.
+			// physics task's, so multiplying them out here again would show a
+			// re-derived lock instead of the one the car actually steered at.
 			const steered = uSteer.value !== carSim.steerAngle;
 			uSteer.value = carSim.steerAngle;
 

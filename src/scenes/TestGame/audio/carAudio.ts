@@ -229,7 +229,7 @@ let handbrakePrev = carSim.handbrake;
 // that stack make a gentle cornering slide scream): wheelspin (past the TC
 // lamp's 0.15), slide (|drift| ramped 8-25 deg, gated on road speed), handbrake
 // (locked rears scaled by speed), cornering (carSim.latLoad — the only honest
-// signal Grip's planted max-banking corner gives), launch (the rev-match boost)
+// signal a planted max-banking corner gives), launch (the rev-match boost)
 // and hard brake at speed (there's no ABS/lockup channel, so this supplies the
 // drama). Not gated on ignition — a handbrake slide with the engine off still
 // squeals. Attack outruns release: the squeal arrives with the slide and

@@ -8,7 +8,7 @@
 	import type { CarHull } from '../cars/hull';
 	import { G, UNITS_PER_METER } from '../units';
 	import { carSim } from '../sim/carTelemetry.svelte';
-	import { carHandling, type CarViewMode } from '../sim/carSwitches.svelte';
+	import { type CarViewMode } from '../sim/carSwitches.svelte';
 	import { latMu } from '../sim/handling';
 	import { clamp } from '../sim/carMath';
 	import type { Suspension } from '../sim/suspension';
@@ -700,7 +700,7 @@
 			const aLat = carSim.accelLat;
 			const aMag = Math.hypot(aFwd, aLat) / G;
 			aim(accelArrow, aLat, 0, -aFwd, aMag * GG_PER_G);
-			const fullMu = latMu(spec.tunes[carHandling.mode]);
+			const fullMu = latMu(spec.tune);
 			// Green until the lateral budget fills, red at the limit. `latLoad` is
 			// the model's own answer to "how much of the cap is this corner using".
 			accelMat.color.copy(cTmp.copy(cGreen).lerp(cRed, clamp(carSim.latLoad, 0, 1)));
@@ -728,7 +728,7 @@
 				wedgeMat.color.copy(
 					cTmp
 						.copy(cAmber)
-						.lerp(cRed, clamp(Math.abs(beta) / spec.tunes[carHandling.mode].maxDriftAngle, 0, 1))
+						.lerp(cRed, clamp(Math.abs(beta) / spec.tune.maxDriftAngle, 0, 1))
 				);
 			}
 

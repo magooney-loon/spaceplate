@@ -5,7 +5,6 @@
 // below flips on the press edge (`carControls.on(slot, 'press', …)`) and
 // deliberately survives scene exit and Restart.
 
-import { HANDLING_MODES, type HandlingMode } from './handling';
 import type { CarToggleSlot } from './carControls';
 
 // --- Lights -------------------------------------------------------------------
@@ -25,18 +24,14 @@ export const carLights = $state({
  */
 export const carIgnition = $state({ on: true, ready: true });
 
-/** The selected setup — Grip or Drift (see handling.ts). Read fresh every
- *  physics step, so flipping mid-corner is legal and instant. */
-export const carHandling = $state({ mode: 'grip' as HandlingMode });
-
-export const setHandlingMode = (mode: HandlingMode): void => {
-	carHandling.mode = mode;
-};
-
-export const cycleHandlingMode = (): void => {
-	const next = (HANDLING_MODES.indexOf(carHandling.mode) + 1) % HANDLING_MODES.length;
-	carHandling.mode = HANDLING_MODES[next];
-};
+/**
+ * Traction control — one toggle, default OFF. Read fresh every physics step
+ * through the drivetrain's `tc` input (the same pattern as the gearbox's
+ * `auto`), so flipping it mid-corner is legal and instant. On, the ECU
+ * catches the driven wheels at the spec's `tcSlipSpeed`; off, nothing trims
+ * the surplus torque — wheelspin is the driver's to manage.
+ */
+export const carTc = $state({ on: false });
 
 /** MANUAL or AUTOMATIC — read fresh every physics step through the
  *  controller's `auto` input; see `sim/drivetrain.ts`'s `autoShift`. */
@@ -82,8 +77,8 @@ export const applyCarToggle = (action: CarToggleSlot): void => {
 		carLights.on = !carLights.on;
 		return;
 	}
-	if (action === 'handling') {
-		cycleHandlingMode();
+	if (action === 'tc') {
+		carTc.on = !carTc.on;
 		return;
 	}
 	if (action === 'gearbox') {

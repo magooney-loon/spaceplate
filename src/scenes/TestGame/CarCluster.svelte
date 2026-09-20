@@ -3,9 +3,9 @@
 	import { carHud } from './sim/carTelemetry.svelte';
 	import {
 		carGearbox,
-		carHandling,
 		carIgnition,
 		carLights,
+		carTc,
 		carUnits
 	} from './sim/carSwitches.svelte';
 	import { GLYPHS, SEGMENT_IDS, glyphs, segmentCell, type SegmentCell } from './clusterSegments';
@@ -241,18 +241,19 @@
 	const spraying = $derived(carHud.nitrous > 0.05);
 
 	// ── Tell-tales ───────────────────────────────────────────────────────────────
-	// TC lamps when the ECU is working — which it never is in Drift: the tune
-	// runs `tractionControl: false`, so wheelspin there is the SETUP, not a system
-	// intervening, and a blinking lamp would be a lie. Gate on the tune's own flag
-	// rather than the mode string — the tune is the truth.
-	const slipping = $derived(CAR.tunes[carHandling.mode].tractionControl && carHud.slip > 0.15);
-	const setup = $derived(CAR.tunes[carHandling.mode].label);
-	// Which half of the gearbox is driving. A LABEL, like the setup chip beside it:
-	// it is never a warning, and the digit in the gear window is the same digit
-	// either way — this is the only thing on the pod that says who chose it.
+	// TC tells both halves of the switch's story: OFF (as it ships) and the chip
+	// burns steady red — the dash saying the nannies are asleep, the same red as
+	// HAND but a softer border so a state and a warning don't read alike. ON and
+	// it goes dark until the ECU actually works (slip past 0.15), then amber —
+	// wheelspin with TC off is the SETUP, not a system intervening, and a
+	// blinking lamp would be a lie.
+	const slipping = $derived(carTc.on && carHud.slip > 0.15);
+	// Which half of the gearbox is driving. A LABEL: it is never a warning, and
+	// the digit in the gear window is the same digit either way — this is the
+	// only thing on the pod that says who chose it.
 	const gearboxLabel = $derived(carGearbox.mode === 'auto' ? 'AUTO' : 'MANUAL');
 	// A few degrees of slip angle is just a car cornering. Past ~10° it is a slide, and
-	// the number is worth watching: it is what the Drift tune's two yaw terms balance.
+	// the number is worth watching: it is what the tune's two yaw terms balance.
 	const sliding = $derived(carHud.driftDeg >= 10);
 
 	const label = $derived(`${speedRead} ${unitLabel}, gear ${gearGlyph.toUpperCase()}, ${rpm} rpm`);
@@ -460,14 +461,18 @@
 		<div class="bar throttle"><span style:height="{carHud.throttle * 100}%"></span></div>
 		<div class="bar brake"><span style:height="{carHud.brake * 100}%"></span></div>
 		<div class="lamps">
-			<span class="lamp setup">{setup}</span>
 			<span class="lamp box" class:auto={carGearbox.mode === 'auto'}>{gearboxLabel}</span>
 			<span class="lamp drift" class:on={sliding || booting}>{carHud.driftDeg}°</span>
 			<span class="lamp beam" class:on={carLights.on || booting} class:high={carLights.high}>
 				BEAM
 			</span>
 			<span class="lamp hand" class:on={carHud.handbrake || booting}>HAND</span>
-			<span class="lamp slip" class:on={slipping || booting}>TC</span>
+			<span
+				class="lamp slip"
+				class:off={!carTc.on}
+				class:on={carTc.on && (slipping || booting)}
+			>TC</span
+			>
 		</div>
 	</div>
 </div>
@@ -908,13 +913,7 @@
 		color: rgba(255, 255, 255, 0.22);
 	}
 
-	/* Always lit — this one is a label, not a warning light. */
-	.lamp.setup {
-		color: rgba(255, 255, 255, 0.7);
-		border-color: rgba(74, 144, 217, 0.6);
-	}
-
-	/* The other always-lit label: dim for the manual box the car ships with,
+	/* The always-lit label: dim for the manual box the car ships with,
 	   amber once the box is shifting for you. */
 	.lamp.box {
 		color: rgba(255, 255, 255, 0.45);
@@ -954,5 +953,14 @@
 	.lamp.slip.on {
 		color: #ffd24e;
 		border-color: #ffd24e;
+	}
+
+	/* TC OFF — steady red while the switch is off (as it ships): the tell-tale
+	   for a car with the nannies asleep. HAND's red, but the softer border keeps
+	   a latched state from reading like an active warning. Takes precedence over
+	   the amber: with TC off there is no ECU to lamp about. */
+	.lamp.slip.off {
+		color: #ff4e4e;
+		border-color: rgba(255, 78, 78, 0.6);
 	}
 </style>

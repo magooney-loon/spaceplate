@@ -26,17 +26,15 @@
 // contract as the GR86 (`model.wheelMaterialPrefix` below): one case-
 // insensitive prefix across every wheel-assembly material.
 //
-// Only a Grip tune is meaningfully authored — see `tunes` below.
+// One tune, the default setup — see `tune` below.
 
 import { BASE_URL } from '$extensions/settings';
 import type { CarSpec } from './types';
 import type { HandlingTune } from '../sim/handling';
 
-const grip: HandlingTune = {
-	label: 'Grip',
-
+const tune: HandlingTune = {
 	// AWD puts all four tyres to work under power — more longitudinal bite
-	// than the GR86's RWD 1.05, and enough lateral grip that a 1575 kg car
+	// than the GR86's RWD 1.0, and enough lateral grip that a 1575 kg car
 	// still corners like the performance AWD hatch it is.
 	tireMuLong: 1.15,
 	tireMuLat: 1.15,
@@ -45,7 +43,6 @@ const grip: HandlingTune = {
 	// AWD shares wheelspin's cost across four tyres instead of two, so a
 	// moment of slip bleeds less lateral grip than a RWD/FWD car's.
 	slipGripLoss: 0.3,
-	tractionControl: true,
 	looseBase: 0,
 	throttleLoose: 0,
 	brakeLoose: 0,
@@ -59,7 +56,7 @@ const grip: HandlingTune = {
 	yawResponse: 9,
 
 	handbrakeYawBoost: 2.0,
-	// 1 and 0 — Grip is the plain kinematic model, same as every car's Grip tune.
+	// 1 and 0 — the plain kinematic model, same as every grip-biased tune.
 	powerYawBoost: 1,
 	driftAlign: 0,
 	handbrakeAlign: 0,
@@ -303,17 +300,13 @@ export const rs3 = {
 		hasTurbo: true
 	},
 
-	// ── The setups ────────────────────────────────────────────────────────────
-	// Only Grip is meaningfully authored: this engine's drift model is tuned
-	// around REAR-slip (the CLAUDE.md rule — driftAlign, the oversteer terms,
-	// the whole "loose rear" mechanism), and AWD handling feel is explicitly
-	// unwritten (see cars/CLAUDE.md's "Multi-car" section). Rather than fake a
-	// drift character this engine can't yet model honestly for AWD, Drift is
-	// the SAME tune as Grip — the G switch is legal but changes nothing.
-	tunes: {
-		grip,
-		drift: grip
-	}
+	// ── The tune ──────────────────────────────────────────────────────────────
+	// THE default setup, plain and grip-biased: this engine's oversteer terms
+	// (driftAlign, looseness, the "loose rear" mechanism) are a REAR-slip
+	// model, and AWD handling feel is explicitly unwritten (see CLAUDE.md's
+	// "Multi-car" section) — a real AWD slide needs a torque-split model this
+	// engine doesn't have yet, so the kinematic baseline is the honest tune.
+	tune
 } as const satisfies CarSpec;
 
 export type Rs3 = typeof rs3;

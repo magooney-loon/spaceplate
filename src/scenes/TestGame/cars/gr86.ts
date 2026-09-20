@@ -7,10 +7,15 @@
 // feel like a car, and those only compose if they share one unit system. The
 // controller converts at the boundary.
 //
-// The setups (Grip / Drift) live in `tunes` below — moved from handling.ts,
-// which keeps only the HandlingTune contract and the cornering-model rules.
-// Values + inline comments are the source of truth for both tunes (see the
-// note in CLAUDE.md: measured figures in the prose predate revisions).
+// The handling TUNE lives in `tune` below — moved from handling.ts, which
+// keeps only the HandlingTune contract and the cornering-model rules. It is a
+// NORMAL RWD STREET SETUP, blended from the two tunes this car used to carry
+// (Grip / Drift, retired with the switch): planted and honest like the Grip
+// one, but with the Drift one's vocabulary at half strength — the throttle
+// and brake can loosen the rear, the handbrake swings and self-aligns, and
+// there is enough lock to catch a slide. Values + inline comments are the
+// source of truth (see the note in CLAUDE.md: measured figures in the prose
+// predate revisions).
 
 import { BASE_URL } from '$extensions/settings';
 import type { CarSpec } from './types';
@@ -57,10 +62,11 @@ export const gr86 = {
 		yawInertia: 2100,
 		/** m/s — 1st tops out ~12 m/s of spin at the limiter, 2nd ~10 after a long
 		 *  pull, 3rd cannot spin at all: 10 puts 1st fully lit and 2nd only there
-		 *  if you hold it, which is the contrast the tunes want. */
+		 *  if you hold it — with the TC switch on that contrast reads as the lamp,
+	 *  not smoke. */
 		fullSlipSpeed: 10,
 		/** m/s — the GR86's ECU is a patient one: 2 m/s of overspeed before the
-		 *  TC ceiling bites, so Grip's launch lands at `slip` 0.2 and the lamp
+		 *  TC ceiling bites, so the launch lands at `slip` 0.2 and the lamp
 		 *  still lights when it is working. */
 		tcSlipSpeed: 2,
 		/** 1/s — the tyres snap the car back in line sharply once it hooks up. */
@@ -159,9 +165,8 @@ export const gr86 = {
 		autoDemandRate: 1.2,
 
 		// ── Brakes ───────────────────────────────────────────────────────────
-		// Tyre μ and the whole steering rack are NOT here — they are the setup,
-		// not the car, and they differ between the Grip and Drift tunes (tunes
-		// below).
+		// Tyre μ and the whole steering rack are NOT here — they are the TUNE,
+		// not the car (tune below).
 		/** N — all four discs at full pedal: an aftermarket big-brake kit (the
 		 *  nitrous precedent — emphatically not stock GR86 hardware). ≈1.23 g →
 		 *  100-0 km/h in ~2.3 s, up from the stock kit's 0.9 g / ~2.9 s. Braking
@@ -201,13 +206,13 @@ export const gr86 = {
 			[7800, 150]
 		],
 
-		/**
-		 * Aftermarket wet nitrous kit — emphatically NOT real GR86 hardware (the
-		 * FA24 is naturally aspirated; the demo car just has a bottle in the boot).
-		 * ≈ +45% ≈ +112 Nm on peak (≈ 360 Nm, ~100 hp on top) — big enough to light
-		 * up 2nd in Grip and 3rd in Drift, honest enough that 3rd+ in Grip still
-		 * hooks. The kit's bottle/regen/ramp numbers live here with it; the
-		 * controller owns only the live level, the smoothed flow and the gating.
+		/** Aftermarket wet nitrous kit — emphatically NOT real GR86 hardware (the
+		 *  FA24 is naturally aspirated; the demo car just has a bottle in the boot).
+		 *  ≈ +45% ≈ +112 Nm on peak (≈ 360 Nm, ~100 hp on top) — big enough that
+		 *  1st/2nd under spray light the rears up for real (or the TC lamp, switch
+		 *  permitting), honest enough that 3rd+ still hooks. The kit's
+		 *  bottle/regen/ramp numbers live here with it; the
+		 *  controller owns only the live level, the smoothed flow and the gating.
 		 */
 		nitrousTorqueGain: 0.45,
 		/** s of full spray in a full bottle. */
@@ -380,141 +385,85 @@ export const gr86 = {
 		hasTurbo: false
 	},
 
-	// ── The setups ────────────────────────────────────────────────────────────
-	tunes: {
-		grip: {
-			label: 'Grip',
+	// ── The tune ──────────────────────────────────────────────────────────────
+	// One setup, the normal-RWD blend of the retired Grip/Drift pair. Roughly
+	// the midpoint of the two, weighted toward Grip (a street car is planted
+	// first); every number's comment says where it came from.
+	tune: {
+		// Between Grip's 1.05 and Drift's 0.7, near the Grip end: 1st still lights
+		// up, 2nd still steps out, 3rd+ hooks up. Almost none of the playfulness
+		// ever rode on losing power in a straight line — that was the lesson the
+		// Drift tune's own history (0.8 → 0.9 → 0.7) kept teaching.
+		tireMuLong: 1.0,
+		// The real car's 1.1 — same number both old tunes carried.
+		tireMuLat: 1.1,
+		// Up from the real car's 1.3 — a friendlier, more forgiving cornering margin
+		// so a slightly hot entry still hooks up instead of running wide. Both old
+		// tunes agreed on this: a coasting car has a coasting car's grip, and the
+		// contrast between planted and provoked IS the feel.
+		latGripGain: 1.6,
+		// Drift's value: paired with `handbrakeAlign` below it stops a tap-from-
+		// 60 km/h in ~30 m, ~4 m sideways, ending near straight (Grip's older 0.42
+		// predates that pairing and could skate). Also caps how far a throttle slide
+		// can bleed down, so drifts barely notice it.
+		handbrakeMuLat: 0.5,
+		// Between Grip's 0.35 (wheelspin costs a third of the lateral tyre) and
+		// Drift's 0.69 (it nearly wipes it). The TC switch decides how much of it
+		// ever lands: on, spin tops out at 2 m/s (slip 0.2, ~10%); off — the
+		// default — the full half is live and power deepens a slide sharply.
+		slipGripLoss: 0.5,
+		// 0, per the CLAUDE.md rule: looseness must be EARNED by an input, never
+		// baked into the tyre. A planted-until-provoked car is the whole point.
+		looseBase: 0,
+		// Between Grip's 0 and Drift's 0.75: the throttle takes the tail out when
+		// you commit to it, not on a whiff — half the friction circle, still the
+		// main drift control in EVERY gear (this is why the throttle works in gears
+		// that never light up the rears).
+		throttleLoose: 0.45,
+		// Between Grip's 0 and Drift's 0.9, toward the middle: trail-braking into a
+		// corner rotates the car if you ask, but a brush of the pedal on entry
+		// doesn't set the car loose on you.
+		brakeLoose: 0.55,
 
-			tireMuLong: 1.05,
-			tireMuLat: 1.1,
-			// Up from the real car's 1.3 — a friendlier, more forgiving cornering margin
-			// so a slightly hot entry still hooks up instead of running wide.
-			latGripGain: 1.6,
-			handbrakeMuLat: 0.42,
-			// Down from 0.55: wheelspin now only costs a third of the lateral tyre instead
-			// of nearly half, so mashing the throttle out of a corner doesn't step the
-			// back out as a side effect — that's DRIFT's job, not a Grip surprise.
-			slipGripLoss: 0.35,
-			// On, like the real car. The rears are caught at 2 m/s of overspeed, which is
-			// where Grip's wheelspin always effectively sat — 1st still lights the TC lamp
-			// off the line and nothing else in the tune notices.
-			tractionControl: true,
-			looseBase: 0,
-			throttleLoose: 0,
-			brakeLoose: 0,
+		// Between Grip's 0.5 and Drift's 0.95: more than the street car's 24° so
+		// there is countersteer authority to CATCH a slide, less than Drift's
+		// lock-and-a-half so the car doesn't dart on every keyboard tap.
+		maxSteerAngle: 0.68,
+		// Between Grip's 0.5 and Drift's 0.95 — the rack keeps two thirds of its
+		// lock at speed: direct enough for the motorway, enough left to catch with.
+		steerHighSpeedFactor: 0.68,
+		// Between Grip's 55 and Drift's 92 — the falloff stretches over most of the
+		// speed range the car is actually driven at.
+		steerFalloffSpeed: 72,
+		// Between Grip's 7 and Drift's 2.2: quick enough that a tap reaches lock
+		// without lag, slow enough that a binary key press doesn't snap the car into
+		// the slide it just gave you the lock to catch.
+		steerResponse: 4.5,
+		// Between Grip's 9 and Drift's 3.2 — an eager body that still carries a
+		// little inertia of its own.
+		yawResponse: 6,
 
-			// 28.6°, a touch more than the real car's 24°: the demo favours tight turns.
-			// Radius at full lock is 4.7 m against the real 5.4. This was 0.7 rad — 40°,
-			// not the ≈29° the old comment claimed — which is a 3.0 m radius and 94°/s of
-			// yaw at 18 km/h. That is where the low-speed twitchiness came from.
-			maxSteerAngle: 0.5,
-			// Up from 0.35: the rack keeps half its lock at speed instead of a third, so
-			// the car doesn't go numb on the motorway.
-			steerHighSpeedFactor: 0.5,
-			// Up from 42: the falloff above stretches over a wider speed range, so it
-			// keeps feeling direct through more of the range instead of going flat early.
-			steerFalloffSpeed: 55,
-			// Up from 5.5: a keyboard tap reaches its target lock quicker — less input lag.
-			steerResponse: 7,
-			// Up from 7: the body catches up to the yaw target faster, which reads as a
-			// more eager, direct car.
-			yawResponse: 9,
-
-			handbrakeYawBoost: 2.2,
-			// 1 and 0 — Grip is the original kinematic model, untouched.
-			powerYawBoost: 1,
-			driftAlign: 0,
-			// 0 — Grip's handbrake is untouched.
-			handbrakeAlign: 0,
-			maxDriftAngle: 0.75
-		},
-		drift: {
-			label: 'Drift',
-
-			// Up from 0.8, then 0.9 (settled on 0.7) — still bleeding too much straight-line power to
-			// wheelspin for a tune where `throttleLoose` below (not wheelspin) is meant to
-			// be the thing that gets the car sideways. Close to Grip's 1.05 now: 1st
-			// still lights up, 2nd still steps out, 3rd+ still hooks, but almost none of
-			// the drift character was ever riding on losing power in a straight line.
-			// (Not re-measured against the 6.2 s/0-60 figure above.)
-			tireMuLong: 0.7,
-			tireMuLat: 1.1,
-			// The SAME as Grip. A coasting car should have a coasting car's grip: with
-			// `looseBase` near zero, boost ≈ 1 and the yaw cap matches what the bleed can
-			// service, so Drift corners exactly like Grip until something provokes it.
-			// That contrast IS the feel — running this lower just made everything vague.
-			latGripGain: 1.6,
-			// Up from 0.15, which let a handbrake stop SKATE: a tap from 60 km/h slid
-			// 60 m on and 11 m sideways, swapping ends. 0.5 (with `handbrakeAlign`
-			// below) stops it in ~30 m, ~4 m sideways, ending near straight. It
-			// also caps how far a throttle slide can bleed down, so drifts barely notice.
-			handbrakeMuLat: 0.5,
-			// Wheelspin nearly wipes the lateral tyre, so power deepens a slide sharply.
-			slipGripLoss: 0.69,
-			// OFF. Nothing trims the surplus torque, so the rears spin up for real: 1st is
-			// on the limiter in a blink, 2nd builds over a couple of seconds of held
-			// throttle, 3rd and up still cannot out-pull the tyre. A donut now sits at the
-			// limiter with the rears lit instead of at 2 900 rpm, which is the whole reason
-			// this switch exists. It costs no acceleration — the tyre's limit is unchanged
-			// — but under power in 1st and 2nd `slip` now reaches 1, so `driftAlign` fades
-			// right out and the car is genuinely on its own until you lift.
-			tractionControl: false,
-			// A little livelier than before — the car has a hint of playfulness even
-			// coasting, without giving up the planted-until-provoked contrast.
-			looseBase: 0.05,
-			// Up from 0.6: the throttle takes the tail out quicker still and with even
-			// less pedal precision — this was the "kinda hard to drift" complaint, and
-			// throttle is the main control, so it's the one that needed to answer sooner.
-			throttleLoose: 0.75,
-			// Up from 0.8, closer to the handbrake's 1: trail-braking into a corner
-			// triggers a slide more readily — an easier, more generous "tap ↓ to set the
-			// car" entry.
-			brakeLoose: 0.9,
-
-			// A LITTLE more lock than Grip, held a little further up the speed range — just
-			// enough countersteer authority to catch a slide (Grip's rack falls to 35% by
-			// motorway speed, which is fine for lane changes and useless for catching
-			// anything). These were 0.62 / 0.55 / 8, and that rack was most of what read as
-			// punchy: from a keyboard the only thing smoothing a binary key press is
-			// `steerResponse`, and at 8/s a 0.2 s tap already had 80% of a bigger lock in.
-			maxSteerAngle: 0.95,
-			steerHighSpeedFactor: 0.95,
-			steerFalloffSpeed: 92,
-			// Up from 1.5: countersteer answers the key quicker, which is what actually
-			// makes catching a slide feel controllable instead of laggy.
-			steerResponse: 2.2,
-			// Up from 2.5, still a shade under Grip's 9 so the body keeps some of its own
-			// inertia — but with the quicker steerResponse above, the whole catch-and-hold
-			// loop reacts faster than before.
-			yawResponse: 3.2,
-
-			// Bigger flick: the handbrake already sets looseness to 1, so it collects the
-			// whole of `powerYawBoost`. 1.6 × 1.9 = 3.04 is the flick multiplier — a more
-			// dramatic handbrake turn.
-			handbrakeYawBoost: 1.6,
-			// Down again, 2.6 → 2.3 → 1.9: still ran away before the player had time to
-			// react — this is the rate the yaw AUTHORITY builds at while the throttle
-			// holds the rear loose, and a keyboard has nothing but reaction time to
-			// counter it with. Slower build, more window to catch it.
-			powerYawBoost: 1.9,
-			// Up again, 0.15 → 0.22 → 0.35. `align` is `driftAlign × (1 − loose)`, and
-			// `loose` while the throttle is held is `throttleLoose` (0.75 above) — so on
-			// a committed throttle slide only 25% of this is landing (~0.09), which is
-			// deliberately weak so holding throttle can still hold the slide. LIFT is
-			// where the catch actually happens: `loose` falls back to `looseBase` (0.05),
-			// so ~95% of this lands (~0.33) — that's the "opposite lock catches it" moment,
-			// and 0.22 wasn't landing hard enough there either.
-			driftAlign: 0.35,
-			// The catch while the handbrake is held (`driftAlign` is zero there, since
-			// loose is 1) — what stops a handbrake stop from spinning round. A held
-			// full-lock handbrake turn still turns.
-			handbrakeAlign: 3,
-			// Up from 0.9: the drift can hold a bigger angle before the catch fully takes
-			// over, for a more dramatic slide before it settles. The handbrake held at full
-			// lock still spins the car out to fully sideways, which is what that input
-			// should do.
-			maxDriftAngle: 2.45
-		}
+		// Between Grip's 2.2 and Drift's 1.6 — a firm flick, not a theatrical one.
+		handbrakeYawBoost: 2.0,
+		// Between Grip's 1 (off) and Drift's 1.9: at full looseness the steering
+		// gains ~40% authority, fading back to 1 as the slide reaches
+		// `maxDriftAngle`. Enough that a committed throttle slide develops over a
+		// beat you can react to, not a wall it snaps against.
+		powerYawBoost: 1.4,
+		// Between Grip's 0 (off) and Drift's 0.35. The auto-catch, scaled by
+		// `1 − loose` at the call site: on a committed throttle slide (loose ≈ 0.45)
+		// only ~55% of it lands, deliberately weak so holding throttle can hold the
+		// slide — LIFT is where the catch happens, and near-full 0.22 lands there.
+		driftAlign: 0.22,
+		// Between Grip's 0 (off) and Drift's 3 — the catch while the handbrake is
+		// held, which stops a handbrake stop from swapping ends. Steering still
+		// wins a held handbrake turn; a tap-and-hold stop comes to rest near
+		// straight.
+		handbrakeAlign: 2.2,
+		// Between Grip's 0.75 and Drift's 2.45: the slide can get properly sideways
+		// before the catch fully takes over, then settles instead of spinning. The
+		// steady-state angle lands well under this, a little past half.
+		maxDriftAngle: 1.3
 	}
 } as const satisfies CarSpec;
 

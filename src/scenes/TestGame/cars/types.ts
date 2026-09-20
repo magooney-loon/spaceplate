@@ -13,7 +13,7 @@
 //   (case-insensitive), each wheel mesh containing ALL FOUR wheels merged, so
 //   fx/CarWheels can recover the four pivots by bounding-box quadrant split.
 
-import type { HandlingMode, HandlingTune } from '../sim/handling';
+import type { HandlingTune } from '../sim/handling';
 
 /** Which axle(s) the engine drives. RWD is fully implemented; FWD/AWD are
  *  spec-level plumbing only — the driven-axle LOAD math in the drivetrain is
@@ -84,10 +84,11 @@ export type CarSpec = {
 		 *  so 1st goes fully lit and 2nd only gets there if you hold it. A car with
 		 *  fatter torque or shorter gears wants this bigger, or every gear reads lit. */
 		fullSlipSpeed: number;
-		/** m/s of overspeed the TRACTION CONTROL tolerates. Modelled as a ceiling
-		 *  on slip rather than a torque-cut loop — the outcome is what matters, and
-		 *  a real ECU trims torque precisely to stop the number here from growing.
-		 *  Deliberately generous: at 2 m/s Grip's launch lands at `slip` 0.2, and
+		/** m/s of overspeed the TRACTION CONTROL tolerates when the player switches
+		 *  it on (the G latch, default off). Modelled as a ceiling on slip rather
+		 *  than a torque-cut loop — the outcome is what matters, and a real ECU
+		 *  trims torque precisely to stop the number here from growing.
+		 *  Deliberately generous: at 2 m/s the launch lands at `slip` 0.2, and
 		 *  the cluster's TC lamp (`slip > 0.15`) still lights when the ECU works. */
 		tcSlipSpeed: number;
 		/** 1/s — how fast leftover sideways velocity settles once it is back inside
@@ -212,8 +213,8 @@ export type CarSpec = {
 		/** Wide-open-throttle crank torque curve, ascending by rpm. */
 		torqueCurve: readonly TorquePoint[];
 		/** Crank torque multiplier at full nitrous spray — applied by the
-		 *  drivetrain INSIDE its traction limit, so a shot in 1st is wheelspin,
-		 *  a shot in 3rd is thrust, and Drift + spray in 3rd is smoke. The kit's
+		 *  drivetrain INSIDE its traction limit, so a shot in 1st is wheelspin
+		 *  and a shot in 3rd is thrust. The kit's
 		 *  other numbers follow; the controller owns only the live bottle level,
 		 *  the smoothed flow and the throttle-switch gating. */
 		nitrousTorqueGain: number;
@@ -382,7 +383,9 @@ export type CarSpec = {
 		hasTurbo: boolean;
 	};
 
-	/** The setups (Grip / Drift) — a tune shop's view of THIS car. Read fresh
-	 *  every physics step; switching mid-corner is legal. */
-	tunes: Record<HandlingMode, HandlingTune>;
+	/** THE TUNE — this car's tyre/steering/oversteer setup, a tune shop's view of
+	 *  it. One per car: the grip/drift switch is gone, and what a car ships with
+	 *  is the setup it drives (the GR86's is a normal RWD street setup — planted
+	 *  until provoked, playful once it is). */
+	tune: HandlingTune;
 };

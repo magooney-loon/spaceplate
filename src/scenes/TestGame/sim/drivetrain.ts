@@ -2,10 +2,12 @@
 // function of its own state — no runes, no Three, no Rapier. The controller
 // (sim/controller.ts) owns the body and calls `step()` once per physics step
 // with the road speed it measured. What this models is TestGame's CLAUDE.md
-// "engine feel" section; this header covers only what that doesn't. The three
-// setup numbers (driven-axle grip, wheelspin's lateral cost, traction control)
-// come in per step as a `HandlingTune` (handling.ts), never cached — the
-// player can switch tunes mid-corner.
+// "engine feel" section; this header covers only what that doesn't. The tune
+// numbers (driven-axle grip, wheelspin's lateral cost) come in per step as a
+// `HandlingTune` (handling.ts) — the car's one tune, which the controller
+// still re-reads each step. Traction control is the player's G switch
+// (default off) and arrives the same way the gearbox mode does: as a fresh
+// `input.tc` flag, never cached.
 //
 // Wheelspin (`spin`) is a speed, not a ratio: how much faster the driven
 // tyre's contact patch is running than the road, in m/s, integrated against
@@ -42,6 +44,11 @@ export interface DriveInput {
 	 * like the shift flags: the player can switch mode mid-corner, so it is read
 	 * fresh every step and never cached. */
 	auto: boolean;
+	/** Traction control is ON (the G latch, default off). LEVEL like `auto`:
+	 * read fresh every step, never cached. On, the ECU clamps wheelspin at the
+	 * spec's `tcSlipSpeed`; off, the surplus torque spins the driven wheels for
+	 * real and the limiter is the only ceiling. */
+	tc: boolean;
 	/** 0..1 — how hard the car is cornering (the controller's lateral load / slip
 	 * angle, whichever is loosest, one step stale). The AUTOMATIC only: a box that
 	 * changes gear mid-bend unsettles a car that is already using its tyres. */
@@ -612,10 +619,11 @@ export function createDrivetrain(spec: CarSpec) {
 		if (wasSpin * state.spin < 0) state.spin = 0;
 		// The handbrake holds the rears still: locked, not lit.
 		if (input.handbrake) state.spin = 0;
-		// TRACTION CONTROL, the setup's call. Grip runs the real car's, so the rears
-		// are caught the moment they step out. Drift has none — the whole point, and
-		// the only reason a donut can sit on the limiter.
-		if (tune.tractionControl) state.spin = clamp(state.spin, -hw.tcSlipSpeed, hw.tcSlipSpeed);
+		// TRACTION CONTROL, the switch's call (`input.tc`, the G toggle — ships
+		// OFF). On, the ECU catches the driven wheels the moment they step out,
+		// at the spec's `tcSlipSpeed`; off, nothing trims the surplus torque —
+		// the rears spin up for real and a donut sits on the limiter.
+		if (input.tc) state.spin = clamp(state.spin, -hw.tcSlipSpeed, hw.tcSlipSpeed);
 
 		prevDrive = driveForce;
 		// No filter on `slip` any more: `spin` carries the real rotating inertia, which

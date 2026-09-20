@@ -31,9 +31,9 @@ TestGameHud.svelte      — HUD shell (controls hint, back-to-menu, restart) + t
                          itself — they share that corner)
 cars/                   — THE GARAGE: everything car-specific is data here
   types.ts              — CarSpec: the contract (hardware/suspension/geometry/
-                         model/audio/cluster/tunes + layout 'rwd'|'fwd'|'awd')
+                         model/audio/cluster/tune + layout 'rwd'|'fwd'|'awd')
   gr86.ts               — the GR86 spec: real-car hardware, measured geometry,
-                         the two tunes (values + inline comments = source of truth)
+                         the handling tune (values + inline comments = source of truth)
   rs3.ts                — the Audi RS3 Sportback spec (AWD, 6-speed as given):
                          real headline numbers (power/torque/0-60/top speed/
                          weight), everything else researched the same way;
@@ -41,7 +41,7 @@ cars/                   — THE GARAGE: everything car-specific is data here
                          GR86's — needed its wheel assembly's four separate
                          materials (tire/brake/disk/hub) RENAMED at the asset
                          level to share one prefix (see its own header).
-                         Grip-only — see its `tunes` comment
+                         One grip-biased tune — see its `tune` comment
   gtir.ts               — the Nissan Pulsar GTI-R spec (FWD as specified —
                          the real car is AWD; FWD is this demo's deliberate
                          drivetrain-variety choice, 5-speed as given). Its GLB
@@ -49,7 +49,7 @@ cars/                   — THE GARAGE: everything car-specific is data here
                          metres" (units.ts) — off by a measured ×3.776 — so
                          its geometry fields and `model.scale` carry an extra
                          conversion factor documented in its own header.
-                         Grip-only — see its `tunes` comment
+                         One grip-biased tune — see its `tune` comment
   spec.ts               — spec math: gearRatio/rpmInGear/engineTorque +
                          layout-aware drivenAxleLoad/drivenAxles + centerOfMass +
                          wheelPatches (shared layout)
@@ -67,8 +67,8 @@ sim/                    — the driving model, car-agnostic
                          halves of the gearbox: the player's Q/E and the
                          AUTOMATIC (`autoShift`), which asks through the same
                          `requestShift` the keys do
-  handling.ts           — the HandlingTune CONTRACT + cornering-model rules + modes
-                         (the GR86's tunes live in its spec)
+  handling.ts           — the HandlingTune CONTRACT + cornering-model rules
+                         (the cars' tunes live in their specs)
   suspension.ts         — the RIDE + body attitude, PER CAR (createSuspension(spec);
                          the controller owns the instance beside its drivetrain):
                          four raycast springs hold the car up in physics — along
@@ -89,7 +89,8 @@ sim/                    — the driving model, car-agnostic
                          system. Data, not a keymap — the engine owns the keys
                          (src/extensions/input/CLAUDE.md)
   carSwitches.svelte.ts — what LATCHING a switch MEANS: lights, ignition + its
-                         startup sequence, handling tune, gearbox mode (manual /
+                         startup sequence, traction control (TC, default off),
+                         gearbox mode (manual /
                          automatic), B view mode, + the
                          HUD → scene restart signal. Was carInput.svelte.ts, which
                          also carried the hand-rolled keymap
@@ -288,9 +289,8 @@ driven) is deliberately unwritten — the current model is rear-slip-centric
 (looseness, driftAlign, "the fronts are never the axle that lets go") and
 should not be guessed at without the cars to tune against. cars/rs3.ts (AWD)
 and cars/gtir.ts (FWD) exist now and exercise the LOAD/driveline plumbing for
-real, but each carries only a Grip tune — its own `tunes.drift` is a literal
-copy of `tunes.grip` (both required by the `Record<HandlingMode,
-HandlingTune>` contract), rather than a rear-slip-model Drift tune faking a
+real, but each ships the plain kinematic tune — the grip/drift switch is gone,
+so there is no slot for a rear-slip drift vocabulary faking a
 front-slip character this engine can't yet compute honestly. Don't treat
 either car's numbers as a validated AWD/FWD handling feel — they're a
 starting point for whoever writes that model, same as the GR86 was for RWD.
@@ -298,7 +298,11 @@ starting point for whoever writes that model, same as the GR86 was for RWD.
 ## Controls
 
 Arrows drive (↑ throttle, ↓ brake), Space handbrake, Q/E shift down/up, either
-Shift nitrous, L headlights, K main beam, G handling setup, H gearbox mode
+Shift nitrous, L headlights, K main beam, G traction control (TC — one toggle,
+SHIPS OFF: on, the ECU catches wheelspin at the spec's `tcSlipSpeed`; off, the
+surplus spins the driven wheels for real — and the cluster's TC chip burns
+steady RED while it is off, going dark until the ECU works once switched on),
+H gearbox mode
 (manual ↔ automatic — the H-pattern you are giving up; free of both Studio's
 bare-letter binds and the engine's Ctrl+H, which needs the modifier),
 M ignition (one key,
@@ -347,8 +351,8 @@ two bindings on one `nitrous` slot; the held-code tracking that makes that
 work, and the blur release that stops a Shift let go while unfocused from
 sticking the pedal, are the engine's. The kit's NUMBERS are the
 car's (spec hardware: `nitrousTorqueGain`, +45% crank torque, applied by the
-drivetrain INSIDE its traction limit — so a shot in 1st/2nd becomes wheelspin,
-3rd+ is real thrust, and Drift + spray in 3rd lights the tyres — plus the bottle,
+drivetrain INSIDE its traction limit — so a shot in 1st/2nd becomes wheelspin
+and 3rd+ is real thrust — plus the bottle,
 4 s of full spray and ~14 s to refill, and the flow ramp, ~0.13 s in / ~0.25 s
 out); the controller's task owns the live level (it refills even while parked),
 the smoothed flow and the telemetry publish. `carSim.nitrous` (flow) and
@@ -382,7 +386,7 @@ press (the CarWheels substep hazard again).
 The engine has no opinion about what latching MEANS — that a headlight is a switch,
 that flicking to main beam turns the lamps on, that the ignition runs a startup
 sequence. `carSwitches.svelte.ts` owns all of it (`carLights`, `carIgnition`,
-`carHandling`, `carView`, `carUnits`, plus the HUD→scene restart token), and those survive
+`carTc`, `carView`, `carUnits`, plus the HUD→scene restart token), and those survive
 Restart and scene exit on purpose. Leaving the scene deactivates the map, which
 zeroes the pedals; the lights you left on stay on.
 
@@ -404,34 +408,39 @@ two stay a real, always-on guarantee. (Roll-only — `[true, true, false]` — i
 what lets the car occasionally tip up onto two wheels, and with nothing gating
 the drivetrain on the chassis being upright, a flipped car could still drive.)
 
-### Two setups, one car
+### One tune per car
 
 `cars/gr86.ts` is the HARDWARE (engine, gearbox, mass, aero, brakes) and never varies.
-`sim/handling.ts` is the SETUP CONTRACT — tyre μ, the steering rack, and the oversteer
-knobs — and the GR86 carries two tunes (in its spec), picked by `carHandling.mode`
-(G, or the HUD switch). The controller and `drivetrain.step()` read
-`tunes[mode]` **fresh every physics step**; nothing caches a tune, so switching
-mid-corner is legal.
+`sim/handling.ts` is the TUNE CONTRACT — tyre μ, the steering rack, and the oversteer
+knobs — and every car carries exactly ONE tune (its spec's `tune`): what a car ships
+with is the setup it drives. The GR86 used to carry a Grip/Drift pair switched by a
+key; the switch is retired and its tune is the normal-RWD blend of the two — planted
+until provoked, playful once provoked (traction control is the player's G switch
+now, and it ships OFF — see Controls). The FWD/AWD specs
+ship the plain kinematic baseline while their handling feel stays unwritten — see
+"Multi-car"). The controller and `drivetrain.step()` read `spec.tune` **fresh every
+physics step**.
 
-> Both tunes were revised for a friendlier, more arcade feel — more lateral grip,
-> quicker steering response, and an easier-to-trigger, easier-to-catch drift. The
-> exact numbers below are current; the specific MEASURED figures throughout this
-> section (peak yaw °/s, circle diameters, settle times) predate that revision and
+> The tune was revised for a friendlier, more arcade feel — more lateral grip,
+> quicker steering response, and an easier-to-trigger, easier-to-catch drift — and
+> then re-blended into the single setup (each value's provenance is commented in
+> the spec). The specific MEASURED figures throughout this
+> section (peak yaw °/s, circle diameters, settle times) predate those revisions and
 > haven't been re-measured — treat them as illustrating the mechanism, not as
 > current numbers. The spec's own inline comments (in `cars/gr86.ts`) are the
 > source of truth.
 
-- **Grip** is the car (0-60 in 5.7 s, 140 mph governed — both the drivetrain's,
-  unaffected by this file), tuned friendlier than the real car for cornering grip
-  and steering response. `looseBase` / `driftAlign` are still 0 with `powerYawBoost`
-  still 1, which collapses every term below back to the base kinematic model — Grip
-  never picks up a drift term, only its own numbers changed.
-- **Drift** is an ARCADE tune (the reference is NFS Underground 2), not the real
-  car: it rotates roughly where you point it, the velocity vector lags behind, and
-  an assist pulls the nose back so a slide is something you hold rather than
-  survive. It costs almost nothing in a straight line — 0-60 in 6.2 s against
-  Grip's 5.7 — because the looseness comes from the friction circle rather than
-  from throwing away rear traction.
+- **The street half is the car** (0-60 in 5.7 s, 140 mph governed — both the
+  drivetrain's, unaffected by this file), tuned friendlier than the real car for
+  cornering grip and steering response. `looseBase` is 0, so nothing below wakes
+  up until an input earns it.
+- **The drift half is the arcade vocabulary at half strength** (the reference is
+  NFS Underground 2): the throttle and brake loosen the rear through the friction
+  circle, the handbrake swings it, and an assist pulls the nose back so a slide is
+  something you hold rather than survive. It costs almost nothing in a straight
+  line — the looseness comes from the friction circle rather than from throwing
+  away rear traction, and with the TC switch off (as it ships) the low-gear
+  wheelspin is real too.
 
 > **The stability rule: nothing may depend on the SIGN of the slip angle except
 > `driftAlign`.** This is the one that has already been got wrong. An oversteer
@@ -463,7 +472,7 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
     ratio that makes the tune feel good is **2° coasting against 32° on the
     throttle** — looseness has to be EARNED by an input, never baked into the tyre.
     It also caps `driftAlign`, so raising it loosens the car twice over.
-  - `throttleLoose` (0.7) is **the friction circle and the main drift control** —
+  - `throttleLoose` (0.45) is **the friction circle and the main drift control** —
     scaled by the drivetrain's `powerLoad`, the share of the rear's grip budget the
     drive force is spending. A tyre has one budget; grip spent pushing the car
     along is not available to hold it sideways, and that is true well before the
@@ -474,16 +483,16 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   - **Keying the slide off wheelspin alone was the trap.** Only 1st and 2nd ever
     reach the traction limit, so getting sideways in 4th needed the handbrake, and
     dropping `tireMuLong` far enough to fix that cost 2.4 s off 0-60. The friction
-    circle costs nothing: `tireMuLong` stays at 0.8 and Drift does 0-60 in 6.2 s
-    against Grip's 5.7.
-  - `brakeLoose` (0.9) is **trail-braking oversteer and the deliberate entry** —
+    circle costs nothing: `tireMuLong` stays at 1.0 and the straight-line numbers
+    barely move.
+  - `brakeLoose` (0.55) is **trail-braking oversteer and the deliberate entry** —
     the big-brake kit moves ~2 800 N (nearly half the static rear load) off the
     rear axle. Tap ↓ into the corner to set the car, then ↑ to hold the angle; measured, a 0.4 s
     tap peaks at 23° and holds ~20° while the car drives out of it.
-- **Drift's `latGripGain` is the SAME as Grip's** (1.6). With `looseBase` near
-  zero the boost is ≈1 and the yaw cap matches what the bleed can service, so a
-  coasting Drift car corners exactly like a Grip one. Running it lower to "add
-  slide" just made everything vague — the contrast is the feel, not the baseline.
+- **`latGripGain` is not a drift knob** — with `looseBase` at zero the boost is
+  ≈1 and the yaw cap matches what the bleed can service, so a coasting car corners
+  at its full grip. Running it lower to "add slide" just made everything vague —
+  the contrast between planted and provoked is the feel, not the baseline.
 - **`maxDriftAngle` fades the boost out, and that is what makes a drift settle**
   instead of spinning: the boost shrinks with slip angle while `driftAlign` grows,
   so they cross. **`maxDriftAngle` is therefore the knob for "too slidy"** — it
@@ -496,12 +505,12 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   building. At 2.6 that is ~39°/s against Grip's 32 (1.35×, not 1.7×) and the
   drift develops over ~0.5 s. Peak yaw across the speed range, Drift vs Grip:
   114 / 77 / 39 °/s against 83 / 57 / 32 at 30 / 50 / 90 km/h.
-- **Drift's steering rack is only slightly quicker than Grip's**, and that is
-  deliberate. It was 0.62 rad of lock at `steerResponse` 8, which was most of the
-  punchiness: input is a keyboard, so a binary key press has nothing smoothing it
+- **The rack is the punchiness knob, and lock trades against it.** It was
+  0.62 rad of lock at `steerResponse` 8, which was most of what read as
+  punchy: input is a keyboard, so a binary key press has nothing smoothing it
   but `steerResponse`, and at 8/s a 0.2 s tap was already at 80% of a bigger lock.
-  0.55 rad at 5.5 keeps enough countersteer authority to catch a slide without the
-  car darting on every tap.
+  The lesson the retired tunes kept relearning: enough lock to catch a slide,
+  a response slow enough not to dart on every tap.
 - **`driftAlign` is the auto-catch, and it MUST scale with rear grip** — the scene
   applies `driftAlign × (1 − loose)`. A spinning tyre aligns nothing, so the
   aligning moment has to fade exactly as the rear lets go. As a constant it did the
@@ -513,18 +522,21 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   - Lifting is a real input because of this: looseness falls back to `looseBase`,
     which roughly doubles the aligning moment and closes the slide.
   - It is still what ends a slide, what opposite lock is helping, and what makes
-    the straight line self-correcting. Zero in Grip.
+    the straight line self-correcting. Zero on the purely kinematic tunes (the
+    FWD/AWD specs).
 - **The yaw CAP runs on the full lateral μ, the sideways bleed on the reduced
   one.** The fronts are never the axle that lets go, and it is the fronts that set
   how fast a car can rotate — capping rotation with the _rear's_ lost grip makes
   the car unable to turn at exactly the moment it should be sliding.
-- **Grip's numbers are not close to drifting, and it is worth knowing by how
-  much**: `tireMuLong` 1.05 means only 1st gear ever beats rear traction, and
-  `slipGripLoss` 0.35 leaves 65% of the lateral tyre under _total_ wheelspin —
-  Grip is built to shrug off wheelspin, not slide on it.
-- **Full lock is per-tune, so `carSim.steerAngle` is published in radians** and
+- **The street bias is real, and it is worth knowing by how much**: `tireMuLong`
+  1.0 means only 1st gear ever beats rear traction, and `slipGripLoss` 0.5 costs
+  half the lateral tyre under _total_ wheelspin. The TC switch (G, ships off)
+  is the ECU's half of the bargain: on, wheelspin tops out at the spec's
+  `tcSlipSpeed` (2 m/s, slip 0.2, ~10% of that cost); off, the full half is live
+  and power deepens a slide.
+- **Full lock is per-car, so `carSim.steerAngle` is published in radians** and
   `CarWheels` renders that. Re-deriving `steer × maxSteerAngle` at the consumer
-  would show the Grip lock while Drift steered at 0.62 rad.
+  would show a re-derived lock, not the one the physics steered at.
 
 ### The rest of the cornering model
 
@@ -541,25 +553,26 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   the yaw cap costs exactly v·ω = μ·g of bleed per second, so they cancel and a
   planted car never slides. Raise one without the other and the car understeers
   out of every corner. `latGripGain` scales both; it is the one knob for "the car
-  won't turn at speed", and 1 is the real car. Drift deliberately breaks this — see
-  its `latGripGain` and yaw-cap bullets above; a car that never slides is the point
-  in Grip and the failure mode in Drift.
+  won't turn at speed", and 1 is the real car. The looseness terms deliberately
+  break this agreement while active — see the latGripGain and yaw-cap bullets
+  above; a car that never slides is the street half's point and the drift half's
+  failure mode.
 - **Speed-sensitive rack:** `steerFalloffSpeed` has to span the speeds the car is
   actually driven at. It was 1.8 m/s once, i.e. fully applied by walking pace,
   which made it a no-op and left `maxSteerAngle` (then 40°, not the ≈29° its own
   comment claimed) as the low-speed feel — that pair was the twitchiness.
 
-- **The model is SI; the world is not.** The car's spec and tunes hold the
-  numbers (torque curve, 6MT ratios, tyre μ, drag) in metres/kg/newtons, and
-  the controller converts at exactly one boundary: `UNITS_PER_METER = 2.5`
+- **The model is SI; the world is not.** The car's spec holds the
+  numbers (torque curve, 6MT ratios, tyre μ, drag) in metres/kg/newtons, and the
+  controller converts at exactly one boundary: `UNITS_PER_METER = 2.5`
   (units.ts), the
   same 2.5 the car's visual group is scaled by (the track is authored at 2.5
   units/metre). Forces and velocities scale by it, rad/s does not. The car's
   `gravityScale` is that constant too — the shared `<World>` pulls at 9.8
-  _units_/s², which on this track is 3.9 m/s². Validated against the real GR86 **on
-  the Grip tune**: 0-60 mph 5.7 s (6.1 published), 140 mph governed, redline in
-  1st at ~50 km/h. Drift is a setup, not a claim about the car — don't re-validate
-  against it.
+  _units_/s², which on this track is 3.9 m/s². Validated against the real GR86
+  (0-60 mph 5.7 s, 6.1 published; 140 mph governed; redline in 1st at ~50 km/h) —
+  measured on the retired Grip tune (μ_long 1.05 and TC always on; the current
+  one runs 1.0 with the TC switch shipping off), so re-measure before quoting.
 - **Physics runs at a FIXED rate — 60 Hz by default** (`physicsState.framerate`;
   the Studio panel also offers 120 and 200). Fixed is what makes it deterministic;
   the number itself is a cost/resolution choice, not a repeatability one. A
@@ -1539,9 +1552,10 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
   launch boost, full through the drop and easing off with the tail into 1st);
   sources never sum (the looseness model's own rule). Attack 12/s vs release 4/s
   with a snap to 0 so the release asymptote can't hiss. Not
-  gated on ignition — tyres aren't combustive. TC LAMP: the cluster's `spinning` indicator gates on the tune's `tractionControl`
-  flag — in Drift mode `tractionControl` is false, so wheelspin there is the setup,
-  not a system intervening, and the lamp stays off. SCRAPE: the hull-contact
+  gated on ignition — tyres aren't combustible. TC LAMP: the cluster's TC chip tells both halves of the switch's story —
+  OFF (as it ships) it burns steady RED (the nannies are asleep); ON it gates
+  on slip past the lamp's own 0.15 — wheelspin with TC off is the setup,
+  not a system intervening, and a blinking amber would be a lie. SCRAPE: the hull-contact
   half of what fx/CarImpacts.svelte draws, voiced off ONE take
   (`metal_scraping.opus`) as two voices — a LOOP under the sills whose level and
   rate ride the same grind the spark stream's rate does (`hullSlideMs` over

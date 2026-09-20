@@ -20,16 +20,16 @@ import { G, UNITS_PER_METER } from '../units';
 import { latMu } from './handling';
 import { createDrivetrain } from './drivetrain';
 import { carSim, publishCarHud } from './carTelemetry.svelte';
-import { carGearbox, carHandling, carIgnition } from './carSwitches.svelte';
+import { carGearbox, carIgnition, carTc } from './carSwitches.svelte';
 import { carControls } from './carControls';
 import { clamp, damp } from './carMath';
 import { createSuspension } from './suspension';
 
 // UNITS: the sim thinks in metres, the world is 2.5 units to the metre. Forces
 // and velocities convert at this boundary and nowhere else — see units.ts.
-// Every tuneable number lives in the car's `tunes` and is read FRESH each
-// step: the player can flip Grip ↔ Drift mid-corner and nothing here may
-// cache it.
+// Every tuneable number lives in the car's `tune` and is read FRESH each
+// step: the car may change under this controller at a scene remount and
+// nothing here may cache a stale spec.
 /** m/s floor under the grip cap, so it can't divide by ~0. */
 const YAW_MIN_SPEED = 1.5;
 /** m/s — the slip-angle drift gate fades in across `1 → 1 + DRIFT_GATE_RAMP`,
@@ -183,8 +183,9 @@ export function createCarController(spec: CarSpec, world: World) {
 			spawnRot.w = r.w;
 		}
 
-		// The selected setup, re-read every step — switching tunes is a live change.
-		const tune = spec.tunes[carHandling.mode];
+		// The car's one tune — still read per step, so a scene remount onto
+		// another car is picked up without ceremony.
+		const tune = spec.tune;
 		const latGrip = latMu(tune);
 
 		// The `steer` slot reads SCREEN-natural (− left, + right); this model's sign is
@@ -281,7 +282,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		const lockFraction =
 			1 - (1 - tune.steerHighSpeedFactor) * clamp(absSpeed / tune.steerFalloffSpeed, 0, 1);
 		carSim.steer += (steerKey * lockFraction - carSim.steer) * damp(tune.steerResponse, delta);
-		// Published in RADIANS, because full lock is now a per-tune number and CarWheels
+		// Published in RADIANS, because full lock is a per-car number and CarWheels
 		// must render the angle the physics used, not one it re-derived from a constant.
 		carSim.steerAngle = carSim.steer * tune.maxSteerAngle;
 
@@ -393,8 +394,10 @@ export function createCarController(spec: CarSpec, world: World) {
 				shiftUp,
 				shiftDown,
 				// The gearbox SWITCH, read fresh like the tune — the box may change
-				// its mind about who shifts halfway through a corner.
+				// its mind about who shifts halfway through a corner. TC likewise: the
+				// G latch, default off.
 				auto: ignOn && carGearbox.mode === 'auto',
+				tc: carTc.on,
 				nitrous: nitrousFlow,
 				// Last step's cornering effort — the automatic holds its gear through
 				// a corner rather than unsettling the car mid-bend.
@@ -454,7 +457,8 @@ export function createCarController(spec: CarSpec, world: World) {
 		const yawDemand = ((speedMs * Math.tan(carSim.steerAngle)) / hw.wheelbase) * boost;
 		const yawCap = (latGrip * boost * G) / Math.max(absSpeed, YAW_MIN_SPEED);
 		// The auto-catch, scaled by how much rear grip is left — a spinning tyre
-		// aligns nothing (CLAUDE.md's `driftAlign` bullet). Zero in Grip.
+		// aligns nothing (CLAUDE.md's `driftAlign` bullet). Zero on a purely
+		// kinematic tune (the FWD/AWD specs).
 		// On the handbrake `loose` is 1, so it has its own catch (`handbrakeAlign`).
 		const align = handbrake ? tune.handbrakeAlign : tune.driftAlign * (1 - loose);
 		const targetYaw = clamp(yawDemand, -yawCap, yawCap) - align * beta;
@@ -572,7 +576,7 @@ export function createCarController(spec: CarSpec, world: World) {
 		carSim.powerLoad = 0;
 		carSim.gripFactor = 1;
 		carSim.loose = 0;
-		carSim.muLat = latMu(spec.tunes[carHandling.mode]);
+		carSim.muLat = latMu(spec.tune);
 		carSim.clutch = 1;
 	}
 

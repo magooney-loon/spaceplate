@@ -29,7 +29,7 @@
 // rename needed (contrast cars/rs3.ts, whose wheel assembly split across
 // four separately-named materials and DID need one).
 //
-// Only a Grip tune is meaningfully authored — see `tunes` below.
+// One tune, the default setup — see `tune` below.
 
 import { BASE_URL } from '$extensions/settings';
 import type { CarSpec } from './types';
@@ -41,18 +41,17 @@ const GLB_UNITS_PER_METRE = 3.7762377487779153;
  *  metres (`UNITS_PER_METER`, 2.5) — corrected for this GLB's own unit. */
 const MODEL_SCALE = 2.5 / GLB_UNITS_PER_METRE;
 
-const grip: HandlingTune = {
-	label: 'Grip',
-
+const tune: HandlingTune = {
+	// Modest tyres for a ~1.2 t hot hatch: the driven fronts also do the
+	// steering, so their grip budget is spent twice over.
 	tireMuLong: 1.0,
 	tireMuLat: 1.05,
 	latGripGain: 1.5,
 	handbrakeMuLat: 0.4,
 	// FWD unloads the driven (front) axle under acceleration (spec.ts's
 	// drivenAxleLoad), so wheelspin costs a bit more lateral grip than the
-	// GR86's RWD 0.35.
+	// GR86's RWD 0.5.
 	slipGripLoss: 0.4,
-	tractionControl: true,
 	looseBase: 0,
 	throttleLoose: 0,
 	brakeLoose: 0,
@@ -297,18 +296,14 @@ export const gtir = {
 		hasTurbo: true
 	},
 
-	// ── The setups ────────────────────────────────────────────────────────────
-	// Only Grip is meaningfully authored: this engine's drift model is tuned
-	// around REAR-slip (the CLAUDE.md rule — driftAlign, the oversteer terms,
-	// the whole "loose rear" mechanism), and FWD handling feel is explicitly
-	// unwritten (see cars/CLAUDE.md's "Multi-car" section) — a real FWD slide
-	// is a front-slip/lift-off character this model doesn't have the terms
-	// for yet. Rather than fake it, Drift is the SAME tune as Grip — the G
-	// switch is legal but changes nothing.
-	tunes: {
-		grip,
-		drift: grip
-	}
+	// ── The tune ──────────────────────────────────────────────────────────────
+	// THE default setup, plain and grip-biased: this engine's oversteer terms
+	// (driftAlign, looseness, the "loose rear" mechanism) are a REAR-slip
+	// model, and FWD handling feel is explicitly unwritten (see CLAUDE.md's
+	// "Multi-car" section) — a real FWD slide is a front-slip/lift-off
+	// character this model doesn't have the terms for yet, so the kinematic
+	// baseline is the honest tune.
+	tune
 } as const satisfies CarSpec;
 
 export type Gtir = typeof gtir;

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { currentCar } from '../cars';
 	import { drivenAxles } from '../cars/spec';
-	import { carHandling, carView } from '../sim/carSwitches.svelte';
+	import { carView } from '../sim/carSwitches.svelte';
 	import { carDebugHud, carHud } from '../sim/carTelemetry.svelte';
 
 	// The debug rig's other half: the NUMBERS behind `DebugRig.svelte`'s geometry.
@@ -43,7 +43,6 @@
 	<div class="debug">
 		<div class="debug-head">
 			<span class="tag">{carDebugHud.layout.toUpperCase()}</span>
-			<span class="tag">{carHandling.mode.toUpperCase()}</span>
 			<span class="tag">{carView.mode.toUpperCase()}</span>
 		</div>
 

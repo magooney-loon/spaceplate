@@ -35,19 +35,20 @@ export const carSim = {
 	slip: 0,
 	/** Steering rack, -1…1, left-positive — the fraction of lock the rack is at. */
 	steer: 0,
-	/** rad — `steer` × the SELECTED TUNE's full lock. CarWheels renders this rather
-	 *  than re-deriving it, because full lock is a per-tune number now (Drift runs
-	 *  more of it) and the visual lock has to be the one the physics steered at. */
+	/** rad — `steer` × the car's own full lock (the tune's `maxSteerAngle`).
+	 *  CarWheels renders this rather than re-deriving it — full lock is a
+	 *  per-car number and the visual lock has to be the one the physics
+	 *  steered at. */
 	steerAngle: 0,
 	/** rad — slip angle at the CG: the angle between where the nose points and where
 	 *  the car is actually going. Positive = travelling to the car's RIGHT, i.e. the
 	 *  tail is out in a left-hand slide. Zero when planted; a drift IS a big held
-	 *  value here. Written in both tunes; only Drift can hold much of it. */
+	 *  value here — how much of one a car can hold is its tune's business. */
 	drift: 0,
 	/** 0..1 — share of the lateral grip budget the current corner demands: the
 	 *  sideways-bleed demand over the μ·g cap it's clamped to (TestGame.svelte).
 	 *  Pins at 1 exactly at max banking (v·ω = μ·g at the yaw cap), sits well under
-	 *  it in a normal corner. The tyre-squeal driver reads this (carAudio): Grip's
+	 *  it in a normal corner. The tyre-squeal driver reads this (carAudio): a
 	 *  planted limit cornering lights no drift angle and no TC lamp — the load
 	 *  itself is the only honest squeal signal. */
 	latLoad: 0,

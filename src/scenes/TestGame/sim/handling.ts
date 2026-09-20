@@ -1,17 +1,13 @@
-// The handling CONTRACT + the cornering model's rules. The TUNES themselves
-// are per-car data (the GR86's live in cars/gr86.ts). The controller reads
-// the current car's tune per physics step, so switching is instant and
-// carries no state (`carHandling` in carSwitches.svelte.ts owns the choice).
-// See CLAUDE.md's "Two setups, one car" section for what GRIP vs DRIFT means
-// and the stability rule (NOTHING here may depend on the SIGN of the slip
-// angle except `driftAlign`).
+// The handling CONTRACT + the cornering model's rules. The TUNE itself is
+// per-car data (the GR86's lives in cars/gr86.ts) — one tune per car, the
+// grip/drift switch is gone: a car ships with the setup it ships with. See
+// CLAUDE.md's "One tune per car" section for what the knobs mean and the
+// stability rule (NOTHING here may depend on the SIGN of the slip angle
+// except `driftAlign`).
 
-/** The knobs that differ between setups. Everything else is the car's hardware
- *  (its spec's `hardware` block). */
+/** The handling knobs. Everything else is the car's hardware (its spec's
+ *  `hardware` block). */
 export interface HandlingTune {
-	/** Shown on the HUD switch and the cluster badge. */
-	label: string;
-
 	// ── Tyres ────────────────────────────────────────────────────────────────
 	/** Longitudinal grip coefficient — what the rear axle can put down before it spins. */
 	tireMuLong: number;
@@ -27,13 +23,6 @@ export interface HandlingTune {
 	handbrakeMuLat: number;
 	/** How much of the lateral tyre full wheelspin costs, 0…1. Applied in drivetrain.ts. */
 	slipGripLoss: number;
-	/**
-	 * TRACTION CONTROL — whether the ECU catches the rears when they run away.
-	 * Does NOT change `tireMuLong`'s limit, only where the SURPLUS goes: on,
-	 * the ECU trims it away; off, it spins the wheels for real and the
-	 * limiter is the only ceiling.
-	 */
-	tractionControl: boolean;
 	/**
 	 * Permanent looseness, 0…1 — the floor under everything else, and a flat
 	 * cut to lateral grip in drivetrain.ts. Keep it SMALL: looseness should
@@ -70,7 +59,8 @@ export interface HandlingTune {
 	/**
 	 * The flick. A locked rear axle lets the car rotate faster than the tyres
 	 * can hold, so this scales the yaw DEMAND as well as the cap. Multiplies
-	 * with `powerYawBoost`, so Drift's value is a small top-up, not the whole flick.
+	 * with `powerYawBoost`, so its value is a top-up on the flick, not the
+	 * whole of it.
 	 */
 	handbrakeYawBoost: number;
 	/**
@@ -101,13 +91,6 @@ export interface HandlingTune {
 	 */
 	maxDriftAngle: number;
 }
-
-/** The setups a car carries. The GR86 ships Grip/Drift; the union is explicit
- *  (it used to be `keyof typeof HANDLING_TUNES`) because tunes now live in the
- *  spec. */
-export type HandlingMode = 'grip' | 'drift';
-
-export const HANDLING_MODES: readonly HandlingMode[] = ['grip', 'drift'];
 
 /** Lateral μ the cornering model runs on — the yaw cap and the sideways bleed share it. */
 export const latMu = (tune: HandlingTune): number => tune.tireMuLat * tune.latGripGain;
