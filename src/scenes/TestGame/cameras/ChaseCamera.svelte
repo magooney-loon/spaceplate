@@ -6,6 +6,7 @@
 	import { carSim } from '../sim/carTelemetry.svelte';
 	import { clamp, damp } from '../sim/carMath';
 	import { HULL_HIT_FLASH_TIME } from '../sim/hullContacts';
+	import ChaseCameraBank from './ChaseCameraBank.svelte';
 
 	// Third-person / bird chase camera for the car.
 	//
@@ -132,6 +133,34 @@
 	 *  grow unbounded over a long scrape. */
 	let grindPhase = 0;
 
+	// ── Corner bank — lean the camera into the turn ───────────────────────
+	// A pure camera-space roll: the chassis is locked to pitch/roll
+	// (`enabledRotations`) and only leans cosmetically through `sim/suspension.ts`,
+	// which banks the MODEL realistically OUT of the corner (onto the loaded
+	// outside wheels). This does the opposite, on purpose — the arcade
+	// "fighter-jet" read that sells a hard turn or a held drift as an event
+	// rather than a lane change, rather than matching the suspension's real
+	// weight transfer. Driven mostly by `carSim.accelLat` (the model's own
+	// lateral g — saturates at the tyre's μ, so a drift held at the limit banks
+	// as hard as it ever will, and it can't reverse sign any faster than the
+	// tyres actually load the other way, which is what keeps a fast wheel-flick
+	// L/R/L/R from reading as a flicker) plus a SMALL touch of `carSim.steer`
+	// for immediacy — small on purpose: steer follows the key, not the tyres,
+	// so weighting it any heavier is what turned a quick correction into a
+	// visible wobble. Both are documented left-positive, so they add rather
+	// than fight. The sign is a feel call, not a measured one; flip
+	// BANK_PER_ACCEL/BANK_PER_STEER if it ever reads backwards. `BANK_RATE` is
+	// deliberately slow — a lean is a low-pass on cornering, not a tracker of
+	// it, and the slower it is the more a rapid alternation gets filtered out
+	// instead of chased. Applying the roll itself is `ChaseCameraBank.svelte`'s
+	// job — see that file for why it can't happen in this task.
+	const BANK_MAX_ROLL = (2.5 * Math.PI) / 180; // rad — a lean, not a barrel roll
+	const BANK_PER_ACCEL = 0.004; // rad per m/s² of accelLat
+	const BANK_PER_STEER = 0.006; // rad per full lock of steer — small, see above
+	const BANK_RATE = 2.5; // 1/s — settles in ~1s: a low-pass, not a tracker
+	/** Smoothed roll, rad — read every frame by ChaseCameraBank.svelte. */
+	let bankRoll = 0;
+
 	// ── Idle orbit — the standstill showcase ─────────────────────────
 	// 5 s at ~zero speed and the rig orbits the car slowly, a full 360 until
 	// the car moves again. trackRotation is GATED OFF while orbiting — the
@@ -246,6 +275,7 @@
 		hitLevel = 0;
 		hitSeq = carSim.hullHitSeq;
 		grindLevel = 0;
+		bankRoll = 0;
 		stoppedFor = 0;
 		orbiting = false;
 		invalidate();
@@ -335,6 +365,16 @@
 					(Math.PI * 2);
 			}
 			const wobble = Math.sin(grindPhase) * grindLevel;
+
+			// ── Corner bank: lean into the turn (constants block above; the roll
+			// itself is applied post-CameraControls by ChaseCameraBank.svelte). ──
+			const bankTarget = clamp(
+				carSim.accelLat * BANK_PER_ACCEL + carSim.steer * BANK_PER_STEER,
+				-BANK_MAX_ROLL,
+				BANK_MAX_ROLL
+			);
+			bankRoll += (bankTarget - bankRoll) * damp(BANK_RATE, delta);
+			if (Math.abs(bankRoll) < 0.0002) bankRoll = 0;
 
 			if (
 				kickLevel > 0.001 ||
@@ -467,3 +507,4 @@
 	minDistance={MIN_DISTANCE}
 	maxDistance={MAX_DISTANCE}
 />
+<ChaseCameraBank {active} roll={() => bankRoll} />
