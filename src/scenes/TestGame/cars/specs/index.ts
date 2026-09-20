@@ -6,7 +6,3 @@
 export { toyota_gr86 } from './toyota_gr86';
 export { audi_rs3 } from './audi_rs3';
 export { nissan_gtir } from './nissan_gtir';
-
-export type { ToyotaGr86 } from './toyota_gr86';
-export type { AudiRs3 } from './audi_rs3';
-export type { NissanGtir } from './nissan_gtir';

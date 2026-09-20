@@ -160,10 +160,13 @@ export type Drivetrain = ReturnType<typeof createDrivetrain>;
 export function createDrivetrain(spec: CarSpec) {
 	const hw = spec.hardware;
 
-	    const state: DrivetrainState = {
-		        // Spawn in NEUTRAL — slotting 1st is the driver's call (and the launch
-		        // ritual starts from N).
-		        gear: 0,
+	/** The box as it spawns — and, through `reset()`, as it comes back. One
+	 *  definition rather than two: the reset used to restate this list field by
+	 *  field, so a state added to the interface had to be remembered twice. */
+	const initialState = (): DrivetrainState => ({
+		// Spawn in NEUTRAL — slotting 1st is the driver's call (and the launch
+		// ritual starts from N).
+		gear: 0,
 		rpm: hw.idleRpm,
 		clutch: 1,
 		slip: 0,
@@ -175,7 +178,9 @@ export function createDrivetrain(spec: CarSpec) {
 		launched: false,
 		launchTier: 0,
 		launch: 0
-	};
+	});
+
+	const state: DrivetrainState = initialState();
 
 	let shiftTimer = 0;
 	let cutTimer = 0;
@@ -508,8 +513,7 @@ export function createDrivetrain(spec: CarSpec) {
 				const rate = throttle > 0 ? hw.freeRevRate : hw.freeDropRate;
 				state.rpm += (free - state.rpm) * damp(rate, dt);
 				if (input.tc || input.auto) {
-					state.rpm +=
-						(Math.max(hw.idleRpm, gearRpm) - state.rpm) * damp(hw.revMatchRate, dt);
+					state.rpm += (Math.max(hw.idleRpm, gearRpm) - state.rpm) * damp(hw.revMatchRate, dt);
 				}
 			} else {
 				const slipping =
@@ -722,19 +726,10 @@ export function createDrivetrain(spec: CarSpec) {
 		prevDrive = 0;
 	}
 
-	    function reset(): void {
-		        state.gear = 0;
-		state.rpm = hw.idleRpm;
-		state.clutch = 1;
-		state.slip = 0;
-		state.spin = 0;
-		state.throttle = 0;
-		state.brake = 0;
-		state.limiting = false;
-		state.shifted = false;
-		state.launched = false;
-		state.launchTier = 0;
-		state.launch = 0;
+	function reset(): void {
+		// Assigned INTO the existing object, never rebound: the controller and the
+		// telemetry hold `drivetrain.state` by reference.
+		Object.assign(state, initialState());
 		shiftTimer = 0;
 		cutTimer = 0;
 		prevUp = false;

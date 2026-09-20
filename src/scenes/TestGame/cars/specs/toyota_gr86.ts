@@ -66,7 +66,7 @@ export const toyota_gr86 = {
 		/** m/s — 1st tops out ~12 m/s of spin at the limiter, 2nd ~10 after a long
 		 *  pull, 3rd cannot spin at all: 10 puts 1st fully lit and 2nd only there
 		 *  if you hold it — with the TC switch on that contrast reads as the lamp,
-	 *  not smoke. */
+		 *  not smoke. */
 		fullSlipSpeed: 10,
 		/** m/s — the GR86's ECU is a patient one: 2 m/s of overspeed before the
 		 *  TC ceiling bites, so the launch lands at `slip` 0.2 and the lamp
@@ -490,5 +490,3 @@ export const toyota_gr86 = {
 		powerPush: 0
 	}
 } as const satisfies CarSpec;
-
-export type ToyotaGr86 = typeof toyota_gr86;

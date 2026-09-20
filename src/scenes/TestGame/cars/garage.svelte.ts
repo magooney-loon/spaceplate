@@ -33,5 +33,3 @@ export const carGarage = $state<{ currentId: CarId }>({ currentId: 'toyota_gr86'
 export function currentCar(): CarSpec {
 	return CARS[carGarage.currentId];
 }
-
-export type { CarSpec } from './types';

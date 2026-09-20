@@ -4,4 +4,4 @@
 
 export { CARS, carGarage, currentCar } from './garage.svelte';
 export type { CarId } from './garage.svelte';
-export type { CarSpec, CarLayout, TorquePoint } from './types';
+export type { CarSpec } from './types';

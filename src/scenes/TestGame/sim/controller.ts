@@ -308,24 +308,10 @@ export function createCarController(spec: CarSpec, world: World) {
 				targetRpm = hw.idleRpm + (revPeak - hw.idleRpm) * Math.exp(-decayRate * t);
 			}
 			carSim.rpm += (targetRpm - carSim.rpm) * damp(12, delta);
-			carSim.speedMs = 0;
-			carSim.gear = drivetrain.state.gear;
-			carSim.slip = 0;
-			carSim.drift = 0;
-			carSim.latLoad = 0;
-			carSim.launch = 0;
-			carSim.throttle = 0;
-			carSim.brake = 0;
-			carSim.handbrake = false;
-			carSim.limiting = false;
-			carSim.nitrous = 0;
-			carSim.nitrousTank = nitrousBottle;
-			// The kit isn't live until the startup sequence hands over — same rule
-			// as the flow above.
-			carSim.nitrousPurge = 0;
-			carSim.accelFwd = 0;
-			carSim.accelLat = 0;
-			parkDebugTelemetry();
+			// The car is held still, and the KIT ISN'T LIVE until the sequence hands
+			// over — hence the zeroed flow and purge, where the parked branch below
+			// publishes its live ones.
+			publishIdleTelemetry(0, 0, 0);
 			publishCarHud(delta, suspension);
 			return;
 		}
@@ -352,33 +338,17 @@ export function createCarController(spec: CarSpec, world: World) {
 				// Engine off — sharp drop to 0, not idling.
 				carSim.rpm += (0 - carSim.rpm) * damp(hw.freeDropRate * 1.5, delta);
 			}
-			// The speed the car IS doing, not a zero: the wheels render this, and a
-			// car still settling the last centimetres of a stop must roll them.
-			// (`speedMs` is pre-friction, i.e. this step's reading — the tyre takes
-			// it out on the way to Rapier, and next step reads the result.)
-			carSim.speedMs = speedMs;
-			carSim.gear = drivetrain.state.gear;
-			carSim.slip = 0;
-			carSim.drift = 0;
-			carSim.latLoad = 0;
-			carSim.launch = 0;
-			carSim.throttle = 0;
-			carSim.brake = 0;
-			carSim.handbrake = false;
-			carSim.limiting = false;
-			carSim.nitrous = nitrousFlow;
-			carSim.nitrousTank = nitrousBottle;
+			// The speed published is the one the car IS doing, not a zero: the wheels
+			// render it, and a car still settling the last centimetres of a stop must
+			// roll them. (`speedMs` is pre-friction, i.e. this step's reading — the
+			// tyre takes it out on the way to Rapier, and next step reads the result.)
+			//
 			// THE parked purge publish — the idle branch is exactly where the vent
 			// gets held (no pedals, body sleeping; the FX and the drain hiss run
 			// off this number from their own always-running tasks).
-			carSim.nitrousPurge = nitrousPurge;
-			// Parked: the suspension has nothing to lean on, so it rests.
-			carSim.accelFwd = 0;
-			carSim.accelLat = 0;
-			// The DEBUG feed parks too — but the springs do NOT: `resetForces` above
-			// cast the four rays, so the panel and the rig still show a parked car
-			// standing on four loaded corners, which is exactly what it is doing.
-			parkDebugTelemetry();
+			publishIdleTelemetry(speedMs, nitrousFlow, nitrousPurge);
+			// After the park, which zeroes the debug feed's own clutch: the disc is
+			// home on a parked car and the rig should say so.
 			carSim.clutch = drivetrain.state.clutch;
 			publishCarHud(delta, suspension);
 			return;
@@ -571,6 +541,40 @@ export function createCarController(spec: CarSpec, world: World) {
 		cornering = clamp(Math.max(latLoad, Math.abs(beta) / tune.maxDriftAngle), 0, 1);
 
 		publishCarHud(delta, suspension);
+	}
+
+	/**
+	 * The instruments on the TWO paths that never reach the drivetrain — STARTUP
+	 * (the car held still while the engine catches) and PARKED. Everything the
+	 * driving model would have published reads as a car doing nothing; the three
+	 * numbers that genuinely differ between the two come in as arguments, and the
+	 * caller is free to correct a field afterwards (the parked branch does, for
+	 * the clutch).
+	 *
+	 * One function rather than the two near-identical field lists this used to be:
+	 * they had to agree on ~15 writes, with nothing checking that they did.
+	 */
+	function publishIdleTelemetry(speed: number, flow: number, purge: number): void {
+		carSim.speedMs = speed;
+		carSim.gear = drivetrain.state.gear;
+		carSim.slip = 0;
+		carSim.drift = 0;
+		carSim.latLoad = 0;
+		carSim.launch = 0;
+		carSim.throttle = 0;
+		carSim.brake = 0;
+		carSim.handbrake = false;
+		carSim.limiting = false;
+		carSim.nitrous = flow;
+		carSim.nitrousTank = nitrousBottle;
+		carSim.nitrousPurge = purge;
+		// Standing still: the suspension has nothing to lean on, so it rests.
+		carSim.accelFwd = 0;
+		carSim.accelLat = 0;
+		// The DEBUG feed parks too — but the springs do NOT: `resetForces` already
+		// cast the four rays, so the panel and the rig still show a parked car
+		// standing on four loaded corners, which is exactly what it is doing.
+		parkDebugTelemetry();
 	}
 
 	/** Zero the debug feed on the paths that never reach the drivetrain (startup

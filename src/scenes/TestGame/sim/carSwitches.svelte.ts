@@ -68,47 +68,49 @@ export const cycleCarView = (): void => {
 };
 
 /**
- * What a press of one of the toggle SLOTS means — the game semantics the engine
- * deliberately has none of. TestGame.svelte wires it up with
+ * What a press of each toggle SLOT means — the game semantics the engine
+ * deliberately has none of.
+ *
+ * A TOTAL map over `CarToggleSlot`, not a chain of `if`s: the chain ended in a
+ * bare fallthrough to the high beam, so adding a slot to `CAR_TOGGLE_SLOTS` and
+ * forgetting to handle it here silently bound it to the headlights. Keyed by the
+ * slot type, a missing entry is a compile error instead.
+ */
+const TOGGLES: Record<CarToggleSlot, () => void> = {
+	lights: () => {
+		carLights.on = !carLights.on;
+	},
+	// Flicking to main beam turns the lamps on — a dead key with the lights off is
+	// just a bug report waiting to happen. Dipping again leaves them on, as in a car.
+	highBeam: () => {
+		carLights.high = !carLights.high;
+		if (carLights.high) carLights.on = true;
+	},
+	tc: () => {
+		carTc.on = !carTc.on;
+	},
+	gearbox: cycleGearboxMode,
+	// Either way the engine is not `ready`: switching ON starts the crank-and-fire
+	// sequence (sim/controller.ts runs it and clears the flag), switching OFF just
+	// stops being ready.
+	ignition: () => {
+		carIgnition.on = !carIgnition.on;
+		carIgnition.ready = false;
+	},
+	view: cycleCarView,
+	units: () => {
+		carUnits.imperial = !carUnits.imperial;
+	}
+};
+
+/**
+ * TestGame.svelte wires this up with
  * `carControls.on(slot, 'press', () => applyCarToggle(slot))`, which fires exactly
  * once per real press: there is no auto-repeat to filter out here any more, because
  * an `on()` edge is not a keydown.
  */
 export const applyCarToggle = (action: CarToggleSlot): void => {
-	if (action === 'lights') {
-		carLights.on = !carLights.on;
-		return;
-	}
-	if (action === 'tc') {
-		carTc.on = !carTc.on;
-		return;
-	}
-	if (action === 'gearbox') {
-		cycleGearboxMode();
-		return;
-	}
-	if (action === 'ignition') {
-		if (carIgnition.on) {
-			carIgnition.on = false;
-			carIgnition.ready = false;
-		} else {
-			carIgnition.on = true;
-			carIgnition.ready = false;
-		}
-		return;
-	}
-	if (action === 'view') {
-		cycleCarView();
-		return;
-	}
-	if (action === 'units') {
-		carUnits.imperial = !carUnits.imperial;
-		return;
-	}
-	// Flicking to main beam turns the lamps on — a dead key with the lights off is
-	// just a bug report waiting to happen. Dipping again leaves them on, as in a car.
-	carLights.high = !carLights.high;
-	if (carLights.high) carLights.on = true;
+	TOGGLES[action]();
 };
 
 // --- Restart ------------------------------------------------------------------

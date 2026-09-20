@@ -1119,6 +1119,19 @@ render every frame**, in a scene `DOCS/testperf.md` already calls fill-bound.
     the suspension for it: the four springs live on the controller's instance
     (the rig reads that directly), and the HUD is a sibling tree that can reach
     neither.
+  - **Both mirrors are parked from a snapshot, not a hand-written list.**
+    `resetCarTelemetry` restores `CAR_SIM_DEFAULTS` / `CAR_DEBUG_DEFAULTS`
+    (spread off each object at module load, before anything writes them) instead
+    of restating every field. The second list is what `carDebugHud.layout` was
+    missing from, and the failure was the module-singleton trap `carPaint`
+    documents: the field was seeded from `currentCar()` at module load and never
+    written again, so a Garage switch left the panel labelling the AWD RS3 `RWD`
+    for the rest of the session. `layout` is now re-read in `publishDebug` — a
+    car fact read per publish, not per frame, and correct however the mount
+    ordering falls. The named exceptions to the snapshot are `rpm` (the snapshot
+    froze the FIRST car's idle) and the two MONOTONIC seqs, `shiftSeq` /
+    `hullHitSeq`, which are read back rather than rewound because consumers sync
+    their edge state to them.
 - **`CarWheels.svelte` deforms vertices in `positionNode`**, so it also writes
   `positionPrevious` — a vertex-deforming material owns both ends of the
   velocity buffer or motion blur smears it against its rest pose. Its steer

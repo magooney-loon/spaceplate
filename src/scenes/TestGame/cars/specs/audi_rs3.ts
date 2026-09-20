@@ -332,5 +332,3 @@ export const audi_rs3 = {
 	// engine doesn't have yet, so the kinematic baseline is the honest tune.
 	tune
 } as const satisfies CarSpec;
-
-export type AudiRs3 = typeof audi_rs3;

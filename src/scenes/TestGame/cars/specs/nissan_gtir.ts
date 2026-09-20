@@ -324,5 +324,3 @@ export const nissan_gtir = {
 	// baseline is the honest tune.
 	tune
 } as const satisfies CarSpec;
-
-export type NissanGtir = typeof nissan_gtir;

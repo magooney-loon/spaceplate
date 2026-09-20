@@ -201,6 +201,20 @@ export const carSim = {
 	hullSlideDirZ: 0
 };
 
+/**
+ * The parked feed — snapshotted at module load, BEFORE anything has written to
+ * it, so `resetCarTelemetry` restores the list this object declares rather than a
+ * second hand-maintained copy of it. That copy is what `carDebugHud.layout` was
+ * missing from, and the failure mode is silent: a field added above and forgotten
+ * below simply carries the last car's reading back into the next mount.
+ *
+ * Two fields are restored from somewhere else instead, at the call site: `rpm`
+ * (the snapshot froze the FIRST car's idle, and a reset happens across a car
+ * SWITCH) and the two monotonic seqs (see their own docs — consumers sync their
+ * edge state to them, so a reset must never rewind one).
+ */
+const CAR_SIM_DEFAULTS = { ...carSim };
+
 /** The HUD's reactive view. Quantised, ~30 Hz. */
 export const carHud = $state({
 	kmh: 0,
@@ -288,6 +302,12 @@ export const carDebugHud = $state({
 	posZ: 0
 });
 
+/** The debug mirror's parked values, same snapshot-at-load trick as
+ *  `CAR_SIM_DEFAULTS`. `load` and `grounded` come back out again because they are
+ *  ARRAYS: handing the same two back on every reset would let `publishDebug`
+ *  write through into the defaults. They are zeroed element-wise instead. */
+const { load: _load, grounded: _grounded, ...CAR_DEBUG_DEFAULTS } = { ...carDebugHud };
+
 const HUD_INTERVAL = 1 / 30;
 let elapsed = 0;
 
@@ -357,6 +377,13 @@ const q = (v: number, places: number): number => {
  *  above, never on its own — one accumulator, so the two mirrors stay in step. */
 function publishDebug(suspension: Suspension): void {
 	const d = carDebugHud;
+	// The driveline the panel is NAMING. Constant for a mount, but this module is
+	// a singleton and the Garage switches cars under it, so the value is re-read
+	// rather than kept from whichever car happened to boot first — which is
+	// exactly what it used to do, labelling the AWD RS3 'RWD' for the whole
+	// session. An object lookup at 30 Hz, and only while the rig is up.
+	const layout = currentCar().layout as string;
+	if (d.layout !== layout) d.layout = layout;
 	const driveForce = Math.round(carSim.driveForce);
 	if (d.driveForce !== driveForce) d.driveForce = driveForce;
 	const resistForce = Math.round(carSim.resistForce);
@@ -424,94 +451,38 @@ export function publishCarPose(body: RapierRigidBody): void {
 	carSim.bodyQuatW = r.w;
 }
 
-/** Park the instruments — used when the scene stops driving (scene switch, blur). */
+/**
+ * Park the instruments — used when the scene stops driving (scene switch, blur).
+ *
+ * Both mirrors are restored from the defaults snapshotted at module load, so
+ * this cannot fall out of step with the field lists above the way a second
+ * hand-written copy of them did. The exceptions are all named explicitly.
+ */
 export function resetCarTelemetry(): void {
-	carSim.speedMs = 0;
-	carSim.rpm = currentCar().hardware.idleRpm;
-	carSim.gear = 0;
-	carSim.slip = 0;
-	carSim.steer = 0;
-	carSim.steerAngle = 0;
-	carSim.drift = 0;
-	carSim.latLoad = 0;
-	carSim.contactFront = 1;
-	carSim.contactRear = 1;
-	carSim.throttle = 0;
-	carSim.brake = 0;
-	carSim.handbrake = false;
-	carSim.limiting = false;
-	carSim.nitrous = 0;
-	// The bottle refills on scene exit to match the fresh component state the
-	// next mount starts with.
-	carSim.nitrousTank = 1;
-	carSim.nitrousPurge = 0;
-	carSim.perfectLaunch = 0;
-	carSim.launchTier = 0;
-	carSim.launch = 0;
-	carSim.accelFwd = 0;
-	carSim.accelLat = 0;
-	carSim.spin = 0;
-	carSim.velLat = 0;
-	carSim.yawRate = 0;
-	carSim.driveForce = 0;
-	carSim.resistForce = 0;
-	carSim.powerLoad = 0;
-	carSim.gripFactor = 0;
-	carSim.loose = 0;
-	carSim.muLat = 0;
-	carSim.clutch = 1;
-	carSim.bodyX = 0;
-	carSim.bodyY = 0;
-	carSim.bodyZ = 0;
-	carSim.bodyQuatX = 0;
-	carSim.bodyQuatY = 0;
-	carSim.bodyQuatZ = 0;
-	carSim.bodyQuatW = 1;
-	carSim.hullContact = false;
-	carSim.hullContactX = 0;
-	carSim.hullContactY = 0;
-	carSim.hullContactZ = 0;
-	carSim.hullNormalX = 0;
-	carSim.hullNormalY = 1;
-	carSim.hullNormalZ = 0;
-	carSim.hullLocalX = 0;
-	carSim.hullLocalY = 0;
-	carSim.hullLocalZ = 0;
-	carSim.hullNormalLocalX = 0;
-	carSim.hullNormalLocalY = 1;
-	carSim.hullNormalLocalZ = 0;
-	carSim.hullHitDv = 0;
-	carSim.hullHitFlash = 0;
-	carSim.hullSlideMs = 0;
-	carSim.hullSlideDirX = 0;
-	carSim.hullSlideDirY = 0;
-	carSim.hullSlideDirZ = 0;
+	// The seqs are MONOTONIC by contract — consumers sync their edge state to
+	// them, so a reset reads them back rather than rewinding them. `rpm` and
+	// `nitrousTank` come from the car rather than the snapshot: a reset happens
+	// across a car SWITCH, and the bottle refills on exit to match the fresh
+	// component state the next mount starts with (which is what the snapshot
+	// holds anyway — it is restated here because it is a decision, not a zero).
+	const { shiftSeq, hullHitSeq } = carSim;
+	Object.assign(carSim, CAR_SIM_DEFAULTS, {
+		rpm: currentCar().hardware.idleRpm,
+		nitrousTank: 1,
+		shiftSeq,
+		hullHitSeq
+	});
 	elapsed = HUD_INTERVAL;
 	publishCarHud(0);
+
 	// The debug mirror has no `suspension` to publish from here (the controller
 	// is being torn down), so it is parked directly — otherwise the panel still
-	// reads the last corner loads on the way back into the scene.
-	const d = carDebugHud;
-	d.driveForce = 0;
-	d.resistForce = 0;
-	d.accelFwd = 0;
-	d.accelLat = 0;
-	d.velLat = 0;
-	d.yawRate = 0;
-	d.spin = 0;
-	d.slip = 0;
-	d.powerLoad = 0;
-	d.gripFactor = 0;
-	d.latLoad = 0;
-	d.loose = 0;
-	d.clutch = 0;
-	d.muLat = 0;
-	d.springForce = 0;
-	d.hullContact = false;
-	d.hullHitDv = 0;
-	d.hullSlideMs = 0;
+	// reads the last corner loads on the way back into the scene. `layout` is
+	// re-read from the car for the same reason `publishDebug` does it: the next
+	// mount may be a different driveline.
+	Object.assign(carDebugHud, CAR_DEBUG_DEFAULTS, { layout: currentCar().layout as string });
 	for (let i = 0; i < 4; i++) {
-		d.load[i] = 0;
-		d.grounded[i] = false;
+		carDebugHud.load[i] = 0;
+		carDebugHud.grounded[i] = false;
 	}
 }
