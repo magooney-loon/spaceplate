@@ -2,10 +2,10 @@
 // itself on the scene fog's distance ramp: the scattering half of fog a `fogNode` can't
 // do (SkyFog.svelte only tints/absorbs). Driven by the weather, not the panel —
 // `$core/skybox/fogScatter.svelte.ts` carries the band/weight; see postprocessing/CLAUDE.md
-// for the full rationale and the shared activity-latch contract with the lens effects.
+// for the full rationale.
 
 import { mix, screenUV, smoothstep } from 'three/tsl';
-import { fogScatterActivity, uFogFar, uFogNear, uFogScatter } from '$core/skybox/fogScatter.svelte';
+import { uFogFar, uFogNear, uFogScatter } from '$core/skybox/fogScatter.svelte';
 import type { EffectDef } from '../types';
 import { mipSource } from './mipSource';
 
@@ -40,24 +40,19 @@ export const fogScatterEffect: EffectDef<FogScatterParams> = {
 	// attachment to the union and never forces a scene-wide shader rebuild.
 	requires: ['viewZ'],
 	params: () => ({ strength: 0.85, blur: 3.2, inputClamp: 8 }),
-	// Enabled by default and free when the weather is dry: with no fog the latch below
-	// keeps it out of the graph entirely, so the cost is exactly zero until it rains.
+	// Enabled by default. Always in the graph — the weatherGrade/afterimage bargain, not
+	// a latch: `weight` below is the weather fog channel times the band, an exact 0 in
+	// clear air, so the mix is a true identity at rest. Trades a full-frame target + a
+	// mip chain regenerated every frame regardless of weather for never rebuilding the
+	// pipeline on a fog transition (postprocessing/CLAUDE.md).
 	defaultEnabled: true,
 	ranges: {
 		strength: { min: 0, max: 1, step: 0.01 },
 		blur: { min: 0.5, max: 6, step: 0.1 },
 		inputClamp: { min: 1, max: 32, step: 0.5 }
 	},
-	// The latch (see fogScatter.svelte.ts): the graph must not contain this effect while
-	// the weather is dry, because an inactive one still allocates a full-frame target and
-	// regenerates its mip chain every frame to be blended at weight zero.
-	structuralTag: () => (fogScatterActivity.active ? 'on' : 'off'),
-	note: 'Blurs the frame into the distance on the scene fog band, so a fog bank softens what is inside it instead of only paling it. Driven by the weather fog channel — it does nothing in clear weather, and leaves the pipeline entirely below a low fog threshold.',
+	note: 'Blurs the frame into the distance on the scene fog band, so a fog bank softens what is inside it instead of only paling it. Driven by the weather fog channel — an exact identity in clear weather, and never a pipeline rebuild.',
 	build: (ctx, u) => {
-		// Dry: fold in nothing. The effect stays "enabled" in the panel — this is the
-		// weather's decision, not the user's.
-		if (!fogScatterActivity.active) return ctx.color;
-
 		// viewZ is negative in front of the camera, so distance along the ray is its
 		// negation. Past the band's far edge (sky included) it clamps to 1.
 		const distance = ctx.viewZ.negate();

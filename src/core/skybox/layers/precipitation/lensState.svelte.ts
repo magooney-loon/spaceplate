@@ -70,24 +70,3 @@ export const uIce = uniform(new Vector3(0.78, 0.87, 0.98));
  * frost would come in from one side of an off-screen ellipse instead of from the edges.
  */
 export const uPatternOffset = uniform(new Vector2(Math.random() * 512, Math.random() * 512));
-
-// ── Activity latches ─────────────────────────────────────────────────────────
-
-/**
- * Whether each lens is doing anything visible. **Reactive on purpose, and the only
- * reactive thing in this module** — the effects declare it as their `structuralTag`, so
- * flipping one rebuilds the pipeline graph with that lens folded in or left out
- * entirely.
- *
- * That rebuild is what buys back the `mesh.visible = false` the mesh version got for
- * free. A dry lens is not merely a cheap blend: the droplet and crystal fields are
- * evaluated THREE times per pixel (the finite differences the refraction normal needs),
- * fullscreen, and no uniform set to zero avoids that. So the graph must not contain the
- * effect at all when it is dry.
- *
- * It is NOT a per-frame quantity — it is a latch that flips at most once per weather
- * transition, which is why `$state` is legitimate here where the descriptor contract
- * forbids it (`../../CLAUDE.md`). The hysteresis in `LensDriver.svelte` is what keeps it
- * from thrashing at the threshold and rebuilding the graph every frame.
- */
-export const lensActivity = $state({ rain: false, snow: false });

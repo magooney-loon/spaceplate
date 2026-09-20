@@ -7,20 +7,13 @@
 	//
 	// Mounts inside the sky group, where the lens meshes used to: the layers only mount
 	// in procedural sky mode, so an HDR/cube environment leaves this unmounted and both
-	// effects build as pass-throughs. (Weather audio lives outside the layers for the
-	// opposite reason — a looping bed must not stop when the env mode changes.)
+	// effects sit at their identity (uWetness/uGrowth hard-set to 0 below). (Weather
+	// audio lives outside the layers for the opposite reason — a looping bed must not
+	// stop when the env mode changes.)
 	import { useTask, useThrelte } from '@threlte/core/webgpu';
 	import { Vector3 } from 'three/webgpu';
 	import { clamp01, descriptor, rainAmount, snowAmount } from '../../model';
-	import {
-		lensActivity,
-		uDropTime,
-		uFlowTime,
-		uGrowth,
-		uIce,
-		uPatternOffset,
-		uWetness
-	} from './lensState.svelte';
+	import { uDropTime, uFlowTime, uGrowth, uIce, uPatternOffset, uWetness } from './lensState.svelte';
 
 	interface Props {
 		/** Forward speed, world units per second, at which the lens reaches full wetness. */
@@ -126,29 +119,30 @@
 	const TELEPORT_SPEED = 480;
 
 	/**
-	 * Hysteresis on the activity latches. `ON` is the visibility threshold; `OFF` sits
-	 * below it so a value hovering at the boundary cannot flip the latch — and each flip
-	 * REBUILDS THE PIPELINE GRAPH (see `lensActivity`), which is a recompile, not a
-	 * uniform write. The gap is wide enough that the one-pole smoothing crosses it in a
-	 * direction and stays there.
+	 * Both lenses are always in the pipeline graph now (postprocessing/CLAUDE.md) — these
+	 * are no longer a structural latch, just the threshold this task uses to decide
+	 * whether either lens is doing anything worth an `invalidate()`, and the moment to
+	 * re-roll the frost pattern. Hysteresis (`ON`/`OFF` pairs) keeps a value hovering at
+	 * the boundary from flapping `visible` every frame.
 	 *
 	 * **THE THRESHOLD IS PER LENS, BECAUSE "VISIBLE" MEANS SOMETHING DIFFERENT IN EACH.**
 	 * Wetness is a plain blend factor, so any positive value tints the frame a little and
 	 * the floor can sit low. Growth is not: it is a POSITION for the growth front, and the
 	 * front only crosses the corners of the frame at about 0.086 (`2.7 - 0.086*2.9` against
 	 * a corner maximum of ~2.45 in snowLens.ts) — below that the effect renders a
-	 * fullscreen pass whose output is provably the input. A shared 0.002 floor kept that
-	 * pass alive for a further ~24 s of melt, every time it stopped snowing, drawing
-	 * nothing (best-practices.md §3.6 measured the tail and called it "≈30s"). These
-	 * numbers are read off the effect's geometry — retune them together.
+	 * fullscreen pass whose output is provably the input. These numbers are read off the
+	 * effect's geometry — retune them together.
 	 */
 	const RAIN_ON = 0.012;
 	const RAIN_OFF = 0.006;
 	const SNOW_ON = 0.1;
 	const SNOW_OFF = 0.07;
 
-	const latch = (value: number, active: boolean, on: number, off: number): boolean =>
-		active ? value > off : value > on;
+	const crossed = (value: number, visible: boolean, on: number, off: number): boolean =>
+		visible ? value > off : value > on;
+
+	let rainVisible = false;
+	let snowVisible = false;
 
 	useTask(
 		(delta) => {
@@ -225,9 +219,9 @@
 			const lit = Math.min(1.05, Math.max(0.12, 0.15 + ambient * 0.5 + intensity * 0.09));
 			uIce.value.set(lit * 0.78, lit * 0.87, lit * 0.98);
 
-			// ── Latches ──────────────────────────────────────────────────────────────
-			const rainActive = latch(wetness, lensActivity.rain, RAIN_ON, RAIN_OFF);
-			const snowActive = latch(growth, lensActivity.snow, SNOW_ON, SNOW_OFF);
+			// ── Visibility ───────────────────────────────────────────────────────────
+			const rainNowVisible = crossed(wetness, rainVisible, RAIN_ON, RAIN_OFF);
+			const snowNowVisible = crossed(growth, snowVisible, SNOW_ON, SNOW_OFF);
 
 			// A NEW ARRANGEMENT EACH TIME THE FROST RETURNS, on the RISING edge specifically.
 			// Re-rolling is a discontinuity — every lobe and every dendrite moves at once —
@@ -235,31 +229,29 @@
 			// growth has only just crossed SNOW_ON, which is exactly where the front reaches
 			// the deepest corner, so coverage is still zero everywhere and the jump is
 			// unobservable.
-			// It also coincides with the graph rebuild the latch triggers, so the new offset
-			// is compiled in rather than swapped under a live frame.
-			if (snowActive && !lensActivity.snow) {
+			if (snowNowVisible && !snowVisible) {
 				uPatternOffset.value.set(Math.random() * 512, Math.random() * 512);
 			}
 
-			lensActivity.rain = rainActive;
-			lensActivity.snow = snowActive;
+			rainVisible = rainNowVisible;
+			snowVisible = snowNowVisible;
 
 			// Same contract the mesh layers had: TSL-animated, so it owns its own
 			// invalidation, gated on actually being live (../../CLAUDE.md).
-			if (rainActive || snowActive) invalidate();
+			if (rainVisible || snowVisible) invalidate();
 		},
 		{ before: autoRenderTask, autoInvalidate: false }
 	);
 
-	// Unmounting (an environment-mode switch) must take the lenses down with it, or the
-	// effects keep building a lens the driver is no longer feeding — frozen at whatever
-	// wetness the last frame of procedural sky happened to have.
+	// Unmounting (an environment-mode switch) must take the lenses down with it: neither
+	// effect has a latch to drop it from the graph, so an HDR/cube environment would
+	// otherwise hold whatever wetness/growth the last procedural frame happened to have.
 	$effect(() => {
 		return () => {
 			uWetness.value = 0;
 			uGrowth.value = 0;
-			lensActivity.rain = false;
-			lensActivity.snow = false;
+			rainVisible = false;
+			snowVisible = false;
 		};
 	});
 </script>

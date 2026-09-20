@@ -26,7 +26,7 @@
 	} from 'three/tsl';
 	import { clamp01, descriptor, lerp, rainAmount } from './model';
 	import { flashState } from './layers/lightning/flashState';
-	import { fogScatterActivity, uFogFar, uFogNear, uFogScatter } from './fogScatter.svelte';
+	import { uFogFar, uFogNear, uFogScatter } from './fogScatter.svelte';
 	import { uWeatherCool, uWeatherDesaturate } from './weatherGrade.svelte';
 
 	interface Props {
@@ -135,16 +135,6 @@
 		inscatterSharpness = 6,
 		flashFogLift = 0.85
 	}: Props = $props();
-
-	/**
-	 * Weather `fog` at which the scattering effect enters and leaves the pipeline graph.
-	 * Two thresholds, not one: every crossing is a graph rebuild, and a weather blend
-	 * settling exactly on a single threshold would rebuild every frame. The ON value is
-	 * where a blurred copy of the frame first differs from it visibly; the OFF value is
-	 * low enough that the fade out finishes before the effect leaves.
-	 */
-	const SCATTER_ON = 0.06;
-	const SCATTER_OFF = 0.02;
 
 	const { scene, camera, autoRenderTask } = useThrelte();
 
@@ -346,13 +336,6 @@
 			uWeatherDesaturate.value = 1 - (1 - precipitation) * (1 - fogWeight * 0.6);
 			uWeatherCool.value = precipitation;
 
-			// The activity latch, with hysteresis so a fog blend cannot rebuild the pipeline
-			// graph on every frame it spends near the threshold.
-			const scattering = fogScatterActivity.active
-				? fogWeight > SCATTER_OFF
-				: fogWeight > SCATTER_ON;
-			if (scattering !== fogScatterActivity.active) fogScatterActivity.active = scattering;
-
 			// Assigned once. See the header note -- swapping either rebuilds nodes.
 			if (scene.fog !== fog) scene.fog = fog;
 			// `fogNode` is not in @types/three's Scene; same `any`-for-gaps rule as above.
@@ -369,13 +352,11 @@
 		return () => {
 			// The scatter effect outlives this component (it is a pipeline chain effect), and
 			// after unmount nothing schedules the task that would decay these — the same rule
-			// the lens drivers follow. Hard-set to rest, and drop the effect from the graph.
+			// the lens drivers follow. Hard-set to rest: neither effect has a latch to drop
+			// it from the graph, so an HDR environment would otherwise hold whatever the
+			// last procedural frame's weather happened to be forever. At rest both ARE the
+			// identity.
 			uFogScatter.value = 0;
-			fogScatterActivity.active = false;
-
-			// Same rule for the grade, which has no latch to drop it from the graph and so
-			// would otherwise hold whatever the last procedural frame's weather happened to
-			// be over an HDR environment forever. At rest these two ARE the identity.
 			uWeatherDesaturate.value = 0;
 			uWeatherCool.value = 0;
 

@@ -2,7 +2,7 @@
 // of it: water beads and runs, ice GROWS. A front creeps inward from the frame edges
 // (thickest in the corners), only advancing/retreating, never sliding. Mechanically
 // the same effect and inherits rainLens.ts's constraints (RTT mip source, `inputClamp`,
-// dry-lens latch) — read that header first.
+// always-on identity-at-rest) — read that header first.
 //
 // Ordered after the rain lens (37 > 36) so during sleet its RTT captures the
 // already-rain-lensed frame and the two composite in the right order.
@@ -30,12 +30,7 @@ import {
 	vec3,
 	vec4
 } from 'three/tsl';
-import {
-	lensActivity,
-	uGrowth,
-	uIce,
-	uPatternOffset
-} from '$core/skybox/layers/precipitation/lensState.svelte';
+import { uGrowth, uIce, uPatternOffset } from '$core/skybox/layers/precipitation/lensState.svelte';
 import type { EffectDef } from '../types';
 import { mipSource } from './mipSource';
 
@@ -81,11 +76,13 @@ export const snowLensEffect: EffectDef<SnowLensParams> = {
 		sparkle: { min: 0, max: 2, step: 0.05 },
 		inputClamp: { min: 0.5, max: 64, step: 0.5 }
 	},
-	structuralTag: () => (lensActivity.snow ? 1 : 0),
+	// Always in the graph — same bargain as rainLens.ts: the final `mix` below is
+	// weighted by `mask`, provably ~0 fullscreen while `uGrowth` sits under the old
+	// visibility threshold, so the effect is a true identity at rest. Trades the
+	// always-on crystal field cost for never rebuilding the pipeline on a snow
+	// transition (postprocessing/CLAUDE.md).
 	note: 'Driven by weather + camera speed, not by these sliders — frost only appears while it is snowing. Unlike rain it has a standing term, so a stationary camera ices over too (LensDriver.svelte).',
 	build: (ctx, u) => {
-		if (!lensActivity.snow) return ctx.color;
-
 		/** Ridged fractal noise: fbm folded about zero, so zero crossings become thin
 		 * bright filaments. A plain function, not `Fn`: no assignment, so no stack
 		 * needed (layers/skyLayer.ts). Position lifted to vec3 explicitly — only

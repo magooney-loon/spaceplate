@@ -30,7 +30,6 @@ import {
 	vec3
 } from 'three/tsl';
 import {
-	lensActivity,
 	uDropTime,
 	uFlowTime,
 	uWetness
@@ -88,14 +87,13 @@ export const rainLensEffect: EffectDef<RainLensParams> = {
 		dropBlur: { min: 0, max: 6, step: 0.1 },
 		inputClamp: { min: 0.5, max: 64, step: 0.5 }
 	},
-	// Weather drives this, not the panel: when dry the effect is left out of the graph
-	// entirely rather than folded in at zero, since a dry lens still evaluates the
-	// droplet field three times per pixel, fullscreen — no uniform value avoids that.
-	structuralTag: () => (lensActivity.rain ? 1 : 0),
+	// Always in the graph — the weatherGrade bargain, not a latch: the final `mix`
+	// below is weighted by `uWetness` alone, an exact 0 when dry, so the effect is a
+	// true identity at rest. The droplet field still evaluates three times per pixel,
+	// fullscreen, whatever the weather — that's the cost this trades for never
+	// rebuilding the pipeline on a rain transition (postprocessing/CLAUDE.md).
 	note: 'Driven by weather + camera speed, not by these sliders — it only appears when you move through rain, and the drops stream outward from the centre of the frame as a windscreen does. Tuning here is the look of the glass; the wetting behaviour lives in LensDriver.svelte.',
 	build: (ctx, u) => {
-		if (!lensActivity.rain) return ctx.color;
-
 		// Everything below is inside `Fn()`: TSL's assignment operators need a stack to
 		// record into and fail silently outside one (layers/skyLayer.ts). Leans on
 		// `.toVar()`/`.addAssign()` to stay diffable against the GLSL original.

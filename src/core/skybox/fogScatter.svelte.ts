@@ -23,12 +23,3 @@ export const uFogFar = uniform(1);
  * never the day curve's own dawn/dusk haze (blurring a clear sky must never happen).
  */
 export const uFogScatter = uniform(0);
-
-/**
- * Whether there is enough fog for the effect to be worth having in the graph at all.
- * **Reactive on purpose, the only reactive thing in this module** — the effect declares
- * it as its `structuralTag`, so flipping it rebuilds the pipeline with the effect folded
- * in or left out entirely (an inactive scatter is still a full-frame target + mip chain
- * generated to blend at weight zero). `SkyFog` applies hysteresis to avoid rebuild churn.
- */
-export const fogScatterActivity = $state({ active: false });
