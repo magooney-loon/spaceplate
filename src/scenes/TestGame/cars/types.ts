@@ -48,6 +48,13 @@ export type CarSpec = {
 	id: string;
 	/** Shown wherever the car is named (HUD, logs). */
 	label: string;
+	/** Absolute URL to the manufacturer's badge (usually
+	 *  `${BASE_URL}models/testgame/<make>.png`) — the Garage HUD card's logo.
+	 *  A transparent PNG, pre-cropped and padded to the same square canvas as
+	 *  every other car's (ImageMagick `-trim -resize -extent`, not CSS) so the
+	 *  cards line up without per-logo styling; the box in Garage.svelte sizes
+	 *  the DISPLAY, not the asset. */
+	logo: string;
 	layout: CarLayout;
 
 	// ── Hardware — the car itself, pure SI. Never varies between setups. ──────

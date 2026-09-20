@@ -88,6 +88,7 @@ const tune: HandlingTune = {
 export const audi_rs3 = {
 	id: 'audi_rs3',
 	label: 'Audi RS3 Sportback',
+	logo: `${BASE_URL}models/testgame/audi.png`,
 	layout: 'awd',
 
 	hardware: {

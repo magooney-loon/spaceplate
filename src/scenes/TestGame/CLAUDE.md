@@ -40,7 +40,10 @@ shops/                  — the TOP BAR shop overlays: paint + change-car, same
   Garage.svelte         — the change-car shop: a TOP BAR, same shape as
                          PaintShop — one card per CARS entry showing exactly
                          what's in its spec (power/torque/weight/top speed/
-                         gear count/layout, nothing invented here). Picking a
+                         gear count/layout, nothing invented here), headed by
+                         the manufacturer's badge (spec.logo — a plain <img>,
+                         pre-cropped to a common square so every card lines up
+                         without per-logo CSS). Picking a
                          car writes carGarage.currentId; Scene.svelte keys the
                          TestGame mount on that id, so the pick REMOUNTS the
                          scene fresh against the new spec (garage.svelte.ts's

@@ -64,6 +64,7 @@
 					class:selected={id === carGarage.currentId}
 					onclick={() => pick(id as CarId)}
 				>
+					<img class="logo" src={spec.logo} alt="" width="320" height="320" />
 					<span class="label">{spec.label}</span>
 					<span class="layout">{LAYOUT_LABEL[spec.layout]}</span>
 					<span class="stats">
@@ -160,6 +161,12 @@
 		color: #fff;
 		border-color: #4a90d9;
 		box-shadow: 0 0 12px rgba(74, 144, 217, 0.4);
+	}
+
+	.logo {
+		width: 2.75rem;
+		height: 2.75rem;
+		object-fit: contain;
 	}
 
 	.label {
