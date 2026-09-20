@@ -81,9 +81,6 @@ const LAYER_RPM = currentCar().audio.layerRpm;
 const PITCH_SCALE = currentCar().audio.pitchScale;
 /** This car's rpm bounds — read once; the car is constant for a session. */
 const HW = currentCar().hardware;
-/** Whether this car voices the turbo at all — the GR86 is naturally aspirated
- *  and must never spool, the same gate CarCluster's boost gauge uses. */
-const HAS_TURBO = currentCar().cluster.hasTurbo;
 
 /** Safety clamps for the derived rates (idle dips and limiter overshoots). */
 const RATE_MIN = 0.7;
@@ -169,28 +166,6 @@ let nitroDrain: VoiceHandle | null = null;
 let nitroPrev = 0;
 let nitroOn = false;
 let nitroReleased = false;
-
-// ── Turbo ────────────────────────────────────────────────────────────────────
-//
-// A spool whine under the bed, gated on the spec's `cluster.hasTurbo` (the
-// GR86 is naturally aspirated and must never voice it — the same gate the
-// boost gauge uses, CarCluster.svelte). Level follows the SAME spool math as
-// that gauge — spool ramps from ~35% of the tacho to full at redline, and only
-// reads once the throttle plate is open — duplicated here because the gauge's
-// number is display-only and must never feed back into anything this module
-// reads. Rate rides the level too: a spooling turbo climbs in pitch with boost.
-
-/** Turbo level at full boost — a whine under the bed, not over it. */
-const TURBO_GAIN = 0.55;
-/** 1/s — attack (spooling up) vs release (the wastegate dumping it). */
-const TURBO_ATTACK = 10;
-const TURBO_RELEASE = 6;
-
-/** The turbo loop's handle — null on a naturally-aspirated car. Created paused
- *  at init. */
-let turboLoop: VoiceHandle | null = null;
-/** Smoothed turbo level — asymmetric slew, the squeal's own shape. */
-let turboLevel = 0;
 
 // ── Ignition ─────────────────────────────────────────────────────────────────
 //
@@ -370,7 +345,6 @@ export const initCarAudio = (carScope: AudioScope, at: CarAnchors): void => {
 	nitroDrain = scope.loop(carSounds.nitroDrain.soundId, { at: at.engineBay, paused: true });
 	squealLoop = scope.loop(carSounds.squeal.soundId, { at: at.tyres, paused: true });
 	scrapeLoopVoice = scope.loop(carSounds.scrapeLoop.soundId, { at: at.sills, paused: true });
-	if (HAS_TURBO) turboLoop = scope.loop(carSounds.turbo.soundId, { at: at.engineBay, paused: true });
 };
 
 /**
@@ -386,8 +360,6 @@ export const detachCarAudio = (): void => {
 	nitroDrain = null;
 	squealLoop = null;
 	scrapeLoopVoice = null;
-	turboLoop = null;
-	turboLevel = 0;
 	turnOn = null;
 	cranking = false;
 	nitroPrev = 0;
@@ -529,20 +501,6 @@ export const tickCarAudio = (delta: number): void => {
 		nitroDrain.volume = flow * NITRO_GAIN;
 		if (flow > 0.01 && audible) nitroDrain.resume();
 		else nitroDrain.pause();
-	}
-
-	// ── Turbo: spool rides the tacho, boost rides the throttle — CarCluster's
-	// own boost-gauge math, duplicated because that number is display-only. ──
-	if (turboLoop) {
-		const revFrac = clamp(carSim.rpm / HW.maxRpm, 0, 1);
-		const spool = clamp((revFrac - 0.35) / 0.65, 0, 1);
-		const boost = carSim.throttle * spool;
-		turboLevel += (boost - turboLevel) * damp(boost > turboLevel ? TURBO_ATTACK : TURBO_RELEASE, delta);
-		if (boost === 0 && turboLevel < 0.01) turboLevel = 0;
-		turboLoop.volume = turboLevel * TURBO_GAIN;
-		turboLoop.rate = 0.85 + 0.5 * turboLevel;
-		if (turboLevel > AUDIBLE_WEIGHT && audible) turboLoop.resume();
-		else turboLoop.pause();
 	}
 
 	// ── Tyres: the loosest source wins, eased, then the loop rides it. ─────────
