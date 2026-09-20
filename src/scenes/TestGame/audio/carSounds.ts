@@ -63,6 +63,9 @@ export const carSounds = defineSounds({
 	nitroDrain: { url: 'engine/nitrosdrain.opus', ...CAR_POS },
 	nitroStart: { url: 'engine/nitrosstart.opus', volume: SHOT_GAIN, ...CAR_POS },
 	nitroEnd: { url: 'engine/nitrosend.opus', volume: SHOT_GAIN, ...CAR_POS },
+	// Turbo whine — only voiced for cars with `cluster.hasTurbo` (carAudio.ts);
+	// level rides the same spool math as the boost gauge (CarCluster.svelte).
+	turbo: { url: 'engine/turbo.opus', ...CAR_POS },
 	// Ignition: M fires the crank, N the cut.
 	turnOn: { url: 'engine/turnon.opus', volume: SHOT_GAIN, ...CAR_POS },
 	turnOff: { url: 'engine/turnoff.opus', volume: SHOT_GAIN, ...CAR_POS },
