@@ -5,11 +5,11 @@
 	// renders nothing and owns no state anyone else can see; all it does is turn
 	// TWO independent sources into one eased boost value:
 	//   - `carSim.nitrous` (the already-ramped spray flow) — the big, deliberate smear.
-	//   - road speed above `SPEED_START_KMH` — a much smaller trail that builds in as
-	//     the car gets properly fast, so the sense of speed doesn't only exist while
-	//     spraying nitrous. The two ADD (a nitrous burst at speed is the biggest smear
-	//     the car ever shows), each on its OWN easing so a gearshift's momentary lift
-	//     off the accelerator can't flicker the speed half.
+	//   - road speed above `SPEED_START_KMH` — a slightly lighter trail that builds in
+	//     as the car gets properly fast, so the sense of speed doesn't only exist
+	//     while spraying nitrous. The two ADD (a nitrous burst at speed is the biggest
+	//     smear the car ever shows), each on its OWN easing so a gearshift's momentary
+	//     lift off the accelerator can't flicker the speed half.
 	//
 	// WHY A COMPONENT AND NOT A PHYSICS-TASK LINE IN TestGame.svelte: the write is
 	// per RENDER frame, not per physics step (a uniform written more than once per
@@ -48,12 +48,18 @@
 	const SPEED_START_KMH = 70;
 	/** km/h where it reaches its own ceiling — short of any car's governed top speed,
 	 * so the trail is fully in by the time a straight actually feels fast. */
-	const SPEED_FULL_KMH = 180;
-	/** Boost at max speed — a fraction of the nitrous ceiling: this is ambient, the
-	 * spray is still the moment. */
-	const SPEED_MAX_BOOST = 0.3;
-	/** Seconds to build in — gradual on purpose, it should read as accumulating speed. */
-	const SPEED_ATTACK_TAU = 1.2;
+	const SPEED_FULL_KMH = 150;
+	/** Boost at max speed — close to the nitrous ceiling rather than a token fraction
+	 * of it: the node is BRIGHT-PASS feedback (only pixels above ~0.1 linear persist
+	 * at all), and trail length scales like 1/(1-damp), so 0.3 here was too thin an
+	 * exponential to read as anything on an ordinary daylit frame — it only ever
+	 * showed on the very brightest highlights, and even those cleared in a couple of
+	 * frames. 0.6 gives the same kind of persistence nitrous's own high end does. */
+	const SPEED_MAX_BOOST = 0.6;
+	/** Seconds to build in — still gradual (it should read as accumulating speed, not
+	 * snapping in), but fast enough to actually be seen before the car changes speed
+	 * again. */
+	const SPEED_ATTACK_TAU = 0.5;
 	/** Seconds to fade once the car drops back under the threshold. */
 	const SPEED_RELEASE_TAU = 0.8;
 

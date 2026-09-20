@@ -117,7 +117,7 @@ schedules the task again to decay them.
   contract, one extra wrinkle: the driver also owns a RESOURCE (the snapshot `rtt()`),
   which the effect hands over on every build and `Renderer.svelte` clears to `null`
   before every rebuild — a node that dies with its build must never be poked afterwards.
-- **`afterimage`** — nitrous trails PLUS a small road-speed trail (TestGame's
+- **`afterimage`** — nitrous trails PLUS a road-speed trail (TestGame's
   `CarAfterimage.svelte` writes `uAfterimageBoost` from `carSim.nitrous` and
   `carSim.speedMs` — two independently-eased sources that ADD, so a nitrous burst
   at speed is the deepest smear the car ever shows). The OPPOSITE latch
