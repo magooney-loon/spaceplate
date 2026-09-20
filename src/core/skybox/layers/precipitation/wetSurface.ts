@@ -65,7 +65,7 @@ import {
 	positionWorld,
 	sin,
 	smoothstep,
-	vec3
+	vec4
 } from 'three/tsl';
 import { uPuddles, uRippleTime, uWetness } from './wetSurface.svelte';
 
@@ -170,10 +170,22 @@ export const applyWetness = <T extends THREE.Material>(
 
 	// The DRY base. An existing node wins, so a material that already computes its own
 	// albedo (a texture, a vertex colour, DemoScene's reflector emissive sibling) is
-	// wrapped rather than thrown away; otherwise `materialColor`/`materialRoughness` read
-	// the material's own uniform, which is what a plain `color`/`roughness` assignment
-	// sets. This is why the call has to come last.
-	const dryColor = (material as any).colorNode ?? materialColor;
+	// wrapped rather than thrown away; otherwise `materialColor`/`materialRoughness` are
+	// what the material would have used anyway. This is why the call has to come last.
+	//
+	// BOTH OF THOSE ACCESSORS ALREADY FOLD IN THEIR MAPS — `materialColor` is the vec4
+	// diffuse with `map` (and its alpha) in it, `materialRoughness` multiplies in
+	// `roughnessMap.g` — so wrapping them preserves a textured material's textures. That
+	// is what makes this safe to point at a GLB.
+	//
+	// AND `colorNode` REPLACES THE WHOLE vec4, ALPHA INCLUDED. `NodeMaterial.setup()` does
+	// `diffuseColor.assign(this.colorNode ? vec4(this.colorNode) : materialColor)` and
+	// then runs alphaTest against `diffuseColor.a`, so handing back a vec3 pads the alpha
+	// to a constant and every alpha-CUT material silently loses its cutout — foliage,
+	// decals, chain-link and grates all render as solid quads. Wrapped in `vec4` here and
+	// recombined with `.a` untouched below: multiply rgb only, carry alpha through, the
+	// same rule `postprocessing/effects/vignette.ts` states for the chain.
+	const dryColor = vec4((material as any).colorNode ?? materialColor);
 	const dryRoughness = (material as any).roughnessNode ?? materialRoughness;
 
 	// WHERE WATER CAN SIT. The geometric normal against world up — see the header on why
@@ -208,7 +220,7 @@ export const applyWetness = <T extends THREE.Material>(
 	// `weatherGrade`'s cool tint follows).
 	const filmDarken = mix(float(1), float(o.darken), uWetness);
 	const poolDarken = mix(float(1), float(o.puddleDarken), puddle);
-	(material as any).colorNode = vec3(dryColor).mul(filmDarken).mul(poolDarken);
+	(material as any).colorNode = vec4(dryColor.rgb.mul(filmDarken).mul(poolDarken), dryColor.a);
 
 	// ── Roughness ────────────────────────────────────────────────────────────────
 	// Dry → film → puddle, in that order, so a puddle on an already-wet surface reaches

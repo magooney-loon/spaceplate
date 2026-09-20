@@ -329,6 +329,16 @@ has neither the normal nor the BRDF to do it with.
   across. That copy happens ONCE, on first build, onto a DIFFERENT object, which is the
   one real constraint: call it before the material has rendered a frame, and don't
   expect a later assignment to the original to take.
+- **`colorNode` REPLACES THE WHOLE vec4 DIFFUSE, ALPHA INCLUDED** — the trap this
+  function fell into on its first outing. `NodeMaterial.setup()` does
+  `diffuseColor.assign(this.colorNode ? vec4(this.colorNode) : materialColor)` and then
+  runs alphaTest against `diffuseColor.a`, so returning a **vec3** pads the alpha to a
+  constant and every alpha-CUT material loses its cutout: the track's foliage rendered
+  as solid shards, because each leaf quad stopped being cut to a leaf. RGB survived
+  (`materialColor` folds in `map`), which is what made it look like a shading bug rather
+  than an alpha one. Multiply rgb, carry `.a` through — the rule `vignette.ts` already
+  states for the chain. `materialRoughness` needs no equivalent care: it folds in
+  `roughnessMap.g` and is a float either way.
 - **`applyWetness` is idempotent, and that is load-bearing rather than tidy.** It takes
   the material's EXISTING node as its dry base, so a second call makes the first call's
   output the second's input and the surface darkens again — permanently, and only on a
