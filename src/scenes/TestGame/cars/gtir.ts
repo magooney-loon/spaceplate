@@ -45,6 +45,9 @@ const tune: HandlingTune = {
 	// Modest tyres for a ~1.2 t hot hatch: the driven fronts also do the
 	// steering, so their grip budget is spent twice over.
 	tireMuLong: 1.0,
+	// Equal to the static cap — the plain physical model (no kinetic grease
+	// until FWD handling feel is written).
+	slideMuLong: 1.0,
 	tireMuLat: 1.05,
 	latGripGain: 1.5,
 	handbrakeMuLat: 0.4,

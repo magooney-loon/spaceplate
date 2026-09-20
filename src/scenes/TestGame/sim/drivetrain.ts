@@ -50,8 +50,11 @@ export interface DriveInput {
 	 * real and the limiter is the only ceiling. */
 	tc: boolean;
 	/** 0..1 — how hard the car is cornering (the controller's lateral load / slip
-	 * angle, whichever is loosest, one step stale). The AUTOMATIC only: a box that
-	 * changes gear mid-bend unsettles a car that is already using its tyres. */
+	 *  angle, whichever is loosest, one step stale). TWO consumers: the AUTOMATIC
+	 * (a box that changes gear mid-bend unsettles a car that is already using
+	 * its tyres) and the sliding tyre's KINETIC μ — the drift grease
+	 * (`slideMuLong`) blends in with this, so drifts carry speed while
+	 * straight-line burnouts keep the plain static μ. */
 	cornering: number;
 	/** 0..1 — nitrous flow reaching the engine this step. The SCENE owns the
 	 * bottle and the throttle-switch gating (Shift alone does nothing); this is just
@@ -596,18 +599,32 @@ export function createDrivetrain(spec: CarSpec) {
 		const drivenLoad = drivenAxleLoad(spec, prevDrive);
 		const traction = input.handbrake ? 0 : tune.tireMuLong * drivenLoad;
 
-		// What the tyre hands the road. Gripping, it passes the engine's request up to
-		// the limit. SLIDING, it gives full μ along the way the wheels are turning and
-		// the engine has no say at all — which is why a burnout keeps pulling through
-		// the limiter's fuel cut instead of braking the car (see the header).
+		const sliding = Math.abs(state.spin) > HOOKED;
+		const plant = 1 + launchBoost * hw.launchGripGain;
+		// What the tyre hands the road. GRIPPING, it passes the engine's request up
+		// to the static limit. SLIDING, it gives its KINETIC μ along the way the
+		// wheels are turning, and the engine has no say at all — which is why a
+		// burnout keeps pulling through the limiter's fuel cut instead of braking
+		// the car (see the header).
+		// The kinetic μ is the ARCADE GREASE, blended in by how hard the car is
+		// CORNERING (`input.cornering`): a straight-line burnout runs the plain
+		// static `tireMuLong` — the wheel only keeps accelerating while the engine
+		// asks for more than the tyre takes, so the burnout gate below ~0.78 stays
+		// the burnout gate — while a drift gets up to `slideMuLong` (the GR86's
+		// 0.95 against a 0.75 cap), so a lit rear keeps ~95% of the push and the
+		// slide CARRIES SPEED instead of bogging. Flat μk above the static cap
+		// everywhere was tried first and killed the standing burnout: at standstill
+		// the slipping clutch passes only ~4.7 kN against 0.95 × 5.9 kN of kinetic
+		// push, so the surplus scrubbed the wheel back down to hooked and the car
+		// just launched.
 		// During a rev-match launch the driven-axle μ gains up to the spec's
 		// `launchGripGain` — the plant that makes the launch HARDER with depth in
 		// the window (the request at full bite is already past the tyre, so grip
 		// is the cap on thrust).
-		const sliding = Math.abs(state.spin) > HOOKED;
-		const plant = 1 + launchBoost * hw.launchGripGain;
+		const kinetic =
+			tune.tireMuLong + (tune.slideMuLong - tune.tireMuLong) * clamp(input.cornering, 0, 1);
 		const driveForce = sliding
-			? Math.sign(state.spin) * traction * plant
+			? Math.sign(state.spin) * kinetic * drivenLoad * plant
 			: clamp(requested, -traction * plant, traction * plant);
 
 		// Everything the engine asked for beyond what the tyre took goes into WHEEL

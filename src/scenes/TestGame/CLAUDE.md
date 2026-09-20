@@ -539,7 +539,15 @@ powerLoad)`, or 1 on the handbrake** — whichever source is loosest wins, they 
   `clutchMinBite` 0.45 × ~244 Nm × the 1st reduction ≈ 4.7 kN against
   `muLong × 5.9 kN` of static rear traction, so below ~0.78 the rears light up
   from a standstill (at 1.0 the car hooked and just launched). 2nd steps out
-  under WOT, 3rd+ hooks (the transfer term wins up there). `slipGripLoss` 0.62
+  under WOT, 3rd+ hooks (the transfer term wins up there). **Once lit AND
+  cornering, the tyre pushes at `slideMuLong` 0.95 — the kinetic μ run ABOVE
+  0.75 static and blended in across `input.cornering`** (backwards physics,
+  deliberate): straight-line burnouts keep the plain static μ — a standstill
+  wheel only keeps spinning while the engine out-asks the tyre, and at 0.95
+  everywhere the slipping clutch's ~4.7 kN couldn't out-ask 5.6 kN of kinetic
+  push, so the wheel scrubbed back down and the car launched — while a drift
+  gets ~95% of the push, so slides CARRY SPEED instead of bogging.
+  `slipGripLoss` 0.62
   costs ~62% of the lateral tyre under total wheelspin; the TC switch (G, ships
   off) is the ECU's half — on, spin tops out at the spec's `tcSlipSpeed` (2 m/s,
   slip 0.2, ~12% of that cost).

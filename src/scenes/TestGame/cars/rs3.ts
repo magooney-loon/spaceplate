@@ -34,9 +34,12 @@ import type { HandlingTune } from '../sim/handling';
 
 const tune: HandlingTune = {
 	// AWD puts all four tyres to work under power — more longitudinal bite
-	// than the GR86's RWD 1.0, and enough lateral grip that a 1575 kg car
+	// than the GR86's RWD 0.75, and enough lateral grip that a 1575 kg car
 	// still corners like the performance AWD hatch it is.
 	tireMuLong: 1.15,
+	// Equal to the static cap — the plain physical model (no kinetic grease
+	// until AWD handling feel is written).
+	slideMuLong: 1.15,
 	tireMuLat: 1.15,
 	latGripGain: 1.55,
 	handbrakeMuLat: 0.42,

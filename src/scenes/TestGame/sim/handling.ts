@@ -11,6 +11,15 @@ export interface HandlingTune {
 	// ── Tyres ────────────────────────────────────────────────────────────────
 	/** Longitudinal grip coefficient — what the rear axle can put down before it spins. */
 	tireMuLong: number;
+	/** Longitudinal μ once the tyre is SLIDING and the car is CORNERING — the
+	 *  ARCADE GREASE. Real physics runs kinetic below the static cap; drift
+	 *  games run it at or above, so a lit rear keeps its push and drifts carry
+	 *  speed instead of bogging. Blended in by the drivetrain across the input's
+	 *  `cornering` (0 = straight → the plain `tireMuLong`, so the BURNOUT GATE
+	 *  still works — a standstill wheel only keeps spinning while the engine
+	 *  asks for more than the tyre takes; 1 = full drift → this). Equal to
+	 *  `tireMuLong` = the plain physical model. */
+	slideMuLong: number;
 	/** Lateral grip coefficient. The real GR86 is 1.1. */
 	tireMuLat: number;
 	/**

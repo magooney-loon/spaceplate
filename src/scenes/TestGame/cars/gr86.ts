@@ -404,6 +404,16 @@ export const gr86 = {
 		// term wins up there — 3rd's full WOT ≈ 4.5 kN against 0.75 × ~6.7 kN once
 		// the load arrives).
 		tireMuLong: 0.75,
+		// The KINETIC μ, ABOVE the static cap on purpose (real physics runs it
+		// below), blended in by CORNERING in the drivetrain: a straight-line
+		// burnout runs the plain 0.75 — the wheel only keeps accelerating while
+		// the engine out-asks the tyre, so the burnout gate survives — while a
+		// drift gets up to 0.95 of push, so slides CARRY SPEED instead of bogging
+		// down mid-corner. Flat 0.95 everywhere was tried first and killed the
+		// standing burnout: at standstill the slipping clutch passes only ~4.7 kN
+		// against 0.95 × 5.9 kN of kinetic push, so the wheel scrubbed back down
+		// to hooked and the car just launched.
+		slideMuLong: 0.95,
 		// The real car's 1.1 — same number both old tunes carried.
 		tireMuLat: 1.1,
 		// Up from the real car's 1.3 — a friendlier, more forgiving cornering margin
