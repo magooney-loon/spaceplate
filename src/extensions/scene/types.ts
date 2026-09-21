@@ -1,11 +1,6 @@
 export const extensionScope = 'scene';
 
-export type SceneType = 'mainMenu' | 'demoScene';
-
-export type ScenePresets = {
-	postprocessing?: string;
-	skybox?: string;
-};
+export type SceneType = 'mainMenu' | 'demoScene' | 'testGame';
 
 export type SceneConfig = {
 	id: SceneType;
@@ -14,7 +9,15 @@ export type SceneConfig = {
 };
 
 export type SceneState = {
+	/** The MOUNTED 3D scene — what `Scene.svelte`'s `{#if}` routing follows. */
 	currentScene: SceneType;
+	/**
+	 * The scene the player can actually SEE, which lags `currentScene` for the whole
+	 * covered part of a transition: the swap happens at the start of the load and the
+	 * reveal is at the end of it, so between the two a scene is mounted but hidden. HUDs
+	 * route on this — see `src/SceneHud.svelte`.
+	 */
+	visibleScene: SceneType;
 	previousScene: SceneType | null;
 	isTransitioning: boolean;
 };
@@ -25,10 +28,8 @@ export type ExtensionActions = {
 	setScene: (scene: SceneType) => void;
 	goToMainMenu: () => void;
 	goToDemoScene: () => void;
+	goToTestGame: () => void;
 	goBack: () => void;
-	transitionTo: (scene: SceneType, transitionDuration?: number) => Promise<void>;
-	setScenePreset: (sceneId: SceneType, type: 'postprocessing' | 'skybox', presetId: string | null) => void;
-	clearScenePreset: (sceneId: SceneType, type: 'postprocessing' | 'skybox') => void;
-	setGlobalPreset: (type: 'postprocessing' | 'skybox', presetId: string | null) => void;
-	clearGlobalPreset: (type: 'postprocessing' | 'skybox') => void;
+	/** Warm swap under the veil: cover → setScene → first rendered frame → grace. */
+	transitionTo: (scene: SceneType) => Promise<void>;
 };

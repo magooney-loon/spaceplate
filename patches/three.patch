@@ -1,0 +1,338 @@
+diff --git a/examples/jsm/tsl/display/GodraysNode.js b/examples/jsm/tsl/display/GodraysNode.js
+index b76c4d7383497c4b3499c34bf3ae20d1ae9b94a0..b933956f52db61a20106fa9ad08da727e71784bf 100644
+--- a/examples/jsm/tsl/display/GodraysNode.js
++++ b/examples/jsm/tsl/display/GodraysNode.js
+@@ -1,5 +1,7 @@
+-import { Frustum, Matrix4, RenderTarget, Vector2, RendererUtils, QuadMesh, TempNode, NodeMaterial, NodeUpdateType, Vector3, Plane } from 'three/webgpu';
+-import { cubeTexture, clamp, viewZToPerspectiveDepth, logarithmicDepthToViewZ, float, Loop, max, Fn, passTexture, uv, dot, uniformArray, If, getViewPosition, uniform, vec4, add, interleavedGradientNoise, screenCoordinate, round, mul, uint, mix, exp, vec3, distance, pow, reference, lightPosition, vec2, bool, texture, perspectiveDepthToViewZ, lightShadowMatrix, context } from 'three/tsl';
++import { Frustum, HalfFloatType, Matrix4, RenderTarget, Vector2, RendererUtils, QuadMesh, TempNode, NodeMaterial, NodeUpdateType, Vector3, Vector4, Plane } from 'three/webgpu';
++// PATCH (spaceplate): `add`, `clamp`, `mul` and `round` dropped — the per-pixel sample-count
++// roll and the hard density clamp that used them are both gone (see the raymarch in setup()).
++import { cubeTexture, viewZToPerspectiveDepth, logarithmicDepthToViewZ, float, Loop, max, Fn, passTexture, uv, dot, uniformArray, If, getViewPosition, uniform, vec4, interleavedGradientNoise, screenCoordinate, uint, mix, exp, vec3, distance, pow, reference, lightPosition, vec2, bool, texture, perspectiveDepthToViewZ, lightShadowMatrix, context } from 'three/tsl';
+ 
+ const _quadMesh = /*@__PURE__*/ new QuadMesh();
+ const _size = /*@__PURE__*/ new Vector2();
+@@ -15,6 +17,9 @@ const _DIRECTIONS = [
+ 
+ const _PLANES = _DIRECTIONS.map( () => new Plane() );
+ const _SCRATCH_VECTOR = new Vector3();
++// PATCH (spaceplate): a second scratch, so the SunLight branch can hold the camera's
++// forward vector and its world position at the same time.
++const _SCRATCH_VECTOR_B = new Vector3();
+ const _SCRATCH_MAT4 = new Matrix4();
+ const _SCRATCH_FRUSTUM = new Frustum();
+ 
+@@ -39,7 +44,8 @@ let _rendererState;
+  *
+  * Limitations:
+  *
+- * - Only point and directional lights are currently supported.
++ * - Only point and directional lights are currently supported. PATCH (spaceplate):
++ * cascaded `SunLight`s (three/addons) are supported too — see the notes in the constructor.
+  * - The effect requires a full shadow setup. Meaning shadows must be enabled in the renderer,
+  * 3D objects must cast and receive shadows and the main light must cast shadows.
+  *
+@@ -191,6 +197,69 @@ class GodraysNode extends TempNode {
+ 		this._fNormals = uniformArray( _DIRECTIONS.map( () => new Vector3() ) );
+ 		this._fConstants = uniformArray( _DIRECTIONS.map( () => 0 ) );
+ 
++		// ── PATCH (spaceplate): SunLight (cascaded shadow map) support ────────────────
++		//
++		// Upstream handles `isPointLight` and `isDirectionalLight` only. three r186's
++		// `SunLight` is neither (it `extends Light` and sets `isSunLight`), so both the
++		// ray-box setup in `_updateLightParams()` and the shadow lookup in `inShadow()`
++		// fell through to no branch at all — and a TSL build failure is silent, so the
++		// symptom is a blank material rather than a throw.
++		//
++		// The deeper difference is that `SunLightShadow` is TWO CASCADES IN ONE ATLAS
++		// (`_cascadeCount = 2`), where this node assumes one map and one matrix. Each
++		// cascade carries its own world→atlas-UV matrix (`getMatrix( i )`, which already
++		// bakes in both the [0,1] remap and the atlas tile offset) and its own view-depth
++		// range (`_cascadeData[ i ]` = `( begin, end, fadeStart, 0 )`), so the raymarch has
++		// to pick the cascade PER SAMPLE from the sample's own view depth.
++
++		/**
++		 * Whether the light is a cascaded `SunLight`.
++		 *
++		 * @private
++		 * @type {boolean}
++		 */
++		this._isSunLight = light.isSunLight === true;
++
++		/**
++		 * The inverse world matrix of the scene's camera — the cascade split is defined in
++		 * VIEW depth, so each raymarch sample has to be taken back into view space to pick
++		 * its cascade. Holds the camera's live `Matrix4` by reference, exactly as
++		 * `_cameraMatrixWorld` above does, so three's own per-frame update carries it.
++		 *
++		 * @private
++		 * @type {UniformNode<mat4>}
++		 */
++		this._cameraMatrixWorldInverse = uniform( camera.matrixWorldInverse );
++
++		/**
++		 * Per-cascade world→shadow-atlas matrices, mirrored from `shadow.getMatrix( i )`
++		 * each frame.
++		 *
++		 * @private
++		 * @type {Array<UniformNode<mat4>>}
++		 */
++		this._cascadeMatrices = [];
++
++		/**
++		 * Per-cascade `( begin, end, fadeStart, 0 )` view depths, mirrored from
++		 * `shadow._cascadeData[ i ]` each frame.
++		 *
++		 * @private
++		 * @type {Array<UniformNode<vec4>>}
++		 */
++		this._cascadeUniforms = [];
++
++		if ( this._isSunLight ) {
++
++			for ( let i = 0, l = light.shadow.getViewportCount(); i < l; i ++ ) {
++
++				this._cascadeMatrices.push( uniform( new Matrix4() ) );
++				this._cascadeUniforms.push( uniform( new Vector4() ) );
++
++			}
++
++		}
++
+ 		/**
+ 		 * The light the godrays are rendered for.
+ 		 *
+@@ -213,7 +282,15 @@ class GodraysNode extends TempNode {
+ 		 * @private
+ 		 * @type {RenderTarget}
+ 		 */
+-		this._godraysRenderTarget = new RenderTarget( 1, 1, { depthBuffer: false } );
++		// PATCH (spaceplate): HALF FLOAT, not the RenderTarget default (UnsignedByteType).
++		// This buffer holds a continuous accumulation — a shaft is a smooth ramp spread
++		// across most of the screen — and at 8 bits it has 256 levels for a signal that
++		// rarely uses more than the bottom fifth of the range, i.e. ~50 usable steps. The
++		// result is exactly what it sounds like: the gradient inside every beam quantises
++		// into visible contour bands, and neither the bilateral blur nor the composite can
++		// put back a level the buffer never stored. `bilateralBlur` copies its input's type
++		// onto its own targets, so this carries through the whole chain.
++		this._godraysRenderTarget = new RenderTarget( 1, 1, { depthBuffer: false, type: HalfFloatType } );
+ 		this._godraysRenderTarget.texture.name = 'Godrays';
+ 
+ 		/**
+@@ -339,6 +416,64 @@ class GodraysNode extends TempNode {
+ 
+ 			}
+ 
++		} else if ( this._isSunLight ) {
++
++			// PATCH (spaceplate). Mirror the live cascade fit into the shader's uniforms.
++			// `getMatrix( i )` is already the full world→atlas-UV transform (LightShadow's
++			// `_updateMatrix` folds the 0.5 remap AND the viewport tile into it), and
++			// `_cascadeData[ i ]` is the cascade's ( begin, end, fadeStart, 0 ) view depths.
++
++			const shadow = light.shadow;
++
++			for ( let i = 0; i < this._cascadeMatrices.length; i ++ ) {
++
++				this._cascadeMatrices[ i ].value.copy( shadow.getMatrix( i ) );
++				this._cascadeUniforms[ i ].value.copy( shadow._cascadeData[ i ] );
++
++			}
++
++			// THE MARCH BOUNDS ARE THE VIEW FRUSTUM, not a light-space box, and that is the
++			// substantive difference from the directional branch. `SunLightShadow` fits its
++			// cascades to the VIEW CAMERA (that is the whole point of it — see
++			// core/skybox/CLAUDE.md), so the region with shadow information in it is the
++			// camera's own frustum truncated at `shadow.camera.far`, not a box parked around
++			// the light. Taking the light's ortho box here would march huge tracts of space
++			// the atlas says nothing about.
++
++			const camera = this._camera;
++
++			_SCRATCH_MAT4.multiplyMatrices( camera.projectionMatrix, camera.matrixWorldInverse );
++			_SCRATCH_FRUSTUM.setFromProjectionMatrix( _SCRATCH_MAT4, camera.coordinateSystem );
++
++			// Same sign convention as the directional branch: three's frustum planes point
++			// INWARD (inside is positive), and `sdPlane` wants inside to be NEGATIVE.
++
++			for ( let i = 0; i < 6; i ++ ) {
++
++				const plane = _SCRATCH_FRUSTUM.planes[ i ];
++
++				this._fNormals.array[ i ].copy( plane.normal ).multiplyScalar( - 1 );
++				this._fConstants.array[ i ] = plane.constant * - 1;
++
++			}
++
++			// Replace the frustum's own far plane (index 4, per `Frustum.setFromProjectionMatrix`:
++			// right, left, bottom, top, far, near) with one at the SHADOW distance. Past it the
++			// cascades hold nothing, so marching further only costs samples that can never be
++			// occluded — which is also what would make the shafts wash out into a flat haze.
++
++			const far = Math.min( camera.far, shadowCamera.far );
++
++			camera.getWorldDirection( _SCRATCH_VECTOR );
++			_SCRATCH_VECTOR_B.setFromMatrixPosition( camera.matrixWorld );
++
++			// dot( p, forward ) - ( forward · cameraPosition + far ), i.e. negative until the
++			// ray has travelled `far` along the camera's forward axis. `getWorldDirection`
++			// returns a unit vector, so the projection of `forward * far` is just `far`.
++
++			this._fNormals.array[ 4 ].copy( _SCRATCH_VECTOR );
++			this._fConstants.array[ 4 ] = - ( _SCRATCH_VECTOR.dot( _SCRATCH_VECTOR_B ) + far );
++
+ 		}
+ 
+ 	}
+@@ -432,6 +567,68 @@ class GodraysNode extends TempNode {
+ 
+ 				return output;
+ 
++			} else if ( this._isSunLight ) {
++
++				// PATCH (spaceplate): pick the cascade from the SAMPLE's view depth, then do
++				// the directional branch's lookup with that cascade's matrix.
++				//
++				// Walked BACK TO FRONT, like `SunShadowNode._setupCascades`, because the
++				// cascade ranges deliberately overlap (each one covers the previous one's fade
++				// band so the material path can blend across it). Back to front means the
++				// NEARER cascade's `If` runs last and wins in the overlap, which is the one
++				// with the tighter texels. No fade blend here: this is one sample of a
++				// raymarch that averages tens of them, so the seam averages out, and a
++				// `smoothstep` per cascade per step is real cost in the hottest loop we own.
++
++				// `.xyz` is load-bearing: `worldPos` arrives as a VEC4, not a vec3 — the
++				// march's `mix( startPosition /*vec3*/, worldPosition /*mat4.mul → vec4*/, t )`
++				// promotes to the greater length, and TSL's padding already gives it w=1.
++				// Joining the full vec4 with another `1.0` is 5 components, which trips
++				// JoinNode's "Length of parameters exceeds maximum length" (the extra is
++				// dropped, so it rendered correctly anyway — but it errored on every build).
++				const worldPosition = vec4( worldPos.xyz, 1.0 ).toConst();
++
++				const viewDepth = this._cameraMatrixWorldInverse.mul( worldPosition ).z.negate().toConst();
++
++				const output = vec2( 1, 0 ).toVar();
++
++				for ( let i = this._cascadeMatrices.length - 1; i >= 0; i -- ) {
++
++					const cascade = this._cascadeUniforms[ i ];
++
++					If( viewDepth.greaterThanEqual( cascade.x ).and( viewDepth.lessThan( cascade.y ) ), () => {
++
++						const shadowPosition = this._cascadeMatrices[ i ].mul( worldPosition );
++						const shadowCoord = shadowPosition.xyz.div( shadowPosition.w ).toConst();
++
++						const frustumTest = shadowCoord.x.greaterThanEqual( 0 )
++							.and( shadowCoord.x.lessThanEqual( 1 ) )
++							.and( shadowCoord.y.greaterThanEqual( 0 ) )
++							.and( shadowCoord.y.lessThanEqual( 1 ) )
++							.and( shadowCoord.z.greaterThanEqual( 0 ) )
++							.and( shadowCoord.z.lessThanEqual( 1 ) );
++
++						If( frustumTest.equal( true ), () => {
++
++							const result = texture( this._light.shadow.map.depthTexture, shadowCoord.xy ).compare( shadowCoord.z ).r;
++
++							// NOTE the second component. Upstream returns the distance from the
++							// LIGHT, which `distanceAttenuation` then fades the accumulation over
++							// — meaningless for a sun, which has no position. The distance that
++							// does mean something here is from the CAMERA, and dividing it by
++							// `_shadowCameraFar` (the shadow distance) makes the attenuation ramp
++							// span exactly the range the cascades cover.
++
++							output.assign( vec2( result.oneMinus(), viewDepth ) );
++
++						} );
++
++					} );
++
++				}
++
++				return output;
++
+ 			} else {
+ 
+ 				throw new Error( 'THREE.GodraysNode: Unsupported light type.' );
+@@ -554,23 +751,45 @@ class GodraysNode extends TempNode {
+ 
+ 				const illum = float( 0 ).toVar();
+ 
++				// PATCH (spaceplate): THE DITHER OFFSETS THE SAMPLES; it does not jitter their
++				// COUNT. Upstream rolls a per-pixel step count — `round( steps + ( steps / 8 + 2 )
++				// * noise )` — and then places the samples at `i / count`, so with 48 steps every
++				// pixel draws one of nine possible counts and every pixel sharing a count marches
++				// the IDENTICAL set of positions. The march therefore quantises the same way over
++				// whole regions of the screen and the beam reads as a stack of hard steps instead
++				// of a gradient. Offsetting each sample by the pixel's own blue noise decorrelates
++				// neighbours instead, which turns the same error into high-frequency noise — which
++				// is precisely what the bilateral blur downstream exists to remove. Cheaper, too:
++				// a loop bound straight off the uniform, no per-pixel round/uint.
+ 				const noise = interleavedGradientNoise( screenCoordinate ).toConst();
+-				const samplesFloat = round( add( this.raymarchSteps, mul( this.raymarchSteps.div( 8 ).add( 2 ), noise ) ) ).toConst();
++				const samplesFloat = float( this.raymarchSteps ).toConst();
+ 				const samples = uint( samplesFloat ).toConst();
+ 
++				// Hoisted out of the loop: both endpoints are loop-invariant, so the ray's
++				// length is one distance() per march rather than one per step, in the hottest
++				// loop this effect owns.
++				const stepWeight = distance( startPosition, worldPosition ).mul( this.density.div( 100 ) ).toConst();
++
+ 				Loop( samples, ( { i } ) => {
+ 
+-					const samplePos = mix( startPosition, worldPosition, float( i ).div( samplesFloat ) ).toConst();
++					const samplePos = mix( startPosition, worldPosition, float( i ).add( noise ).div( samplesFloat ) ).toConst();
+ 					const shadowInfo = inShadow( samplePos );
+ 					const shadowAmount = shadowInfo.x.oneMinus().toConst();
+ 
+-					illum.addAssign( shadowAmount.mul( distance( startPosition, worldPosition ).mul( this.density.div( 100 ) ) ).mul( pow( shadowInfo.y.div( this._shadowCameraFar ).oneMinus(), this.distanceAttenuation ) ) );
++					illum.addAssign( shadowAmount.mul( stepWeight ).mul( pow( shadowInfo.y.div( this._shadowCameraFar ).oneMinus(), this.distanceAttenuation ) ) );
+ 
+ 				} );
+ 
+ 				illum.divAssign( samplesFloat );
+ 
+-				output.assign( vec4( vec3( clamp( exp( illum.negate() ).oneMinus(), 0, this.maxDensity ) ), depth ) );
++				// PATCH (spaceplate): a SOFT ceiling. `clamp( x, 0, maxDensity )` puts a flat
++				// plateau with a first-derivative break at its rim wherever a ray saturates —
++				// a contour line drawn across the middle of the brightest part of a shaft,
++				// which is the one place nothing should have an edge. Scaling the transmittance
++				// by `maxDensity` has the same ceiling and approaches it asymptotically, so
++				// there is no rim to see. `1 - exp( -illum )` is already in [0,1) for illum >= 0,
++				// so nothing is left to clamp.
++				output.assign( vec4( vec3( exp( illum.negate() ).oneMinus().mul( this.maxDensity ) ), depth ) );
+ 
+ 
+ 			} );
+diff --git a/examples/jsm/tsl/display/RetroPassNode.js b/examples/jsm/tsl/display/RetroPassNode.js
+index 073e32beb4b762fe07e29a2b1595e63a0be11175..44f42fe646c9343456f8b8a5cdd8dd31984c1693 100644
+--- a/examples/jsm/tsl/display/RetroPassNode.js
++++ b/examples/jsm/tsl/display/RetroPassNode.js
+@@ -1,5 +1,5 @@
+ import { MeshBasicNodeMaterial, PassNode, UnsignedByteType, NearestFilter, CubeMapNode, MeshPhongNodeMaterial } from 'three/webgpu';
+-import { float, vec2, vec4, Fn, uv, varying, cameraProjectionMatrix, cameraViewMatrix, positionWorld, screenSize, materialColor, uint, texture, uniform, context, reflectVector } from 'three/tsl';
++import { float, vec2, vec4, Fn, uv, varying, cameraProjectionMatrix, cameraViewMatrix, positionWorld, screenSize, materialColor, uint, texture, cubeTexture, uniform, context, reflectVector } from 'three/tsl';
+ 
+ const _affineUv = varying( vec2() );
+ const _w = varying( float() );
+@@ -118,7 +118,20 @@ class RetroPassNode extends PassNode {
+ 
+ 					if ( envMap ) {
+ 
+-						const reflection = new CubeMapNode( texture( envMap ) );
++						// PATCH (spaceplate): `texture()` builds a 2D TextureNode. CubeMapNode
++						// only converts EQUIRECTANGULAR sources; when the env map is already a
++						// cube its updateBefore() takes the `envNode already refers to a cube
++						// map` branch and returns this node verbatim. The shader then declares
++						// a texture_2d binding while the bind group supplies a cube view:
++						//   "Dimension (TextureViewDimension::Cube) of [TextureView ...]
++						//    doesn't match the expected dimension (TextureViewDimension::e2D)"
++						// Every other CubeMapNode caller in three passes a correctly typed node;
++						// this is the only one that hard-codes texture(). A raw CubeTexture as
++						// scene.environment is normal here — Sky.svelte bakes the procedural
++						// dome into a CubeRenderTarget rather than a PMREM'd 2D map.
++						const reflection = new CubeMapNode(
++							envMap.isCubeTexture === true ? cubeTexture( envMap ) : texture( envMap )
++						);
+ 
+ 						let metalness;
+ 

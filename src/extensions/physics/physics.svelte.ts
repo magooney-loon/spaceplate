@@ -1,11 +1,12 @@
-import { logPhysics } from '$extensions/logger/logger.svelte';
-import { sceneActions } from '$extensions/scene/scene.svelte';
+import { logPhysics } from '$extensions/logger';
+import { sceneActions } from '$extensions/scene';
 import type {
 	GravityType,
 	PhysicsFramerate,
 	PhysicsState,
 	PhysicsActions,
-	PhysicsBody
+	PhysicsBody,
+	PhysicsBodyType
 } from './types';
 
 export type {
@@ -13,18 +14,51 @@ export type {
 	PhysicsFramerate,
 	PhysicsState,
 	PhysicsActions,
-	PhysicsBody
+	PhysicsBody,
+	PhysicsBodyType
 } from './types';
 
 const COLORS = ['#4488ff', '#ff4466', '#44ff88', '#ff8844', '#aa44ff', '#ffdd44'];
 const randomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
 
+/**
+ * Hard cap on spawned bodies. At the cap a spawn evicts the OLDEST body instead of
+ * growing the array, so the scene's cost is bounded no matter how long the button is
+ * held.
+ *
+ * The number is a Rapier budget, not a render one: the renderer draws all of these in
+ * two instanced draw calls (`scenes/DemoScene/SpawnedBodies.svelte`), so what actually
+ * scales here is the simulation, the collider pairs and the 500 `<RigidBody>`
+ * components' effects. Eviction unmounts one component and creates one body per click,
+ * which is nothing at click frequency — recycling the Rapier body in place would buy
+ * nothing and needs a teleport path.
+ */
+export const MAX_BODIES = 500;
+
 const WORLD_DEFAULTS = {
 	gravityX: 0,
-	gravityY: -9.8,
+	gravityY: -30.0,
 	gravityZ: 0,
+	// FIXED, not 'varying'. That is the whole determinism question: a number here
+	// steps the world at exactly `1 / n` seconds regardless of monitor refresh or
+	// frame time, so the same inputs give the same result; `'varying'` feeds
+	// rAF's jittery delta straight into `world.timestep` and no two runs match.
+	// 60, 120 and 200 are ALL deterministic — the choice between them is cost and
+	// resolution, not repeatability.
+	//
+	// 60 is the default because it is one step per frame at 60 fps instead of
+	// four. Every `usePhysicsTask` in the app runs once per rendered frame rather
+	// than 3–4 times, and Rapier steps its trimesh sets once — the single biggest
+	// CPU lever the physics side has. It is also Rapier's own design point.
+	//
+	// This is safe to move ONLY because nothing integrates a per-step FRACTION.
+	// Every damping constant in the driving model is a rate in 1/s applied as
+	// `damp(rate, dt)` = `1 - exp(-rate * dt)` (scenes/TestGame/sim/carMath.ts) and
+	// every timer is in seconds (the rev limiter's `limiterCut`, the shift cut, the
+	// nitrous bottle). A "fraction kept per step" constant anywhere would silently
+	// retune the game the moment this number changes — keep it that way.
 	framerate: 60 as PhysicsFramerate,
-	debug: true
+	debug: false
 };
 
 const SPAWN_DEFAULTS = {
@@ -59,6 +93,28 @@ const spawnPosition = (): [number, number, number] =>
 	physicsState.spawnRandom
 		? [(Math.random() - 0.5) * 8, 8 + Math.random() * 4, (Math.random() - 0.5) * 8]
 		: [0, 8, 0];
+
+/** Ball and box differ only by `type` and their collider shape — one spawn path. */
+const spawn = (type: PhysicsBodyType) => {
+	sceneActions.setScene('demoScene');
+	const body: PhysicsBody = {
+		id: crypto.randomUUID(),
+		type,
+		position: spawnPosition(),
+		color: randomColor(),
+		restitution: physicsState.spawnRestitution,
+		friction: physicsState.spawnFriction,
+		linearDamping: physicsState.spawnLinearDamping,
+		angularDamping: physicsState.spawnAngularDamping,
+		gravityScale: physicsState.spawnGravityScale,
+		ccd: physicsState.spawnCcd,
+		canSleep: physicsState.spawnCanSleep
+	};
+	// Oldest out, newest in — see MAX_BODIES.
+	if (physicsState.bodies.length >= MAX_BODIES) physicsState.bodies.shift();
+	physicsState.bodies.push(body);
+	logPhysics.info(`Spawned ${type}:`, body.id, `(${physicsState.bodies.length}/${MAX_BODIES})`);
+};
 
 export const physicsActions: PhysicsActions = {
 	setGravityX(v) {
@@ -132,40 +188,10 @@ export const physicsActions: PhysicsActions = {
 		Object.assign(physicsState, ATTRACTOR_DEFAULTS);
 	},
 	spawnBall() {
-		sceneActions.setScene('demoScene');
-		const body: PhysicsBody = {
-			id: crypto.randomUUID(),
-			type: 'ball',
-			position: spawnPosition(),
-			color: randomColor(),
-			restitution: physicsState.spawnRestitution,
-			friction: physicsState.spawnFriction,
-			linearDamping: physicsState.spawnLinearDamping,
-			angularDamping: physicsState.spawnAngularDamping,
-			gravityScale: physicsState.spawnGravityScale,
-			ccd: physicsState.spawnCcd,
-			canSleep: physicsState.spawnCanSleep
-		};
-		physicsState.bodies.push(body);
-		logPhysics.info('Spawned ball:', body.id);
+		spawn('ball');
 	},
 	spawnBox() {
-		sceneActions.setScene('demoScene');
-		const body: PhysicsBody = {
-			id: crypto.randomUUID(),
-			type: 'box',
-			position: spawnPosition(),
-			color: randomColor(),
-			restitution: physicsState.spawnRestitution,
-			friction: physicsState.spawnFriction,
-			linearDamping: physicsState.spawnLinearDamping,
-			angularDamping: physicsState.spawnAngularDamping,
-			gravityScale: physicsState.spawnGravityScale,
-			ccd: physicsState.spawnCcd,
-			canSleep: physicsState.spawnCanSleep
-		};
-		physicsState.bodies.push(body);
-		logPhysics.info('Spawned box:', body.id);
+		spawn('box');
 	},
 	clearBodies() {
 		physicsState.bodies = [];

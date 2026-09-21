@@ -1,0 +1,14 @@
+packages:
+  - '.'
+  - 'spacetimedb'
+allowBuilds:
+  '@parcel/watcher': true
+minimumReleaseAgeExclude:
+  - '@threlte/core@8.6.0'
+  - '@threlte/extras@9.21.1'
+  - '@types/node@26.4.0'
+  - three@0.186.0
+patchedDependencies:
+  '@threlte/extras@9.21.1': patches/@threlte__extras@9.21.1.patch
+  '@threlte/studio@0.4.3': patches/@threlte__studio@0.4.3.patch
+  three: patches/three.patch

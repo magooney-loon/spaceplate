@@ -3,7 +3,7 @@
 	import { Folder, Checkbox } from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import { extensionScope, type LoggerChannel } from './types';
-	import { loggerState, loggerActions, channelStyles } from '$extensions/logger/logger.svelte';
+	import { loggerState, loggerActions, channelStyles } from './logger.svelte';
 
 	interface Props {
 		children?: Snippet;
@@ -27,7 +27,7 @@
 <ToolbarItem position="right">
 	<DropDownPane icon="mdiConsole" title="Logger">
 		<Folder title="Channels" expanded={true}>
-			{#each channels as [channel, style]}
+			{#each channels as [channel, style] (channel)}
 				<Checkbox
 					label="{style.text} {style.label}"
 					value={loggerState[channel]}

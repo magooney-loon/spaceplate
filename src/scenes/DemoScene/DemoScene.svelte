@@ -1,16 +1,84 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { T } from '@threlte/core';
-	import { interactivity } from '@threlte/extras';
-	import { RigidBody, Collider, Debug, Attractor, useRapier } from '@threlte/rapier';
-	import { physicsState } from '$extensions/physics/physics.svelte';
+	import { T, useThrelte } from '@threlte/core/webgpu';
+	import { Collider, Attractor, useRapier } from '@threlte/rapier';
+	import * as THREE from 'three/webgpu';
+	import { reflector } from 'three/tsl';
+	import { physicsState } from '$extensions/physics';
 	import PhysicsController from '$extensions/physics/PhysicsController.svelte';
-	import { logPhysics } from '$extensions/logger/logger.svelte';
+	import { logPhysics } from '$extensions/logger';
 	import DemoPhysicsBodies from './DemoPhysicsBodies.svelte';
-	import DemoFloor from './DemoFloor.svelte';
-	import DemoDistanceMarkers from './DemoDistanceMarkers.svelte';
+	import SpawnedBodies from './SpawnedBodies.svelte';
+	import { LENS_LAYER } from '$core/skybox/layers/skyLayer';
+	import { applyWetness } from '$core';
+	import { registerMirrorFloor, unregisterMirrorFloor } from './mirrorFloor';
+	import { DEMO_QUALITY } from './demoQuality';
+	import { settingsState } from '$extensions/settings';
 
-	interactivity();
+	const { scene, invalidate } = useThrelte();
+
+	// Mirror floor. bounces stays at its DEFAULT (true) ON PURPOSE: that makes the
+	// reflector re-render per render-pass, so every camera that draws the floor gets
+	// its own reflection RT — with bounces: false the single per-frame refresh
+	// anchored to whichever camera drew first and slid with the editor camera.
+	// Reflection rides the emissive slot (keeps the sky system's lighting/shadows on
+	// the gray base), clamped because the RT holds RAW HDR dome radiance (render-target
+	// passes skip tone mapping). resolutionScale starts here and is retuned by the
+	// quality preset below.
+	const reflection = reflector({ resolutionScale: 0.5 });
+	reflection.target.rotateX(-Math.PI / 2);
+	reflection.target.userData = { selectable: false, hideInTree: true };
+	scene.add(reflection.target);
+
+	// THE REFLECTOR'S VIRTUAL CAMERA IS A CLONE, SO IT INHERITS THE LAYER MASK:
+	// `ReflectorNode.getVirtualCamera()` clones the active camera, which (unlike the
+	// freshly-constructed cube cameras) carries every layer bit it has enabled — measured
+	// `mask=3`, so the floor was reflecting LENS_LAYER's screen-space rain/frost quads as
+	// blown-out bloom garbage. Stripped here rather than in the lens layers because the
+	// inheritance is a property of THIS reflector; PRECIPITATION_LAYER stays inherited on
+	// purpose, so rain/snow keep showing in the floor's reflection.
+	const baseGetVirtualCamera = reflection.reflector.getVirtualCamera.bind(reflection.reflector);
+	reflection.reflector.getVirtualCamera = (camera: THREE.Camera) => {
+		const virtual = baseGetVirtualCamera(camera);
+		virtual.layers.disable(LENS_LAYER);
+		return virtual;
+	};
+
+	const floorMaterial = new THREE.MeshStandardNodeMaterial();
+	floorMaterial.color.set('gray');
+	floorMaterial.emissiveNode = reflection.rgb.clamp(0, 1).mul(0.25);
+	// Wet ground. LAST, after the colour is set, so `applyWetness` picks up the material's
+	// own colour as the dry base (see its header). It patches albedo and roughness only,
+	// so the reflector sitting in `emissiveNode` is untouched — and since the floor's
+	// roughness drops as it wets, the mirror it already has is exactly what the water is
+	// for.
+	applyWetness(floorMaterial);
+
+	// The same floor without the reflector node, swapped in for the duration of the cube
+	// captures in DemoPhysicsBodies — see mirrorFloor.ts for what that saves (it is the
+	// single biggest cost in this scene). Identical gray base, so the captures see the
+	// floor lit and shadowed as usual, just not mirroring.
+	const floorCaptureMaterial = new THREE.MeshStandardNodeMaterial();
+	floorCaptureMaterial.color.set('gray');
+	// Wet too, or the floor's albedo would jump every time a cube capture swapped it in.
+	applyWetness(floorCaptureMaterial);
+
+	let floorMesh = $state.raw<THREE.Mesh>();
+	$effect(() => {
+		if (!floorMesh) return;
+		registerMirrorFloor(floorMesh, floorMaterial, floorCaptureMaterial);
+		return unregisterMirrorFloor;
+	});
+
+	// Quality preset — see demoQuality.ts for what each knob costs.
+	const quality = $derived(DEMO_QUALITY[settingsState.graphics.quality]);
+
+	// The reflector reads resolutionScale on its next update and resizes its target
+	// there (ReflectorBaseNode._updateResolution), so this is all the switch needs.
+	$effect(() => {
+		reflection.reflector.resolutionScale = quality.reflectionScale;
+		invalidate();
+	});
 
 	const sceneMountId = crypto.randomUUID().slice(0, 8);
 	const { world, rigidBodyObjects, colliderObjects } = useRapier();
@@ -42,16 +110,13 @@
 
 	onDestroy(() => {
 		logPhysics.info(`DemoScene destroy [${sceneMountId}]`, snapshotWorld());
+		reflection.target.removeFromParent();
+		floorMaterial.dispose();
+		floorCaptureMaterial.dispose();
 	});
 </script>
 
 <PhysicsController />
-
-{#if import.meta.env.VITE_GAME_ENGINE === 'true'}
-	{#if physicsState.debug}
-		<Debug />
-	{/if}
-{/if}
 
 {#if physicsState.attractorEnabled}
 	<Attractor
@@ -62,62 +127,22 @@
 	/>
 {/if}
 
-<DemoFloor />
-<DemoDistanceMarkers />
+<T.Group userData={{ selectable: false, hideInTree: true }}>
+	<Collider shape="cuboid" args={[10, 0, 10]} />
+	<T.Mesh
+		bind:ref={floorMesh}
+		position={[0, 0, 0]}
+		receiveShadow
+		material={floorMaterial}
+		userData={{ selectable: false, hideInTree: true }}
+	>
+		<T.BoxGeometry args={[20, 0.001, 20]} />
+	</T.Mesh>
+</T.Group>
+
 <DemoPhysicsBodies />
 
-<!-- Spawned physics bodies -->
-{#each physicsState.bodies as body (body.id)}
-	<T.Group position={body.position} userData={{ selectable: false, hideInTree: true }}>
-		<RigidBody
-			type="dynamic"
-			ccd={body.ccd}
-			canSleep={body.canSleep}
-			linearDamping={body.linearDamping}
-			angularDamping={body.angularDamping}
-			gravityScale={body.gravityScale}
-			userData={{ selectable: false, hideInTree: true }}
-			oncreate={(rigidBody) => {
-				logPhysics.info(`Spawned body create [${sceneMountId}]`, {
-					id: body.id,
-					type: body.type,
-					initialPosition: body.position,
-					handle: rigidBody.handle
-				});
-			}}
-			onsleep={() => {
-				logPhysics.info(`Spawned body sleep [${sceneMountId}]`, { id: body.id });
-			}}
-			onwake={() => {
-				logPhysics.info(`Spawned body wake [${sceneMountId}]`, { id: body.id });
-			}}
-		>
-			{#if body.type === 'ball'}
-				<Collider
-					shape="ball"
-					args={[0.4]}
-					restitution={body.restitution}
-					friction={body.friction}
-				/>
-				<T.Mesh castShadow>
-					<T.SphereGeometry args={[0.4, 16, 16]} />
-					<T.MeshStandardMaterial color={body.color} flatShading />
-				</T.Mesh>
-			{:else}
-				<Collider
-					shape="cuboid"
-					args={[0.4, 0.4, 0.4]}
-					restitution={body.restitution}
-					friction={body.friction}
-				/>
-				<T.Mesh castShadow>
-					<T.BoxGeometry args={[0.8, 0.8, 0.8]} />
-					<T.MeshStandardMaterial color={body.color} flatShading />
-				</T.Mesh>
-			{/if}
-		</RigidBody>
-	</T.Group>
-{/each}
+<SpawnedBodies mountId={sceneMountId} />
 
 {#if import.meta.env.VITE_GAME_ENGINE === 'true'}
 	{#await import('$extensions/gltf-viewer/GltfViewerScene.svelte') then { default: GltfViewerScene }}

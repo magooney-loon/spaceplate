@@ -3,21 +3,47 @@ export const extensionScope = 'settings';
 export type QualityLevel = 'low' | 'high';
 
 export type AudioSettings = {
+	/**
+	 * The master fader, 0–1. Drives three's own `AudioListener` gain, which the whole
+	 * bus graph hangs off (`core/audio/mixer.ts`). No `masterEnabled` to pair with it:
+	 * the three bus toggles below already gate everything, and a master mute defaulting
+	 * to `false` would fight the autoplay unlock in `Loader.svelte`.
+	 */
+	masterVolume: number;
 	musicVolume: number;
 	musicEnabled: boolean;
 	ambienceVolume: number;
 	ambienceEnabled: boolean;
-	effectsVolume: number;
 	sfxVolume: number;
 	sfxEnabled: boolean;
 };
 
 export type GraphicsSettings = {
 	quality: QualityLevel;
+	/**
+	 * Render resolution as a fraction of what the preset would otherwise use, 0.5–1.
+	 *
+	 * Multiplies the preset's base device pixel ratio rather than replacing it, so 1 is
+	 * exactly the old behaviour on both presets and the knob composes instead of fighting
+	 * them. `App.svelte` owns the arithmetic. This is the cheapest lever there is on a
+	 * fill-rate-bound frame — 0.5 is a quarter of the fragments.
+	 */
+	renderScale: number;
+	/**
+	 * Frame-rate cap in fps. 0 = VSync (the default): no artificial cap — the loop runs
+	 * at the monitor's refresh rate, which is the ceiling anyway (the browser composites
+	 * on vsync and rAF never ticks faster). One of FPS_CAPS (settings.svelte.ts).
+	 * Enforced by the frame gate in core/utils/EngineClock.svelte, which throttles the whole
+	 * engine loop — tasks and renders alike — so both the GPU and the per-tick CPU cost
+	 * follow it.
+	 */
+	maxFps: number;
 };
 
 export type GeneralSettings = {
 	uiVisible: boolean;
+	mouseSensitivity: number;
+	aimSensitivity: number;
 };
 
 export type SettingsState = {
@@ -29,21 +55,25 @@ export type SettingsState = {
 export type ExtensionState = SettingsState;
 
 export type AudioActions = {
+	setMasterVolume: (v: number) => void;
 	toggleMusic: () => void;
 	toggleAmbience: () => void;
 	toggleSfx: () => void;
 	setMusicVolume: (v: number) => void;
 	setAmbienceVolume: (v: number) => void;
 	setSfxVolume: (v: number) => void;
-	setEffectsVolume: (v: number) => void;
 };
 
 export type GraphicsActions = {
 	setQuality: (quality: QualityLevel) => void;
+	setRenderScale: (v: number) => void;
+	setMaxFps: (v: number) => void;
 };
 
 export type GeneralActions = {
 	toggleUiVisible: () => void;
+	setMouseSensitivity: (v: number) => void;
+	setAimSensitivity: (v: number) => void;
 };
 
 export type ExtensionActions = AudioActions & GraphicsActions & GeneralActions;

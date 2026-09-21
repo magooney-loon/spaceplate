@@ -3,7 +3,7 @@
 	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
 	import { extensionScope, type GravityType, type PhysicsFramerate } from './types';
 	import { physicsState, physicsActions } from './physics.svelte';
-	import { sceneState } from '$extensions/scene/scene.svelte';
+	import { sceneState } from '$extensions/scene';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -56,10 +56,10 @@
 				label="Framerate"
 				value={physicsState.framerate}
 				options={[
-					{ value: 'varying', text: 'Varying (default)' },
-					{ value: 60, text: '60 Hz' },
+					{ value: 'varying', text: 'Varying (NOT deterministic)' },
+					{ value: 60, text: '60 Hz (default)' },
 					{ value: 120, text: '120 Hz' },
-					{ value: 200, text: '200 Hz (deterministic)' }
+					{ value: 200, text: '200 Hz' }
 				]}
 				on:change={(e) => physicsActions.setFramerate(e.detail.value as PhysicsFramerate)}
 			/>
@@ -173,7 +173,12 @@
 					min={-20}
 					max={20}
 					step={0.1}
-					on:change={(e) => physicsActions.setAttractorPosition(e.detail.value, physicsState.attractorY, physicsState.attractorZ)}
+					on:change={(e) =>
+						physicsActions.setAttractorPosition(
+							e.detail.value,
+							physicsState.attractorY,
+							physicsState.attractorZ
+						)}
 				/>
 				<Slider
 					label="Pos Y"
@@ -181,7 +186,12 @@
 					min={-10}
 					max={20}
 					step={0.1}
-					on:change={(e) => physicsActions.setAttractorPosition(physicsState.attractorX, e.detail.value, physicsState.attractorZ)}
+					on:change={(e) =>
+						physicsActions.setAttractorPosition(
+							physicsState.attractorX,
+							e.detail.value,
+							physicsState.attractorZ
+						)}
 				/>
 				<Slider
 					label="Pos Z"
@@ -189,7 +199,12 @@
 					min={-20}
 					max={20}
 					step={0.1}
-					on:change={(e) => physicsActions.setAttractorPosition(physicsState.attractorX, physicsState.attractorY, e.detail.value)}
+					on:change={(e) =>
+						physicsActions.setAttractorPosition(
+							physicsState.attractorX,
+							physicsState.attractorY,
+							e.detail.value
+						)}
 				/>
 			{/if}
 			<Button title="Reset Attractor" on:click={() => physicsActions.resetAttractor()} />

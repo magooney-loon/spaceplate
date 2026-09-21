@@ -1,0 +1,257 @@
+<script lang="ts">
+	// The CPU half of both lenses. Renders nothing: measures the camera, reads the
+	// weather, and writes `lensState`'s uniforms, which the two chain effects
+	// (`core/postprocessing/effects/rainLens.ts`, `snowLens.ts`) sample. One driver for
+	// both since rain and snow are complementary halves of one `precipitationType`
+	// channel and can only overlap during sleet — a shared measurement is the honest model.
+	//
+	// Mounts inside the sky group, where the lens meshes used to: the layers only mount
+	// in procedural sky mode, so an HDR/cube environment leaves this unmounted and both
+	// effects sit at their identity (uWetness/uGrowth hard-set to 0 below). (Weather
+	// audio lives outside the layers for the opposite reason — a looping bed must not
+	// stop when the env mode changes.)
+	import { useTask, useThrelte } from '@threlte/core/webgpu';
+	import { Vector3 } from 'three/webgpu';
+	import { clamp01, descriptor, rainAmount, snowAmount } from '../../model';
+	import { uDropTime, uFlowTime, uGrowth, uIce, uPatternOffset, uWetness } from './lensState.svelte';
+
+	interface Props {
+		/** Forward speed, world units per second, at which the lens reaches full wetness. */
+		rainSpeedForFull?: number;
+		/** Seconds for the lens to bead up, and to dry off. Asymmetric on purpose. */
+		wetSeconds?: number;
+		drySeconds?: number;
+		/**
+		 * Ceiling on wetness, so a downpour never turns the screen to soup.
+		 *
+		 * It buys less headroom than it looks: `wetness` is ALSO what the effect's layer
+		 * weights ramp against (`staticDrops` / `layer1` / `layer2` in rainLens.ts), so
+		 * lowering it thins the drop field as well as the blend. That is the intended
+		 * shape — heavier rain should mean more water, not a flat frame-wide wash — but it
+		 * means the ceiling is a look decision and not just a safety clamp.
+		 */
+		maxWetness?: number;
+		/**
+		 * How much frost snow puts on the glass with the camera standing still.
+		 *
+		 * THIS IS THE DOMINANT TERM, not a floor under a motion-driven effect: rain has to
+		 * be driven into to land on a windscreen, so the rain lens has no standing term at
+		 * all, but frost is a TEMPERATURE — a lens sitting in snow ices over whether or not
+		 * it is going anywhere. Motion only deepens it.
+		 *
+		 * Dominant is not the same as heavy. It came down from 0.5 with `maxFrost` and the
+		 * effect's own params (snowLens.ts): frost that closes over a third of the frame the
+		 * moment it starts snowing reads as a filter someone switched on, not as weather.
+		 */
+		standingFrost?: number;
+		/**
+		 * Speed at which motion contributes its full extra measure on top of
+		 * `standingFrost`. Only `1 - standingFrost` of range is left above that term, so
+		 * this is a shallower ramp than the rain lens's, not a steeper one.
+		 */
+		snowSpeedForFull?: number;
+		/**
+		 * Seconds for the frost to form, and to melt back. Slow in BOTH directions — and the
+		 * freeze is now genuinely slow (4 s, was 1.8): ice that arrives in under two seconds
+		 * reads as a fade-in, which is the other half of "too strong" after the depth of it.
+		 */
+		freezeSeconds?: number;
+		meltSeconds?: number;
+		/** Ceiling on growth, so even a whiteout leaves the middle of the frame readable. */
+		maxFrost?: number;
+		/**
+		 * How much sideways motion counts toward wetting/freezing, as a fraction of forward
+		 * motion.
+		 *
+		 * Physically this should be near zero — rain lands on a windscreen because you
+		 * drive INTO it. It is not zero because DemoScene's camera orbits the origin, so
+		 * its forward speed is identically zero. Drop it to 0 for a first-person
+		 * controller.
+		 */
+		lateralInfluence?: number;
+	}
+
+	let {
+		rainSpeedForFull = 7,
+		wetSeconds = 0.7,
+		drySeconds = 2.6,
+		maxWetness = 0.62,
+		standingFrost = 0.35,
+		snowSpeedForFull = 8,
+		freezeSeconds = 4,
+		meltSeconds = 7,
+		maxFrost = 0.5,
+		lateralInfluence = 0.35
+	}: Props = $props();
+
+	const { camera, invalidate, autoRenderTask } = useThrelte();
+
+	// Plain variables, written and read only by the task.
+	let wetness = 0;
+	let dropTime = 0;
+	let flowTime = 0;
+	let growth = 0;
+	let lastPosition: Vector3 | null = null;
+	const stepVector = new Vector3();
+	const forward = new Vector3();
+
+	/** Base rate of the droplet clock, and how much the camera's speed adds to it. */
+	const DROP_RATE = 0.18;
+	const DROP_RATE_PER_SPEED = 0.025;
+
+	/**
+	 * The windshield clock (`uFlowTime`): how fast drops stream outward from the centre of
+	 * the frame. Mostly SPEED — the base is only enough that the pattern is not frozen at a
+	 * crawl — because this term is the airflow, not the drops' own life. Full-tilt driving
+	 * (~20 u/s) puts it around 12x the base rate.
+	 */
+	const FLOW_RATE = 0.035;
+	const FLOW_RATE_PER_SPEED = 0.02;
+
+	/**
+	 * A camera moving faster than this is being cut, not flown.
+	 *
+	 * A SPEED, not a per-frame distance: the old per-frame form (8 units) meant 1150 u/s
+	 * at 144Hz but only 240 u/s in a 30fps offline capture take, so a flythrough that wet
+	 * the glass in the viewport read as a cut in the recording of it and the lens never
+	 * built any wetness at all. 480 u/s is the old figure at 60fps.
+	 */
+	const TELEPORT_SPEED = 480;
+
+	/**
+	 * Both lenses are always in the pipeline graph now (postprocessing/CLAUDE.md) — these
+	 * are no longer a structural latch, just the threshold this task uses to decide
+	 * whether either lens is doing anything worth an `invalidate()`, and the moment to
+	 * re-roll the frost pattern. Hysteresis (`ON`/`OFF` pairs) keeps a value hovering at
+	 * the boundary from flapping `visible` every frame.
+	 *
+	 * **THE THRESHOLD IS PER LENS, BECAUSE "VISIBLE" MEANS SOMETHING DIFFERENT IN EACH.**
+	 * Wetness is a plain blend factor, so any positive value tints the frame a little and
+	 * the floor can sit low. Growth is not: it is a POSITION for the growth front, and the
+	 * front only crosses the corners of the frame at about 0.086 (`2.7 - 0.086*2.9` against
+	 * a corner maximum of ~2.45 in snowLens.ts) — below that the effect renders a
+	 * fullscreen pass whose output is provably the input. These numbers are read off the
+	 * effect's geometry — retune them together.
+	 */
+	const RAIN_ON = 0.012;
+	const RAIN_OFF = 0.006;
+	const SNOW_ON = 0.1;
+	const SNOW_OFF = 0.07;
+
+	const crossed = (value: number, visible: boolean, on: number, off: number): boolean =>
+		visible ? value > off : value > on;
+
+	let rainVisible = false;
+	let snowVisible = false;
+
+	useTask(
+		(delta) => {
+			const cam = camera.current;
+			const position = cam.position;
+
+			// How fast, and how much of that is INTO the view. `getWorldDirection` is the
+			// camera's own -Z in world space, so this is signed: reversing out of the rain
+			// wets nothing, which is why it is floored at zero.
+			let forwardSpeed = 0;
+			let lateralSpeed = 0;
+
+			if (lastPosition === null) {
+				lastPosition = position.clone();
+			} else {
+				stepVector.subVectors(position, lastPosition);
+				lastPosition.copy(position);
+				if (delta > 0 && stepVector.length() / delta <= TELEPORT_SPEED) {
+					stepVector.divideScalar(delta);
+					cam.getWorldDirection(forward);
+					forwardSpeed = Math.max(0, stepVector.dot(forward));
+					// Pythagoras against the total, so this is the component perpendicular
+					// to the view rather than a second projection.
+					const total = stepVector.length();
+					lateralSpeed = Math.sqrt(Math.max(0, total * total - forwardSpeed * forwardSpeed));
+				}
+			}
+
+			const speed = forwardSpeed + lateralSpeed * lateralInfluence;
+
+			// ── Rain ─────────────────────────────────────────────────────────────────
+			// The shared split off the explicit `precipitationType` channel. Snow leaves no
+			// droplets on glass, so wetness is deliberately rain-only — and during sleet it
+			// wets in proportion to the rain half alone.
+			const rain = rainAmount(descriptor.weather);
+			const wetTarget = clamp01(speed / rainSpeedForFull) * rain * maxWetness;
+
+			// Asymmetric one-pole smoothing: beads up quickly, dries slowly. Both branches
+			// use the `exp` form so the time constants hold at any framerate.
+			const wetTau = wetTarget > wetness ? wetSeconds : drySeconds;
+			wetness += (wetTarget - wetness) * (1 - Math.exp(-delta / wetTau));
+			uWetness.value = wetness;
+
+			// The clock runs faster the faster you move — drops streak past rather than
+			// drifting — and is accumulated, never `time * rate`. See the uniform's note.
+			dropTime += delta * (DROP_RATE + speed * DROP_RATE_PER_SPEED);
+			uDropTime.value = dropTime;
+
+			// The outward stream (see FLOW_RATE). Off the same `speed` that wets the glass,
+			// lateral influence included: on a camera that orbits rather than drives, the
+			// thing that puts water on the lens is also the thing that blows it aside.
+			flowTime += delta * (FLOW_RATE + speed * FLOW_RATE_PER_SPEED);
+			uFlowTime.value = flowTime;
+
+			// ── Snow ─────────────────────────────────────────────────────────────────
+			const snow = snowAmount(descriptor.weather);
+
+			// A PRESENCE CURVE, not the raw amount — the same shape Rain and Snow use.
+			// Whether it is snowing is a threshold question, not a proportion: past a light
+			// flurry the glass is cold and the rest is a matter of degree, which the terms
+			// below express. (Feeding the raw `snowAmount` in instead starves the effect —
+			// the authored `snow` weather sits at precipitation 0.7, and the product at rest
+			// came to 0.18, which put the growth front beyond all but the extreme corners.)
+			const presence = Math.min(1, snow * 4);
+			const frostTarget = clamp01(standingFrost + speed / snowSpeedForFull) * presence * maxFrost;
+
+			const frostTau = frostTarget > growth ? freezeSeconds : meltSeconds;
+			growth += (frostTarget - growth) * (1 - Math.exp(-delta / frostTau));
+			uGrowth.value = growth;
+
+			// What the ice is scattering. Floored so a night blizzard still shows frost
+			// rather than a black border, and biased cool at every level.
+			const { ambient, intensity } = descriptor.light;
+			const lit = Math.min(1.05, Math.max(0.12, 0.15 + ambient * 0.5 + intensity * 0.09));
+			uIce.value.set(lit * 0.78, lit * 0.87, lit * 0.98);
+
+			// ── Visibility ───────────────────────────────────────────────────────────
+			const rainNowVisible = crossed(wetness, rainVisible, RAIN_ON, RAIN_OFF);
+			const snowNowVisible = crossed(growth, snowVisible, SNOW_ON, SNOW_OFF);
+
+			// A NEW ARRANGEMENT EACH TIME THE FROST RETURNS, on the RISING edge specifically.
+			// Re-rolling is a discontinuity — every lobe and every dendrite moves at once —
+			// so it has to land on a frame where none of them are drawn. This is that frame:
+			// growth has only just crossed SNOW_ON, which is exactly where the front reaches
+			// the deepest corner, so coverage is still zero everywhere and the jump is
+			// unobservable.
+			if (snowNowVisible && !snowVisible) {
+				uPatternOffset.value.set(Math.random() * 512, Math.random() * 512);
+			}
+
+			rainVisible = rainNowVisible;
+			snowVisible = snowNowVisible;
+
+			// Same contract the mesh layers had: TSL-animated, so it owns its own
+			// invalidation, gated on actually being live (../../CLAUDE.md).
+			if (rainVisible || snowVisible) invalidate();
+		},
+		{ before: autoRenderTask, autoInvalidate: false }
+	);
+
+	// Unmounting (an environment-mode switch) must take the lenses down with it: neither
+	// effect has a latch to drop it from the graph, so an HDR/cube environment would
+	// otherwise hold whatever wetness/growth the last procedural frame happened to have.
+	$effect(() => {
+		return () => {
+			uWetness.value = 0;
+			uGrowth.value = 0;
+			rainVisible = false;
+			snowVisible = false;
+		};
+	});
+</script>

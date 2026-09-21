@@ -2,8 +2,9 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { threlteStudio } from '@threlte/studio/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
-import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
+
+const dirname = import.meta.dirname;
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -11,7 +12,6 @@ export default defineConfig({
 	plugins: [
 		threlteStudio(),
 		svelte(),
-		tailwindcss(),
 		visualizer({
 			filename: 'stats.html',
 			open: false,
@@ -20,12 +20,23 @@ export default defineConfig({
 	],
 	resolve: {
 		alias: {
-			$lib: path.resolve(__dirname, './src/lib'),
-			$root: path.resolve(__dirname, './src'),
-			$bindings: path.resolve(__dirname, './src/module_bindings'),
-			$core: path.resolve(__dirname, './src/core'),
-			$extensions: path.resolve(__dirname, './src/extensions'),
-			$scenes: path.resolve(__dirname, './src/scenes')
+			$lib: path.resolve(dirname, './src/lib'),
+			$root: path.resolve(dirname, './src'),
+			$bindings: path.resolve(dirname, './src/module_bindings'),
+			$core: path.resolve(dirname, './src/core'),
+			$extensions: path.resolve(dirname, './src/extensions'),
+			$scenes: path.resolve(dirname, './src/scenes')
+		}
+	},
+	optimizeDeps: {
+		entries: ['index.html']
+	},
+	build: {
+		target: 'esnext'
+	},
+	server: {
+		fs: {
+			deny: ['DOCS/**']
 		}
 	}
 });

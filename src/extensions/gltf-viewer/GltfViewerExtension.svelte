@@ -4,7 +4,7 @@
 	import type { Snippet } from 'svelte';
 	import { gltfViewerState, gltfViewerActions } from './gltfViewer.svelte';
 	import { extensionScope, type GltfViewerColliderShape } from './types';
-	import { sceneState } from '$extensions/scene/scene.svelte';
+	import { sceneState } from '$extensions/scene';
 
 	interface Props {
 		children?: Snippet;
@@ -72,6 +72,37 @@
 					/>
 
 					<Separator />
+
+					<Checkbox
+						label="Show Rig"
+						value={model.showRig}
+						on:change={() => gltfViewerActions.setShowRig(model.id, !model.showRig)}
+					/>
+					<Checkbox
+						label="Cast Shadows"
+						value={model.castShadows}
+						on:change={() => gltfViewerActions.setCastShadows(model.id, !model.castShadows)}
+					/>
+					<Checkbox
+						label="Receive Shadows"
+						value={model.receiveShadows}
+						on:change={() => gltfViewerActions.setReceiveShadows(model.id, !model.receiveShadows)}
+					/>
+					<Checkbox
+						label="Auto Rotate"
+						value={model.autoRotate}
+						on:change={() => gltfViewerActions.setAutoRotate(model.id, !model.autoRotate)}
+					/>
+					{#if model.autoRotate}
+						<Slider
+							label="Rotate Speed"
+							value={model.autoRotateSpeed}
+							min={0.1}
+							max={5}
+							step={0.1}
+							on:change={(e) => gltfViewerActions.setAutoRotateSpeed(model.id, e.detail.value)}
+						/>
+					{/if}
 
 					{#if model.animationClips.length > 0}
 						<Folder title="Animations ({model.animationClips.length})" expanded={false}>

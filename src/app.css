@@ -1,4 +1,65 @@
-@import 'tailwindcss';
+/* Minimal style reset for HUD components */
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	line-height: 1.5;
+	font-family:
+		ui-sans-serif,
+		system-ui,
+		-apple-system,
+		'Segoe UI',
+		Roboto,
+		'Helvetica Neue',
+		Arial,
+		sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+figure,
+blockquote,
+dl,
+dd {
+	margin: 0;
+}
+
+ul,
+ol {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+button,
+input,
+select,
+textarea {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: none;
+	padding: 0;
+}
+
+button {
+	cursor: pointer;
+}
+
+img,
+svg,
+video,
+canvas {
+	display: block;
+}
 
 body {
 	background: #333333;

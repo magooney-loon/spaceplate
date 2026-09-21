@@ -1,0 +1,329 @@
+// Shared plumbing for the sky layers (Stars, Meteors, Nebula, Moon, CloudDeck, Rain,
+// Snow, Lightning). Everything here was copy-pasted between four to six components
+// before this module existed, and the copies had already drifted into a real bug --
+// see `altitudeOf` below.
+//
+// Three things live here, and each one encodes an invariant the layers must not get
+// wrong individually:
+//
+//   1. GEOMETRY. Every particle layer is billboarded quads, and every one of them used
+//      to write its per-particle data FOUR TIMES, once per quad vertex. `instancedQuad`
+//      replaces that with one shared four-vertex quad plus per-instance attributes.
+//   2. THE VERTEX NODE. Depth pinning to the far plane is load-bearing, not an
+//      optimisation (see `pinFarPlane`), and the billboard/streak constructions have
+//      to avoid TSL's assignment-outside-Fn trap.
+//   3. MATERIAL FLAGS. `fog = false` on every sky layer is not a style choice.
+//
+// See layers/CLAUDE.md.
+
+import * as THREE from 'three/webgpu';
+import {
+	cameraProjectionMatrix,
+	instancedBufferAttribute,
+	mix,
+	modelViewMatrix,
+	positionLocal,
+	vec2,
+	vec4
+} from 'three/tsl';
+
+/** Sky layers are engine furniture: never selectable, never shown in the Studio tree. */
+export const SKY_LAYER_USERDATA = { hideInTree: true, selectable: false };
+
+/**
+ * The layer screen-space overlays render on. **Currently nobody is on it** — the rain and
+ * frost lenses that were its only residents are post-processing chain effects now
+ * (`core/postprocessing/effects/rainLens.ts`, `snowLens.ts`), which is where an overlay
+ * belongs and is the reason the layer's whole problem evaporated. It is kept, with its
+ * reasoning intact, because the next in-scene fullscreen overlay needs every word of it.
+ *
+ * WHAT IT WAS FOR. Those quads were written straight to clip space and read the finished
+ * framebuffer (`viewportMipTexture`) — only meaningful for the camera the player looks
+ * through. Any OTHER camera rendering the scene (the mirror sphere's and corner balls'
+ * cube-capture faces, the floor reflector's virtual camera, Studio's selection pre-render,
+ * the HeightField pass) would draw them as a fullscreen layer of re-sampled,
+ * wrong-viewport garbage that reads as blown-out bloom. The meshes moved onto this layer
+ * and the ACTIVE camera (`camera.subscribe`) enabled it, so every internal camera — which
+ * all use the default layer-0 mask — stopped seeing them.
+ *
+ * **A CLONED CAMERA IS NOT A FRESH ONE.** That "default layer-0 mask" argument holds for
+ * every internal camera that is CONSTRUCTED (the cube faces, the HeightField ortho) and
+ * fails for one that is COPIED: `ReflectorNode.getVirtualCamera()` returns
+ * `camera.clone()`, and `Object3D.copy` copies `layers.mask` (three 0.185,
+ * `Object3D.js:1615`). The floor reflector's virtual camera therefore inherited this bit
+ * from the active camera and reflected the lens quads — measured `mask=3` at runtime, so
+ * the failure above was live, not theoretical. `DemoScene.svelte` still strips the bit on
+ * the way out of `getVirtualCamera`; that is now defensive rather than load-bearing.
+ * **Any new reflector owes the same.**
+ */
+export const LENS_LAYER = 1;
+
+/**
+ * The layer the precipitation particle fields (Rain, its two splash layers, Snow) render
+ * on.
+ *
+ * PURELY A COST GATE — unlike LENS_LAYER, drawing these from another camera is correct,
+ * just ruinously expensive. Rain is 12 000 instances across three meshes and Snow 11 000,
+ * and the two cube captures in `DemoScene` render the whole scene **six times each** at
+ * 30 Hz and 15 Hz. That put ~270 extra scene-renders' worth of precipitation instances
+ * through the pipeline every second, all of it landing in 128²/96² cube faces where a
+ * 0.05-world-unit flake is comfortably sub-pixel. It is the periodic-hitch shape the
+ * frame budget could least afford.
+ *
+ * So: the active camera enables this layer, freshly-constructed internal cameras do not,
+ * and the precipitation disappears from the cube captures. **The floor reflector keeps
+ * it** — deliberately, and for free, via the same clone-inherits-the-mask behaviour
+ * described above. Rain in the mirror floor is a foot away and reads; rain in a 128²
+ * cube face does not.
+ */
+export const PRECIPITATION_LAYER = 2;
+
+/**
+ * The layer near-camera AMBIENT decoration fields render on (dust motes today) —
+ * `PRECIPITATION_LAYER`'s reasoning, generalised to any layer whose instance count is
+ * cheap through the main viewport but pure noise in a tiny cube-capture face. A few
+ * hundred sub-pixel sparkles are not the periodic-hitch shape precipitation was, but
+ * they buy the baked env map nothing either, so the same exclusion applies for free.
+ */
+export const AMBIENT_LAYER = 3;
+
+// ── Geometry ───────────────────────────────────────────────────────────────────
+
+/** Centred billboard: the quad spans -1..1 on both axes around the particle centre. */
+export const CENTERED_QUAD = [-1, -1, 1, -1, 1, 1, -1, 1];
+/**
+ * Head-anchored billboard: y runs 0..1 from the particle centre, so the quad hangs off
+ * one end rather than straddling it. Rain's streaks are built from head to tail.
+ */
+export const HEAD_ANCHORED_QUAD = [-1, 0, 1, 0, 1, 1, -1, 1];
+
+/**
+ * One four-vertex quad, drawn `count` times.
+ *
+ * THE POINT OF THIS. Every particle layer previously built `count * 4` vertices and
+ * wrote each per-particle value into all four of them -- a 4x duplication of position,
+ * colour, size, seed and every packed parameter, plus a `count * 6` Uint32 index buffer.
+ * Measured on the shipped counts: Rain 1.52 MB, Snow 2.20 MB, Stars 0.64 MB. Instanced,
+ * the same fields cost 0.25 / 0.40 / 0.12 MB and the index buffers collapse into the six
+ * indices shared here.
+ *
+ * The corner arrives as `positionLocal.xy`, so a layer reads its quad corner exactly
+ * where it used to read its `aCorner` attribute.
+ *
+ * NOTE this does NOT relieve WebGPU's 8-`maxVertexBuffers` cap that Meteors packs
+ * around: an instanced attribute still occupies a vertex-buffer slot. Escaping that cap
+ * needs storage buffers (`instancedArray`), which is a compute-shader-shaped change.
+ */
+export const instancedQuad = (
+	count: number,
+	corners: readonly number[] = CENTERED_QUAD
+): THREE.InstancedBufferGeometry => {
+	const geometry = new THREE.InstancedBufferGeometry();
+
+	const position = new Float32Array(4 * 3);
+	for (let v = 0; v < 4; v++) {
+		position[v * 3] = corners[v * 2];
+		position[v * 3 + 1] = corners[v * 2 + 1];
+		position[v * 3 + 2] = 0;
+	}
+
+	geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+	geometry.setIndex([0, 1, 2, 0, 2, 3]);
+	geometry.instanceCount = count;
+	return geometry;
+};
+
+/**
+ * One regular polygon CIRCUMSCRIBING the unit circle, drawn `count` times — the
+ * round-sprite counterpart to `instancedQuad`.
+ *
+ * FOR FILL RATE, AND NOTHING ELSE. A particle whose falloff dies at radius 1 (Snow's
+ * inverse-distance speck, `0.5/d - 1`) draws its disc inside the inscribed circle of its
+ * quad, so the four corners — `(4 - π)/4`, **21.5% of every flake's fragments** — are
+ * rasterised, shaded and alpha-blended to produce exactly nothing. At 11 000 flakes on a
+ * fill-bound frame that is real money.
+ *
+ * The apothem is 1, so the drawn disc is untouched and no shader changes: the layer still
+ * reads its corner from `positionLocal.xy` on the same 0..1 radius convention, and the
+ * few fragments beyond radius 1 still clamp to zero — there are simply far fewer of them.
+ * Octagon area is `8·tan(π/8) = 3.31` against the square's 4, so **17% fewer fragments**
+ * for four extra vertices per instance. On a fill-bound layer that trade is roughly 60:1
+ * in favour; it is the wrong trade for a layer that is vertex-bound.
+ *
+ * `sides = 4` reproduces `CENTERED_QUAD` exactly, which is the sanity check that the
+ * construction is right.
+ *
+ * Not for Rain: its streaks are long thin quads whose gradient fills the whole shape, so
+ * there are no dead corners to reclaim.
+ */
+export const instancedDisc = (count: number, sides = 8): THREE.InstancedBufferGeometry => {
+	const geometry = new THREE.InstancedBufferGeometry();
+
+	const radius = 1 / Math.cos(Math.PI / sides);
+	const position = new Float32Array(sides * 3);
+	for (let v = 0; v < sides; v++) {
+		// The half-step offset is what puts an EDGE tangent to the circle rather than a
+		// vertex on it — i.e. what makes this circumscribed rather than inscribed.
+		const angle = (v / sides) * Math.PI * 2 + Math.PI / sides;
+		position[v * 3] = Math.cos(angle) * radius;
+		position[v * 3 + 1] = Math.sin(angle) * radius;
+		position[v * 3 + 2] = 0;
+	}
+
+	// Triangle fan, wound counter-clockwise to match `instancedQuad` — sky layers are
+	// `FrontSide`, so a reversed winding would cull the whole field.
+	const index: number[] = [];
+	for (let v = 1; v < sides - 1; v++) index.push(0, v, v + 1);
+
+	geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+	geometry.setIndex(index);
+	geometry.instanceCount = count;
+	return geometry;
+};
+
+// Per-instance attribute constructors.
+//
+// The explicit type argument is required for the same reason `attribute<'vec2'>(...)`
+// needs one: the generic is inferred from the argument's VALUE, so a bare 'vec3' widens
+// to `string` and every downstream node method silently disappears.
+//
+// These nodes carry their own buffers and are bound directly by the renderer
+// (RenderObject.getAttributes reads `nodeAttribute.node.attribute`), so they do NOT
+// need to be registered on the geometry -- only `instanceCount` does.
+
+export const instancedFloat = (array: Float32Array) =>
+	instancedBufferAttribute<'float'>(new THREE.InstancedBufferAttribute(array, 1), 'float');
+
+export const instancedVec2 = (array: Float32Array) =>
+	instancedBufferAttribute<'vec2'>(new THREE.InstancedBufferAttribute(array, 2), 'vec2');
+
+export const instancedVec3 = (array: Float32Array) =>
+	instancedBufferAttribute<'vec3'>(new THREE.InstancedBufferAttribute(array, 3), 'vec3');
+
+export const instancedVec4 = (array: Float32Array) =>
+	instancedBufferAttribute<'vec4'>(new THREE.InstancedBufferAttribute(array, 4), 'vec4');
+
+// ── Vertex nodes ───────────────────────────────────────────────────────────────
+
+/**
+ * Pin a clip-space position to the far plane, exactly as SkyMesh does internally.
+ *
+ * LOAD-BEARING, not an optimisation. The camera's far plane is 144 while the sky sits at
+ * radius 1000, so an honestly-projected sky layer is clipped away in its entirety.
+ * Pinning also sorts the layer behind all scene geometry for free -- which is why
+ * `renderOrder` is the only thing separating the sky layers from each other.
+ *
+ * Every layer using this also needs `frustumCulled={false}`: its bounding volume sits
+ * wholly beyond the far plane, so three would cull it before it ever drew.
+ */
+export const pinFarPlane = (clip: THREE.Node<'vec4'>) => vec4(clip.xy, clip.w, clip.w);
+
+/**
+ * The standard model-view-projection, for a layer that keeps HONEST depth.
+ *
+ * Used by the near-camera layers (rain streaks, impact rings and bursts) which must be
+ * occluded by scene geometry, as opposed to the dome layers which pin to the far plane.
+ * Written out rather than left to `material.positionNode` because these layers read
+ * `positionLocal` for their quad corner, and `positionNode` is what `positionLocal`
+ * resolves FROM -- feeding one from the other is circular.
+ */
+export const projectClip = (localPosition: THREE.Node<'vec3'>) =>
+	cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(localPosition, 1)));
+
+/** The whole vertex node for a layer whose geometry is already at the dome's radius. */
+export const domeVertexNode = () => pinFarPlane(projectClip(positionLocal));
+
+/**
+ * Camera-facing billboard: offset the corner AFTER the model-view transform, so the quad
+ * faces the camera with no per-particle rotation.
+ *
+ * Built as ONE PURE EXPRESSION, with no `.toVar()` and no assignment. That is not a style
+ * preference. TSL's assignment operators need an `Fn()` stack to record into, and outside
+ * one they fail with "No stack defined for assign operation" -- a console warning, not a
+ * throw. An early version of Stars used `mv.xy.addAssign(...)`, the call was dropped,
+ * every quad's four vertices stayed on the same point, and thousands of zero-area
+ * triangles rendered precisely nothing.
+ */
+export const billboardClip = (center: THREE.Node<'vec3'>, offset: THREE.Node<'vec2'>) => {
+	const mv = modelViewMatrix.mul(vec4(center, 1));
+	return cameraProjectionMatrix.mul(vec4(mv.xy.add(offset), mv.z, mv.w));
+};
+
+/**
+ * Motion-aligned billboard: a quad stretched from `head` to `tail`, widened
+ * perpendicular to its own screen-space direction. Rain's drops and Meteors' streaks are
+ * the same construction with different endpoints.
+ *
+ * `along` walks the spine (0 = head, 1 = tail) and `across` is the cross-axis corner.
+ * The epsilon guards the degenerate head-over-tail case -- motion straight at the camera,
+ * where `normalize()` of a zero vector is NaN.
+ */
+export const streakClip = (
+	head: THREE.Node<'vec3'>,
+	tail: THREE.Node<'vec3'>,
+	along: THREE.Node<'float'>,
+	across: THREE.Node<'float'>,
+	width: THREE.Node<'float'>
+) => {
+	const headVS = modelViewMatrix.mul(vec4(head, 1));
+	const tailVS = modelViewMatrix.mul(vec4(tail, 1));
+	const motion = tailVS.xy.sub(headVS.xy).add(vec2(1e-5, 1e-5)).normalize();
+	const perpendicular = vec2(motion.y.negate(), motion.x);
+	const spine = mix(headVS, tailVS, along);
+	const offset = perpendicular.mul(across.mul(width));
+	return cameraProjectionMatrix.mul(vec4(spine.xy.add(offset), spine.z, spine.w));
+};
+
+/**
+ * Sine of a dome-layer point's altitude, from its world position and the dome radius.
+ *
+ * THIS EXISTS BECAUSE THE COPIES OF IT DISAGREED. Stars stores radius-scaled positions,
+ * so `positionWorld.y / radius` recovered the altitude correctly. Meteors stores UNIT
+ * directions and scales in the shader, so the same copied line divided an already-unit
+ * value by 1000 and every meteor was multiplied by a constant ~0.06 -- a 16x dimming,
+ * with the horizon fade it was written for doing nothing at all.
+ *
+ * Instancing removes the trap at the root: with the centre in an instanced attribute,
+ * `positionWorld` is the +/-1 quad corner for every layer, so nobody may read it for
+ * altitude any more. Pass the centre explicitly and state its scale.
+ */
+export const altitudeOf = (center: THREE.Node<'vec3'>, radius: number) => center.y.div(radius);
+
+// ── Materials ──────────────────────────────────────────────────────────────────
+
+export type SkyLayerMaterialOptions = {
+	blending?: THREE.Blending;
+	side?: THREE.Side;
+	/**
+	 * Layers that must composite in the SkyMesh dome's exposure space (the cloud deck,
+	 * the moon) set this true. Emissive layers -- stars, meteors, the nebula, lightning
+	 * -- do not: tone mapping them at night's 0.62 exposure would dim the one thing in a
+	 * dark frame that is supposed to be bright.
+	 */
+	toneMapped?: boolean;
+};
+
+/**
+ * A transparent sky-layer material with the flags every layer shares.
+ *
+ * `fog = false` is the one that is not negotiable. Sky layers sit at radius ~1000 while
+ * scene fog is tuned for a 144-unit far plane, so ANY density at all resolves the whole
+ * sky to a flat fog colour -- and fogging an additive layer mixes it toward the fog
+ * colour rather than dimming it. The sky is what the fog is a haze TOWARD, never
+ * something the fog is applied to. That is exactly why the day curve authors a
+ * per-keyframe `fogColor` in the first place. See SkyFog.svelte.
+ */
+export const skyLayerMaterial = ({
+	blending = THREE.NormalBlending,
+	side = THREE.FrontSide,
+	toneMapped = false
+}: SkyLayerMaterialOptions = {}): THREE.MeshBasicNodeMaterial => {
+	const material = new THREE.MeshBasicNodeMaterial();
+	material.transparent = true;
+	material.depthWrite = false;
+	material.blending = blending;
+	material.side = side;
+	material.toneMapped = toneMapped;
+	material.fog = false;
+	return material;
+};

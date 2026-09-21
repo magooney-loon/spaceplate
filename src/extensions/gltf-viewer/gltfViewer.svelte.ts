@@ -1,5 +1,5 @@
-import { sceneActions } from '$extensions/scene/scene.svelte';
-import { logGltf } from '$extensions/logger/logger.svelte';
+import { sceneActions } from '$extensions/scene';
+import { logGltf } from '$extensions/logger';
 import type { GltfViewerColliderShape, GltfViewerModel, GltfViewerState } from './types';
 
 export type { GltfViewerModel, GltfViewerState } from './types';
@@ -16,6 +16,11 @@ const makeModel = (name: string, url: string, isBlobUrl: boolean): GltfViewerMod
 	crossfadeDuration: 0.3,
 	loop: true,
 	visible: true,
+	showRig: false,
+	castShadows: false,
+	receiveShadows: false,
+	autoRotate: false,
+	autoRotateSpeed: 0.5,
 	colliderEnabled: false,
 	colliderShape: 'trimesh'
 });
@@ -81,11 +86,17 @@ export const gltfViewerActions = {
 	setModelClips(id: string, clips: string[]) {
 		const m = find(id);
 		if (!m) return;
-		m.animationClips = clips;
+		// GLTFs can carry duplicate clip names (Blender NLA exports do it readily) — the
+		// panel's name-keyed `each` would throw. Dedupe, preserving first-seen order.
+		const unique = [...new Set(clips)];
+		if (unique.length < clips.length) {
+			logGltf.warn(`Ignoring ${clips.length - unique.length} duplicate clip name(s) in`, m.name);
+		}
+		m.animationClips = unique;
 		logGltf.info(
 			'Clips discovered for',
 			m.name + ':',
-			clips.length > 0 ? clips.join(', ') : '(none)'
+			unique.length > 0 ? unique.join(', ') : '(none)'
 		);
 	},
 
@@ -127,6 +138,31 @@ export const gltfViewerActions = {
 	setVisible(id: string, visible: boolean) {
 		const m = find(id);
 		if (m) m.visible = visible;
+	},
+
+	setShowRig(id: string, show: boolean) {
+		const m = find(id);
+		if (m) m.showRig = show;
+	},
+
+	setCastShadows(id: string, cast: boolean) {
+		const m = find(id);
+		if (m) m.castShadows = cast;
+	},
+
+	setReceiveShadows(id: string, receive: boolean) {
+		const m = find(id);
+		if (m) m.receiveShadows = receive;
+	},
+
+	setAutoRotate(id: string, enabled: boolean) {
+		const m = find(id);
+		if (m) m.autoRotate = enabled;
+	},
+
+	setAutoRotateSpeed(id: string, speed: number) {
+		const m = find(id);
+		if (m) m.autoRotateSpeed = speed;
 	},
 
 	setColliderShape(id: string, shape: GltfViewerColliderShape) {

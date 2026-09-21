@@ -1,6 +1,6 @@
 {
   "dev": {
-    "run": "npm run dev"
+    "run": "pnpm run dev"
   },
   "database": "spaceplate-j29m7",
   "module-path": "./spacetimedb",

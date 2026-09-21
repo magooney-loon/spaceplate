@@ -1,0 +1,750 @@
+// Engine + clutch + gearbox, generic over a CarSpec (cars/). Pure SI, pure
+// function of its own state — no runes, no Three, no Rapier. The controller
+// (sim/controller.ts) owns the body and calls `step()` once per physics step
+// with the road speed it measured. What this models is TestGame's CLAUDE.md
+// "engine feel" section; this header covers only what that doesn't. The tune
+// numbers (driven-axle grip, wheelspin's lateral cost) come in per step as a
+// `HandlingTune` (handling.ts) — the car's one tune, which the controller
+// still re-reads each step. Traction control is the player's G switch
+// (default off) and arrives the same way the gearbox mode does: as a fresh
+// `input.tc` flag, never cached.
+//
+// Wheelspin (`spin`) is a speed, not a ratio: how much faster the driven
+// tyre's contact patch is running than the road, in m/s, integrated against
+// the car's rotating inertia. Not a force ratio clamped to a multiplier — that
+// couldn't let revs run away under wheelspin, and the limiter's fuel cut used
+// to brake the car mid-spin (crank torque negative, drive force following it
+// negative) where a spinning tyre actually hands the road full traction in
+// the direction the wheels are turning regardless of what the engine is doing.
+
+import type { CarSpec } from '../cars/types';
+import {
+	drivenAxleLoad,
+	engineBrakeTorque,
+	engineTorque,
+	gearRatio,
+	rpmInGear,
+	topGear,
+	totalRatio
+} from '../cars/spec';
+import type { HandlingTune } from './handling';
+import { clamp, damp } from './carMath';
+
+/** Raw driver intent for one step. Shift flags are LEVEL, not edges — see `step`. */
+export interface DriveInput {
+	/** ↑ held. Throttle — drives the car forwards, or backwards in R. */
+	forward: boolean;
+	/** ↓ held. Brake — only ever the brake, in every gear. */
+	backward: boolean;
+	handbrake: boolean;
+	shiftUp: boolean;
+	shiftDown: boolean;
+	/** The gearbox is in AUTOMATIC — the box picks the forward gear itself, and
+	 * Q/E stay live as a tiptronic override (and as the R/N/D selector). LEVEL,
+	 * like the shift flags: the player can switch mode mid-corner, so it is read
+	 * fresh every step and never cached. */
+	auto: boolean;
+	/** Traction control is ON (the G latch, default off). LEVEL like `auto`:
+	 * read fresh every step, never cached. On, the ECU clamps wheelspin at the
+	 * spec's `tcSlipSpeed`; off, the surplus torque spins the driven wheels for
+	 * real and the limiter is the only ceiling. */
+	tc: boolean;
+	/** 0..1 — how hard the car is cornering (the controller's lateral load / slip
+	 *  angle, whichever is loosest, one step stale). TWO consumers: the AUTOMATIC
+	 * (a box that changes gear mid-bend unsettles a car that is already using
+	 * its tyres) and the sliding tyre's KINETIC μ — the drift grease
+	 * (`slideMuLong`) blends in with this, so drifts carry speed while
+	 * straight-line burnouts keep the plain static μ. */
+	cornering: number;
+	/** 0..1 — nitrous flow reaching the engine this step. The SCENE owns the
+	 * bottle and the throttle-switch gating (Shift alone does nothing); this is just
+	 * how much spray is in, multiplying wide-open-throttle torque. Sits INSIDE
+	 * the traction limit like any engine torque, so in the low gears a shot
+	 * becomes wheelspin rather than teleportation. */
+	nitrous: number;
+}
+
+export interface DriveOutput {
+	/** N along the car's nose, signed. Engine + engine braking, traction-clipped. */
+	driveForce: number;
+	/** N along the car's nose, signed — always opposes motion. Brakes + drag + rolling. */
+	resistForce: number;
+	/** Lateral grip left, 0…1: 1 = the tyre's full bite, 0 = the handbrake's drift
+	 *  limit. The controller interpolates its two tuned grip rates across this. */
+	gripFactor: number;
+	/** How much of the driven axle's grip budget the drive force is spending, 0…1 —
+	 *  the FRICTION CIRCLE. A tyre has one budget; grip spent pushing the car along
+	 *  is not available to hold it sideways, and that is true well before the tyre
+	 *  actually spins. The controller turns this into looseness (`throttleLoose`),
+	 *  which is what lets the throttle provoke a slide in a gear that never lights
+	 *  the rears up — without it, only 1st and 2nd could ever break traction. */
+	powerLoad: number;
+}
+
+export interface DrivetrainState {
+	/** -1 reverse, 0 neutral, 1…6. */
+	gear: number;
+	rpm: number;
+	/** 0 = clutch on the floor, 1 = fully home AND biting — the pedal's position
+	 *  times the disc's bite, which are two different things (see `step`). Mid-
+	 *  shift it rides the engagement ramp rather than snapping 0 → 1. */
+	clutch: number;
+	/** 0…1 — how LIT the driven tyres are: wheel overspeed over the spec's
+	 *  `fullSlipSpeed`, so 1 is a tyre doing nothing but smoke. Feeds lateral
+	 *  grip here, looseness in the controller, and the cluster's TC lamp. */
+	slip: number;
+	/** m/s — how much faster the driven contact patch is running than the road,
+	 *  signed along the nose. The state `slip` is a normalised view of; the revs
+	 *  read it. */
+	spin: number;
+	throttle: number;
+	brake: number;
+	/** Fuel cut is active (limiter bouncing or top speed reached). */
+	limiting: boolean;
+	/** True for the STEP a gear change starts — the controller folds it into
+	 * `carSim.shiftSeq` (a boolean set in substep 1 is gone before the frame's
+	 * consumers run), which the audio tick barks a sound off. */
+	shifted: boolean;
+	/** True for the frame a REV-MATCH LAUNCH lands — 1st slotted from N with the
+	 * revs in the window and the clutch just dropped clean. The scene flashes
+	 * the cluster off it. */
+	launched: boolean;
+	/** The caught launch's tier, set the same frame as `launched` (from the
+	 * caught rpm, not the live one): 0 = STREET (4–5k), 1 = JUICY (5–5.5k),
+	 * 2 = PERFECT (5.5–6k). Presentation bands — the boost itself stays
+	 * continuous; the cluster flash names the band. */
+	launchTier: number;
+	/** 0..1 — rev-match launch LIVE: depth in the window × what's left of the
+	 * clutch drop. Fades to 0 exactly as the clutch homes; the tyre-squeal
+	 * source reads it through carSim. */
+	launch: number;
+}
+
+/** m/s under which the tyre is gripping rather than sliding. Noise floor. */
+const HOOKED = 0.05;
+
+/** The automatic refuses a downshift that would land closer than this to its own
+ *  upshift point — the anti-hunt rule, and the one that is not a tuning number:
+ *  without it the box kicks down, pulls to the upshift rpm, changes back up into
+ *  the rpm that asked for the kickdown, and does it again. */
+const AUTO_HUNT_MARGIN = 0.9;
+
+/** m/s under which the automatic counts the car as STOPPED and selects 1st. */
+const AUTO_REST_SPEED = 1.5;
+
+/** × `autoShiftHold` — how long an automatic UPSHIFT locks the gear it just
+ *  chose against a kickdown. The pedal is a key, so demand swings far more than
+ *  a real ankle does, and around 30 km/h the two schedules overlap: without the
+ *  lock, blipping the throttle in traffic gets 1→2→1→2 inside a second and a
+ *  half. Lugging still gets through it (see the guard), so the box can always
+ *  save itself; what it may not do is undo its own decision on a twitch. */
+const AUTO_UPSHIFT_LOCK = 4;
+
+/** Cornering effort (`DriveInput.cornering`) over which the automatic holds the
+ *  gear it is in. A shift mid-corner is a torque cut and then a torque step into
+ *  an axle that is already spending its grip sideways — the one moment a box
+ *  should keep its hands to itself. Downshifts are still allowed: they are how
+ *  you get drive back on the way out. */
+const AUTO_CORNER_HOLD = 0.55;
+
+/** Wheelspin over which the automatic will not UPSHIFT. Re-engaging onto a
+ *  spinning axle at a lower ratio is how an automatic turns a small slide into a
+ *  big one. */
+const AUTO_SLIP_HOLD = 0.25;
+
+/** rad/s per rpm — the crank-speed conversion the clutch shock is computed in. */
+const RAD_PER_RPM = (2 * Math.PI) / 60;
+
+export type Drivetrain = ReturnType<typeof createDrivetrain>;
+
+export function createDrivetrain(spec: CarSpec) {
+	const hw = spec.hardware;
+
+	/** The box as it spawns — and, through `reset()`, as it comes back. One
+	 *  definition rather than two: the reset used to restate this list field by
+	 *  field, so a state added to the interface had to be remembered twice. */
+	const initialState = (): DrivetrainState => ({
+		// Spawn in NEUTRAL — slotting 1st is the driver's call (and the launch
+		// ritual starts from N).
+		gear: 0,
+		rpm: hw.idleRpm,
+		clutch: 1,
+		slip: 0,
+		spin: 0,
+		throttle: 0,
+		brake: 0,
+		limiting: false,
+		shifted: false,
+		launched: false,
+		launchTier: 0,
+		launch: 0
+	});
+
+	const state: DrivetrainState = initialState();
+
+	let shiftTimer = 0;
+	let cutTimer = 0;
+	/** Rising-edge latches for Q/E — the scene passes held booleans. */
+	let prevUp = false;
+	let prevDown = false;
+	/** Last step's drive force, for the load-transfer term. Chicken-and-egg, one step stale. */
+	let prevDrive = 0;
+	/** Phase accumulator for the idle wobble — organic fluctuation around idle. */
+	let idlePhase = 0;
+	/** rpm held during a REV-MATCH LAUNCH, 0 = none. Latched in engage() when 1st
+	 * slots from N with the revs in the window; cleared by the clutch coming
+	 * home, a lift, or any further gear change (engage re-latches). */
+	let launchHold = 0;
+	/** Depth in the window at the catch, 0…1 — how hard the launch is. Bite and
+	 * the driven-axle plant both scale with it. */
+	let launchQ = 0;
+	/** The live launch boost: `launchQ` held through the clutch drop, then
+	 * decaying into 1st (spec `launchBoostDecay`). Plant and torque gain read THIS —
+	 * the slam must outlive the drop or it reads as a blip. Zeroed instantly on
+	 * a lift or gear change: no reward for aborted launches. */
+	let launchBoost = 0;
+	/** One-shot latch so `state.launched` fires on the landing frame only. */
+	let launchAnnounced = false;
+	/** s left before the AUTOMATIC may shift again. Armed by every engagement,
+	 * the player's own taps included. */
+	let autoHold = 0;
+	/** 0…1 — the automatic's smoothed pedal DEMAND, which is what its schedule
+	 * interpolates across. The raw pedal is a key. */
+	let autoDemand = 0;
+	/** Last step's raw pedal, for the automatic's KICKDOWN edge. Separate from
+	 * `autoDemand` on purpose: the smoothing is what makes the schedule mean
+	 * something, and the edge is what makes a stab mean something. */
+	let prevAutoThrottle = false;
+	/** s left on the lock an automatic UPSHIFT puts on the gear it just picked
+	 * (`AUTO_UPSHIFT_LOCK`). Separate from `autoHold`, which is every shift's
+	 * settle: this one is only against changing the box's own mind back. */
+	let autoUpLock = 0;
+
+	function engage(gear: number): void {
+		if (gear === state.gear) return;
+		// The rev-match window is judged at the TAP — the shift cut that follows
+		// lets the revs climb out of it, and that climb is the player's timing,
+		// not a miss. Depth in the window (`launchQ`) is how hard the launch is:
+		// the floor is barely more than the street launch, the top is a dropped
+		// clutch at full plant. Rolling engagements past `launchSpeed` self-clear
+		// in the step (coupling is already 1) — a launch this is not.
+		launchHold =
+			gear === 1 &&
+			state.gear === 0 &&
+			state.rpm >= hw.launchWindowMinRpm &&
+			state.rpm <= hw.launchWindowMaxRpm
+				? state.rpm
+				: 0;
+		launchQ =
+			launchHold > 0
+				? clamp(
+						(state.rpm - hw.launchWindowMinRpm) / (hw.launchWindowMaxRpm - hw.launchWindowMinRpm),
+						0,
+						1
+					)
+				: 0;
+		launchBoost = launchQ;
+		state.gear = gear;
+		shiftTimer = hw.shiftTime;
+		state.shifted = true;
+		// Every engagement settles the automatic, whoever asked for it: a Q/E tap in
+		// D is a real override, not something the box undoes on the next step.
+		autoHold = hw.autoShiftHold;
+	}
+
+	function requestShift(dir: number, speedMs: number): void {
+		const next = state.gear + dir;
+		if (next > topGear(spec) || next < -1) return;
+		// Reverse only while (nearly) stopped or already rolling back; forward
+		// gears only while (nearly) stopped or already rolling forward. The 5 m/s
+		// grace window (up from 3, for friendlier shifting) lets you slot 1st from
+		// R/N (or R from 1st) while still creeping instead of waiting for a dead
+		// stop; the money-shift guard below still refuses anything that would
+		// over-rev. Neutral is always available.
+		if (next < 0 && speedMs > 5) return;
+		if (next > 0 && speedMs < -5) return;
+		// Money-shift guard: refuse a downshift that would slam past the limiter.
+		if (next > 0 && rpmInGear(spec, next, speedMs) > hw.limiterRpm) return;
+		engage(next);
+	}
+
+	/**
+	 * THE AUTOMATIC — drives the same `requestShift` the player's Q/E do, forward
+	 * gears only (R/N stay the driver's call). See CLAUDE.md's automatic-gearbox
+	 * section for the schedule and the three rules (lug-rpm upshift guard,
+	 * anti-hunt downshift margin, stopped-means-1st).
+	 */
+	function autoShift(dt: number, speedMs: number, throttle: number, input: DriveInput): void {
+		autoDemand += (throttle - autoDemand) * damp(hw.autoDemandRate, dt);
+		autoHold = Math.max(0, autoHold - dt);
+		autoUpLock = Math.max(0, autoUpLock - dt);
+		// The pedal going DOWN is an instruction, not a data point — the rising edge
+		// is the kickdown request (see below). Latched here, before any early
+		// return, or a stab during the settle after a shift is simply lost.
+		const stab = throttle > 0 && !prevAutoThrottle;
+		prevAutoThrottle = throttle > 0;
+
+		const [upLifted, upWot] = hw.autoUpshiftRpm;
+		const [downLifted, downWot] = hw.autoDownshiftRpm;
+		const upRpm = upLifted + (upWot - upLifted) * autoDemand;
+		const downRpm = downLifted + (downWot - downLifted) * autoDemand;
+
+		// Not in a forward gear or mid-shift: the box has nothing to say.
+		if (state.gear < 1 || shiftTimer > 0) return;
+
+		// ── KICKDOWN ────────────────────────────────────────────────────────
+		// The smoothed demand takes about a second to reach the wide-open half of
+		// the schedule, which is exactly right for deciding when to change UP and
+		// useless as an answer to "I want to overtake, now": by the time the demand
+		// agrees, the moment is gone. So the pedal's rising edge asks the WIDE-OPEN
+		// downshift question directly (`autoDownshiftRpm`'s second number, the
+		// number that already means kickdown), and asks it THROUGH the settle timer
+		// and the upshift lock — a driver flooring it has overruled both. Every
+		// other refusal still applies: it goes through `requestShift`, and the
+		// anti-hunt margin below is repeated here so a kickdown cannot land the box
+		// straight back at its own upshift point.
+		if (stab && state.gear > 1 && state.rpm <= downWot) {
+			if (rpmInGear(spec, state.gear - 1, speedMs) <= upWot * AUTO_HUNT_MARGIN) {
+				requestShift(-1, speedMs);
+				return;
+			}
+		}
+
+		// Still settling after a shift — the box waits.
+		if (autoHold > 0) return;
+
+		// STOPPED: the box is in 1, whatever the revs say, and it goes there
+		// directly rather than a gear at a time. The rpm schedule alone does not
+		// get you home — hard braking from 100 km/h is over in ~2.3 s, less than
+		// the coast-down needs to walk six gears — and pulling away in 4th on a
+		// slipping clutch is the one thing an automatic is supposed to never do.
+		if (Math.abs(speedMs) < AUTO_REST_SPEED) {
+			if (state.gear > 1) engage(1);
+			return;
+		}
+
+		// ── When the box may NOT change up ──────────────────────────────────
+		// All three are the same rule seen three ways: an upshift is a torque cut
+		// followed by a torque step, and there are moments when the car cannot
+		// absorb one. Under BRAKING it is about to need the lower gear anyway;
+		// mid-CORNER the tyres are already spending their budget sideways; mid-
+		// SLIDE, re-engaging onto a spinning axle is how a twitch becomes a spin.
+		// None of them block a DOWNSHIFT — that is how drive comes back.
+		const holdGear =
+			input.backward || input.cornering > AUTO_CORNER_HOLD || state.slip > AUTO_SLIP_HOLD;
+
+		if (!holdGear && state.rpm >= upRpm && state.gear < topGear(spec)) {
+			if (rpmInGear(spec, state.gear + 1, speedMs) >= hw.lugRpm) {
+				requestShift(1, speedMs);
+				autoUpLock = hw.autoShiftHold * AUTO_UPSHIFT_LOCK;
+			}
+			return;
+		}
+		// ON THE BRAKES the box comes down on the KICKDOWN schedule instead of the
+		// coast-down one. Lifted, `downRpm` is 1300 — a gentle walk down the gears
+		// as the car rolls to a stop, which is right for coasting and wrong for
+		// braking: the driver is slowing for something and wants the gear they will
+		// need on the way out, plus the engine braking on the way in. The anti-hunt
+		// margin below is what stops that being a money shift.
+		const downNow = input.backward ? Math.max(downRpm, downWot) : downRpm;
+		if (state.rpm <= downNow && state.gear > 1) {
+			// Freshly upshifted: the only downshift allowed is the one that saves the
+			// engine from lugging, i.e. the LIFTED end of the schedule.
+			if (autoUpLock > 0 && state.rpm > downLifted) return;
+			if (rpmInGear(spec, state.gear - 1, speedMs) <= upRpm * AUTO_HUNT_MARGIN) {
+				requestShift(-1, speedMs);
+			}
+		}
+	}
+
+	/**
+	 * Advance one physics step.
+	 *
+	 * @param dt      step length, seconds
+	 * @param speedMs road speed along the nose, signed, m/s
+	 * @param tune    the selected setup — read fresh every step, never cached
+	 */
+	function step(dt: number, speedMs: number, input: DriveInput, tune: HandlingTune): DriveOutput {
+		state.shifted = false;
+		state.launched = false;
+		const rolling = Math.abs(speedMs);
+
+		// ── Gear selection ───────────────────────────────────────────────────
+		if (input.shiftUp && !prevUp) requestShift(1, speedMs);
+		if (input.shiftDown && !prevDown) requestShift(-1, speedMs);
+		prevUp = input.shiftUp;
+		prevDown = input.shiftDown;
+
+		// ── Pedals ───────────────────────────────────────────────────────────
+		// No pedal swapping in reverse: ↑ is ALWAYS throttle, ↓ is ALWAYS brake.
+		// In R the throttle simply drives the car backwards — you slot R with Q
+		// and pull away on the same key as everywhere else.
+		const throttle = input.forward ? 1 : 0;
+		const braking = input.backward ? 1 : 0;
+		state.throttle = throttle;
+		state.brake = braking;
+
+		// The automatic runs AFTER the player's own taps, on the pedals of this
+		// step: a tap and the box asking for the same shift is one shift, and the
+		// hold `engage` arms means the box then leaves that gear alone.
+		// In manual the demand tracks the pedal exactly, so switching INTO auto
+		// mid-corner starts from the pedal you are actually holding rather than
+		// spending a second catching up to it.
+		if (input.auto) autoShift(dt, speedMs, throttle, input);
+		else {
+			autoDemand = throttle;
+			prevAutoThrottle = throttle > 0;
+		}
+
+		// ── Clutch & engine speed ────────────────────────────────────────────
+		shiftTimer = Math.max(0, shiftTimer - dt);
+		const ratio = gearRatio(spec, state.gear);
+		const total = totalRatio(spec, state.gear);
+		const inGear = ratio !== 0;
+
+		// THE CLUTCH PEDAL across a shift. It used to be a dead cut — zero torque
+		// for the whole `shiftTime`, then full torque on the same step the timer
+		// hit zero — and a shift felt like a mute button followed by a kick. What a
+		// clutch actually does is come OUT fast and go back IN progressively, so
+		// that is what this is: `clutchOpen` of the window on the floor, then a
+		// smoothstep back up. The torque the car feels builds over that ramp, which
+		// is where a shift gets its bite, and the rev mismatch left at the moment
+		// of engagement becomes the SHOCK below.
+		const shiftPhase = shiftTimer > 0 ? (hw.shiftTime - shiftTimer) / hw.shiftTime : 1;
+		const engaging = clamp((shiftPhase - hw.clutchOpen) / (1 - hw.clutchOpen), 0, 1);
+		const shiftPedal = engaging * engaging * (3 - 2 * engaging);
+
+		/** How locked the crank is to the road, 0…1 — what the REVS follow, and
+		 *  what engine braking is scaled by (an open clutch transmits none). */
+		let lock = 0;
+		/** Clutch PEDAL position, 0 = floor … 1 = home. Separate from the disc's
+		 *  bite below — a launch dumps the pedal while the disc slips. */
+		let pedal = 0;
+		/** Fraction of crank torque the clutch actually passes: pedal × bite. */
+		let pass = 0;
+		/** The rpm this gear imposes at this road speed — the rev-match target, and
+		 *  the speed the disc is biting onto. */
+		let gearRpm = 0;
+
+		if (!inGear) {
+			// Neutral: the engine is on its own. Blipping the throttle actually does
+			// something, which is the point.
+			state.clutch = 0;
+			state.launch = 0;
+			const free = hw.idleRpm + throttle * (hw.limiterRpm - hw.idleRpm);
+			const rate = throttle > 0 ? hw.freeRevRate : hw.freeDropRate;
+			state.rpm += (free - state.rpm) * damp(rate, dt);
+		} else {
+			// Slip the clutch off the line so a launch holds revs instead of bogging.
+			// Scaled by gear: 1st is home by launchSpeed, top gear would never slip anyway.
+			const homeAt = hw.launchSpeed * (totalRatio(spec, 1) / total);
+			const coupling = clamp(rolling / homeAt, 0, 1);
+			// REV-MATCH LAUNCH (window at the top): while held, the clutch is DOWN
+			// CLEAN and DEPTH in the window sets how hard — bite scales
+			// `clutchMinBite`→1 with `launchQ`, the revs sit where you caught them
+			// instead of the soft-slip launch rpm. The BOOST (plant + torque) is
+			// `launchBoost`: held through the drop, then decaying into 1st so the
+			// slam outlives the engagement. The hold ends when the clutch homes or
+			// the throttle lifts; a lift (or any gear change) kills the boost too —
+			// no reward for aborted launches.
+			if (launchHold > 0 && (coupling >= 1 || throttle === 0)) {
+				launchHold = 0;
+				launchQ = 0;
+				if (throttle === 0) launchBoost = 0;
+			}
+			if (launchHold > 0) launchBoost = launchQ;
+			else if (launchBoost > 0) {
+				launchBoost = Math.max(0, launchBoost - hw.launchBoostDecay * dt);
+			}
+			if (launchHold > 0 && !launchAnnounced) {
+				launchAnnounced = true;
+				state.launched = true;
+				// The tier off the CAUGHT rpm (launchHold is still the catch here).
+				state.launchTier = launchHold >= 5500 ? 2 : launchHold >= 5000 ? 1 : 0;
+			}
+			if (launchHold === 0) launchAnnounced = false;
+
+			// THE DISC'S BITE AND THE PEDAL'S POSITION ARE DIFFERENT THINGS, and a
+			// launch is exactly where that shows: the pedal is DUMPED while the disc
+			// slips like mad. `bite` is the old clutch-slip model (how hard the disc
+			// is clamped, `clutchMinBite`→1); `pedal` is the shift ramp above, which
+			// a rev-match launch dumps in proportion to depth in the window — so the
+			// deeper the catch, the faster the clutch comes home, which is what
+			// dumping a clutch IS.
+			const bite = launchHold > 0 ? Math.max(coupling, launchQ) : coupling;
+			pedal = launchHold > 0 ? Math.max(shiftPedal, launchQ) : shiftPedal;
+			lock = coupling * pedal;
+			// A fully slipping disc still passes `clutchMinBite`; a pedal on the
+			// floor passes NOTHING. The old dead cut had no pedal at all, so
+			// `clutchMinBite` was the whole story and mid-shift was a special case.
+			pass = pedal * (hw.clutchMinBite + (1 - hw.clutchMinBite) * bite);
+			state.clutch = pedal * bite;
+			// The tyres' chirp reads the boost: full through the drop, easing off
+			// with the tail into 1st.
+			state.launch = launchBoost;
+
+			// `spin` feeds back here: spinning wheels turn faster than the road, so the
+			// revs climb even though the car is not. It is a real wheel speed, so this
+			// is just the gearing — a donut on the limiter is 12 m/s of spin over a
+			// 4 m/s car, and the tacho says so.
+			gearRpm = rpmInGear(spec, state.gear, speedMs + state.spin);
+			if (shiftTimer > 0 && launchHold === 0) {
+				// MID-SHIFT: the clutch is off the floor, so the engine is free — and
+				// two things are asking it for a speed. The PEDAL (free-rev, as
+				// before: blipping during a shift still does something) and the BOX,
+				// which is pulling the engine onto the speed the gear it is going into
+				// will impose. That second pull is the REV MATCH — the blip on a
+				// downshift and the drop on an upshift — and it matters more here than
+				// in a real car, because the throttle is a KEY: a driver who never
+				// lifts would otherwise re-engage every single upshift straight off
+				// the limiter. Whatever mismatch `revMatchRate` fails to close by the
+				// time the disc bites is the SHOCK the car feels (below): a clean
+				// match is silent, a lazy one kicks.
+				//
+				// THE BLIP IS A DRIVER AID and rides the TC switch: TC off (as it
+				// ships) and a manual box gets NO help — the full mismatch lands as
+				// shock, which is the shift-lock drift entry on a downshift and a
+				// jolt on a hold-it-to-the-limiter upshift unless you lift or blip it
+				// yourself (a throttle tap inside the window is the keyboard's
+				// heel-toe). The AUTOMATIC is exempt — its match is the box's own
+				// competence, not a nanny, and an auto that thumped every shift
+				// would just read as broken.
+				const free = hw.idleRpm + throttle * (hw.limiterRpm - hw.idleRpm);
+				const rate = throttle > 0 ? hw.freeRevRate : hw.freeDropRate;
+				state.rpm += (free - state.rpm) * damp(rate, dt);
+				if (input.tc || input.auto) {
+					state.rpm += (Math.max(hw.idleRpm, gearRpm) - state.rpm) * damp(hw.revMatchRate, dt);
+				}
+			} else {
+				const slipping =
+					launchHold > 0 ? launchHold : hw.idleRpm + throttle * (hw.launchRpm - hw.idleRpm);
+				const target = Math.max(
+					hw.idleRpm,
+					gearRpm,
+					gearRpm * coupling + slipping * (1 - coupling)
+				);
+				state.rpm += (target - state.rpm) * damp(hw.rpmResponse, dt);
+			}
+		}
+
+		// ── Fuel cut: rev limiter and the top-speed governor ─────────────────
+		if (state.rpm >= hw.limiterRpm) cutTimer = hw.limiterCut;
+		cutTimer = Math.max(0, cutTimer - dt);
+		const governed = speedMs > hw.topSpeed;
+		const cut = cutTimer > 0 || governed;
+		state.limiting = cut && throttle > 0;
+		state.rpm = clamp(state.rpm, hw.idleRpm, hw.limiterRpm + 150);
+
+		// ── Crank torque → wheel force ───────────────────────────────────────
+		let crankTorque = 0;
+		if (inGear) {
+			// Lugging: below `lugRpm` the engine can't make its curve.
+			const lug = clamp(state.rpm / hw.lugRpm, 0.35, 1);
+			// Nitrous multiplies the WOT term only — a fuel cut still cuts and engine
+			// braking is untouched, exactly as if the kit had just made the curve fatter.
+			// The launch boost multiplies on top of that, same rule.
+			const wot =
+				engineTorque(spec, state.rpm) *
+				lug *
+				(1 + hw.nitrousTorqueGain * input.nitrous) *
+				(1 + hw.launchTorqueGain * launchBoost);
+			// ENGINE BRAKING NEEDS A CLOSED CLUTCH, hence the `lock`. It is also what
+			// stopped a car rolling to a stop in gear from being dragged backwards
+			// through zero by an engine it was barely connected to any more.
+			const drag = engineBrakeTorque(spec, state.rpm) * lock;
+			// CREEP — the other half of the same fact. A slipping disc DRAGS, and at
+			// idle that drag is what a real car pulls away on before the throttle has
+			// said anything: slot 1st (or R) and it walks. It fades out as the clutch
+			// homes (`1 - lock`) and again with road speed (`creepSpeed`), so it is a
+			// walking pace, not a launch — and the gearing does the rest for free,
+			// since the same crank torque through 6th barely moves the car.
+			// THE BRAKE BEATS CREEP, and it has to be settled here rather than by
+			// out-pushing it downstream: the brake force only exists above 0.05 m/s
+			// (`resist`'s gate), so a creep torque that survived the pedal would
+			// walk the car off the line in 0.05 m/s hops that the brake could only
+			// ever answer after the fact.
+			const creep =
+				input.backward || input.handbrake
+					? 0
+					: hw.creepTorque * (1 - lock) * (1 - throttle) * clamp(1 - rolling / hw.creepSpeed, 0, 1);
+			crankTorque = cut ? -drag : throttle * wot - (1 - throttle) * drag + creep;
+		}
+
+		// ── The clutch-drop SHOCK ────────────────────────────────────────────
+		// A disc biting onto a crank that is turning at the wrong speed drags the
+		// two together, and the CAR feels the reaction: the engine's own inertia,
+		// over the time the clutch has to swallow the mismatch. Engine faster than
+		// the gear — a downshift dumped on high revs — shoves the car forward;
+		// slower — an upshift re-engaged from the limiter, or a lazy downshift — is
+		// the engine-braking kick. It rides the same road as every other crank
+		// torque (through the clutch, the gearing and the TRACTION LIMIT), so a big
+		// enough mismatch chirps the tyres instead of teleporting the car, which is
+		// exactly what dumping a clutch does. A launch is excluded: it has its own
+		// model (the plant and the boost), and counting both would be one drop paid
+		// for twice.
+		if (inGear && shiftTimer > 0 && shiftPedal > 0 && launchHold === 0) {
+			const snapTime = Math.max(hw.shiftTime * (1 - hw.clutchOpen), 1e-3);
+			crankTorque +=
+				(hw.clutchShock * hw.engineInertia * (state.rpm - gearRpm) * RAD_PER_RPM) / snapTime;
+		}
+
+		// A slipping clutch transmits less than the crank makes — without this the car
+		// launched off the line at the full traction limit and ran 0-60 in 5.2 s
+		// against the real GR86's 6.1. It is also what stops the car lurching when you
+		// blip the throttle at walking pace. `pass` carries the shift pedal now too,
+		// so this one number is the whole of "how much of the engine reaches the road".
+		const reduction = (total * hw.efficiency) / hw.wheelRadius;
+		const requested = crankTorque * pass * reduction * Math.sign(ratio || 1);
+
+		// ── Traction at the driven axle ──────────────────────────────────────
+		// Static driven-axle load plus longitudinal transfer (m·a·h/L, and m·a is
+		// just last step's force), layout-aware — cars/spec.ts. Handbrake locks
+		// the rears, so they drive nothing.
+		const drivenLoad = drivenAxleLoad(spec, prevDrive);
+		const traction = input.handbrake ? 0 : tune.tireMuLong * drivenLoad;
+
+		const sliding = Math.abs(state.spin) > HOOKED;
+		const plant = 1 + launchBoost * hw.launchGripGain;
+		// What the tyre hands the road. GRIPPING, it passes the engine's request up
+		// to the static limit. SLIDING, it gives its KINETIC μ along the way the
+		// wheels are turning, and the engine has no say at all — which is why a
+		// burnout keeps pulling through the limiter's fuel cut instead of braking
+		// the car (see the header).
+		// The kinetic μ is the ARCADE GREASE, blended in by how hard the car is
+		// CORNERING (`input.cornering`): a straight-line burnout runs the plain
+		// static `tireMuLong` — the wheel only keeps accelerating while the engine
+		// asks for more than the tyre takes, so the burnout gate below ~0.78 stays
+		// the burnout gate — while a drift gets up to `slideMuLong` (the GR86's
+		// 0.95 against a 0.75 cap), so a lit rear keeps ~95% of the push and the
+		// slide CARRIES SPEED instead of bogging. Flat μk above the static cap
+		// everywhere was tried first and killed the standing burnout: at standstill
+		// the slipping clutch passes only ~4.7 kN against 0.95 × 5.9 kN of kinetic
+		// push, so the surplus scrubbed the wheel back down to hooked and the car
+		// just launched.
+		// During a rev-match launch the driven-axle μ gains up to the spec's
+		// `launchGripGain` — the plant that makes the launch HARDER with depth in
+		// the window (the request at full bite is already past the tyre, so grip
+		// is the cap on thrust).
+		const kinetic =
+			tune.tireMuLong + (tune.slideMuLong - tune.tireMuLong) * clamp(input.cornering, 0, 1);
+		const driveForce = sliding
+			? Math.sign(state.spin) * kinetic * drivenLoad * plant
+			: clamp(requested, -traction * plant, traction * plant);
+
+		// Everything the engine asked for beyond what the tyre took goes into WHEEL
+		// SPEED. The rotating assembly resists that as an equivalent mass at the
+		// contact patch, I/r², with the engine's own inertia reflected through the
+		// gearing squared: ~460 kg in 1st against ~95 in 3rd. That single number is
+		// why 1st lights up in a blink, 2nd builds over a couple of seconds, and 3rd
+		// (which cannot out-pull the tyre anyway) never spins.
+		// Weighted by the clutch PEDAL: the crank's inertia only reaches the wheels
+		// through a clutch that is in. On the floor it is the axle alone (which is
+		// what the old dead cut modelled by excluding it outright), home it is the
+		// full reflected figure — the ends are unchanged and the ramp between them
+		// is new.
+		const spinMass =
+			((inGear ? hw.engineInertia * total * total * pedal : 0) + hw.wheelInertia) /
+			(hw.wheelRadius * hw.wheelRadius);
+		const wasSpin = state.spin;
+		state.spin += ((requested - driveForce) / spinMass) * dt;
+		// Never let a decaying spin cross zero inside one step — that is the wheels
+		// grabbing and dragging the car the other way.
+		if (wasSpin * state.spin < 0) state.spin = 0;
+		// The handbrake holds the rears still: locked, not lit.
+		if (input.handbrake) state.spin = 0;
+		// TRACTION CONTROL, the switch's call (`input.tc`, the G toggle — ships
+		// OFF). On, the ECU catches the driven wheels the moment they step out,
+		// at the spec's `tcSlipSpeed`; off, nothing trims the surplus torque —
+		// the rears spin up for real and a donut sits on the limiter.
+		if (input.tc) state.spin = clamp(state.spin, -hw.tcSlipSpeed, hw.tcSlipSpeed);
+
+		prevDrive = driveForce;
+		// No filter on `slip` any more: `spin` carries the real rotating inertia, which
+		// is the smooth thing the old asymmetric damping was faking. It is also why
+		// lifting still catches the slide — off throttle the surplus goes sharply
+		// negative (engine braking pulling one way, the sliding tyre the other), so a
+		// lit 1st gear hooks back up in about 0.7 s and 2nd in a quarter of that.
+		state.slip = clamp(Math.abs(state.spin) / hw.fullSlipSpeed, 0, 1);
+		// Friction circle: the share of the driven axle's budget the drive force is
+		// using, AFTER the clip (so it saturates at 1 exactly when the tyre lets go).
+		// Off throttle this is just engine braking, a tenth or so — which is the
+		// point, because it is what makes lifting a real input rather than a no-op.
+		const powerLoad = traction > 0 ? clamp(Math.abs(driveForce) / traction, 0, 1) : 0;
+
+		// ── Brakes, aero, rolling resistance ─────────────────────────────────
+		let resist = 0;
+		if (rolling > 0.05) {
+			const dir = Math.sign(speedMs);
+			let magnitude = hw.dragK * speedMs * speedMs + hw.rollingResistance;
+			magnitude += braking * hw.brakeForce;
+			if (input.handbrake) magnitude += hw.handbrakeForce;
+			// Never let a retarding force push the car backwards inside one step.
+			const stopping = (rolling * hw.mass) / dt;
+			resist = -dir * Math.min(magnitude, stopping);
+		}
+
+		// ── Lateral grip left over for the cornering model ───────────────────
+		// The handbrake takes it all the way to the drift end; wheelspin takes a
+		// chunk of it, which is how a rear-drive car steps out under power. How
+		// big a chunk is the tune's call (`slipGripLoss` — the GR86's 0.62 leaves
+		// 38% of the tyre under total wheelspin, loose enough to slide on power).
+		// `looseBase` is a small flat cut, `brakeLoose` is trail-braking oversteer
+		// (braking moves load off the rear axle, and a lighter rear tyre has less
+		// lateral grip to give), and `throttleLoose` is the friction circle above. All
+		// zero in Grip. They compound, so brake-and-power together is the loosest the
+		// car gets short of the handbrake.
+		//
+		// `looseBase` deliberately stays SMALL. At 0.6 the car ran 32° of slip angle
+		// just coasting through a gentle corner — permanently sideways, no contrast
+		// between planted and provoked, which reads as floaty rather than fun. The
+		// looseness wants to be earned by an input, not baked into the tyre.
+		const gripFactor = input.handbrake
+			? 0
+			: (1 - tune.slipGripLoss * state.slip) *
+				(1 - tune.looseBase) *
+				(1 - tune.brakeLoose * braking) *
+				(1 - tune.throttleLoose * powerLoad);
+
+		return { driveForce, resistForce: resist, gripFactor, powerLoad };
+	}
+
+	/** Called when the car is parked and the scene stops touching the body. */
+	function idle(dt: number): void {
+		state.throttle = 0;
+		state.brake = 0;
+		state.slip = 0;
+		state.spin = 0;
+		state.limiting = false;
+		state.shifted = false;
+		state.launch = 0;
+		launchBoost = 0;
+		// Organic idle: slow sine wobble around idle rpm. The two terms
+		// (1.5 Hz main + 0.4 Hz sub-harmonic) keep it from looking periodic.
+		idlePhase += dt;
+		const wobble = Math.sin(idlePhase * 1.5) * 40 + Math.sin(idlePhase * 0.4) * 10;
+		state.rpm += (hw.idleRpm + wobble - state.rpm) * damp(hw.freeDropRate, dt);
+		prevDrive = 0;
+	}
+
+	function reset(): void {
+		// Assigned INTO the existing object, never rebound: the controller and the
+		// telemetry hold `drivetrain.state` by reference.
+		Object.assign(state, initialState());
+		shiftTimer = 0;
+		cutTimer = 0;
+		prevUp = false;
+		prevDown = false;
+		prevDrive = 0;
+		idlePhase = 0;
+		launchHold = 0;
+		launchQ = 0;
+		launchBoost = 0;
+		launchAnnounced = false;
+		autoHold = 0;
+		autoDemand = 0;
+		autoUpLock = 0;
+		prevAutoThrottle = false;
+	}
+
+	return { state, step, idle, reset };
+}

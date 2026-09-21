@@ -1,0 +1,534 @@
+// The sky façade. The only stateful module here; everything it imports is pure.
+// Data flows one way: clock -> model -> renderers, renderers never write back. The
+// descriptor is a plain mutable object written in place each tick, never `$state`
+// (the descriptor contract, ../CLAUDE.md).
+
+import { createClock, type Clock, type ClockOptions } from './clock';
+import { createBaseline, sampleDayCurve, DEFAULT_DAY_CURVE } from './dayCurve';
+import { isDaytime, isRising, phaseFor } from './phases';
+import {
+	createBody,
+	createMoonPhase,
+	directionAt,
+	moonAt,
+	moonLagAt,
+	moonPhaseAt,
+	sunAt,
+	DEFAULT_MAX_ELEVATION,
+	DEFAULT_SYNODIC_DAYS,
+	type PathOptions
+} from './sunPath';
+import { emit } from './events';
+import { clamp01, lerp, lerpRGB, smooth01, wrap01 } from './math';
+import {
+	AMBIENT_RETURN,
+	bodyVisibility,
+	CHANNEL_NAMES,
+	createWeatherMixer,
+	deckFactor,
+	keyAttenuation,
+	modulateBaseline,
+	WEATHERS,
+	type ChannelName,
+	type WeatherOptions
+} from './weatherMixer';
+import type {
+	ClockKind,
+	DayKeyframe,
+	MoonPhaseName,
+	PhaseName,
+	RGB,
+	SkyDescriptor,
+	WeatherChannels,
+	WeatherTarget
+} from './types';
+
+export * from './types';
+export { DEFAULT_DAY_CURVE } from './dayCurve';
+export { on, off } from './events';
+export { WEATHERS, CHANNEL_NAMES, DEFAULT_BLEND_MS } from './weatherMixer';
+export type { WeatherDefinition, WeatherOptions, ChannelName } from './weatherMixer';
+
+// Key-light palette. Warm at the horizon, neutral overhead, cool by moonlight.
+const SUN_HORIZON: RGB = [1, 0.6, 0.35];
+const SUN_ZENITH: RGB = [1, 0.98, 0.95];
+const MOON_COLOR: RGB = [0.55, 0.68, 1];
+
+/** Peak key output at high sun. Pairs with `Sky.svelte`'s `environmentIntensity` (0.25)
+ * as one change — move them together and re-measure; never compensate with the day
+ * curve's `exposure` (renderer-global). Full rationale: model/CLAUDE.md. */
+const SUN_INTENSITY = 4.75;
+
+/** A playable night, not a physical moon. An absolute level, not a fraction of the sun
+ * — must not be "restored" to some ratio of `SUN_INTENSITY`. */
+const MOON_INTENSITY = Math.PI / 12;
+
+/** What a new moon keeps of the full moon's key and fill, as a fraction — a
+ * playability floor, not physics (real moonlight is a much steeper function of phase). */
+const MOON_PHASE_FLOOR = 0.15;
+
+/** Ambient fill published to the key-light consumer, since the env map can't carry
+ * night (SkyMesh zeroes its sun term below -2.31deg elevation). `DAY_AMBIENT` is zero
+ * since the env map genuinely carries daylight; `TWILIGHT_AMBIENT` covers the same
+ * blind spot at dawn/dusk. See model/CLAUDE.md. */
+const MOON_AMBIENT = Math.PI / 32;
+const DAY_AMBIENT = 0;
+const TWILIGHT_AMBIENT = Math.PI / 14;
+
+/** Starlight/airglow floor under deep night, independent of the moon — needed because
+ * a new moon is unlit *and* in the daytime sky, which without this is a frame the
+ * player can't navigate. Max()'d in with the others, not added. */
+const NIGHT_AMBIENT = Math.PI / 96;
+
+/** Floor on the elevation used to *aim* the key light, in degrees — without it the sun
+ * aims the light from underground through civil twilight. */
+const KEY_MIN_ELEVATION = 3;
+
+/** Boots on a named weather so the first frame is reproducible from the panel.
+ * `storm` is deliberately the loudest entry so every weather renderer is live
+ * immediately — also the most expensive boot the engine has, so a scene measuring its
+ * own budget should `clearWeather({ over: 0 })` first. */
+const BOOT_WEATHER = 'storm';
+
+// A named target is a `Partial<WeatherChannels>`, so it is spread over a full vector
+// rather than cast -- an authored weather that omits a channel still boots valid. The
+// base is all-zero except `precipitationType`, a POSITION whose neutral value is rain.
+const bootWeather = (): WeatherChannels => ({
+	cloudCover: 0,
+	cloudType: 0,
+	fog: 0,
+	precipitation: 0,
+	precipitationType: 1,
+	wind: 0,
+	windDirection: 0,
+	lightning: 0,
+	...WEATHERS[BOOT_WEATHER].target
+});
+
+export const descriptor: SkyDescriptor = {
+	sun: createBody(),
+	moon: createBody(),
+	moonPhase: createMoonPhase(),
+	sky: createBaseline(),
+	weather: bootWeather(),
+	light: {
+		direction: { x: 0, y: 1, z: 0 },
+		color: [...SUN_ZENITH] as RGB,
+		intensity: SUN_INTENSITY,
+		ambient: 1
+	},
+	meta: { t: 0, day: 0, phase: 'night', isDaytime: false }
+};
+
+/** Owns and mutates `descriptor.weather` exactly, so cached references see live values. */
+const mixer = createWeatherMixer(descriptor.weather, BOOT_WEATHER);
+
+/**
+ * The reactive surface -- deliberately tiny. HUD overlays and the Studio panel need to
+ * re-render on phase and weather changes; the tick WRITES these and never reads them,
+ * keeping the one-way rule intact. The channel mirrors are epsilon-gated so a 20 s
+ * blend wakes the graph a few dozen times rather than 1200. All writes go through
+ * `publishMeta`/`publishWeather`.
+ */
+export const skyMeta = $state({
+	t: 0,
+	day: 0,
+	phase: 'night' as PhaseName,
+	isDaytime: false,
+	/** Named phase of the moon. Changes a handful of times per cycle, so ungated. */
+	moonPhase: descriptor.moonPhase.name as MoonPhaseName,
+	/** Lit fraction, gated to CHANNEL_EPSILON like the weather channels. */
+	moonIllumination: descriptor.moonPhase.illumination,
+	/** Last named weather set, or `'custom'` after a raw target. */
+	weather: BOOT_WEATHER,
+	blending: false,
+	cloudCover: descriptor.weather.cloudCover,
+	cloudType: descriptor.weather.cloudType,
+	fog: descriptor.weather.fog,
+	precipitation: descriptor.weather.precipitation,
+	precipitationType: descriptor.weather.precipitationType,
+	wind: descriptor.weather.wind,
+	windDirection: descriptor.weather.windDirection,
+	lightning: descriptor.weather.lightning
+});
+
+// Manual clock default: the app boots on a curated sunrise rather than the player's
+// wall clock, so a demo never opens on 3am black. 0.25 is the `sunrise` keyframe exactly
+// -- boot times are keyframe times, not round numbers near them. Games pick their own.
+let clock: Clock = createClock('manual', { t: 0.25 });
+let pathOptions: PathOptions = {};
+let curve: DayKeyframe[] = DEFAULT_DAY_CURVE;
+let frozen = false;
+let lastPhase: PhaseName | null = null;
+let lastDaytime: boolean | null = null;
+/** Set whenever time jumps rather than flows; consumers use it to skip smoothing. */
+let discontinuity = true;
+
+/** Scratch for the sun colour, so the per-frame blend allocates nothing. */
+const sunColor: RGB = [...SUN_ZENITH] as RGB;
+
+/** One game-minute. Anything finer is below what the readouts and scrubber resolve. */
+const META_EPSILON = 1 / 1440;
+/** 1% of a channel. Below that no readout or slider in the panel moves a pixel. */
+const CHANNEL_EPSILON = 0.01;
+
+/**
+ * Gate publishes so `skyMeta` ($state) only invalidates when a value actually moved --
+ * a game-minute for `t`, CHANNEL_EPSILON for channels. The gates compare plain shadow
+ * variables, never `skyMeta` itself: it stays write-only from this module, which is
+ * what makes a `$state` object safe to touch from the tick.
+ */
+let publishedT = -1;
+let publishedDay = -1;
+let publishedPhase: PhaseName | null = null;
+let publishedDaytime: boolean | null = null;
+let publishedMoonPhase: MoonPhaseName | null = null;
+let publishedMoonIllumination = -1;
+let publishedWeather: string | null = null;
+let publishedBlending: boolean | null = null;
+const publishedChannels: Record<ChannelName, number> = {
+	cloudCover: -1,
+	cloudType: -1,
+	fog: -1,
+	precipitation: -1,
+	precipitationType: -1,
+	wind: -1,
+	windDirection: -1,
+	lightning: -1
+};
+
+/** Mirror every channel a dev panel watches, gated to CHANNEL_EPSILON. */
+const publishWeather = (w: WeatherChannels) => {
+	if (publishedWeather !== mixer.name) {
+		publishedWeather = mixer.name;
+		skyMeta.weather = mixer.name;
+	}
+	if (publishedBlending !== mixer.blending) {
+		publishedBlending = mixer.blending;
+		skyMeta.blending = mixer.blending;
+	}
+	// Driven off CHANNEL_NAMES: a channel missing from this loop would simply never
+	// reach the panel -- a silent omission, not a type error.
+	for (const key of CHANNEL_NAMES) {
+		// Also fires when a blend lands exactly on its target, since `to` is reached
+		// only once and the epsilon gate would otherwise strand the final value.
+		if (Math.abs(w[key] - publishedChannels[key]) >= CHANNEL_EPSILON || !mixer.blending) {
+			if (publishedChannels[key] === w[key]) continue;
+			publishedChannels[key] = w[key];
+			skyMeta[key] = w[key];
+		}
+	}
+};
+
+const publishMeta = (t: number, day: number, phase: PhaseName, daytime: boolean) => {
+	// Compared cyclically: 0.9999 -> 0.0001 is one minute forward, not a day backward.
+	if (publishedT < 0 || Math.abs(((t - publishedT + 1.5) % 1) - 0.5) >= META_EPSILON) {
+		publishedT = t;
+		skyMeta.t = t;
+	}
+	if (publishedDay !== day) {
+		publishedDay = day;
+		skyMeta.day = day;
+	}
+	if (publishedPhase !== phase) {
+		publishedPhase = phase;
+		skyMeta.phase = phase;
+	}
+	if (publishedDaytime !== daytime) {
+		publishedDaytime = daytime;
+		skyMeta.isDaytime = daytime;
+	}
+	const { name, illumination } = descriptor.moonPhase;
+	if (publishedMoonPhase !== name) {
+		publishedMoonPhase = name;
+		skyMeta.moonPhase = name;
+	}
+	// Same epsilon as the weather channels, for the same reason: a readout resolving
+	// whole percent has no use for a value that moves in the eighth decimal.
+	if (Math.abs(illumination - publishedMoonIllumination) >= CHANNEL_EPSILON) {
+		publishedMoonIllumination = illumination;
+		skyMeta.moonIllumination = illumination;
+	}
+};
+
+/**
+ * Recompute the descriptor from a clock sample. `deltaMs` advances the weather blend;
+ * it is 0 on the jump paths (setTime, setClock), so weather does not creep forward
+ * because someone scrubbed the clock.
+ */
+const compose = (t: number, day: number, deltaMs = 0) => {
+	// Written in place, not reassigned: consumers may hold a reference to
+	// `descriptor.sun` across frames, and reassigning would silently strand them.
+	sunAt(t, pathOptions, descriptor.sun);
+	// The lag is the phase AND the position, so both come off the same call (sunPath.ts).
+	// It advances with `day`, which is why the moon is not full every night.
+	moonAt(t, day, pathOptions, descriptor.moon);
+	moonPhaseAt(moonLagAt(t, day, pathOptions), descriptor.moonPhase);
+	sampleDayCurve(t, descriptor.sky, curve);
+
+	// Weather goes ON TOP of the sampled baseline, never instead of it: the curve decides
+	// what time it is, the mixer decides what the weather is doing to that.
+	if (deltaMs > 0) mixer.tick(deltaMs);
+	const weather = descriptor.weather;
+	modulateBaseline(descriptor.sky, weather);
+
+	// How much of the body reaches the ground -- the slice a cloud-aware lens flare or a
+	// "can the player see the moon" gameplay query reads; costs one multiply to publish.
+	const seen = bodyVisibility(weather);
+	descriptor.sun.visibility = seen;
+	descriptor.moon.visibility = seen;
+
+	const elevation = descriptor.sun.elevation;
+	const rising = isRising(t);
+	const daytime = isDaytime(elevation);
+	const phase = phaseFor(elevation, rising, pathOptions.maxElevation ?? DEFAULT_MAX_ELEVATION);
+
+	// Sun and moon are computed independently and combined with max(), never lerped
+	// across one shared weight (a shared weight once dimmed the sun and handed over to
+	// the moon at the same time, cutting a horizon sun to an eighth of peak).
+	//
+	// Every ramp crossing the horizon band is a smoothstep, not a linear clamp: a
+	// `clamp01` ramp arrives at its ends with non-zero slope, which is a corner the eye
+	// reads as the sky "not blending" — `sunSet` mattered most since it also drives
+	// `sunShare` below. Endpoints and midpoint are unchanged from the clamp, so no
+	// authored level moved.
+	const sunSet = smooth01(-6, 0, elevation);
+	// Sun's strength keeps growing above the horizon band — a flat lerp would put
+	// noon-level light on a 9-degree sun. Deliberately linear (not eased): its corners
+	// sit where the sun is bright and slow-moving.
+	const sunStrength = 0.25 + 0.75 * clamp01(elevation / 45);
+	const sunKey = SUN_INTENSITY * sunSet * sunStrength;
+	// The moon's own rise/set ramp, shared by its key and its fill so the two cannot
+	// disagree about when the moon is up. Smoothstepped for the reason above; identical
+	// at both ends and at the midpoint.
+	const moonRise = smooth01(0, 20, descriptor.moon.elevation);
+	// How much light the CURRENT phase is worth, shared by the moon's key and its fill so
+	// the two cannot disagree -- exactly the role `moonRise` plays for its rise and set.
+	// The two multiply: a full moon below the horizon is still no light, and a new moon
+	// overhead is still the floor.
+	const moonLight =
+		MOON_PHASE_FLOOR + (1 - MOON_PHASE_FLOOR) * clamp01(descriptor.moonPhase.illumination);
+	const moonKey = MOON_INTENSITY * moonRise * moonLight;
+	// max(), like the ambient fills below: sun and moon are alternatives, so neither is
+	// dimmed by the other fading out.
+	const clearSkyKey = Math.max(sunKey, moonKey);
+
+	// ONE weight drives direction, colour AND intensity, so they cannot disagree.
+	const sunShare = sunKey + moonKey > 0 ? sunKey / (sunKey + moonKey) : 0;
+	lerpRGB(SUN_HORIZON, SUN_ZENITH, clamp01(elevation / 30), sunColor);
+
+	// The direction still flips 180 degrees at the handover (~-4.5 degrees of sun
+	// elevation, ~8% of peak, colour and intensity continuous across it) -- the bodies sit
+	// at opposition by default and interpolating between opposed vectors is undefined.
+	const key = sunShare >= 0.5 ? descriptor.sun : descriptor.moon;
+	directionAt(Math.max(key.elevation, KEY_MIN_ELEVATION), key.azimuth, descriptor.light.direction);
+	lerpRGB(MOON_COLOR, sunColor, sunShare, descriptor.light.color);
+	// A cloud deck strips the warmth as well as the strength. Desaturating toward the
+	// colour's own luminance keeps the day/night crossfade intact underneath. Gated on
+	// `deck`, not raw cover, exactly like the intensity below -- see DECK_THRESHOLD.
+	const deck = deckFactor(weather.cloudCover);
+	const desaturate = 0.7 * deck;
+	if (desaturate > 0) {
+		const c = descriptor.light.color;
+		const luminance = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+		c[0] = lerp(c[0], luminance, desaturate);
+		c[1] = lerp(c[1], luminance, desaturate);
+		c[2] = lerp(c[2], luminance, desaturate);
+	}
+
+	// Weather takes its cut here, at the very end, so every constant above still means
+	// what it says under a clear sky and only one expression decides how much a deck
+	// removes.
+	const attenuation = keyAttenuation(weather);
+	descriptor.light.intensity = clearSkyKey * attenuation;
+
+	// Fill light -- see MOON_AMBIENT for why it is not optional once the sun is down.
+	// Moonlight and twilight are alternatives, combined with max() like the key. Both
+	// are scaled by the deck factor: a real deck blocks them too, and scattered cloud
+	// must leave them alone or the boot default dims every night scene.
+	const moonFill = MOON_AMBIENT * moonRise * moonLight * (1 - 0.9 * deck);
+	// A HUMP peaked at -6 degrees: rises from -18, full at civil twilight, GONE by the
+	// horizon. -6 is the blind spot this fill exists for -- the dome is black through
+	// civil twilight; above the horizon the env map carries the ambient and a second flat
+	// term would double-count it.
+	//
+	// It used to be a TRIANGLE (two linear clamps), and the apex was the single sharpest
+	// break in the whole light model: the fill climbed at +0.019/degree and reversed to
+	// -0.037/degree at exactly -6, so the ambient stopped brightening and began dimming
+	// between one frame and the next. Both factors are smoothsteps now and both arrive at
+	// -6 with zero slope, which rounds the apex off without moving it or its height.
+	//
+	// The falling half IS `1 - sunSet`, written as such rather than repeated: the fill
+	// hands over to the sun's own extinction curve exactly, so no gap or overlap can open
+	// between them however either is retuned.
+	const twilightFill =
+		TWILIGHT_AMBIENT * smooth01(-18, -6, elevation) * (1 - sunSet) * (1 - 0.5 * deck);
+	// Starlight: the COMPLEMENT of the twilight hump's rising half, so the two hand over
+	// at -18 with the same slope and no gap opens between them -- the same trick
+	// `twilightFill` plays against `sunSet` at the other end. Full below -18, gone by
+	// civil twilight. A deck hides the stars, so it takes most of this with it.
+	const starFill = NIGHT_AMBIENT * (1 - smooth01(-18, -6, elevation)) * (1 - 0.75 * deck);
+	// The overcast return is ADDED, not max()'d: it is the light the deck just took off
+	// the key coming back diffusely (see AMBIENT_RETURN). It scales with what was
+	// actually removed, so a clear sky adds exactly zero.
+	const overcastReturn = clearSkyKey * (1 - attenuation) * AMBIENT_RETURN;
+	descriptor.light.ambient =
+		Math.max(Math.max(moonFill, twilightFill), Math.max(starFill, DAY_AMBIENT * sunShare)) +
+		overcastReturn;
+
+	descriptor.meta.t = t;
+	descriptor.meta.day = day;
+	descriptor.meta.phase = phase;
+	descriptor.meta.isDaytime = daytime;
+
+	publishMeta(t, day, phase, daytime);
+	publishWeather(weather);
+
+	if (lastPhase !== phase) {
+		const previous = lastPhase;
+		lastPhase = phase;
+		if (previous !== null) emit('phaseChange', { phase, previous });
+	}
+	if (lastDaytime !== daytime) {
+		const previous = lastDaytime;
+		lastDaytime = daytime;
+		if (previous !== null) emit(daytime ? 'sunrise' : 'sunset', { t, day });
+	}
+};
+
+/**
+ * Point the weather mixer at a named weather or a raw channel target.
+ *
+ * Fire-and-forget and idempotent: no transition state machine for callers to trip
+ * over, and game code, a Studio button and a server subscription all converge on the
+ * same mixer -- which is what makes the multiplayer path one code path. A free
+ * function rather than a method so `clearWeather` can delegate to it without a
+ * circular inferred type.
+ */
+const setWeather = (target: WeatherTarget, options: WeatherOptions = {}) => {
+	if (typeof target === 'string' && !WEATHERS[target]) {
+		// Named weathers are data, so a typo is the likely cause and it has to be loud.
+		throw new Error(
+			`sky.setWeather: unknown weather '${target}'. Known: ${Object.keys(WEATHERS).join(', ')}`
+		);
+	}
+	mixer.set(target, options);
+	// A snap is a jump, exactly like a time scrub: re-bake the env map now, not on the
+	// next interval, and carry the new values before any consumer reads this frame.
+	if (options.over === 0) {
+		discontinuity = true;
+		const sample = clock.sample();
+		compose(sample.t, sample.day);
+	}
+	emit('weatherChanged', { weather: mixer.name, channels: descriptor.weather });
+};
+
+export const skyActions = {
+	/** Swap the time source. Always a discontinuity. */
+	setClock(kind: ClockKind, options: ClockOptions = {}) {
+		clock = createClock(kind, { timeScale: clock.timeScale, ...options });
+		discontinuity = true;
+		const { t, day } = clock.sample();
+		compose(t, day);
+	},
+
+	/** Feed the external clock -- server time, replays, scripted timelines. */
+	setExternalTime(t: number, day?: number) {
+		clock.set(t, day);
+	},
+
+	setTimeScale(scale: number) {
+		clock.timeScale = scale;
+	},
+
+	/** Manual scrub. A jump, so consumers must not smooth across it. */
+	setTime(t: number, day?: number) {
+		clock.set(t, day);
+		discontinuity = true;
+		const sample = clock.sample();
+		compose(sample.t, sample.day);
+	},
+
+	freeze() {
+		frozen = true;
+	},
+
+	unfreeze() {
+		frozen = false;
+	},
+
+	/** Replace the authored day curve (weather.json, Studio edits). */
+	setDayCurve(next: DayKeyframe[]) {
+		curve = next.length ? next : DEFAULT_DAY_CURVE;
+		discontinuity = true;
+	},
+
+	setPathOptions(next: PathOptions) {
+		pathOptions = next;
+		discontinuity = true;
+	},
+
+	/**
+	 * Put the moon at a given point in its cycle NOW -- 0 new, 0.5 full.
+	 *
+	 * Writes the seed rather than the phase, so the cycle keeps running from here
+	 * instead of pinning: this rebases `moonLag` by however far the clock has already
+	 * carried it, which is the inverse of `moonLagAt`. That is what a game asking to
+	 * open on a full moon wants, and it is also the only way a dev panel can look at a
+	 * crescent without scrubbing four game days.
+	 *
+	 * Also moves the moon in the SKY -- phase and position are one number here
+	 * (sunPath.ts), so a full moon set at noon rises that evening. Non-negotiable, not
+	 * a side effect.
+	 */
+	setMoonPhase(age: number) {
+		const { t, day } = clock.sample();
+		const cycle = pathOptions.synodicDays ?? DEFAULT_SYNODIC_DAYS;
+		const drift = cycle > 0 ? (day + t) / cycle : 0;
+		pathOptions = { ...pathOptions, moonLag: wrap01(age - drift) };
+		discontinuity = true;
+		compose(t, day);
+	},
+
+	/** Point the weather mixer at a target -- see the standalone `setWeather` above. */
+	setWeather,
+
+	/** Blend back to `clear`. Same call as any other target, no special path. */
+	clearWeather(options: WeatherOptions = {}) {
+		setWeather('clear', options);
+	},
+
+	/** Advance the model. Called once per frame by exactly one driver task. */
+	tick(deltaMs: number) {
+		const { t, day } = frozen ? clock.sample() : clock.advance(deltaMs);
+		// The weather blend runs on wall-clock ms, deliberately NOT on scaled game time:
+		// `setWeather('storm', { over: 30_000 })` must mean thirty seconds the player
+		// experiences, whatever the day is doing around it.
+		compose(t, day, deltaMs);
+	},
+
+	/** True once after a jump; reading it clears the flag. */
+	consumeDiscontinuity(): boolean {
+		const was = discontinuity;
+		discontinuity = false;
+		return was;
+	}
+};
+
+// Synchronous reads of derived state -- gameplay in a frame loop must not await these.
+export const skyQueries = {
+	getSunElevation: () => descriptor.sun.elevation,
+	getMoonElevation: () => descriptor.moon.elevation,
+	/** The live phase. Mutated in place each tick -- read it, never cache it. */
+	getMoonPhase: () => descriptor.moonPhase,
+	getPhase: () => descriptor.meta.phase,
+	isDaytime: () => descriptor.meta.isDaytime,
+	getTime: () => ({ t: descriptor.meta.t, day: descriptor.meta.day }),
+	/** The live channel vector. Mutated in place each tick -- read it, never cache it. */
+	getWeather: () => descriptor.weather,
+	getWeatherName: () => mixer.name,
+	isWeatherBlending: () => mixer.blending
+};
+
+// Seed so the very first frame reads a composed descriptor rather than defaults.
+compose(clock.sample().t, clock.sample().day);

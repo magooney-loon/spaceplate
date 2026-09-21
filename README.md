@@ -1,16 +1,13 @@
 <div align="center">
-  <h1>🪐 Spaceplate</h1>
+  <img src="public/logo.png" alt="Spaceplate" width="600">
   <p>Svelte 5 + Threlte + SpacetimeDB boilerplate for real-time 3D web apps</p>
-  <p>Example Games:</p>
-  <p><a href="https://therite.magooney.org/">⚔️ TheRite</a></p>
-  <p><a href="https://github.com/magooney-loon/JustSurvive">⚔️ JustSurvive</a></p>
-  <p><a href="https://github.com/magooney-loon/mouse-hole">⚔️ MouseHole</a></p>
-
 </div>
 
-<img width="2507" height="1587" alt="engi1" src="https://github.com/user-attachments/assets/19b9ee92-866d-427c-a03a-a6618447d0ed" />
-<img width="2507" height="1587" alt="engi2" src="https://github.com/user-attachments/assets/428ac85b-3de4-4475-ae18-387fdd728717" />
-<img width="2507" height="1587" alt="engi3" src="https://github.com/user-attachments/assets/07682e13-e066-4e58-a55a-4d9b94fdc331" />
+<div align="center">
+
+[![Tech Demo](https://img.youtube.com/vi/CJAuBGVZVs8/0.jpg)](https://www.youtube.com/watch?v=CJAuBGVZVs8)   
+
+</div>
 
 <div align="center">
   <table>
@@ -21,7 +18,6 @@
       <td align="center"><a href="https://spacetimedb.com"><img src="https://img.shields.io/badge/SpacetimeDB-2.1-7b2ff7.svg" alt="SpacetimeDB 2.1"></a></td>
       <td align="center"><a href="https://vitejs.dev"><img src="https://img.shields.io/badge/Vite-8-646cff.svg" alt="Vite 8"></a></td>
       <td align="center"><a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-6-blue.svg" alt="TypeScript 6"></a></td>
-      <td align="center"><a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/TailwindCSS-4-38bdf8.svg" alt="TailwindCSS 4"></a></td>
     </tr>
   </table>
 </div>
@@ -30,106 +26,26 @@
 
 A minimal, opinionated boilerplate that wires together a Svelte 5 frontend, a Threlte 3D scene, and a SpacetimeDB real-time backend — so you can skip the setup and start building.
 
-## What's included
+## Features
 
-- **Scene Manager** — Application state machine (`mainMenu` / `demoScene`) with animated transitions, per-scene HUD routing, and a preset assignment system for PP/skybox
-- **Task Scheduling** — Threlte-based render pipeline with ordered stages:
-  - `physicsStage` — Game logic (typically runs in `demoScene`, pauses in menus)
-  - `renderStage` — 3D rendering (default)
-  - `uiStage` — UI updates (after render)
-  - `audioStage` — Audio (always runs)
-- **Input System** — Action-based keyboard/mouse/gamepad mapping with per-player bindings, rebinding UI, and localStorage persistence
-- **Studio Extensions** (`VITE_GAME_ENGINE=true`) — Threlte Studio toolbar panels:
-  - `SceneExtension` — Scene switcher + preset manager (assign PP/skybox presets per scene or globally)
-  - `PostProcessingExtension` — 25+ effects, preset save/load/update, bundled presets, conflict detection
-  - `SkyboxExtension` — Sky/stars presets, animated transitions, environment textures, user presets
-  - `SoundExtension` — Volume controls + audio channel toggles
-  - `LoggerExtension` — Per-channel log toggles (`engine`, `settings`, `sound`, `postprocessing`, `skybox`, `cache`, `gltf`, `physics`, `input`)
-  - `GltfViewerExtension` — Load GLTF/GLB from file or path; inspect animations and colliders in `demoScene`
-  - `PhysicsExtension` — Rapier world controls, spawn defaults, attractor controls, and quick body spawning
-- **Sound system** — Polyphonic + one-shot audio, never unmounts, safe from race conditions
-- **Settings** — Tabbed settings HUD (General / Audio / Controls) — all persistent via localStorage
-- **Physics sandbox** — `@threlte/rapier` world wiring, debug collider toggle, attractor modes, and spawnable balls/boxes
-- **SpacetimeDB wiring** — Connection setup, generated bindings, example table subscription
-- **Debug logging** — Multi-channel styled logging with timestamp; channels auto-generate Studio UI checkboxes
-- **TailwindCSS** — Utility-first CSS framework via `@tailwindcss/vite`
+- **Scene Manager** — Application state machine (`mainMenu` / `demoScene`) with instant switching and per-scene HUD routing
+- **Rendering** — WebGPU renderer (WebGL fallback) with a node-based post-processing pipeline: SSAA, DOF, motion blur, bloom, afterimage, vignette, LUT grading, FXAA/SMAA — hot-swappable via an effect registry with quality tiers
+- **Procedural sky & weather** — Day/night curve, blendable weather channels (clouds, rain, snow, wind, fog, lightning), celestial layers (moon, stars, meteors), baked environment maps, and a weather-reactive audio bed
+- **Physics** — Rapier world wiring with spawnable balls/boxes, attractor modes (`static` / `linear` / `newtonian`), and debug collider toggle
+- **Task scheduling** — Threlte `useTask` frame tasks with explicit ordering constraints and on-demand rendering
+- **Input system** — Action-based keyboard/mouse/gamepad mapping with per-player bindings, rebinding UI, and localStorage persistence
+- **Audio** — Polyphonic + one-shot playback, positional audio, autoplay-policy safe; components never unmount, so no race conditions
+- **Settings** — Tabbed settings HUD (General / Audio / Controls), persistent via localStorage
+- **SpacetimeDB wiring** — Connection setup, generated client bindings, example table subscription
+- **Debug logging** — Multi-channel styled logging with timestamps
+- **Studio editor** (`VITE_GAME_ENGINE=true`) — Dev-only Threlte Studio toolbar: scene switcher, sky/time/weather controls, post-processing panel, physics controls, GLTF viewer, sound mixers, log toggles
 
----
+## Documentation
 
-### Task Scheduling
-```typescript
-import { useGameTasks } from '$core/tasks';
-
-const { createPhysicsTask, createUiTask } = useGameTasks();
-
-// Physics only runs in demoScene
-createPhysicsTask((delta) => {
-  // Update game objects
-});
-
-// UI runs in all scenes
-createUiTask((delta) => {
-  // Animate UI
-});
-```
-
-### Input System
-Action-based input that works in production without any editor tooling.
-
-```typescript
-import { inputQueries, advanceInputFrame } from '$extensions/input/input.svelte';
-
-// In a frame task
-createPhysicsTask((delta) => {
-  advanceInputFrame(); // advance wasPressed edge detection
-
-  const { x, y } = inputQueries.getMoveVector('player1');
-  if (inputQueries.wasPressed('player1', 'jump')) { /* ... */ }
-  if (inputQueries.isPressed('player1', 'sprint')) { /* ... */ }
-});
-```
-
-Default player1 bindings out of the box:
-
-| Keys | Action |
-|---|---|
-| W A S D / Arrows | Move |
-| Space | Jump |
-| Shift | Sprint |
-| E | Interact |
-| LMB / Q | Primary / Secondary |
-| R F C X Z T | Reload / Use / Crouch / Drop / Prone / Emote |
-| 1 2 3 4 | Slots |
-| Esc | Pause |
-
-Players can rebind everything from the in-game **Settings → Controls** tab.
-
-### Extensions
-Each extension is self-contained: reactive state (`.svelte.ts`), actions, and an optional Studio UI panel (dev only).
-
-```
-extensions/
-├── scene/              # Scene state machine + preset assignment system
-├── settings/           # Persistent audio/graphics/general settings
-├── input/              # Action-based input mapping, bindings, queries
-├── postprocessing/     # 25+ effects, presets, bundledPresets.ts
-├── skybox/             # Sky + stars presets, envTextures.ts, bundledPresets.ts
-├── sound/              # Positional audio state
-├── logger/             # Multi-channel styled logging
-├── gltf-viewer/        # GLTF/GLB loader, animation controls, collider toggles (dev only)
-└── physics/            # Rapier world state, attractor, debug controls, spawnable bodies
-```
-
-State always works in production — Studio panels are purely dev-time UI on top of the same state.
-
-### Physics
-The boilerplate includes a ready-to-tweak Rapier sandbox inside the demo scene.
-
-- World controls for gravity, framerate, and debug colliders
-- Spawn defaults for restitution, friction, damping, CCD, sleep, and random spawn positions
-- Attractor controls with `static`, `linear`, and `newtonian` gravity falloff
-- Quick body spawning via `physicsActions.spawnBall()` / `spawnBox()`
-- Leaving `demoScene` clears spawned physics bodies automatically
+- `CLAUDE.md` / `src/CLAUDE.md` — repo layout, commands, and architecture rules
+- `spacetimedb/CLAUDE.md` — SpacetimeDB SDK reference for the server module (tables, reducers, views)
+- `spacetimedb/CLI.md` — `spacetime` CLI reference (init, build, publish, queries, server management)
+- `DOCS/` — working notes: post-processing rebuild, weather system, scene environment, WebGPU gotchas, and `RAPIER.md` (physics integration guide)
 
 ---
 
@@ -137,13 +53,13 @@ The boilerplate includes a ready-to-tweak Rapier sandbox inside the demo scene.
 
 ```sh
 # install dependencies
-npm install
+pnpm install
 
 # run dev server
-npm run dev
+pnpm run dev
 
 # build for production
-npm run build
+pnpm run build
 ```
 
 ### SpacetimeDB
@@ -153,16 +69,16 @@ npm run build
 spacetime start
 
 # publish module (local)
-npm run spacetime:publish:local
+pnpm run spacetime:publish:local
 
 # publish module (local, wipe db)
-npm run spacetime:publish:local:fresh
+pnpm run spacetime:publish:local:fresh
 
 # publish module (maincloud)
-npm run spacetime:publish
+pnpm run spacetime:publish
 
 # regenerate client bindings after schema changes
-npm run spacetime:generate
+pnpm run spacetime:generate
 ```
 
 ---
@@ -178,3 +94,4 @@ Copy `.env.example` to `.env.local` and fill in your values.
 | `SPACETIMEDB_DB_NAME` | Same as above, used by the `spacetime` CLI |
 | `SPACETIMEDB_HOST` | Same as above, used by the `spacetime` CLI |
 | `VITE_GAME_ENGINE` | `true` to enable Threlte Studio + PerfMonitor + all Studio extensions |
+| `VITE_STDB_ENABLE` | `true` to connect to SpacetimeDB; disabled by default (client runs standalone) |

@@ -1,32 +1,36 @@
 <script lang="ts">
 	import { useStudio, ToolbarItem, DropDownPane } from '@threlte/studio/extend';
-	import { Folder, Slider, Checkbox, Button, Separator, List } from 'svelte-tweakpane-ui';
+	import {
+		Folder,
+		Slider,
+		Checkbox,
+		Button,
+		ButtonGrid,
+		Separator,
+		List,
+		Monitor
+	} from 'svelte-tweakpane-ui';
 	import type { Snippet } from 'svelte';
 	import {
-		skyboxState,
-		starsState,
-		transitionState,
-		skyboxActions,
-		skyboxPresetsState,
 		environmentState,
+		environmentActions,
 		ENV_TEXTURES,
-		CUBE_TEXTURES,
-		SKY_PRESETS,
-		STAR_PRESETS,
-		TRANSITION_DURATIONS
-	} from '$extensions/skybox/skybox.svelte';
-	import { BUNDLED_SKYBOX_PRESETS } from './bundledPresets';
-	import {
-		resolveScenePreset,
-		resolveGlobalPreset,
-		sceneState,
-		SCENES
-	} from '$extensions/scene/scene.svelte';
+		CUBE_TEXTURES
+	} from '$core/skybox/environment';
+	import { skyActions, skyMeta, sunAt, WEATHERS, DEFAULT_DAY_CURVE } from '$core/skybox/model';
+	import type { ChannelName, ClockKind } from '$core/skybox/model';
+	import { requestStrike } from '$core/skybox/layers/lightning/flashState';
+
+	// Studio is just another caller: this panel reads skyMeta and drives the sky through
+	// skyActions, and the environment-mode state (`$core/skybox/environment`, consumed
+	// by Skybox.svelte in every build) through environmentActions — never a direct
+	// parameter write. The one deliberate exception is `requestStrike`: a dev trigger,
+	// not an authored-sky control, flowing through the same shared state the flash
+	// already uses (see flashState.ts). Keyframe editing + save-to-file remain phase 5.
 
 	interface Props {
 		children?: Snippet;
 	}
-
 	let { children }: Props = $props();
 
 	const { createExtension } = useStudio();
@@ -37,64 +41,127 @@
 		actions: {}
 	});
 
-	const presetCategories = {
-		daytime: ['dawn', 'day', 'dusk'],
-		nighttime: ['night', 'aurora'],
-		atmosphere: ['sunset', 'sunrise', 'cloudy', 'overcast'],
-		special: ['vacuum']
+	// Panel-local mirror of the clock kind. The engine deliberately does not expose
+	// clock getters -- the panel is the only clock writer in dev, so it can trust
+	// its own bookkeeping. A game taking over the clock (external, phase 3) owns it
+	// then, not this pane.
+	// Initial values mirror the engine default (manual at sunrise, frozen).
+	let clockKind: ClockKind = 'manual';
+	let speed = $state('frozen');
+
+	const SPEED_OPTIONS = [
+		{ value: 'frozen', text: 'Frozen' },
+		{ value: 'realtime', text: 'Realtime (wall clock)' },
+		{ value: '60', text: '60x — 24 min/day' },
+		{ value: '240', text: '240x — 6 min/day' },
+		{ value: '720', text: '720x — 2 min/day' }
+	];
+
+	const fmtClock = (t: number) => {
+		const hours = Math.floor(t * 24);
+		const minutes = Math.floor((t * 24 - hours) * 60);
+		return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 	};
 
-	const presetCategoryNames: Record<string, string> = {
-		daytime: 'Daytime',
-		nighttime: 'Nighttime',
-		atmosphere: 'Atmosphere',
-		special: 'Special'
-	};
+	// Quantized to whole game-minutes, so these strings (and everything derived from
+	// them) update a few times per second at dev speeds rather than every frame.
+	// Split into two monitors: one line does not fit the pane width.
+	const clockReadout = $derived(`${fmtClock(skyMeta.t)} · day ${skyMeta.day}`);
+	const skyReadout = $derived.by(() => {
+		const sunElevation = sunAt(skyMeta.t).elevation;
+		return `${skyMeta.phase} · sun ${sunElevation.toFixed(0)}°`;
+	});
 
-	const starPresetCategories = {
-		density: ['dense', 'sparse', 'milkyway'],
-		effects: ['twinkle', 'nebula']
-	};
-
-	const starPresetCategoryNames: Record<string, string> = {
-		density: 'Density',
-		effects: 'Effects'
-	};
-
-	const isDurationSelected = (value: number) => transitionState.transitionDuration === value;
-
-	// Active scene/global preset warning
-	const activeSkyboxPresetId = $derived(
-		resolveScenePreset(sceneState.currentScene, 'skybox') ?? resolveGlobalPreset('skybox')
-	);
-	const activeSkyboxPreset = $derived(
-		activeSkyboxPresetId
-			? (skyboxPresetsState.presets.find((p) => p.id === activeSkyboxPresetId) ?? null)
-			: null
-	);
-	const activeSkyboxSource = $derived(
-		activeSkyboxPresetId
-			? resolveScenePreset(sceneState.currentScene, 'skybox') === activeSkyboxPresetId
-				? (SCENES.find((s) => s.id === sceneState.currentScene)?.label ?? sceneState.currentScene)
-				: 'Global'
-			: null
-	);
-
-	// Delete guard — block if preset is assigned in Scene Manager
-	const deleteSkyboxPreset = (presetId: string) => {
-		const usages: string[] = [];
-		if (resolveGlobalPreset('skybox') === presetId) usages.push('Global');
-		for (const scene of SCENES) {
-			if (resolveScenePreset(scene.id, 'skybox') === presetId) usages.push(scene.label);
+	// Scrubbing always lands on the manual clock: the realtime one re-syncs to the
+	// wall clock every tick at scale 1 and would fight the drag. A fresh manual clock
+	// is created frozen; an already-running one is frozen first for the same reason.
+	const scrubTime = (t: number) => {
+		if (clockKind !== 'manual') {
+			skyActions.setClock('manual', { t });
+			clockKind = 'manual';
+		} else {
+			skyActions.setTimeScale(0);
+			skyActions.setTime(t);
 		}
-		if (usages.length > 0) {
-			alert(
-				`Cannot delete: this preset is assigned in the Scene Manager:\n${usages.map((u) => `  • ${u}`).join('\n')}\n\nRemove it from Scene Manager first.`
-			);
-			return;
-		}
-		skyboxActions.deletePreset(presetId);
+		speed = 'frozen';
 	};
+
+	// Time jumps, built FROM the day curve rather than from four hand-picked constants:
+	// every keyframe is a place worth standing, and the panel cannot drift from the curve
+	// when one is retimed or added. Chronological, so the 2-column grid reads left to
+	// right, top to bottom, midnight to midnight.
+	const PHASE_LABELS: Record<string, string> = {
+		night: 'Midnight',
+		astronomicalDawn: 'Astro Dawn',
+		dawn: 'Dawn',
+		sunrise: 'Sunrise',
+		goldenMorning: 'Golden AM',
+		morning: 'Morning',
+		noon: 'Noon',
+		afternoon: 'Afternoon',
+		goldenHour: 'Golden PM',
+		sunset: 'Sunset',
+		dusk: 'Dusk',
+		astronomicalDusk: 'Astro Dusk'
+	};
+
+	// Not $derived: DEFAULT_DAY_CURVE is a plain module constant, and rebuilding the
+	// `buttons` array would rebuild the tweakpane blade.
+	const phaseJumps = DEFAULT_DAY_CURVE.map((keyframe) => ({
+		label: PHASE_LABELS[keyframe.name] ?? keyframe.name,
+		t: keyframe.t
+	}));
+	const phaseButtons = phaseJumps.map((jump) => jump.label);
+
+	// The four principal phases. `age` is the same number `setMoonPhase` takes and the
+	// same one the model publishes, so the readout and the buttons cannot drift.
+	const MOON_PHASE_JUMPS = [
+		{ label: 'New', age: 0 },
+		{ label: 'First Qtr', age: 0.25 },
+		{ label: 'Full', age: 0.5 },
+		{ label: 'Last Qtr', age: 0.75 }
+	];
+	const moonPhaseButtons = MOON_PHASE_JUMPS.map((jump) => jump.label);
+
+	// Epsilon-gated upstream, so this string rebuilds on whole-percent steps.
+	const moonReadout = $derived(
+		`${skyMeta.moonPhase} · ${Math.round(skyMeta.moonIllumination * 100)}% lit`
+	);
+
+	const setSpeed = (value: string) => {
+		speed = value;
+		if (value === 'realtime') {
+			// Explicit scale 1: setClock preserves the current scale unless told otherwise.
+			skyActions.setClock('realtime', { timeScale: 1 });
+			clockKind = 'realtime';
+		} else if (value === 'frozen') {
+			skyActions.setTimeScale(0);
+		} else {
+			skyActions.setTimeScale(Number(value));
+		}
+	};
+
+	// ── Weather ────────────────────────────────────────────────────────────────
+	// Studio is just another caller: these buttons run the same setWeather a game
+	// or a server subscription would, and the sliders send raw channel targets, which
+	// the API treats as equally valid. There is no privileged panel path, so nothing
+	// here can drift away from the real behaviour.
+
+	const WEATHER_NAMES = Object.keys(WEATHERS);
+
+	/** Blend duration in seconds, so the pane reads in units a human picks. */
+	let blendSeconds = $state(20);
+
+	const applyWeather = (name: string) => skyActions.setWeather(name, { over: blendSeconds * 1000 });
+
+	/**
+	 * A raw channel edit. Snapped (`over: 0`) on purpose: a slider drag is a direct
+	 * manipulation and has to track the handle, not chase it over twenty seconds.
+	 */
+	const setChannel = (channel: ChannelName, value: number) =>
+		skyActions.setWeather({ [channel]: value }, { over: 0 });
+
+	const weatherReadout = $derived(`${skyMeta.weather}${skyMeta.blending ? ' · blending' : ''}`);
 
 	const envTextureOptions = $derived([
 		{ value: null as string | null, text: '— None —' },
@@ -109,50 +176,205 @@
 
 <ToolbarItem position="left">
 	<DropDownPane icon="mdiWeatherSunny" title="Sky">
-		{#if activeSkyboxPreset}
-			<span
-				style="display:block; font-size:11px; color:#ffcc44; background:rgba(255,200,0,0.08); border:1px solid rgba(255,200,0,0.25); border-radius:4px; padding:6px 8px; margin-bottom:4px; line-height:1.6; word-break:break-word; white-space:normal;"
-			>
-				⚠️ <strong>{activeSkyboxPreset.name}</strong> ({activeSkyboxSource}) is active.<br />
-				Manual changes are overridden. Clear in <em>Scenes</em> first.
-			</span>
-		{/if}
 		<Folder title="Mode" expanded={true}>
 			<Button
 				title={environmentState.mode === 'sky' ? '✓ Procedural Sky' : 'Procedural Sky'}
-				on:click={() => skyboxActions.setMode('sky')}
+				on:click={() => environmentActions.setMode('sky')}
 			/>
 			<Button
 				title={environmentState.mode === 'environment'
 					? '✓ HDR / EXR Environment'
 					: 'HDR / EXR Environment'}
-				on:click={() => skyboxActions.setMode('environment')}
+				on:click={() => environmentActions.setMode('environment')}
 			/>
 			<Button
 				title={environmentState.mode === 'cube' ? '✓ Cube Map' : 'Cube Map'}
-				on:click={() => skyboxActions.setMode('cube')}
+				on:click={() => environmentActions.setMode('cube')}
 			/>
 		</Folder>
+
+		<Separator />
+
+		{#if environmentState.mode === 'sky'}
+			<!-- Time drives the procedural sky; an HDR/cubemap environment ignores it, so
+		         the folder only makes sense in this mode. -->
+			<Folder title="Time" expanded={true}>
+				<Monitor label="Clock" value={clockReadout} />
+				<Monitor label="Sky" value={skyReadout} />
+				<Slider
+					label="Scrub"
+					value={skyMeta.t}
+					min={0}
+					max={1}
+					step={1 / 1440}
+					on:change={(e) => {
+						// svelte-tweakpane-ui dispatches 'change' for programmatic value updates
+						// too (origin: 'external'). Without this guard, every running frame
+						// re-enters here and instantly re-freezes whatever speed was just picked.
+						if (e.detail.origin === 'internal') scrubTime(e.detail.value as number);
+					}}
+				/>
+				<List
+					label="Speed"
+					options={SPEED_OPTIONS}
+					value={speed}
+					on:change={(e) => {
+						// Same origin guard: scrubbing writes speed = 'frozen' programmatically,
+						// which would otherwise re-run setSpeed through the external event.
+						if (e.detail.origin === 'internal') setSpeed(e.detail.value as string);
+					}}
+				/>
+				<!-- Every day-curve keyframe, two per row. The click event carries the index
+				     into the same array the labels came from, so no label parsing. -->
+				<ButtonGrid
+					buttons={phaseButtons}
+					columns={2}
+					on:click={(e) => scrubTime(phaseJumps[e.detail.index].t)}
+				/>
+			</Folder>
+
+			<!-- The moon cycles on its own with `day`, so this folder is a JUMP, exactly like
+			     the keyframe grid above — at the default eight-day cycle, reaching a crescent
+			     by scrubbing time is four game days of dragging. -->
+			<Folder title="Moon" expanded={false}>
+				<Monitor label="Phase" value={moonReadout} />
+				<ButtonGrid
+					buttons={moonPhaseButtons}
+					columns={2}
+					on:click={(e) => skyActions.setMoonPhase(MOON_PHASE_JUMPS[e.detail.index].age)}
+				/>
+			</Folder>
+
+			<!-- Weather modulates the day curve; like time, it only means anything while
+			     the procedural sky is the one being rendered. -->
+			<Folder title="Weather" expanded={true}>
+				<Monitor label="Active" value={weatherReadout} />
+				<Slider label="Blend (s)" bind:value={blendSeconds} min={0} max={60} step={1} />
+				<!-- Every named weather, two per row, labelled with the exact string
+				     `setWeather` takes — the panel is just another caller, so the button says
+				     what the call says. Which one is live is the "Active" monitor's job above:
+				     a ✓ in the labels would mean rebuilding the blade on every channel drag,
+				     since a raw slider turns the name into 'custom'. -->
+				<ButtonGrid
+					buttons={WEATHER_NAMES}
+					columns={2}
+					on:click={(e) => applyWeather(WEATHER_NAMES[e.detail.index])}
+				/>
+				<Separator />
+				<!-- Raw channel targets. The sliders track the live mixer values, so they
+				     also read as a progress display while a named weather blends in. All six
+				     channels are here: `cloudType` leans the deck toward storm towers AND picks
+				     rain vs snow; `lightning` arms the strike scheduler. -->
+				<Slider
+					label="Cloud"
+					value={skyMeta.cloudCover}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal') setChannel('cloudCover', e.detail.value as number);
+					}}
+				/>
+				<Slider
+					label="Cloud Type"
+					value={skyMeta.cloudType}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal') setChannel('cloudType', e.detail.value as number);
+					}}
+				/>
+				<Slider
+					label="Fog"
+					value={skyMeta.fog}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal') setChannel('fog', e.detail.value as number);
+					}}
+				/>
+				<Slider
+					label="Precipitation"
+					value={skyMeta.precipitation}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal')
+							setChannel('precipitation', e.detail.value as number);
+					}}
+				/>
+				<!-- Not an intensity: 0 is snow, 1 is rain, and the middle is sleet. -->
+				<Slider
+					label="Precip Type (snow-rain)"
+					value={skyMeta.precipitationType}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal')
+							setChannel('precipitationType', e.detail.value as number);
+					}}
+				/>
+				<Slider
+					label="Wind"
+					value={skyMeta.wind}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal') setChannel('wind', e.detail.value as number);
+					}}
+				/>
+				<!-- Also not an intensity: a compass bearing, one full turn over 0..1. It
+				     wraps, so the mixer blends it the short way round. -->
+				<Slider
+					label="Wind Bearing"
+					value={skyMeta.windDirection}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal')
+							setChannel('windDirection', e.detail.value as number);
+					}}
+				/>
+				<Slider
+					label="Lightning"
+					value={skyMeta.lightning}
+					min={0}
+					max={1}
+					step={0.01}
+					on:change={(e) => {
+						if (e.detail.origin === 'internal') setChannel('lightning', e.detail.value as number);
+					}}
+				/>
+				<!-- Fires one bolt immediately, even with the channel at zero -- tuning the
+				     bolt/deck-flash look must not mean waiting for the next random strike. -->
+				<Button title="⚡ Strike Now" on:click={requestStrike} />
+			</Folder>
+		{/if}
 
 		{#if environmentState.mode === 'environment'}
 			<Folder title="Environment Texture" expanded={true}>
 				{#if ENV_TEXTURES.length === 0}
 					<span style="font-size: 11px; color: rgba(255,255,255,0.4);">
 						No textures — add HDR/EXR files to<br />public/textures/skybox/ and register in
-						envTextures.ts
+						environmentTextures.ts
 					</span>
 				{:else}
 					<List
 						label="Texture"
 						options={envTextureOptions}
 						value={environmentState.envTextureId}
-						on:change={(e) => skyboxActions.setEnvTexture(e.detail.value as string | null)}
+						on:change={(e) => environmentActions.setEnvTexture(e.detail.value as string | null)}
 					/>
 				{/if}
 				<Checkbox label="Use as Background" bind:value={environmentState.envIsBackground} />
 				<Checkbox label="Ground Projection" bind:value={environmentState.envGround} />
 			</Folder>
-			<Separator />
 		{/if}
 
 		{#if environmentState.mode === 'cube'}
@@ -160,146 +382,19 @@
 				{#if CUBE_TEXTURES.length === 0}
 					<span style="font-size: 11px; color: rgba(255,255,255,0.4);">
 						No cube maps — add 6-face sets to<br />public/textures/skybox/cube/ and register in
-						envTextures.ts
+						environmentTextures.ts
 					</span>
 				{:else}
 					<List
 						label="Cube Map"
 						options={cubeTextureOptions}
 						value={environmentState.cubeTextureId}
-						on:change={(e) => skyboxActions.setCubeTexture(e.detail.value as string | null)}
+						on:change={(e) => environmentActions.setCubeTexture(e.detail.value as string | null)}
 					/>
 				{/if}
 				<Checkbox label="Use as Background" bind:value={environmentState.cubeIsBackground} />
 			</Folder>
-			<Separator />
 		{/if}
-
-		<Folder title="Saved Presets" expanded={false}>
-			{#each skyboxPresetsState.presets as preset (preset.id)}
-				{@const isBundled = BUNDLED_SKYBOX_PRESETS.find((b) => b.id === preset.id)}
-				<Button
-					title="{isBundled ? '📦 ' : ''}▶ {preset.name}"
-					on:click={() => skyboxActions.loadUserPreset(preset.id)}
-				/>
-				{#if !isBundled}
-					<Button title="✕ Delete" on:click={() => deleteSkyboxPreset(preset.id)} />
-				{/if}
-			{/each}
-			{#if skyboxPresetsState.presets.length > 0}
-				<Separator />
-			{/if}
-			<Button
-				title="Save Current as Preset"
-				on:click={() => {
-					const name = prompt('Preset name:');
-					if (name) {
-						const result = skyboxActions.savePreset(name);
-						if (!result.success) alert(result.error);
-					}
-				}}
-			/>
-		</Folder>
-		<Separator />
-
-		<Folder title="Sky Presets" expanded={true}>
-			{#each Object.entries(presetCategories) as [category, presetIds]}
-				<Folder title={presetCategoryNames[category]} expanded={false}>
-					{#each presetIds as presetId}
-						{@const preset = SKY_PRESETS[presetId]}
-						{#if preset}
-							<Button title={preset.name} on:click={() => skyboxActions.applyPreset(presetId)} />
-						{/if}
-					{/each}
-				</Folder>
-			{/each}
-		</Folder>
-
-		<Separator />
-
-		<Folder title="Star Presets" expanded={false}>
-			{#each Object.entries(starPresetCategories) as [category, presetIds]}
-				<Folder title={starPresetCategoryNames[category]} expanded={false}>
-					{#each presetIds as presetId}
-						{@const preset = STAR_PRESETS[presetId]}
-						{#if preset}
-							<Button
-								title={preset.name}
-								on:click={() => skyboxActions.applyStarPreset(presetId)}
-							/>
-						{/if}
-					{/each}
-				</Folder>
-			{/each}
-		</Folder>
-
-		<Folder title="Stars" expanded={false}>
-			<Checkbox bind:value={starsState.enabled} label="Enabled" />
-			{#if starsState.enabled}
-				<Slider bind:value={starsState.count} label="Count" min={0} max={15000} step={100} />
-				<Slider bind:value={starsState.speed} label="Twinkle Speed" min={0} max={3} step={0.1} />
-				<Slider bind:value={starsState.lightness} label="Lightness" min={0} max={1} step={0.05} />
-				<Slider bind:value={starsState.opacity} label="Opacity" min={0} max={1} step={0.05} />
-				<Slider bind:value={starsState.saturation} label="Saturation" min={0} max={1} step={0.05} />
-				<Checkbox bind:value={starsState.fade} label="Fade" />
-				<Slider bind:value={starsState.factor} label="Factor" min={1} max={10} step={0.5} />
-				<Slider bind:value={starsState.depth} label="Depth" min={10} max={100} step={5} />
-			{/if}
-		</Folder>
-
-		<Separator />
-
-		<Folder title="Sun Position" expanded={false}>
-			<Slider bind:value={skyboxState.azimuth} label="Azimuth" min={-180} max={180} step={1} />
-			<Slider bind:value={skyboxState.elevation} label="Elevation" min={-5} max={90} step={1} />
-		</Folder>
-
-		<Folder title="Atmosphere" expanded={false}>
-			<Slider bind:value={skyboxState.turbidity} label="Turbidity" min={0} max={20} step={0.1} />
-			<Slider bind:value={skyboxState.rayleigh} label="Rayleigh" min={0} max={4} step={0.1} />
-		</Folder>
-
-		<Folder title="Scattering" expanded={false}>
-			<Slider
-				bind:value={skyboxState.mieCoefficient}
-				label="Mie Coefficient"
-				min={0}
-				max={0.1}
-				step={0.001}
-			/>
-			<Slider
-				bind:value={skyboxState.mieDirectionalG}
-				label="Mie Directional G"
-				min={0}
-				max={1}
-				step={0.01}
-			/>
-		</Folder>
-
-		<Folder title="Rendering" expanded={false}>
-			<Slider bind:value={skyboxState.exposure} label="Exposure" min={0} max={2} step={0.05} />
-			<Checkbox bind:value={skyboxState.setEnvironment} label="Set Environment" />
-		</Folder>
-
-		<Separator />
-
-		<Folder title="Transition" expanded={false}>
-			{#each TRANSITION_DURATIONS as opt}
-				<Button
-					title={isDurationSelected(opt.value) ? `✓ ${opt.text}` : opt.text}
-					on:click={() => skyboxActions.setTransitionDuration(opt.value)}
-				/>
-			{/each}
-			{#if transitionState.isTransitioning}
-				<span style="font-size: 10px; color: #56b6c2; margin-top: 4px;">
-					Transitioning... {Math.round(transitionState.progress * 100)}%
-				</span>
-			{/if}
-		</Folder>
-
-		<Separator />
-
-		<Button title="Reset to Default" on:click={skyboxActions.reset} />
 	</DropDownPane>
 </ToolbarItem>
 

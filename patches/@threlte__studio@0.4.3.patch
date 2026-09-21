@@ -1,0 +1,581 @@
+diff --git a/dist/extensions/editor-camera/CameraControls.svelte b/dist/extensions/editor-camera/CameraControls.svelte
+index 58651b111f72f3143b1a465e1f35ec36d3124115..bd72e7b5d4709c1a3292c1fb7f9a876aba3f82d4 100644
+--- a/dist/extensions/editor-camera/CameraControls.svelte
++++ b/dist/extensions/editor-camera/CameraControls.svelte
+@@ -52,9 +52,21 @@
+     initialTarget: Vector3
+     cc: (cc: CameraControls) => void
+     rest: (rest: { position: Vector3; target: Vector3 }) => void
++    /**
++     * PATCH (spaceplate): while true, `update()` is not called and the controls leave the
++     * camera alone. See the task below.
++     */
++    suspended?: boolean
+   }
+ 
+-  const { camera, initialPosition, initialTarget, cc, rest }: Props = $props()
++  const {
++    camera,
++    initialPosition,
++    initialTarget,
++    cc,
++    rest,
++    suspended = false
++  }: Props = $props()
+ 
+   const { dom, invalidate } = useThrelte()
+ 
+@@ -72,6 +84,21 @@
+ 
+   useTask(
+     (delta) => {
++      // PATCH (spaceplate): let another driver own the editor camera for a while.
++      //
++      // `CameraControls.update()` writes `camera.position` and `camera.lookAt(target)` on
++      // EVERY call, outside any `_needsUpdate` check (camera-controls 3.1.2, ~line 2241),
++      // so it is not a matter of who writes last within a frame: anything else driving
++      // this camera is overwritten every frame it does not happen to run after this task.
++      // Ordering cannot be relied on either, since this component remounts (and its task
++      // re-registers, moving to the back) whenever the editor camera is toggled.
++      //
++      // extensions/flypath drives the editor camera along an authored path and needs it
++      // held still afterwards, so it raises `controlsSuspended` on the editor-camera
++      // extension for the duration. Skipping update() leaves the controls' own internal
++      // state untouched, so releasing the flag snaps the camera back to wherever the user
++      // had it — the restore comes free.
++      if (suspended) return
+       cameraControls.update(delta)
+     },
+     {
+@@ -109,6 +136,14 @@
+   $effect(() => {
+     cameraControls.enabled = !anyInUse
+   })
++
+ </script>
+ 
++<!--
++  PATCH (spaceplate): the axis stems used to be switched off here with
++  `x={{ line: false }}` and friends, because three-viewport-gizmo draws them through its
++  own vendored `LineMaterial` (a raw ShaderMaterial, which WebGPU has no mapping for).
++  patches/@threlte__extras swaps that material for `Line2NodeMaterial` right after the
++  ViewportGizmo is constructed, so the stems draw again and the defaults are fine.
++-->
+ <Gizmo controls={cameraControls} />
+diff --git a/dist/extensions/editor-camera/DefaultCamera.svelte b/dist/extensions/editor-camera/DefaultCamera.svelte
+index 52248d1d951c4296a996afb75f46f172c7da8448..b14242590c0ed2815781025d9728d397a5a543da 100644
+--- a/dist/extensions/editor-camera/DefaultCamera.svelte
++++ b/dist/extensions/editor-camera/DefaultCamera.svelte
+@@ -128,11 +128,23 @@
+       renderer.setViewport(viewport)
+ 
+       // draw to canvas
++      //
++      // PATCH (spaceplate): WebGPU compat.
++      // The render above targets `setViewport(0, 0, width, height)`. WebGL's viewport
++      // origin is the BOTTOM-left of the drawing buffer, so the result lands in the
++      // bottom-left of the canvas and is read back from `(size.y - height) * dpr`.
++      // WebGPU's `setViewport` origin is the TOP-left and three does not flip it, so
++      // under WebGPURenderer the same render lands in the TOP-left and that source
++      // rectangle reads a region the preceding `autoClear` had just wiped -- which is
++      // why the PiP was solid black rather than merely offset.
++      const sourceY = (renderer as unknown as { isWebGPURenderer?: boolean }).isWebGPURenderer
++        ? 0
++        : (size.y - height) * dpr
+       context.clearRect(0, 0, width * dpr, height * dpr)
+       context.drawImage(
+         canvas,
+         0,
+-        (size.y - height) * dpr,
++        sourceY,
+         width * dpr,
+         height * dpr,
+         0,
+diff --git a/dist/extensions/editor-camera/EditorCamera.svelte b/dist/extensions/editor-camera/EditorCamera.svelte
+index 826504d4b1c6caeefd219d7818dd489531c63160..4fabd088da3c4b9842470ae117398c80183cadce 100644
+--- a/dist/extensions/editor-camera/EditorCamera.svelte
++++ b/dist/extensions/editor-camera/EditorCamera.svelte
+@@ -52,7 +52,10 @@
+           enabled: persist(true),
+           height: persist(240),
+           width: persist(400)
+-        }
++        },
++        // PATCH (spaceplate): see CameraControls.svelte's task. Deliberately NOT
++        // persisted — a suspended editor camera must never survive a reload.
++        controlsSuspended: false
+       }
+     },
+     actions: {
+@@ -84,6 +87,10 @@
+       setDefaultCameraEnabled({ state }, enabled) {
+         state.defaultCamera.enabled = enabled
+       },
++      // PATCH (spaceplate): see CameraControls.svelte's task.
++      setControlsSuspended({ state }, suspended) {
++        state.controlsSuspended = suspended
++      },
+       setDefaultCameraObject({ state }, object) {
+         state.defaultCamera.object = object
+       },
+@@ -130,12 +137,29 @@
+     }
+   })
+ 
++  // PATCH (spaceplate): break an infinite effect loop (`effect_update_depth_exceeded`).
++  //
++  // The `$effect.pre` above records whatever `$camera` currently is into
++  // `defaultCameraObject`; this `observe` writes `defaultCameraObject` back into
++  // `camera`. That is a read/write cycle over the same two pieces of state, and the two
++  // halves run in different flush phases, so each lags the other by one tick. With a
++  // single camera it happens to settle, but as soon as two cameras exist -- Threlte
++  // creates an internal default camera, and the app then mounts its own `makeDefault`
++  // one -- they alternate forever and Svelte aborts at 1000 iterations.
++  //
++  // The restore is only ever *meant* to run when leaving editor-camera mode, so gate it
++  // on actually being on an editor camera. When we are not, the app owns `camera` and
++  // Studio has no business reasserting a stale value over it. Toggling the editor camera
++  // on and off still restores the app camera exactly as before.
+   observe(
+     () => [defaultCameraObject, editorCameraEnabled, editorCamera],
+     ([defaultCameraObject, editorCameraEnabled, editorCamera]) => {
+       if (editorCameraEnabled) {
+         camera.set(editorCamera)
+-      } else if (defaultCameraObject) {
++      } else if (
++        defaultCameraObject &&
++        (camera.current === editorCameraPerspective || camera.current === editorCameraOrthographic)
++      ) {
+         camera.set(defaultCameraObject)
+       }
+     }
+@@ -203,6 +227,7 @@
+         cc={(cc) => {
+           cameraControls = cc
+         }}
++        suspended={extension.state.controlsSuspended}
+       />
+     </T>
+   {:else if mode === 'Orthographic'}
+@@ -220,6 +245,7 @@
+         cc={(cc) => {
+           cameraControls = cc
+         }}
++        suspended={extension.state.controlsSuspended}
+       />
+     </T>
+   {/if}
+diff --git a/dist/extensions/editor-camera/types.d.ts b/dist/extensions/editor-camera/types.d.ts
+index ec5f87d5482c4be67e45ac74cf9fe5f677f6db41..45898c9447a4f73fa442debe4612fba9b98bc86f 100644
+--- a/dist/extensions/editor-camera/types.d.ts
++++ b/dist/extensions/editor-camera/types.d.ts
+@@ -11,6 +11,8 @@ export type EditorCameraState = {
+         width: number;
+         height: number;
+     };
++    /** PATCH (spaceplate): while true, CameraControls does not write the camera. */
++    controlsSuspended: boolean;
+ };
+ export type EditorCameraActions = {
+     toggleEnabled: () => void;
+@@ -23,5 +25,7 @@ export type EditorCameraActions = {
+     toggleDefaultCameraEnabled: () => void;
+     setDefaultCameraEnabled: (enabled: boolean) => void;
+     setDefaultCameraObject: (object: Camera | undefined) => void;
++    /** PATCH (spaceplate): hand the editor camera to another driver. */
++    setControlsSuspended: (suspended: boolean) => void;
+     focusSelectedObjects: () => void;
+ };
+diff --git a/dist/extensions/helpers/AxesHelper.svelte b/dist/extensions/helpers/AxesHelper.svelte
+index e9452c8c2029b8e9dbfc0fefea70d2bc179b9bfc..994d7e621731ff48ab2f919b6607b360102082f2 100644
+--- a/dist/extensions/helpers/AxesHelper.svelte
++++ b/dist/extensions/helpers/AxesHelper.svelte
+@@ -1,9 +1,19 @@
+ <script lang="ts">
+   import { T } from '@threlte/core'
+   import * as THREE from 'three'
+-  import { Line2 } from 'three/examples/jsm/lines/Line2.js'
++  // PATCH (spaceplate): WebGPU compat.
++  // The WebGL fat-line stack draws through LineMaterial, which extends raw
++  // ShaderMaterial. NodeLibrary has no ShaderMaterial mapping, so under
++  // WebGPURenderer three logs `Material "LineMaterial" is not compatible` and swaps
++  // in a blank NodeMaterial -- the axes never draw.
++  //
++  // three r185 ships a WebGPU port of the same stack: lines/webgpu/Line2.js is a
++  // drop-in for lines/Line2.js and draws with Line2NodeMaterial. LineGeometry is
++  // backend-agnostic and shared by both (webgpu/Line2.js imports this very module),
++  // so only the Line2 and material imports change.
++  import { Line2 } from 'three/examples/jsm/lines/webgpu/Line2.js'
+   import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
+-  import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
++  import { Line2NodeMaterial } from 'three/webgpu'
+   import { useStudioObjectsRegistry } from '../studio-objects-registry/useStudioObjectsRegistry.svelte.js'
+ 
+   const { studioObjectRef } = useStudioObjectsRegistry()
+@@ -26,8 +36,19 @@
+   }: Props = $props()
+ 
+   const lineGeometry = new LineGeometry()
+-  const lineMaterial = $state(
+-    new LineMaterial({
++  // PATCH (spaceplate): Line2NodeMaterial takes the same parameters as LineMaterial
++  // (its defaults come from LineDashedMaterial, so `linewidth` still applies).
++  // `transparent` is handled inside the node graph -- setupDiffuseColor composites
++  // against viewportOpaqueMipTexture -- which is why the constructor forces
++  // blending = NoBlending. Leave blending alone; setting it breaks the overlay axes.
++  //
++  // `$state.raw`, not `$state`: upstream deep-proxied the material, which was survivable
++  // for a ShaderMaterial (shallow, acyclic) but not for a NodeMaterial, whose TSL node
++  // graph is deep and self-referential. Nothing reads this material reactively -- it is
++  // handed to Line2 at construction and read by the renderer during the frame loop --
++  // so the proxy bought nothing and only risked breakage.
++  const lineMaterial = $state.raw(
++    new Line2NodeMaterial({
+       linewidth: width / 100,
+       vertexColors: true,
+       transparent: opacity < 1,
+diff --git a/dist/extensions/object-selection/RenderSelectedObjects.svelte b/dist/extensions/object-selection/RenderSelectedObjects.svelte
+index 0cf31db85f00eaf03a99752717d276aa2e797fad..ad03aa3aff17800e8d729df59519997e81260e17 100644
+--- a/dist/extensions/object-selection/RenderSelectedObjects.svelte
++++ b/dist/extensions/object-selection/RenderSelectedObjects.svelte
+@@ -6,16 +6,35 @@
+   import {
+     Color,
+     Mesh,
++    PlaneGeometry,
+     MeshBasicMaterial,
+     RGBAFormat,
+     WebGLRenderTarget,
+     type Material
+   } from 'three'
+   import { useStudioObjectsRegistry } from '../studio-objects-registry/useStudioObjectsRegistry.svelte.js'
+-  import { fragmentShader } from './shader/fragment.js'
+-  import { vertexShader } from './shader/vertex.js'
+   import { useObjectSelection } from './useObjectSelection.svelte.js'
+ 
++  // PATCH (spaceplate): WebGPU compat.
++  // The selection outline used a raw ShaderMaterial (./shader/{vertex,fragment}.js).
++  // NodeLibrary has no ShaderMaterial mapping, so on WebGPURenderer it was replaced
++  // with a blank NodeMaterial and outlines never drew. This is a direct TSL port of
++  // that same 8-tap edge detect, driven by a NodeMaterial instead.
++  import { NodeMaterial } from 'three/webgpu'
++  import {
++    dFdx,
++    dFdy,
++    float,
++    length,
++    smoothstep,
++    step,
++    texture,
++    uniform,
++    uv,
++    vec2,
++    vec4
++  } from 'three/tsl'
++
+   const { invalidate } = useThrelte()
+   const objectSelection = useObjectSelection()
+   const { addObject, removeObject } = useStudioObjectsRegistry()
+@@ -65,8 +84,31 @@
+ 
+   useTask(
+     () => {
+-      // TODO: Make perf optimizations in terms of not rendering when no objects
+-      // are selected
++      // PATCH (spaceplate): upstream's own TODO -- "not rendering when no objects are
++      // selected" -- promoted from a perf nicety to load-bearing, because this overlay
++      // is destructive under an MRT pass.
++      //
++      // `selectionMesh` is a full-screen quad with `depthTest = false` and
++      // `renderOrder = 9999`, so it draws last over every pixel. `MRTNode` seeds
++      // material blending for the `output` attachment ONLY (its constructor sets
++      // `blendModes = { output: _materialBlending }`); every other attachment falls
++      // through `getBlendMode()` to `_noBlending` and `WebGPUPipelineUtils` then builds
++      // that colour target with `blend: undefined` -- a straight overwrite, alpha
++      // ignored. So the quad's ~0 alpha keeps it invisible in `output`, while it stamps
++      // its own velocity across the entire `velocity` attachment -- and being parented
++      // to the camera, that velocity is zero. Motion blur silently became a no-op.
++      //
++      // Skipping this entirely when the selection is empty keeps velocity intact for the
++      // common case (and saves a whole extra scene render per frame besides). With
++      // something selected the overlay still flattens velocity; fixing THAT means
++      // compositing studio overlays after post-processing instead of inside the scene
++      // pass, which is a much larger change.
++      if (objectSelection.selectedObjects.length === 0) {
++        selectionMesh.visible = false
++        return
++      }
++      selectionMesh.visible = true
++
+       const originalMaterials = new Map()
+       const originalRenderTarget = renderer.getRenderTarget()
+       const currentCameraMask = camera.current.layers.mask
+@@ -109,7 +151,109 @@
+     }
+   )
+ 
+-  const selectionMesh = new Mesh()
++  // PATCH (spaceplate): TSL port of the original outline shader.
++  // Samples the 8 neighbours of each texel in the selected-objects render target and
++  // marks a pixel as "edge" whenever a neighbour's colour differs by more than
++  // edgeFactor -- identical maths to the GLSL it replaces, expressed as nodes.
++  const outlineColor = uniform(new Color('#FFFF00'))
++  const lineWidth = uniform(1.5)
++  const edgeFactor = uniform(0.0001)
++
++  const outlineMaterial = new NodeMaterial()
++  outlineMaterial.transparent = true
++  outlineMaterial.depthWrite = false
++  outlineMaterial.depthTest = false
++
++  {
++    // PATCH (spaceplate): WebGPU compat -- sample the render target with V flipped.
++    //
++    // The GLSL this replaces sampled the quad's `uv` attribute directly. That is
++    // correct on WebGL, where a framebuffer's origin and a texture's UV origin are both
++    // bottom-left. WebGPU puts the render pass origin at the top-left while `uv` still
++    // starts bottom-left, so the identical sample lands mirrored in Y: the outline drew
++    // reflected about the middle of the viewport and slid the opposite way to the object
++    // whenever the camera moved or zoomed.
++    //
++    // The eight neighbour offsets below are unchanged -- they are symmetric about the
++    // centre tap, so negating dFdy does not affect the edge detect.
++    const vUv = vec2(uv().x, uv().y.oneMinus())
++    // Screen-space derivatives give a line width that stays constant in pixels.
++    const sampleStep = vec2(dFdx(vUv.x), dFdy(vUv.y)).mul(lineWidth)
++    const currentColor = texture(renderTarget.texture, vUv)
++
++    const neighbourOffsets = [
++      [-1, 1], // top-left
++      [0, 1], // top
++      [1, 1], // top-right
++      [1, 0], // right
++      [1, -1], // bottom-right
++      [0, -1], // bottom
++      [-1, -1], // bottom-left
++      [-1, 0] // left
++    ] as const
++
++    let edgeDetectValue = float(0)
++
++    for (const [offsetX, offsetY] of neighbourOffsets) {
++      const neighbour = texture(
++        renderTarget.texture,
++        vUv.add(vec2(sampleStep.x.mul(offsetX), sampleStep.y.mul(offsetY)))
++      )
++      edgeDetectValue = edgeDetectValue.add(
++        step(edgeFactor, length(currentColor.rgb.sub(neighbour.rgb)))
++      )
++    }
++
++    // PATCH (spaceplate): `colorNode`, NOT `fragmentNode`. This is load-bearing for MRT.
++    //
++    // `NodeMaterial.setup()` folds the renderer's MRT into the fragment output only on
++    // its `this.fragmentNode === null` branch; the `fragmentNode` branch just calls
++    // `setupOutput()` and emits a single `@location( 0 )` no matter what. So with an
++    // MRT pass active -- motion blur provisions `mrt({ output, velocity })` -- this one
++    // overlay compiled a 1-output shader while every other material in the scene
++    // compiled 2, and Chromium/Dawn rejected the draw:
++    //
++    //   Attachment state of [RenderPipeline "renderPipeline_NodeMaterial_22"] is not
++    //   compatible with [RenderPassEncoder]. Expects colorTargets [0, 1]; pipeline has [0].
++    //
++    // Nothing upstream catches it: the WGSL is byte-identical with and without MRT, so
++    // it dedupes onto one ProgrammableStage (`Pipelines.programs.fragment` is keyed on
++    // the shader string), and `WebGPUBackend.getRenderCacheKey()` records only
++    // attachment 0's format, never the attachment COUNT -- so the pipeline built for the
++    // 1-attachment pass is silently reused in the 2-attachment one.
++    //
++    // The original comment here said `fragmentNode` was needed so the flat overlay would
++    // not pick up material lighting. It is not: `outlineMaterial.lights` is already
++    // `false` (set above), and with no `lightsNode`, backdrop or emissive,
++    // `setupLighting()` returns the unlit `diffuseColor.rgb` unchanged. `setupOutput()`
++    // -- and therefore fog -- runs on both branches, so the visual result is identical.
++    outlineMaterial.colorNode = vec4(outlineColor, smoothstep(0.1, 3, edgeDetectValue))
++  }
++
++  // PATCH (spaceplate): give the mesh its geometry AND material up front, rather than
++  // attaching them as `<T>` children of the `{#key}` block below.
++  //
++  // Geometry: `new Mesh()` defaults to an empty BufferGeometry, and with
++  // `frustumCulled = false` this mesh is submitted on the very first frame -- before a
++  // `<T.PlaneGeometry />` child would have attached. Under WebGPU the node builder logs
++  // 'THREE.AttributeNode: Vertex attribute "position" not found on geometry.' for that
++  // frame.
++  //
++  // Material: attaching it was actively broken. `useAttach` records the property's
++  // value at attach time and restores it on teardown, and inside `{#key}` Svelte runs
++  // the new branch's `$effect.pre` setup *before* the old branch's teardown:
++  //     setup(new)    -> selectionMesh.material = outlineMaterial
++  //     teardown(old) -> selectionMesh.material = <value captured by the old branch>
++  // The old branch had captured the constructor's default white `MeshBasicMaterial`, so
++  // leaving the editor camera left this full-screen, depth-test-defeating quad opaque
++  // white -- the whole viewport rendered as flat grey (white through AgX tone mapping),
++  // with only the studio sprites on top. It survived the round trip back *to* the editor
++  // camera purely by luck: that branch had captured the correct material.
++  //
++  // Owning both here sidesteps the ordering entirely. `{#key}` is then only responsible
++  // for re-parenting the mesh to the current camera, which is all it was ever for.
++  // Disposal is handled in the `onMount` cleanup below.
++  const selectionMesh = new Mesh(new PlaneGeometry(), outlineMaterial)
+   selectionMesh.raycast = () => {}
+   selectionMesh.position.z = -5
+   selectionMesh.frustumCulled = false
+@@ -146,34 +290,32 @@
+     addObject(selectionMesh)
+     return () => {
+       removeObject(selectionMesh)
++      // PATCH (spaceplate): the geometry and material are script-owned (see above) and
++      // the `<T>` below is marked `dispose={false}`, so ownership sits here, on the
++      // component's own teardown, rather than on every camera switch.
++      selectionMesh.geometry.dispose()
++      outlineMaterial.dispose()
++      renderTarget.dispose()
+     }
+   })
+ </script>
+ 
++<!--
++  PATCH (spaceplate): the `<T.PlaneGeometry />` and `<T.ShaderMaterial>` children are
++  gone -- both are constructed in the script now (see the `selectionMesh` note) -- and
++  what remains is marked `dispose={false}`.
++
++  `{#key $camera.uuid}` tears this block down and rebuilds it on every camera change.
++  That was fine upstream, where every `<T>` in here owned a freshly created object, but
++  both objects are script-owned singletons now: Threlte's `useDispose` would call
++  `.dispose()` on them at each camera switch and then re-attach them dead, which under
++  WebGPU surfaces as `GPUValidationError: Buffer ... has been destroyed` on every
++  subsequent draw. They are released in the `onMount` cleanup instead.
++-->
+ {#key $camera.uuid}
+-  <T is={selectionMesh} attach={$camera}>
+-    <T.PlaneGeometry />
+-
+-    <T.ShaderMaterial
+-      {fragmentShader}
+-      {vertexShader}
+-      uniforms={{
+-        outlinedObjectsTexture: {
+-          value: renderTarget.texture
+-        },
+-        lineWidth: {
+-          value: 1.5
+-        },
+-        outlineColor: {
+-          value: new Color('#FFFF00')
+-        },
+-        edgeFactor: {
+-          value: 0.0001
+-        }
+-      }}
+-      depthWrite={false}
+-      depthTest={false}
+-      transparent
+-    />
+-  </T>
++  <T
++    is={selectionMesh}
++    attach={$camera}
++    dispose={false}
++  />
+ {/key}
+diff --git a/dist/extensions/render-modes/RenderModes.svelte b/dist/extensions/render-modes/RenderModes.svelte
+index 8c6af1e9e54836eb68999f93b4a380afcc87da73..1b1a9e86992c180d90e3a9cbd860cc4644d106c6 100644
+--- a/dist/extensions/render-modes/RenderModes.svelte
++++ b/dist/extensions/render-modes/RenderModes.svelte
+@@ -1,14 +1,7 @@
+ <script lang="ts">
+-  import { useThrelte } from '@threlte/core'
+-  import { onDestroy, type Snippet } from 'svelte'
+-  import {
+-    BackSide,
+-    DoubleSide,
+-    FrontSide,
+-    Material,
+-    MeshBasicMaterial,
+-    MeshMatcapMaterial
+-  } from 'three'
++  import { useTask, useThrelte } from '@threlte/core'
++  import type { Snippet } from 'svelte'
++  import { Material, MeshBasicMaterial, MeshMatcapMaterial } from 'three'
+   import HorizontalButtonGroup from '../../components/HorizontalButtonGroup.svelte'
+   import ToolbarButton from '../../components/ToolbarButton.svelte'
+   import ToolbarItem from '../../components/ToolbarItem.svelte'
+@@ -22,7 +15,7 @@
+   }
+ 
+   const { createExtension } = useStudio()
+-  const { scene, invalidate, renderer } = useThrelte()
++  const { scene, invalidate, autoRenderTask } = useThrelte()
+ 
+   const extension = createExtension<RenderModesState, RenderModesActions>({
+     scope: renderModesScope,
+@@ -49,33 +42,44 @@
+     }
+   })
+ 
+-  // override to exclude objects with `ignoreOverrideMaterial` from being rendered with the override material
+-  // see https://github.com/mrdoob/three.js/blob/45498d0255abe5da8d3ff95c117ccab594c49b8f/src/renderers/WebGLRenderer.js#L1589-L1616
+-  const ogRenderBufferDirect = renderer.renderBufferDirect.bind(renderer)
+-  renderer.renderBufferDirect = (...args) => {
+-    // signature: 0:camera, 1:scene, 2:geometry, 3:material, 4:object, 5:group
+-    if (args[4].userData.ignoreOverrideMaterial && hasMaterial(args[4])) {
+-      // we have to mimic what `renderObject` does with the original material
+-      const material = args[4].material
+-      if (material.transparent && material.side === DoubleSide && !material.forceSinglePass) {
+-        material.side = BackSide
+-        material.needsUpdate = true
+-        ogRenderBufferDirect.call(renderer, args[0], args[1], args[2], material, args[4], args[5])
+-        material.side = FrontSide
+-        material.needsUpdate = true
+-        ogRenderBufferDirect.call(renderer, args[0], args[1], args[2], material, args[4], args[5])
+-        material.side = DoubleSide
+-      } else {
+-        ogRenderBufferDirect.call(renderer, args[0], args[1], args[2], material, args[4], args[5])
++  // PATCH (spaceplate): WebGPU compat.
++  //
++  // Upstream excluded `userData.ignoreOverrideMaterial` objects from the override
++  // material by monkey-patching `renderer.renderBufferDirect`. That method is
++  // WebGLRenderer-only: on WebGPURenderer it is `undefined`, so `.bind(renderer)`
++  // threw at setup and took down the entire Studio subtree with it (every extension
++  // after render-modes, and <Scene />, mount inside this component).
++  //
++  // Since r185 three has a first-class, backend-agnostic equivalent:
++  // `Material.allowOverride = false`, honoured by both WebGLRenderer (L2108) and the
++  // common Renderer used by WebGPU (L3562). It also handles the transparent/DoubleSide
++  // two-pass case the copied code above was reimplementing by hand, so this is a
++  // simplification on WebGL too, not just a port.
++  //
++  // The sync runs per frame rather than on mode change because helpers are created
++  // lazily -- selecting an object mounts new AxesHelper/light helpers that would
++  // otherwise miss the flag. It is gated on a non-'rendered' mode, so the traverse
++  // costs nothing in the normal case. `allowOverride` is set-once: these are Studio's
++  // own gizmos and are never meant to be overridden.
++  const syncAllowOverride = () => {
++    scene.traverse((object) => {
++      if (!object.userData.ignoreOverrideMaterial || !hasMaterial(object)) return
++      const material = object.material as Material | Material[]
++      for (const entry of Array.isArray(material) ? material : [material]) {
++        // Guarded so this is a write-once per material rather than a write per frame:
++        // some Studio helper materials are Svelte proxies, and repeatedly assigning
++        // through a proxy signals a state change on every frame for no reason.
++        if (entry && entry.allowOverride !== false) entry.allowOverride = false
+       }
+-    } else {
+-      ogRenderBufferDirect.call(renderer, ...args)
+-    }
++    })
+   }
+ 
+-  onDestroy(() => {
+-    renderer.renderBufferDirect = ogRenderBufferDirect
+-  })
++  useTask(
++    () => {
++      if (extension.state.renderMode !== 'rendered') syncAllowOverride()
++    },
++    { before: autoRenderTask, autoInvalidate: false }
++  )
+ 
+   $effect(() => {
+     switch (extension.state.renderMode) {

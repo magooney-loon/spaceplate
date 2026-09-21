@@ -1,0 +1,404 @@
+// The car spec — one car's complete description as DATA. Everything the scene,
+// the sim and the FX components know about a specific car comes from here; the
+// code is car-agnostic. Adding a car = one file in cars/ exporting a CarSpec
+// plus an entry in the registry (cars/index.svelte.ts). No component edits.
+//
+// Conventions that hold for every car (they are the code's contracts, not
+// per-car data):
+// - SI units everywhere: metres, kg, newtons, seconds, rad. World conversion
+//   happens ONLY at the controller/scene boundary (../units.ts).
+// - Model space: the GLB's own metres, nose -Z, +X left, y up from the ground
+//   plane (see geometry below for the measured anchors).
+// - The GLB contract for wheels: wheel materials named `<wheelMaterialPrefix>*`
+//   (case-insensitive), each wheel mesh containing ALL FOUR wheels merged, so
+//   fx/CarWheels can recover the four pivots by bounding-box quadrant split.
+
+import type { HandlingTune } from '../sim/handling';
+
+/** Which axle(s) the engine drives. RWD is fully implemented; FWD/AWD are
+ *  spec-level plumbing only — the driven-axle LOAD math in the drivetrain is
+ *  layout-aware, but their handling feel (front-slip understeer model, torque
+ *  split) is deliberately unwritten until the cars exist to tune it against. */
+export type CarLayout = 'rwd' | 'fwd' | 'awd';
+
+/** One point of the wide-open-throttle crank torque curve. */
+export type TorquePoint = readonly [rpm: number, nm: number];
+
+/** How a paint hits the light — mapped to material params (metalness /
+ *  roughness / clearcoat / iridescence) in cars/paintMaterial.ts, so a finish is
+ *  the same look on every car. */
+export type PaintFinish = 'solid' | 'metallic' | 'pearl' | 'shift';
+
+/** One factory paint on the order sheet. */
+export type PaintOption = {
+	id: string;
+	label: string;
+	/** The manufacturer paint code — display-only. Optional: only include one
+	 *  when it's a REAL, verified code (the GR86's are) — an invented one is
+	 *  worse than none, it reads as researched when it isn't. */
+	code?: string;
+	/** sRGB hex, an approximation of the paint (or of the code, when there is one). */
+	hex: string;
+	/** The finish this paint SHIPS as — the shop's default on select, and the
+	 *  chips there override it without touching the colour. */
+	finish: PaintFinish;
+};
+
+export type CarSpec = {
+	id: string;
+	/** Shown wherever the car is named (HUD, logs). */
+	label: string;
+	/** The model name ALONE, no manufacturer — "GR86", not "Toyota GR86". The
+	 *  Garage card pairs this with `logo` instead of repeating the make in
+	 *  text next to the badge that already says it. */
+	modelLabel: string;
+	/** Absolute URL to the manufacturer's badge (usually
+	 *  `${BASE_URL}models/testgame/<make>.png`) — the Garage HUD card's logo.
+	 *  A transparent PNG, pre-cropped and padded to the same square canvas as
+	 *  every other car's (ImageMagick `-trim -resize -extent`, not CSS) so the
+	 *  cards line up without per-logo styling; the box in Garage.svelte sizes
+	 *  the DISPLAY, not the asset. */
+	logo: string;
+	layout: CarLayout;
+
+	// ── Hardware — the car itself, pure SI. Never varies between setups. ──────
+	hardware: {
+		/** kg. */
+		mass: number;
+		/** m — front axle to rear axle. Steering geometry + load transfer. */
+		wheelbase: number;
+		/** m — centre of gravity height. Drives longitudinal load transfer. */
+		cogHeight: number;
+		/** Fraction of static weight on the REAR axle (the GR86 is 53/47). */
+		rearWeightBias: number;
+		/** m — loaded tyre radius. */
+		wheelRadius: number;
+
+		/** kg·m² — crank+flywheel+clutch+gearbox at the CRANK (reaches the road
+		 *  through ratio², which is why low gears spin up instantly). */
+		engineInertia: number;
+		/** kg·m² — driven-axle wheels, tyres, shafts and diff together. */
+		wheelInertia: number;
+		/** kg·m² — the chassis' yaw (vertical-axis) inertia, fed to Rapier
+		 *  explicitly (hull.ts's chassisMassProperties) so the body's mass
+		 *  properties are the car's facts, not a side effect of collider
+		 *  geometry. Steering is DIRECT yaw-rate control (`setAngvel`), so this
+		 *  never shapes steering response — what it scales is everything that
+		 *  torque-drives the body outside that control, barrier contacts
+		 *  chiefly. Pitch/roll are locked on the body; their inertia components
+		 *  are box-equivalent placeholders from the hull's bounds. */
+		yawInertia: number;
+		/** m/s of wheel overspeed that reads as TOTAL wheelspin — the normalizer the
+		 *  drivetrain's `slip` state is measured against (1 = a tyre doing nothing
+		 *  but smoke). Sized off what the gearing can actually reach: the GR86's 1st
+		 *  tops out ~12 m/s of spin at the limiter, 2nd ~10, 3rd cannot spin at all,
+		 *  so 1st goes fully lit and 2nd only gets there if you hold it. A car with
+		 *  fatter torque or shorter gears wants this bigger, or every gear reads lit. */
+		fullSlipSpeed: number;
+		/** m/s of overspeed the TRACTION CONTROL tolerates when the player switches
+		 *  it on (the G latch, default off). Modelled as a ceiling on slip rather
+		 *  than a torque-cut loop — the outcome is what matters, and a real ECU
+		 *  trims torque precisely to stop the number here from growing.
+		 *  Deliberately generous: at 2 m/s the launch lands at `slip` 0.2, and
+		 *  the cluster's TC lamp (`slip > 0.15`) still lights when the ECU works. */
+		tcSlipSpeed: number;
+		/** 1/s — how fast leftover sideways velocity settles once it is back inside
+		 *  what the tyres can pull. A RATE, not a per-step fraction: the latter
+		 *  silently retunes the car whenever the physics framerate moves. The grip
+		 *  LIMIT is what makes a slide a slide; this is only the last little bit. */
+		gripRate: number;
+
+		idleRpm: number;
+		/** Fuel cut. */
+		limiterRpm: number;
+		/** Where the tacho's red zone starts — display only. */
+		redlineRpm: number;
+		/** Top of the HUD dial. */
+		maxRpm: number;
+		/** s — how long each fuel cut lasts, so the limiter bounces. */
+		limiterCut: number;
+		/** rpm the engine hangs at on a clutch-slipped launch at full throttle. */
+		launchRpm: number;
+		/** m/s at which the clutch is fully home in 1st — below it slips. */
+		launchSpeed: number;
+		/** Fraction of crank torque a fully slipping clutch still passes. */
+		clutchMinBite: number;
+		/** rpm — REV-MATCH LAUNCH window, floor and ceiling: slot 1st out of N with
+		 *  the revs inside it and the clutch drops CLEAN, with DEPTH in the window
+		 *  setting how hard (see drivetrain.ts). An engine fact, not a setup — a
+		 *  9k screamer and a torque diesel do not share a window. */
+		launchWindowMinRpm: number;
+		launchWindowMaxRpm: number;
+		/** Driven-axle μ bonus at the TOP of the launch window — the dump slams
+		 *  load onto the driven axle and the tyre plants. Grip is the cap on
+		 *  thrust (full bite already requests past the tyre), so the plant is most
+		 *  of the felt launch. */
+		launchGripGain: number;
+		/** WOT bonus at the TOP of the window, nitrous-style and inside the
+		 *  traction limit — with the plant raising the cap, torque has to rise too
+		 *  or the μ bonus is never spent. */
+		launchTorqueGain: number;
+		/** 1/s — how fast the boost decays once the clutch homes. The drop is the
+		 *  launch, but the TAIL is what makes it feel like a slam instead of a
+		 *  blip: the whole of 1st stays planted, handing over to normal pull as
+		 *  it fades. A lift or a gear change kills it instantly. */
+		launchBoostDecay: number;
+		/** 1/s — how fast rpm chases its target when the clutch is engaged. */
+		rpmResponse: number;
+		/** 1/s — free-revving (neutral or mid-shift): spin-up, then trailing-off. */
+		freeRevRate: number;
+		freeDropRate: number;
+		/** Nm of engine braking = base + perRpm × rpm. */
+		engineBrakeBase: number;
+		engineBrakePerRpm: number;
+		/** Below this the engine lugs and gives back less than the curve says. */
+		lugRpm: number;
+
+		/** Forward gears 1..n. Gear -1 is reverse, 0 neutral — see cars/spec.ts. */
+		gearRatios: readonly number[];
+		reverseRatio: number;
+		finalDrive: number;
+		/** Driveline efficiency, crank torque → wheel torque. */
+		efficiency: number;
+		/** s — the whole shift window: pedal down, gear swapped, pedal back up. */
+		shiftTime: number;
+		/** Fraction of `shiftTime` the clutch spends FULLY OPEN before it starts
+		 *  coming back; the rest is the progressive re-engagement (smoothstepped).
+		 *  A clutch comes out fast and goes back in slowly, and the ramp is where a
+		 *  shift gets its bite — the whole window used to be a dead torque cut,
+		 *  which read as a mute button followed by a kick. */
+		clutchOpen: number;
+		/** 1/s — how hard the box pulls the engine onto the NEXT gear's speed while
+		 *  the clutch is open: the blip on a downshift, the drop on an upshift.
+		 *  Bigger is a cleaner box; whatever it fails to close is the shock below.
+		 *  It matters more here than in a real car because the throttle is a KEY —
+		 *  nothing makes a keyboard driver lift for an upshift. A DRIVER AID:
+		 *  applied only with the TC switch on (the automatic is exempt — its own
+		 *  competence); TC off + manual means the raw mismatch lands as SHOCK. */
+		revMatchRate: number;
+		/** How much of the clutch-drop SHOCK the car feels, 0 = none, 1 = the raw
+		 *  physical figure (the engine's inertia over the engagement time). The
+		 *  weight a downshift has. It passes through the traction limit like any
+		 *  other torque, so a big mismatch chirps the tyres rather than teleporting
+		 *  the car. */
+		clutchShock: number;
+		/** Nm at the crank that a SLIPPING clutch drags the car with at idle — what
+		 *  a real car creeps away on before the throttle says anything. Fades as the
+		 *  clutch homes and as the car reaches `creepSpeed`; the gearing does the
+		 *  rest (the same torque through 6th barely moves the car). 0 turns creep
+		 *  off, and with it the car parks itself the moment you stop steering. */
+		creepTorque: number;
+		/** m/s at which creep has faded to nothing — where an idling car in gear
+		 *  stops accelerating. Walking-to-jogging pace on a real car. */
+		creepSpeed: number;
+
+		/** rpm the AUTOMATIC upshifts at, `[lifted, wide open]` — the shift
+		 *  schedule, interpolated across pedal demand. A car fact like the gears
+		 *  themselves: it is where this engine has stopped pulling. */
+		autoUpshiftRpm: readonly [lifted: number, wot: number];
+		/** rpm the automatic drops a gear at, `[lifted, wide open]`. The wide-open
+		 *  number is KICKDOWN and must sit well under what an upshift leaves behind
+		 *  in the next gear up, or the box hunts between the two. */
+		autoDownshiftRpm: readonly [lifted: number, wot: number];
+		/** s — settle between automatic shifts, on top of the shift cut itself.
+		 *  Also armed by the player's own taps, so a manual override in D is not
+		 *  overruled the next step. */
+		autoShiftHold: number;
+		/** 1/s — how fast the automatic's DEMAND follows the throttle. The pedal is
+		 *  a key, so it is 0 or 1 and nothing else; smoothing it is what gives the
+		 *  lifted half of the schedule anything to mean. A blip pulls away in the
+		 *  low half and upshifts early; a held pedal reaches the wide-open numbers
+		 *  in a second or so and holds every gear to the top. */
+		autoDemandRate: number;
+
+		/** N — all four discs at full pedal. */
+		brakeForce: number;
+		/** N — the handbrake's own (rear-only) retardation. */
+		handbrakeForce: number;
+
+		/** N per (m/s)² — ½·ρ·Cd·A. */
+		dragK: number;
+		/** N — rolling resistance. */
+		rollingResistance: number;
+		/** m/s — governed top speed. */
+		topSpeed: number;
+
+		/** Wide-open-throttle crank torque curve, ascending by rpm. */
+		torqueCurve: readonly TorquePoint[];
+		/** Crank torque multiplier at full nitrous spray — applied by the
+		 *  drivetrain INSIDE its traction limit, so a shot in 1st is wheelspin
+		 *  and a shot in 3rd is thrust. The kit's
+		 *  other numbers follow; the controller owns only the live bottle level,
+		 *  the smoothed flow and the throttle-switch gating. */
+		nitrousTorqueGain: number;
+		/** s of full spray in a full bottle. */
+		nitrousCapacity: number;
+		/** bottle fraction per s, back while not spraying. ~14 s empty → full. */
+		nitrousRegen: number;
+		/** 1/s — flow ramps in fast (the hit should bite) … */
+		nitrousAttack: number;
+		/** … and tails off a touch slower, which reads as a sputter rather than a switch. */
+		nitrousRelease: number;
+	};
+
+	// ── Suspension — the springs the body rides on (sim/suspension.ts). Two ───
+	//    halves like the module: the PHYSICS numbers hold the car up, the VISUAL
+	//    numbers shape how the body leans. Lengths are SI metres (the factory
+	//    converts to world units); ratios and rates are dimensionless. ─────────
+	suspension: {
+		/** m — static spring deflection at rest. THE one knob for ride softness:
+		 *  the natural frequency is `sqrt(g / restSag)`, so bigger = softer = more
+		 *  kerb absorbed, at the cost of reaching the undertray bump stop sooner. */
+		restSag: number;
+		/** Damping ratio of the physical spring. Cars run soft; stability-first. */
+		dampZeta: number;
+		/** m — force saturation. Past this compression the chassis hull
+		 *  takes over as the bump stop — which is what an undertray is for. */
+		maxComp: number;
+		/** m — how far a wheel may hang below rest before it counts as airborne. */
+		droop: number;
+		/** m — how far a wheel may be pushed UP into the arch before the visual gives up. */
+		maxLift: number;
+
+		/** m — load-transfer travel limit, droop side (short). */
+		compMin: number;
+		/** m — load-transfer travel limit, compression side (longer). */
+		compMax: number;
+		/** m per g — body movement per g of load transfer. The lean feel knob. */
+		squatPerG: number;
+		/** Fraction of the road's per-corner height difference the body follows.
+		 *  1.0 is a body that tracks camber exactly. */
+		roadFollow: number;
+		/** m — cap on the road-follow term's WARP mode (one wheel on a kerb, the
+		 *  diagonal a rigid body cannot express anyway), so a kerb strike cannot
+		 *  throw the model at an angle the car never reaches. NOT the slope cap —
+		 *  that is `slopeMax`; capping them together held the body flat on hills. */
+		roadMax: number;
+		/** m — cap on the road-follow term's PITCH and ROLL modes, i.e. on the
+		 *  SURFACE the four wheels are standing on. A safety rail rather than a
+		 *  feel knob (the car should sit on a hill, not lean off it): it works out
+		 *  as `atan(2·slopeMax / wheelbase)` of pitch and `atan(slopeMax /
+		 *  halfTrack)` of roll, so the same number buys more camber than gradient —
+		 *  which is the right way round for a road. */
+		slopeMax: number;
+		/** 1/s² — visual spring rate: how fast the body chases an attitude. */
+		springK: number;
+		/** Visual spring damping ratio. Under 1 so the body bobs into place;
+		 *  at 1 a soft slide, over 1 mush. */
+		springZeta: number;
+	};
+
+	// ── Geometry — measured off the GLB, model metres, nose -Z. ───────────────
+	geometry: {
+		/** m — half the rear track (tyre patch x for both rear wheels). */
+		halfTrack: number;
+		/** m — wheel-centre height in model space. The WHEEL-CONTACT colliders'
+		 *  mount height: their bottoms are the car's only ground contact, so the
+		 *  resting tyres kiss the road (see PlayerCar.svelte). */
+		hubY: number;
+		/** m — front axle centre, z in model space (negative: ahead of the origin). */
+		frontAxleZ: number;
+		/** m — rear axle centre, z in model space. */
+		rearAxleZ: number;
+		/** m — half the tyre's contact width; the skid ribbon's width. */
+		tyreHalfWidth: number;
+		/** Exhaust tip openings, model metres — flames spawn here, pop audio
+		 *  parents here. Two entries, [left, right]. */
+		exhaustTips: readonly (readonly [number, number, number])[];
+		/** Nitrous purge-vent anchors, model metres — the standstill purge cloud
+		 *  (fx/NitrousPurge.svelte) spawns here; the jets aim up-and-out on the
+		 *  car's own basis. Two entries, [left, right]. */
+		purgeVents: readonly (readonly [number, number, number])[];
+		/** Headlamp anchors, model metres, + the pitch the beams aim at. */
+		lamp: {
+			x: number;
+			y: number;
+			z: number;
+			/** rad — nose-down (negative) beam pitch. */
+			pitch: number;
+			color: readonly [number, number, number];
+		};
+		/** Tail lamp anchors, model metres — where fx/CarTaillights.svelte mounts
+		 *  the real point lights (red, no colour field: every car's taillight is
+		 *  red). The GLB's own Light_Bucket emissive is what the lamps look like;
+		 *  this is what makes them THROW light onto the road behind the car. */
+		tailLamp: {
+			x: number;
+			y: number;
+			z: number;
+		};
+		// NO chassis-collider block any more: the collider is ONE rounded convex
+		// hull computed from the GLB at load (cars/hull.ts) — every mesh except
+		// the wheels, plus a 5 cm edge fillet whose belly is clamped to the old
+		// bump-stop line. A car's silhouette is its model; measuring a box by
+		// hand was a proxy for exactly this.
+	};
+
+	// ── Model — where the GLB is and how it sits in the world. ────────────────
+	model: {
+		/** Absolute URL (usually `${BASE_URL}models/testgame/…`). */
+		url: string;
+		/** Scene name for the car's group (scene tree / logs). */
+		name: string;
+		/** Visual scale of the model-metre group (this track: == UNITS_PER_METER). */
+		scale: number;
+		/** Hand-tuned spawn pose in WORLD units / radians — RigidBody reads it at creation. */
+		spawn: {
+			position: readonly [number, number, number];
+			rotation: readonly [number, number, number];
+		};
+		/** Wheel materials in the GLB start with this prefix (case-insensitive) —
+		 *  fx/CarWheels finds and re-meshes them, and the chassis hull excludes
+		 *  them (cars/hull.ts). A new GLB must match, or this, the measurement
+		 *  fallback below and the hull exclusion move together. */
+		wheelMaterialPrefix: string;
+		/** m — wheel radius fallback if runtime measurement fails. */
+		wheelRadiusFallback: number;
+		/** Body-paint material in the GLB (name, case-insensitive) — the scene
+		 *  swaps it for a MeshPhysicalMaterial (clearcoat/iridescence, same name
+		 *  so the shadow policy still reads it) and re-colours it from `paints`. */
+		paintMaterial: string;
+		/** The order sheet — this car's factory paints, first entry the default.
+		 *  Colours are approximations (a paint code is a mixing recipe, not a
+		 *  screen colour); the FINISH is what each code actually ships as. */
+		paints: readonly PaintOption[];
+		/** The lamp-housing material in the GLB (name, exact match) — one mesh
+		 *  spanning BOTH the front and rear clusters, its emissive baked at
+		 *  export (fx/CarTaillights.svelte re-materialises it: front rides the
+		 *  ignition, rear rides the lights/brake logic, split by a per-vertex Z
+		 *  test). Optional: a car without a matching mesh still gets the real
+		 *  SpotLight throw onto the road (fed by `geometry.tailLamp`, material-
+		 *  independent) — it just has no glowing lamp housing on the model
+		 *  itself, and CarTaillights logs a warning instead of failing. */
+		lampMaterial?: string;
+	};
+
+	// ── Audio — the engine NOTE. Files are SHARED across cars (one recorded
+	//    bed); what differs per car is where the layers sit on its own tacho and
+	//    how far the shared samples get pitch-shifted to voice it differently. ──
+	audio: {
+		/** rpm anchor of each shared layer file (idle + rpm1..5) on THIS car's
+		 *  tacho — six entries, ascending (audio/carAudio.ts owns the file list). */
+		layerRpm: readonly number[];
+		/** Multiplier on every layer's playback rate — the cheap per-car voice:
+		 *  1.0 is the GR86 as recorded; a future car shifts the whole bed. */
+		pitchScale: number;
+	};
+
+	// ── Cluster — dial facts for hud/CarCluster. ──────────────────────────────
+	cluster: {
+		/** rpm the shift lights start filling from. */
+		shiftLightFrom: number;
+		/** False on a naturally aspirated car. The boost/vacuum mini-dial reads
+		 *  manifold pressure either way (it is a real gauge — see CarCluster's
+		 *  `manifoldBar`); this decides whether the POSITIVE half of its scale is
+		 *  live or drawn dead, and whether the dial is labelled BOOST or VAC. */
+		hasTurbo: boolean;
+	};
+
+	/** THE TUNE — this car's tyre/steering/oversteer setup, a tune shop's view of
+	 *  it. One per car: the grip/drift switch is gone, and what a car ships with
+	 *  is the setup it drives (the GR86's is a normal RWD street setup — planted
+	 *  until provoked, playful once it is). */
+	tune: HandlingTune;
+};

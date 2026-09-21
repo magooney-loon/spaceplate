@@ -1,75 +1,94 @@
 <script lang="ts">
-	import { sceneActions } from '$extensions/scene/scene.svelte';
-	import { soundActions } from '$core/GlobalAudio.svelte';
-	import SettingsHud from '$scenes/SettingsHud.svelte';
-	import { planetDemoActions, planetDemoState } from '$lib/PlanetDemo/planetDemoState.svelte';
-	import { getPlanetVariantName, hashCode } from '$lib/PlanetDemo/procedural.svelte';
-	import PlanetIcon from '$lib/PlanetDemo/PlanetIcon.svelte';
-
-	let showSettings = $state(false);
-
-	const planetName = $derived(
-		getPlanetVariantName(planetDemoState.temperature, hashCode(planetDemoState.planetId))
-	);
+	import { sceneActions } from '$extensions/scene';
+	import { engineSounds } from '$core';
+	import { overlayState, BASE_URL } from '$extensions/settings';
 </script>
 
-<!-- Main Menu HUD -->
-{#if !showSettings}
-	<div class="pointer-events-auto">
-		<!-- Menu Title -->
-		<div class="absolute top-[20%] left-1/2 -translate-x-1/2 text-center">
-			<PlanetIcon
-				planetId={planetDemoState.planetId}
-				temperature={planetDemoState.temperature}
-				size={80}
-				class="mx-auto mb-4"
-				getSvgDataUri={(uri) => (planetDemoState.faviconUri = uri)}
-			/>
-			<h1 class="text-5xl text-white font-bold m-0" style="text-shadow: 0 0 20px #4a90d9;">
-				SPACEPLATE ENGINE
-			</h1>
-			<p class="text-[#aaa] mt-2">Threlte/Svelte/Spacetime</p>
-			<p class="text-[#888] text-sm mt-1 italic">{planetName} · {planetDemoState.temperature}°C</p>
-		</div>
-
-		<!-- Menu Buttons -->
-		<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-4">
-			<button
-				onclick={() => {
-					soundActions.playClick();
-					sceneActions.goToDemoScene();
-				}}
-				class="px-8 py-4 text-xl bg-black/70 text-white/70 border border-white/20 rounded-lg cursor-pointer min-w-50 hover:bg-white/70 hover:text-black transition-colors"
-			>
-				🚀 Start Demo
-			</button>
-
-			<button
-				onclick={() => {
-					soundActions.playClick();
-					showSettings = true;
-				}}
-				class="px-8 py-4 text-xl bg-black/70 text-white/70 border border-white/20 rounded-lg cursor-pointer min-w-50 hover:bg-white/70 hover:text-black transition-colors"
-			>
-				⚙️ Settings
-			</button>
-
-			<button
-				onclick={() => {
-					soundActions.playClick();
-					planetDemoActions.randomize();
-				}}
-				class="px-8 py-4 text-xl bg-black/70 text-white/70 border border-white/20 rounded-lg cursor-pointer min-w-50 hover:bg-white/70 hover:text-black transition-colors"
-			>
-				🌍 Randomize Planet
-			</button>
-		</div>
+<div class="hud">
+	<!-- The wordmark carries its own glow, so no text-shadow stand-in; the alt text
+	     keeps the old title for anyone who never sees the image. -->
+	<div class="title">
+		<img class="logo" src="{BASE_URL}logo.png" alt="Spaceplate Engine" />
 	</div>
-{:else}
-	<SettingsHud
-		onBack={() => {
-			soundActions.playClick();
-			showSettings = false;
-		}}
-	/>
-{/if}
+
+	<div class="menu-buttons">
+		<button
+			onclick={() => {
+				engineSounds.click.play();
+				sceneActions.goToTestGame();
+			}}
+			class="menu-button"
+		>
+			🚗 Test Game
+		</button>
+
+		<button
+			onclick={() => {
+				engineSounds.click.play();
+				sceneActions.goToDemoScene();
+			}}
+			class="menu-button"
+		>
+			🚀 Demo Scene
+		</button>
+
+		<button
+			onclick={() => {
+				engineSounds.click.play();
+				overlayState.settingsOpen = true;
+			}}
+			class="menu-button"
+		>
+			⚙️ Settings
+		</button>
+	</div>
+</div>
+
+<style>
+	.hud {
+		pointer-events: auto;
+	}
+
+	.title {
+		position: absolute;
+		top: 16.5%;
+		left: 50%;
+		transform: translateX(-50%);
+		text-align: center;
+	}
+
+	/* Width-driven, capped against the viewport so the wordmark never crowds the edges
+	   on a phone or blow up past its 2172px source on a wide monitor. The source is
+	   3:1, so height follows from the aspect ratio. */
+	.logo {
+		display: block;
+		width: min(38rem, 72vw);
+		height: auto;
+	}
+
+	.menu-buttons {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.menu-button {
+		min-width: 12.5rem;
+		padding: 1rem 2rem;
+		font-size: 1.25rem;
+		background: rgba(0, 0, 0, 0.7);
+		color: rgba(255, 255, 255, 0.7);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 0.5rem;
+		cursor: pointer;
+	}
+
+	.menu-button:hover {
+		background: rgba(255, 255, 255, 0.7);
+		color: #000;
+	}
+</style>

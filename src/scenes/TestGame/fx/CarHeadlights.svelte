@@ -1,0 +1,455 @@
+<script lang="ts">
+	import { onDestroy } from 'svelte';
+	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
+	import * as THREE from 'three/webgpu';
+	import {
+		Fn,
+		color,
+		normalView,
+		positionViewDirection,
+		uniform,
+		uv,
+		vec2,
+		vec3,
+		vec4
+	} from 'three/tsl';
+	import { carLights, carIgnition } from '../sim/carSwitches.svelte';
+	import { currentCar } from '../cars';
+
+	// Front headlight rig, generic over the car's spec (the lamp anchors come
+	// from cars/; everything else is this rig's own tuning). Mounts INSIDE the
+	//
+	// Three layers per side, cheapest-first:
+	//   1. a ProjectorLight for the pool on the road — a SpotLight whose attenuation is a
+	//      rectangular frustum instead of a cone, with a TSL `colorNode` painting the
+	//      pattern inside it (low-beam cutoff, kerb-side kick-up, hot spot, lens fringe).
+	//      This is what makes the pool read as a headlight and not as a torch;
+	//   2. an HDR emitter card at the lens — core, halo and a star flare that only opens
+	//      up when you are in front of the car. >1 radiance, so it tone-maps hot and
+	//      feeds Bloom (global mode is on by default, so its ghosts come for free);
+	//   3. a thin ANAMORPHIC STREAK card on the same lens — the wide horizontal blue
+	//      blade every anamorphic night shot is graded for. A LENS artifact, not a
+	//      light: it overlays the bodywork like flare would, and `facing` closes it as
+	//      the camera leaves the front of the car.
+	//
+	// The `lights` / `highBeam` slots toggle these (sim/carControls.ts declares them,
+	// carSwitches.svelte.ts latches `carLights`; L and K by default). The
+	// two modes are one table (DIPPED / MAIN) whose every field is a three property, a
+	// Threlte prop or a `uniform()` — switching writes values, it never recompiles.
+	//
+	// All numbers are tweak-me constants; nothing here is load-bearing elsewhere.
+
+	// ---------------------------------------------------------------- placement
+	// The four anchors are the CAR'S (spec geometry.lamp, measured off its GLB);
+	// the rig's own tuning starts below.
+	const {
+		x: LAMP_X,
+		y: LAMP_Y,
+		z: LAMP_Z,
+		pitch: BEAM_PITCH,
+		color: lampColor
+	} = currentCar().geometry.lamp;
+
+	// ------------------------------------------------------------------- light
+
+	// Cool-white LED projectors (the spec's colour). For an old halogen look use
+	// (1.0, 0.93, 0.82) in the spec and in the emitter colours below.
+	const LAMP_COLOR = new THREE.Color(lampColor[0], lampColor[1], lampColor[2]);
+
+	const LIGHT_DISTANCE = 420; // world units, not scaled by the group's 2.5
+	const LIGHT_ANGLE = 0.46; // VERTICAL half-angle of the frustum (rad)
+	const LIGHT_ASPECT = 2.3; // width/height — a headlight is wide and short
+	// Inverted vs a SpotLight: ProjectorLightNode's edge softness is angle·(1−penumbra)/2
+	// in projected UV, so a HIGHER penumbra gives a CRISPER rectangle.
+	const LIGHT_PENUMBRA = 0.55;
+	const LIGHT_DECAY = 1.35;
+	const LIGHT_CAST_SHADOW = false; // two shadowed lights over the track trimesh is pricey
+
+	// The light aims by moving its target: `aim` is the drop over AIM_DISTANCE, ON TOP
+	// of the group's BEAM_PITCH. A negative `aim` therefore lifts the axis back toward
+	// level.
+	const AIM_DISTANCE = 8;
+
+	const CUTOFF_SOFT = 0.055;
+	const FRINGE_COLOR = color(0.25, 0.45, 1.0);
+	const FRINGE_GAIN = 0.35;
+	const FRINGE_WIDTH = 0.05;
+
+	// ------------------------------------------------------------------- modes
+	//
+	// Dipped vs main beam. Everything that differs lives here, and everything here is
+	// either a plain three property, a Threlte prop, or a `uniform()` — so switching
+	// modes writes values and never rebuilds a shader (`applyMode` below).
+	type BeamMode = {
+		/** Candela. 0 is not a mode — the master switch handles off. */
+		intensity: number;
+		/** Extra drop over AIM_DISTANCE; negative lifts the axis toward level. */
+		aim: number;
+		/** Cutoff height in frustum coords (-1..1). Above 1 = no cutoff at all. */
+		cutoff: number;
+		/** Kerb-side step up in the cutoff. */
+		cutoffKick: number;
+		/** Hot spot: [centre y, half width, half height] in frustum coords. */
+		hotspot: [number, number, number];
+		hotspotGain: number;
+		/** Fill below the cutoff: [everywhere, extra in the middle of the width]. */
+		wash: [number, number];
+		/** Multiplier on the lens card. */
+		emitterGain: number;
+	};
+
+	const DIPPED: BeamMode = {
+		intensity: 420,
+		aim: 1.62, // ≈ 0.245 rad down in total — the pool starts ~0.8 m off the bumper
+		cutoff: 0.46, // ≈ 0.025 rad below horizontal → the cutoff lands ~26 m out
+		cutoffKick: 0.24,
+		hotspot: [0.4, 0.4, 0.3], // peak sits immediately UNDER the cutoff, as on a real lamp
+		hotspotGain: 1.7,
+		wash: [0.18, 0.55],
+		emitterGain: 1
+	};
+
+	const MAIN: BeamMode = {
+		intensity: 900,
+		aim: -0.26, // ≈ 0.012 rad down — the axis runs out to ~52 m before it meets the road
+		cutoff: 2, // off the top of the frustum: `below` is 1 everywhere, no cutoff, no fringe
+		cutoffKick: 0,
+		hotspot: [-0.05, 0.32, 0.36], // round and centred on the axis, not a wide blade
+		hotspotGain: 2.6,
+		wash: [0.1, 0.45], // a main beam is a spot, so it leans on the hot spot instead
+		emitterGain: 1.5
+	};
+
+	// ------------------------------------------------------------- emitter card
+
+	// The card is the GLOW's reach, not the lamp's size: halo, bar and spike all run to
+	// its edges, so an oversized card throws light onto the fender either side of the
+	// lamp. Keep it square and tight, and size the lit slot in metres on top of it —
+	// the two used to be coupled, which is why widening the card smeared the glow.
+	const CARD_SIZE = 0.2; // square quad, car-local metres
+	const LENS_W = 0.1; // lit slot, metres — matches the model's projector element
+	const LENS_H = 0.055;
+	const LENS_HALF_U = LENS_W / CARD_SIZE; // …and the same slot in card UV (-1..1)
+	const LENS_HALF_V = LENS_H / CARD_SIZE;
+	const LENS_HEAT = 9; // HDR core: tone-maps to white, drives bloom
+	const HALO_HEAT = 1.1;
+	const FLARE_HEAT = 0.9;
+	const LENS_CORE_COLOR = color(0.96, 0.98, 1.0);
+	const LENS_GLOW_COLOR = color(0.62, 0.78, 1.0);
+
+	// --------------------------------------------------------- anamorphic streak
+	//
+	// The streak is a LENS artifact, not a light: the thin horizontal blade a bright
+	// source paints across the frame in an anamorphic night shot. Deliberately wider
+	// than the lamp — it overlays the fender the way flare would — and gated by
+	// `facing`, so it opens as the camera swings in front of the car and is gone from
+	// the side. Rides `uEmitterGain`, so mode switching and the power ramp scale it.
+	const STREAK_W = 0.6; // blade reach, car-local metres (± half this, per side)
+	const STREAK_H = 0.045; // blade thickness before the profile shaping
+	const STREAK_HEAT = 0.25; // centre heat — subtle; the lens card carries the source
+	const STREAK_COLOR = color(0.55, 0.72, 1.0); // cooler than the glow: diffraction blue
+
+	// ------------------------------------------------------------ the TSL parts
+
+	/** @types/three exports no `ShaderNodeObject`, so borrow the type off a builtin. */
+	type Node3 = ReturnType<typeof vec3>;
+
+	// The mode-dependent half of the shader. Uniforms, not constants, so dipping and
+	// flashing writes numbers instead of recompiling — and both lamps read the same
+	// ones, because both lamps are always in the same mode.
+	const uCutoff = uniform(DIPPED.cutoff);
+	const uCutoffKick = uniform(DIPPED.cutoffKick);
+	const uHotspot = uniform(new THREE.Vector3(...DIPPED.hotspot));
+	const uHotspotGain = uniform(DIPPED.hotspotGain);
+	const uWash = uniform(new THREE.Vector2(...DIPPED.wash));
+	const uEmitterGain = uniform(DIPPED.emitterGain);
+
+	/**
+	 * The projected beam pattern, called once per light with its frustum UV.
+	 *
+	 * u > 0.5 is the car's RIGHT: the shadow camera looks down the car's -Z with +Y up,
+	 * so its +X is the car's +X. The cutoff is therefore kicked up on the right, which
+	 * is the right-hand-traffic convention (mirror `uCutoffKick`'s smoothstep for LHT).
+	 *
+	 * Every smoothstep here is ascending + `oneMinus()` — the descending form is
+	 * undefined, not reversed (webgpu-notes.md §1.2).
+	 */
+	const beamPattern = Fn(([projectorUV]: [Node3]) => {
+		const p = projectorUV.xy.sub(0.5).mul(2).toVar();
+		const x = p.x;
+		const y = p.y;
+
+		// On main beam `uCutoff` sits above the frustum, so `below` is 1 everywhere and
+		// `fringe` — which tracks the same line — falls outside the pattern with it.
+		const cutoff = uCutoff.add(x.smoothstep(0.02, 0.34).mul(uCutoffKick));
+		const below = y.smoothstep(cutoff.sub(CUTOFF_SOFT), cutoff.add(CUTOFF_SOFT)).oneMinus();
+
+		// Wide fill, tapering to the sides and pulled off the bottom edge so the frustum
+		// doesn't paint a bright band across the tarmac right at the bumper.
+		const wash = x
+			.abs()
+			.smoothstep(0.3, 1)
+			.oneMinus()
+			.mul(uWash.y)
+			.add(uWash.x)
+			.mul(y.smoothstep(-1, -0.55));
+
+		const hot = vec2(x.div(uHotspot.y), y.sub(uHotspot.x).div(uHotspot.z))
+			.length()
+			.smoothstep(0.25, 1)
+			.oneMinus();
+
+		// The blue-violet fringe a projector lens leaves along the cutoff. Signature
+		// detail of a real LED/HID low beam, and it costs two smoothsteps.
+		const fringe = y
+			.sub(cutoff)
+			.abs()
+			.smoothstep(0, FRINGE_WIDTH)
+			.oneMinus()
+			.mul(x.abs().smoothstep(0.55, 1).oneMinus());
+
+		const lit = wash.add(hot.mul(uHotspotGain)).mul(below);
+
+		return vec3(lit).add(FRINGE_COLOR.mul(fringe).mul(FRINGE_GAIN));
+	});
+
+	// The emitter: a lit slot, a halo around it, and a star flare. Shaped in UV rather
+	// than modelled, so the quad's own corners are never visible. FrontSide — the card
+	// faces forward and the bodywork occludes it from behind anyway.
+	const emitterMaterial = new THREE.MeshBasicNodeMaterial({
+		transparent: true,
+		depthWrite: false,
+		blending: THREE.AdditiveBlending,
+		side: THREE.FrontSide
+	});
+	emitterMaterial.name = 'HeadlightEmitter';
+	emitterMaterial.fog = false;
+	{
+		const p = uv().sub(0.5).mul(2).toVar();
+
+		const slot = vec2(p.x.div(LENS_HALF_U), p.y.div(LENS_HALF_V))
+			.length()
+			.smoothstep(0.45, 1)
+			.oneMinus();
+		const halo = p.length().smoothstep(0.06, 1).oneMinus().pow(2.4);
+		const bar = p.y
+			.abs()
+			.smoothstep(0, 0.1)
+			.oneMinus()
+			.mul(p.x.abs().smoothstep(0.15, 1).oneMinus());
+		const spike = p.x
+			.abs()
+			.smoothstep(0, 0.045)
+			.oneMinus()
+			.mul(p.y.abs().smoothstep(0.1, 1).oneMinus());
+
+		// How square-on the lamp is. Each layer rides a different power of it: the lit
+		// slot holds up to a wide angle (a real lens scatters), the halo falls off with
+		// it, and the flare only opens when you are nearly in front of the car.
+		const facing = normalView.dot(positionViewDirection).clamp(0, 1);
+
+		const core = slot.pow(1.3).mul(LENS_HEAT).mul(facing.pow(0.35));
+		const glow = halo.mul(HALO_HEAT).mul(facing.pow(0.8));
+		const flare = bar.add(spike.mul(0.5)).mul(FLARE_HEAT).mul(facing.pow(4));
+
+		emitterMaterial.colorNode = vec4(
+			LENS_CORE_COLOR.mul(core.add(flare)).add(LENS_GLOW_COLOR.mul(glow)).mul(uEmitterGain),
+			1
+		);
+	}
+
+	// The streak card: the same additive discipline as the emitter (fades live in rgb,
+	// alpha stays 1) and the same `facing` idea at a LOWER power — a streak survives
+	// wider angles than a star flare because it is astigmatism, not a source shape.
+	const streakMaterial = new THREE.MeshBasicNodeMaterial({
+		transparent: true,
+		depthWrite: false,
+		blending: THREE.AdditiveBlending,
+		side: THREE.FrontSide
+	});
+	streakMaterial.name = 'HeadlightStreak';
+	streakMaterial.fog = false;
+	{
+		const p = uv().sub(0.5).mul(2).toVar();
+
+		// Thickness: a plateau through the source's centre line, then a soft fall.
+		const blade = p.y.abs().smoothstep(0.2, 1).oneMinus().pow(2.2);
+		// Reach: hot at the source, long soft wings, dark at the tips.
+		const wing = p.x.abs().smoothstep(0, 1).oneMinus().pow(1.6);
+
+		const facing = normalView.dot(positionViewDirection).clamp(0, 1);
+
+		streakMaterial.colorNode = vec4(
+			STREAK_COLOR.mul(blade.mul(wing).mul(STREAK_HEAT).mul(facing.pow(2))).mul(uEmitterGain),
+			1
+		);
+	}
+
+	// -------------------------------------------------------------- the objects
+
+	const emitterGeometry = new THREE.PlaneGeometry(CARD_SIZE, CARD_SIZE);
+	const streakGeometry = new THREE.PlaneGeometry(STREAK_W, STREAK_H);
+
+	/** `colorNode` is a WebGPU-only hook @types/three doesn't declare on lights. */
+	type PatternLight = THREE.ProjectorLight & { colorNode: unknown };
+
+	// Built imperatively rather than through `<T.ProjectorLight>` + refs: `colorNode`,
+	// `aspect` and `target` all have to be set on the instance anyway, and a SpotLight
+	// aims at `target`'s WORLD matrix — the default target is an Object3D at the origin
+	// that is not in the graph, so each light needs a mounted one.
+	const makeLamp = (side: 'L' | 'R') => {
+		const light = new THREE.ProjectorLight(
+			LAMP_COLOR,
+			DIPPED.intensity,
+			LIGHT_DISTANCE,
+			LIGHT_ANGLE,
+			LIGHT_PENUMBRA,
+			LIGHT_DECAY
+		) as PatternLight;
+		light.name = `HeadlightLamp${side}`;
+		// SpotLight's ctor — ProjectorLight extends it — puts the light at
+		// Object3D.DEFAULT_UP, not at the origin. Mounted on the anchor groups below
+		// with no position of its own, that is a free MODEL METRE of lift: the lamp
+		// sat at y 1.66 (above the 1.31 roofline) instead of the spec's 0.66, which
+		// steepened every aim in this file. Every number below is authored for a
+		// lamp AT the group's origin — DIPPED's 1.62 over AIM_DISTANCE 8 plus
+		// BEAM_PITCH is the 0.245 rad its comment claims, and 0.66/tan(0.245+0.46)
+		// is the 0.8 m off the bumper the pool is documented to start at. Both only
+		// hold from here.
+		light.position.set(0, 0, 0);
+		light.aspect = LIGHT_ASPECT;
+		light.colorNode = beamPattern;
+		light.castShadow = LIGHT_CAST_SHADOW;
+		// The projection is only applied between the shadow camera's near and far planes,
+		// whether or not the light casts shadows; pull near in so nothing right at the
+		// bumper falls out of the pattern and gets lit flat.
+		light.shadow.camera.near = 0.2;
+
+		const target = new THREE.Object3D();
+		target.name = `HeadlightAim${side}`;
+		light.target = target;
+
+		return { light, target };
+	};
+
+	const lampL = makeLamp('L');
+	const lampR = makeLamp('R');
+
+	// ------------------------------------------------------------------ switches
+
+	const { invalidate } = useThrelte();
+
+	const mode = $derived(carLights.high ? MAIN : DIPPED);
+
+	// ----------------------------------------------------------- power ramping
+	//
+	// One-pole smoothing on the master switch: a quick swell on, a fast fade out.
+	// LEDs are instant in reality — this is a feel decision, not a physics one. The
+	// point is that the pool and the lens glow should breathe rather than snap, and
+	// that Bloom is never asked to pop. Mode flips stay INSTANT (a dipped/main switch
+	// is a mechanism, not a filament).
+	const POWER_ATTACK_TAU = 0.08; // s — on: a visible glow-up, not a lag
+	const POWER_RELEASE_TAU = 0.03; // s — off: fast enough to mask the cards' visible snap
+	const POWER_SETTLED = 0.002; // below this, snap and let the loop sleep
+
+	// The mode-dependent uniforms, written the moment `mode` moves. The master switch
+	// is NOT handled here — the power task below owns the on/off ramp — but
+	// `carLights.on` and `carIgnition.on` still have to be READ here (the task gates
+	// on both): on-demand rendering only runs tasks on rendered frames, and this
+	// effect's invalidate() on either toggle edge is what wakes the loop to run the
+	// task.
+	$effect(() => {
+		const m = mode;
+		void carLights.on;
+		void carIgnition.on;
+
+		uCutoff.value = m.cutoff;
+		uCutoffKick.value = m.cutoffKick;
+		uHotspot.value.set(...m.hotspot);
+		uHotspotGain.value = m.hotspotGain;
+		uWash.value.set(...m.wash);
+
+		// Rendering is on-demand: a uniform write moves nothing on its own, so flicking
+		// the lights while parked would otherwise not show until something else did.
+		invalidate();
+	});
+
+	// The POWER RAMP — CarAfterimage's task pattern: `autoInvalidate: false`, and
+	// the loop woken only while the value is actually moving; settled is free. The
+	// lamps are dimmed, never hidden (an invisible light re-keys every lit material's
+	// cache and recompiles the lot); the additive cards are hidden by `visible`, whose
+	// snap is masked by the fast release. No teardown reset needed — every value this
+	// task writes dies with the objects it writes them on.
+	let power = 0;
+
+	useTask(
+		(delta) => {
+			// Ignition gates the lot: with the car off there is no pool and no lens
+			// glow (CarTaillights kills the bucket emissives with the same switch).
+			const target = carLights.on && carIgnition.on ? 1 : 0;
+			if (Math.abs(target - power) >= POWER_SETTLED) {
+				const tau = target > power ? POWER_ATTACK_TAU : POWER_RELEASE_TAU;
+				power += (target - power) * (1 - Math.exp(-delta / tau));
+			} else {
+				power = target;
+			}
+
+			// `mode` is read per frame on purpose: a mode flip while parked changes the
+			// target intensity too, and this write-if-moved is what catches it a frame
+			// later (the effect above handles the pattern uniforms).
+			const m = mode;
+			const intensity = m.intensity * power;
+			const gain = m.emitterGain * power;
+			if (intensity === lampL.light.intensity && gain === uEmitterGain.value) return;
+
+			lampL.light.intensity = intensity;
+			lampR.light.intensity = intensity;
+			uEmitterGain.value = gain;
+			invalidate();
+		},
+		{ autoInvalidate: false }
+	);
+
+	onDestroy(() => {
+		emitterMaterial.dispose();
+		streakMaterial.dispose();
+		emitterGeometry.dispose();
+		streakGeometry.dispose();
+		lampL.light.dispose();
+		lampR.light.dispose();
+	});
+</script>
+
+{#snippet lamp({ light, target }: { light: PatternLight; target: THREE.Object3D })}
+	<T is={light} />
+	<T is={target} position={[0, -mode.aim, -AIM_DISTANCE]} />
+
+	<!-- Emitter, a hair in front of the lens. Plane faces +Z by default → flip to -Z. -->
+	<T.Mesh
+		geometry={emitterGeometry}
+		material={emitterMaterial}
+		visible={carLights.on}
+		position={[0, 0, -0.01]}
+		rotation={[0, Math.PI, 0]}
+		userData={{ selectable: false, hideInTree: true }}
+	/>
+
+	<!-- The anamorphic streak — same anchor, wide and thin, a hair further forward
+	     than the card (additive order does not matter; the offset avoids z-fighting). -->
+	<T.Mesh
+		geometry={streakGeometry}
+		material={streakMaterial}
+		visible={carLights.on}
+		position={[0, 0, -0.012]}
+		rotation={[0, Math.PI, 0]}
+		userData={{ selectable: false, hideInTree: true }}
+	/>
+{/snippet}
+
+<T.Group name="HeadlightL" position={[-LAMP_X, LAMP_Y, LAMP_Z]} rotation={[BEAM_PITCH, 0, 0]}>
+	{@render lamp(lampL)}
+</T.Group>
+
+<T.Group name="HeadlightR" position={[LAMP_X, LAMP_Y, LAMP_Z]} rotation={[BEAM_PITCH, 0, 0]}>
+	{@render lamp(lampR)}
+</T.Group>

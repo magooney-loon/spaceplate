@@ -1,0 +1,557 @@
+# TestGame Performance — findings, fixes and the remaining queue
+
+The performance reference for `src/scenes/TestGame/`, the driving tech demo.
+`DOCS/best-practices.md` is the general rule set (§4 is the one new scene content
+must obey) and `DOCS/webgpu-notes.md` is the renderer gotcha list; **this file is
+the scene-specific audit** — what the demo actually spends its frame on, what was
+fixed, and what is deliberately still open.
+
+Scope note: nothing here is engine architecture. TestGame is scene content
+(`src/scenes/TestGame/CLAUDE.md`), and every fix below lives in that directory.
+
+---
+
+## 0. The asset facts everything else follows from
+
+Read straight out of the two GLBs' JSON chunks (accessor counts, node transforms
+— no Draco decode needed):
+
+| Asset                             | Meshes | Triangles | Notes                                         |
+| --------------------------------- | ------ | --------- | --------------------------------------------- |
+| `track.glb` (31 MB)               | 5      | 313 725   | Ground, Asphalt, Decals, Leafs_Mat, **Metal** |
+| `2023_toyota_gr86_compressed.glb` | 29     | 324 640   | full interior + engine modelled               |
+
+Per-material, the parts that matter:
+
+```
+TRACK                         CAR (interior/engine — never in the silhouette)
+190 681  60.8%  Metal          30 568  Engine          22 747  Leather
+ 71 982  22.9%  Leafs_Mat      29 037  Interior_Plastic 21 698  Leather_2
+ 31 572  10.1%  Decals          5 088  Seat             4 216  Interior_Accents
+ 19 488   6.2%  Asphalt         1 552  Speaker          + Carpet/Screen/Mirror/Belt
+      2   0.0%  Ground         ────────────────────────────────────────────────
+                               117 176 tris (36% of the car) across 14 meshes
+```
+
+And the geometry that broke the shadow fit — `Metal`'s node is
+`scale 5.336, t (-64.5, -1.2, 236.5)` over a mesh spanning `x ∈ [-249, 122]`,
+`z ∈ [-68, 249]`, under a Track group at `scale 1.5`:
+
+```
+Metal, world:  ~2 970 × 2 540 units      caster-bounds centre ≈ (-1086, 25, -118)
+car spawn:     (1.46, 8.66, -3.40)       distance from that centre ≈ 1 094 units
+```
+
+Hold on to that 1 094 — it is §1.1.
+
+---
+
+## 1. Fixed
+
+### 1.1 The whole track cast shadows, and the car got none (the big one)
+
+**Symptom bucket:** steady-state cost, plus "the car has no shadow".
+
+`TestGame.svelte` set `castShadow = receiveShadow = true` on every mesh in both
+GLBs. `SkyLight` (`core/skybox/SkyLight.svelte`) fits its **one** shadow cascade
+to the bounding sphere of the visible **casters**, quantised to `shadowRadius`
+(20) and capped at `maxShadowRadius` (400). With the track in the caster set:
+
+- the fitted sphere radius was ~1 950 units, so the fit **saturated at 400**, and
+- its centre landed on the track's bounds, **~1 094 units from the car**.
+
+±400 around a point 1 094 units away does not contain the car. So the car cast no
+shadow, the asphalt received none, and there were **no sun shadows anywhere the
+player could drive** — while `light.shadow.needsUpdate` is armed every frame (the
+car moves), so all 313 725 track triangles across 5 draw calls were re-rendered
+into the 2048² map every frame to produce exactly that.
+
+**Fix** (`TestGame.svelte`): `TRACK_CASTS_SHADOWS = false`, plus a
+`CAR_NON_CASTERS` set for the car's interior and engine materials. Everything
+still _receives_.
+
+|                        | before                      | after                       |
+| ---------------------- | --------------------------- | --------------------------- |
+| shadow-pass triangles  | 313 725 + 324 640           | 207 464 (car exterior only) |
+| shadow-pass draw calls | 34                          | 15                          |
+| fitted shadow radius   | 400 (saturated, off-centre) | 20 (the floor, on the car)  |
+| shadow texel           | 39 cm                       | **2 cm**                    |
+| shadow the player sees | none                        | a sharp one under the car   |
+
+This is the rare change that is a large win on both axes at once. The cost is
+building and tree shadows, which were **already not being drawn**. Getting them
+back is not a flag flip: one cascade cannot serve a 3 km track and a 4 m car, and
+`CSMShadowNode` (`best-practices.md` §2.6) is the honest answer.
+
+> **Since three r186 the engine HAS cascades** — `SkyLight.svelte` is now a
+> `SunLight` whose two cascades are fitted to the view camera, so the failure
+> above (a caster-fitted box saturating on the track and losing the car) cannot
+> happen any more, and `TRACK_CASTS_SHADOWS` is no longer forced off by
+> correctness.
+>
+> **It is now on** (`world/Track.svelte`), scoped to `TRACK_CASTERS` (`Metal` +
+> `Leafs_Mat`) rather than the whole track — Ground/Asphalt/Decals stay excluded
+> (they can only ever shadow themselves). That is still **262 663 of the
+> track's 313 725 triangles**, re-rendered into the shadow map twice a frame
+> (once per cascade), on a scene this doc already calls fill-bound — flipped
+> without a profiled measurement first. If the car judders near barriers or
+> tree lines, that is the first place to look: read `triangles`/`programs`/
+> frame time off the Stats HUD, and trim `TRACK_CASTERS` down to `Metal` alone
+> (the barriers are the caster that actually throws visible shade across the
+> car; `Leafs_Mat` is the cheaper 71 982 to drop first) before reaching for
+> anything more invasive.
+
+### 1.2 Smoke pools were N meshes with N materials — the first-puff hitch
+
+**Symptom bucket:** the reported "first time tyre smoke / exhaust flame is drawn,
+big spike".
+
+`TireSmoke` was 32 `THREE.Mesh`es with **32 material instances**; the exhaust
+smoke another 16. The design note said identical node graphs share a compiled
+program, and that is true — three keys `ProgrammableStage` by generated WGSL
+source and the render pipeline by `(vertex id, fragment id, backend state)`
+(`three/src/renderers/common/Pipelines.js`, `getForRender`), so 48 identical
+graphs collapse to one pipeline. **What does not collapse is everything upstream
+of it:**
+
+- each material builds its **own node graph** the first time it renders — a
+  main-thread NodeBuilder analyze + WGSL generation, per material, paid on the
+  frame that material first becomes visible. A burnout spawns ~40 puffs/s, so 31
+  of those builds landed inside the first second of the first slide;
+- each mesh is its own draw call, its own bind group, and its own entry in the
+  transparent sort.
+
+The existing boot-warm windows made this look solved without being solved: each
+warmed **one** slot (`puffs[POOL - 1]`), so 31 of 32 and 15 of 16 builds were
+still waiting for the player.
+
+**Fix:** `fx/puffPool.ts` — one mesh, one material, one draw call, the SkidMarks
+pattern. `count` quads in a single `BufferGeometry`; positions are world space and
+written per frame; per-puff values ride a per-vertex `aPuff` (birth, life,
+strength, seed) written once at spawn and aged shader-side against `uTime`.
+Billboarding is CPU-side against the camera's right/up basis — the same
+arithmetic as the old `quaternion.copy(camera.quaternion)`, minus 48 matrix
+compositions and 48 world-matrix updates a frame.
+
+|                                       | before                | after                  |
+| ------------------------------------- | --------------------- | ---------------------- |
+| first-render node builds              | 48 (31 + 15 unwarmed) | 2, both at scene entry |
+| transparent draw calls, burnout + pop | up to 48              | 2                      |
+| materials                             | 48                    | 2                      |
+| boot-warm machinery                   | two timed windows     | **deleted**            |
+
+The warm windows are gone because they became unnecessary: the pool's mesh is
+permanently in the graph, so its one pipeline compiles on the scene's **first
+rendered frame**, behind the entry veil, for free. Dead puffs are degenerate
+(four verts on a point) rather than hidden, so an idle pool is one draw call and
+zero fragments.
+
+_(The flame TIPS still warm — six materials across two tips that are invisible
+until the first pop. That window stays.)_
+
+**One accepted difference:** puffs within a pool no longer depth-sort against
+each other, because they are one mesh. At these alphas it reads as more stable
+(no sort popping as puffs cross), not wrong — the same trade SkidMarks already
+makes.
+
+### 1.3 Visual work was running at the physics rate
+
+**Symptom bucket:** steady-state CPU, and a flame-animation pulse.
+
+`CarExhaustFlames` did **everything** in `usePhysicsTask`. Threlte's simulation
+stage takes `ceil(accumulator / rate)` substeps per frame
+(`@threlte/rapier/lib/createPhysicsStages.js`), so at the 200 Hz the scene ran on
+then, against 60 fps, it ran **4/3/3/4/3/3…**. That meant the uniform writes, the tip group
+scale, the entire 16-puff transform loop, 16 billboard quaternion copies and an
+`invalidate()` were all paid **3–4× per drawn frame** for one frame's worth of
+visible change. And `uTime` advanced by the substep TOTAL — 20 ms, 15 ms, 15 ms
+on consecutive frames — so the flame's noise animation pulsed on a 20 Hz beat.
+
+**Fix:** split. The **trigger** stays in the physics task, because a limiter
+bounce is a rising edge of `carSim.limiting` that can come and go inside one
+rendered frame and polling it per frame drops bangs. Everything visual moved to a
+`{ before: autoRenderTask }` task — the render stage, after Rapier's
+synchronization, so the tips are scaled and the puffs billboarded against the
+pose and camera that are about to be drawn.
+
+### 1.4 The wheels stuttered against their own car
+
+**Symptom bucket:** the reported "only the actual car stutters a bit".
+
+`CarWheels` integrated `uRoll` in a `usePhysicsTask`. By the same 4/3/3 substep
+pattern, that advanced the wheels by **20 ms, then 15 ms, then 15 ms** of
+rotation on consecutive frames — a **±17% pulse in wheel rotation on a 20 Hz
+beat** — while the chassis underneath was being smoothly _interpolated_ to the
+frame's own time by Rapier's synchronization stage
+(`createPhysicsTasks`, `lastPosition.lerp(currentPosition, offset)`). Body
+smooth, wheels pulsing, on the one object the player is staring at.
+
+**Fix:** a `{ before: autoRenderTask }` task using the frame's delta. It also
+now owns an `invalidate()` for "the wheels turned", gated on the car actually
+moving or steering. The cost is that `carSim` is up to one 5 ms substep old
+rather than exactly current — invisible, where the pulse was not.
+
+> **The general rule this scene keeps re-learning:** a physics task is for
+> reading and writing simulation state at the simulation's rate. Anything whose
+> output is a _pixel_ belongs in a render-stage task, integrated with the frame's
+> delta. Physics-time integration of a visual quantity is a stutter generator
+> whenever the substep count per frame is not constant — and with `ceil()`
+> accumulation it never is.
+
+### 1.5 Skid marks never stopped drawing
+
+`SkidMarks` submits a fixed ring of 8 192 quads / 16 384 triangles with
+`frustumCulled = false`, and it did so **every frame, for ever**. An expired mark
+is not free: `transparent` + `depthWrite: false` means the quad is still
+rasterised and still blended — a _lit_ `MeshStandardNodeMaterial` with two
+texture fetches — writing alpha 0 over the road. One slide bought that cost for
+the rest of the session.
+
+**Fix:** the mesh leaves the render list once the last mark is past `LIFETIME`
+(the task already tracked `lastLay` for its `invalidate()` gate — it now drives
+`visible` too), and `setDrawRange` follows the ring until it first wraps, so a
+fresh scene submits 0 triangles instead of 16 384 degenerate ones.
+
+### 1.6 Five texture loads for two files
+
+`SkidMarks`, `TireSmoke` and `CarExhaustFlames` each constructed their own
+`TextureLoader` for `perlin.png` / `voronoi.png` — five fetches, five GPU
+textures, and five `dispose()` calls racing on scene exit.
+
+**Fix:** `fx/noiseTextures.ts`, the scene-local version of the cache
+`best-practices.md` §3.3 describes. **Nothing disposes them** — §3.3's own
+caveat: a shared texture must never be freed by one consumer's cleanup.
+
+### 1.7 The chase camera framed the car one frame late
+
+**Symptom bucket:** none, as it turned out. This was found while chasing "at
+higher resolution the car starts to stutter" — but that symptom was **fill rate**,
+and it is closed in §2.6, not here. Read this section as what it is: a real
+ordering bug in the camera rig, fixed on its own merits, with no observable
+before/after. The numbers below are a _simulation_, not a measurement.
+
+§1.4 fixed the wheels stuttering against their car. This is the same rule one
+level up: a consumer of physics state reading it at the wrong point in the frame.
+
+Threlte sorts stages topologically and `@threlte/rapier` only ever constrains
+synchronization to `after: simulation, before: renderStage`. **Nothing relates it
+to the main stage.** Driving the real `DAG` with the app's own insertion sequence
+(scheduler → renderer → `<World>`) gives:
+
+```
+resize → simulation → mainStage → synchronization → renderStage
+```
+
+Synchronization is what writes each body's interpolated pose onto its Object3D
+(`lastPosition.lerp(currentPosition, offset)`). Landing **after** the main stage
+means every main-stage task reads a body transform that is a full frame stale.
+
+This project's own tasks are already immune — they run `{ before: autoRenderTask }`
+(`SpawnedBodies.svelte` says so in a comment). But Threlte's components default to
+the main stage, and the chase camera is built from two of them: `useFollow` and
+`<CameraControls>`, both `useTask(…)` with no ordering option at all. So the
+camera framed the car one frame behind where the car was about to be drawn.
+
+**A constant frame time hides it completely** — the lag is a fixed sub-centimetre
+offset. Uneven frame times do not, and there is an amplifier: `useFollow` derives
+the target's velocity for its `lookAhead` term as `Δposition / delta`, and with a
+stale pose the **numerator spans the previous frame while the denominator is the
+current one**. Two consecutive frames of different length produce a badly wrong
+velocity, which `lookAhead` (0.18 s in `ChaseCamera.svelte`) multiplies straight
+into the camera's look-at point. **Simulated** (a script over synthetic uneven
+frame times at 125 units/s, never measured in the app), worst frame-to-frame
+movement of the car relative to the camera:
+
+| ordering                          | worst jump |
+| --------------------------------- | ---------- |
+| stale pose + `lookAhead` (before) | **105 cm** |
+| stale pose, `lookAhead` disabled  | 8 cm       |
+| fresh pose + `lookAhead` (after)  | **7 cm**   |
+
+Treat that as an argument for the ordering, not as evidence about the reported
+symptom — the real one survived this fix at full `renderScale` and died when the
+resolution came down (§2.6).
+
+**Fix:** `core/utils/PhysicsWorld.svelte` — `<World>` with
+`synchronizationStageOptions={{ before: mainStage }}`, giving
+`resize → simulation → synchronization → mainStage → renderStage`. One public
+`<World>` prop, no patch. Rapier's two real guarantees are untouched: the option
+is _merged_ with the built-in `before: renderStage`, and `after: simulation`
+still holds, so the stage runs after the steps and before anything draws.
+
+It is fixed at the STAGE rather than at the consumers on purpose: moving tasks
+into the render stage is still the rule for our own code, but it cannot reach
+into `useFollow` or `<CameraControls>`, which hard-code their stage. Moving the
+stage fixes every main-stage consumer at once, third-party included. Nothing can
+regress on it, either — a main-stage write to a body transform would previously
+have been clobbered by synchronization, so no working code could depend on the
+old order.
+
+> **The rule, generalised from §1.3/§1.4:** those two say a visual quantity must
+> be integrated with the frame's delta. This one adds the other half — it must
+> also be READ at a point in the frame where the physics state it depends on is
+> the state about to be drawn. A fresh delta applied to a stale pose is still a
+> stutter.
+
+---
+
+## 2. Known and deliberately open
+
+Ranked by (value × how cheap), same as `best-practices.md` §3.
+
+### 2.1 Scene entry is a synchronous stall
+
+`buildTrackColliders` walks the track GLB, allocates a baked `Float32Array` per
+collidable mesh and transforms its vertices in JS, and then Rapier builds a BVH
+per trimesh — all on the main thread, all inside one `$derived`, all while the
+player waits. This is the entry hitch, and it is separate from every frame-path
+item above.
+
+> **Update: the half-measure below is done, and the number above was the whole
+> track's count, not the collider's.** `world/trackColliders.ts` already filters
+> to `TRIMESH_MATERIALS = ['Asphalt', 'Metal']` plus a `Ground` floor — `Decals`
+> (31 572 tris) and `Leafs_Mat` (71 982) were never in the collidable set to
+> begin with (see the scene's `CLAUDE.md`, "Colliders — the hard-won rules").
+> `Ground` is 2 triangles and does not even reach the trimesh path — it becomes
+> an analytical cuboid floor (bounds only, no BVH). So the actual stall today is
+> **Asphalt (19 488) + Metal (190 681) = 210 169 triangles**, transformed and
+> built into two trimesh BVHs, not 313 725. Real, and still worth fixing below —
+> just smaller than this section used to say.
+
+The honest fixes are a worker (`best-practices.md` §3.5 — this is exactly the
+"anything that would otherwise produce a visible hitch at scene entry" case it
+names) or precomputing the collider arrays offline and shipping them as a binary
+next to the GLB. Neither is a small change. **Do not confuse this with the
+in-frame stutters**; they have different symptoms — this one is a single freeze
+at the loading veil.
+
+> **The "a worker" fix is smaller than it sounds — scope it before starting.**
+> `<Collider shape="trimesh" args={c.args} />` in `Track.svelte` is
+> `@threlte/rapier`; mounting it calls `world.createCollider(ColliderDesc.trimesh(...))`
+> **synchronously, into the one shared Rapier WASM instance the whole physics
+> world lives in.** That native call — the actual BVH build over up to 190 681
+> triangles for `Metal` — cannot move to a worker without running a second WASM
+> instance there and merging its state back through Rapier's snapshot API
+> (`world.takeSnapshot()` / `World.restoreSnapshot()`), which `@threlte/rapier`
+> has no plumbing for and which does not compose with an existing world that
+> already has dynamic bodies in it. A worker can only ever move
+> `buildTrackColliders`'s JS loop (the GLB traverse + per-vertex matrix bake
+> that produces the `Float32Array`/`Uint32Array` args) off the main thread —
+> the trimesh/BVH construction itself stays put regardless.
+>
+> **Not measured which half of the stall that JS loop actually is.** Before
+> spending the effort: instrument `buildTrackColliders` and the `<Collider>`
+> mounts separately (`performance.now()` brackets are fine here — this is
+> outside any frame task) and see the real split. If the JS bake is a small
+> fraction of the freeze, a worker buys little and the offline-precompute route
+> (ship baked arrays as a binary next to the GLB, skip the JS loop AND let
+> Rapier build straight from typed arrays with no traverse) is the one worth
+> doing — it also removes the GLB-traverse cost the worker plan does not touch.
+
+### 2.2 The car is 324 640 triangles in 29 draw calls
+
+Twenty-nine meshes, twenty-nine materials, a fully modelled interior and engine
+that are only ever seen through tinted glass. §1.1 took them out of the shadow
+pass; the main pass still pays for all of it. Options, in order of
+value-per-risk: `mergeGeometries` over the meshes that share a material,
+distance-based LOD on the interior group, or an interior cull once the chase
+camera is beyond some distance. All are look decisions.
+
+### 2.3 `useFollow` pins the render loop at full rate
+
+`@threlte/extras`' `useFollow` calls `invalidate()` unconditionally at the end of
+its task whenever it has a target and controls. While TestGame is mounted the
+on-demand renderer is therefore always drawing, and every `invalidate()`
+discipline elsewhere in the scene buys nothing _in this scene_ (they still
+matter — the components are also correct in isolation, and a future scene may not
+run a follow rig). This is the same shape as the `<InstancedMesh>` trap in
+`best-practices.md` §2.7: an extras component that sets `autoInvalidate: false`
+and then invalidates in the body. Worth an upstream issue; not worth patching
+locally.
+
+(The same hook's _stage_ was a real bug rather than a cost — see §1.7. That one
+is fixed, and not by touching `useFollow`.)
+
+### 2.4 Physics dropped from 200 Hz to 60 — DRIVE-TEST OWED
+
+_(Moved out of §1: the change is made, the numbers are certain, the FEEL is not
+yet confirmed. It sits here until someone has driven it.)_
+
+`physicsState.framerate` was 200, so Rapier stepped 3–4× per rendered frame
+against the track's static collider set and every `usePhysicsTask` ran that many
+times. It is now **60** — one step per frame at 60 fps.
+
+**This was never about determinism.** Any fixed number is deterministic; only
+`'varying'` is not, and this project has never used it. The Studio panel used to
+label 200 as "deterministic" and `'varying'` as "(default)", and both labels were
+wrong — fixed now.
+
+**Why it is safe to move at all:** nothing in the sim integrates a per-step
+fraction or counts steps. Every damping constant goes through
+`damp(rate, dt) = 1 - exp(-rate · dt)` (`sim/carMath.ts`, verified across
+`controller.ts` and `drivetrain.ts` — there are no other integration sites), and
+every timer is in seconds: the limiter's `limiterCut` (0.05 s), the 0.28 s shift
+cut, the nitrous bottle, `publishCarHud`'s 1/30 s. So the tune, the 0-60, the
+limiter's bounce cadence and the HUD rate all carry across unchanged **by
+construction** rather than by luck.
+
+**What to actually watch on the drive-test**, i.e. the parts that are coarser
+rather than equivalent:
+
+- **Kerbs, barriers and the known `Ground`/`Asphalt` 1.1 cm seam lip.** Contact
+  resolution and penetration recovery get 3.3× fewer opportunities per second.
+  Tunnelling is not the risk (the chassis is ~10.75 units long and moves 2.6
+  units/step at the 140 mph governor, and `ccd` is on anyway) — _catching_ is.
+- **Launches and wheelspin onset**, where the traction limit is doing the most
+  work per step.
+- **Limiter overshoot.** The cut arms on `rpm >= limiterRpm`, so a coarser step
+  overshoots further before it engages. Bounded by the existing
+  `clamp(rpm, idle, limiterRpm + 150)`, but the bounce may read chunkier.
+
+If any of that is worse, the Studio physics panel switches it live (Physics ▸
+World ▸ Framerate) — 120 is the middle ground. Nothing else needs changing to go
+back.
+
+**Note that this makes §1.3 and §1.4 more important, not less.** The substep
+count per frame is `ceil`, so it is never constant at any rate — and at 60 Hz on
+a high-refresh display it is **0 or 1**, meaning frames where a physics-time
+integration does not advance the visual at all. A 100% pulse where 200 Hz gave a
+17% one.
+
+### 2.5 The skid ring is lit, transparent and double-sided
+
+16 384 triangles of `MeshStandardNodeMaterial` with two texture fetches, blended
+with `depthWrite: false`, is a heavy fragment shader for what is conceptually a
+decal. §1.5 stopped it running when there is nothing to show; it did not make it
+cheaper when there is. The material being LIT is load-bearing (see the scene's
+`CLAUDE.md` — unlit marks read as chalk after dark), so the lever here is the
+ring size (`SEGS_PER_WHEEL`), which is a look decision.
+
+### 2.6 The 4K stutter is fill rate — CLOSED, do not re-open it
+
+**The one the player actually reported**, and the answer is boring: at 4K the
+frame does not fit in the budget, the GPU misses vsync unevenly, and the car —
+the fastest-moving thing framed against a chasing camera — is where that reads.
+**Dropping `settingsState.graphics.renderScale` removes it, with minimal visual
+loss.** That is the fix; there is no bug under it.
+
+Recorded because it cost three wrong answers first. The tell was in the report
+from the start — _"on lower graphics/resolution it's ok with motion blur too"_ —
+which is §3.4 verbatim: **a cost that vanishes at low resolution is fill rate.**
+Motion blur is implicated because it is the marginal straw (it adds a second
+RGBA16F attachment to the scene pass plus `numSamples` fullscreen taps), not
+because it is broken.
+
+Rejected along the way, each plausible and each _not it_:
+
+- **stale physics poses in the chase camera** — a real bug, fixed in §1.7, no
+  observable effect on this;
+- **transparent FX overwriting the `velocity` MRT attachment** — non-`output`
+  attachments genuinely do not blend, so every `depthWrite: false` quad stamps
+  its own velocity over what is under it. Packing `output.a` into the attachment
+  and giving it `NormalBlending` fixes that, and it did not fix this;
+- **`VelocityNode` reporting fiction for the puff pools** — also genuinely true,
+  and also not it.
+
+The last two were built, verified to run clean, and then **reverted** as
+speculative fixes for artifacts nobody had reported. Both live in `git stash` on
+the `webgpu` branch if a real velocity-buffer symptom ever shows up. Two facts
+from them are worth keeping regardless, because they are the reason motion blur
+can never track the pools:
+
+- **`positionPrevious` is not a previous position.** It is
+  `positionGeometry.toVarying('positionPrevious')` — the _same_ attribute. Any
+  mesh that rewrites its vertices per frame (the world-space puff pools, §1.2)
+  therefore reports only the camera's own motion.
+- **`getPreviousMatrix` is keyed per object**, so an `InstancedMesh` whose
+  instances move reports the pool's transform, never the instance's.
+
+---
+
+## 3. How to measure this scene
+
+The general playbook is `best-practices.md` §6; these are the scene-specific
+readings.
+
+1. **Settings ▸ System** (`core/utils/Telemetry.svelte`) — `drawCalls`,
+   `triangles`, `programs`. Take a reading while parked, then during a burnout,
+   then after a downshift, and diff. `programs` climbing during a burnout is the
+   §1.2 disease returning.
+2. **Triangles prove instancing worked, draw calls alone do not** — the lesson
+   from `best-practices.md` §3.2. The puff pools should move draw calls by +2 and
+   triangles by at most `2 × count × 2`, never by `count` draw calls.
+3. **Separate the three symptoms before chasing any of them.** They have
+   different signatures:
+   - _entry freeze_ — one long stall at the veil, §2.1;
+   - _first-effect spike_ — a single hitch the first time an effect is drawn in a
+     session, and never again. That is pipeline/node-build work (§1.2);
+   - _periodic micro-stutter while driving_ — recurring, tied to motion. That is
+     frame-path work: substep-integrated visuals (§1.3, §1.4), or fill rate.
+4. **A cost that vanishes at low resolution is fill rate**, not CPU
+   (`best-practices.md` §3.6's method, which is worth reusing verbatim here):
+   drop `settingsState.graphics.renderScale` and see whether the symptom
+   survives. If it does, it is on the main thread.
+5. **`src/__debug/`** and the headless-Firefox harness (`webgpu-notes.md` §5) for
+   anything that needs evidence rather than inference.
+
+---
+
+## 3b. The scene's light budget, and the trap under it
+
+TestGame mounts **seven** lights: the sky's key `DirectionalLight` and hemisphere
+fill, the two headlight `ProjectorLight`s, the exhaust pop's `PointLight`, and
+the two tail `PointLight`s (`CarTaillights` — the tail pair is the same bargain:
+permanently mounted, `intensity`-driven, no shadows). That is over
+`best-practices.md` §4's three-light guideline, knowingly — §1.1 freed the
+budget by taking the whole track out of the shadow pass. None of them casts a
+shadow except the sky key; a shadow-casting `PointLight` is **six** shadow
+renders.
+
+**The trap, verified in three 0.185's source:** the set of lights in the scene is
+part of every lit material's shader cache key.
+
+```js
+// Renderer.js:3082 — _projectObject
+if (object.visible === false) return; // …before renderList.pushLight( object )
+
+// LightsNode.js — customCacheKey()
+_hashData.push(light.id);
+_hashData.push(light.castShadow ? 1 : 0);
+```
+
+So **`light.visible = false` and `light.castShadow = ...` are not runtime knobs.**
+Flipping either changes `LightsNode.customCacheKey()`, which changes the
+`RenderObject` cache key of every lit material in the scene, which recompiles all
+of them. Doing that per exhaust pop would be a full shader rebuild several times a
+second — the §1.2 disease, but scene-wide and on a repeating trigger.
+
+The rule: **mount lights permanently and modulate `intensity`.** A light at
+intensity 0 still costs a per-fragment evaluation in every lit material and there
+is no way around that; accept the standing cost or do not mount the light.
+`CarHeadlights` (`light.intensity = on ? m.intensity : 0`), the exhaust pop
+light and `CarTaillights`' tail pair all follow it.
+
+---
+
+## 4. Rules for new TestGame content
+
+The scene's own additions to `best-practices.md` §4, each earned above:
+
+- **Visual quantities integrate with the FRAME delta, in a render-stage task.**
+  `usePhysicsTask` is for simulation state only. (§1.3, §1.4)
+- **A pool is one mesh and one material.** Per-instance variation goes in a
+  per-vertex or per-instance attribute, never in a material instance — the draw
+  calls are the visible cost and the per-material node build is the invisible
+  one. (§1.2)
+- **`castShadow` is a decision per mesh, never a traverse-and-set-true.** Ask
+  what the mesh contributes to a silhouette, and remember that every caster is
+  re-rendered into the shadow map, now once per cascade. (§1.1)
+- **A transparent mesh with nothing to show must leave the frame.** Alpha 0 is
+  not free. (§1.5)
+- **Shared assets are loaded once and disposed never.** (§1.6)
+- **Lights are mounted once and driven by `intensity`.** `visible` and
+  `castShadow` are shader-cache-key inputs, not runtime knobs. (§3b)
+- **Anything that READS a physics pose runs after Rapier's synchronization
+  stage** — `{ before: autoRenderTask }` for our own tasks, and the stage itself
+  is pinned ahead of the main stage (`core/utils/PhysicsWorld.svelte`) so
+  third-party main-stage tasks are covered too. (§1.7)

@@ -1,18 +1,37 @@
 <script lang="ts">
-	import { T } from '@threlte/core';
-	import { useGltf, useGltfAnimations } from '@threlte/extras';
+	import { T, useTask, useThrelte } from '@threlte/core/webgpu';
+	import { useGltf, useGltfAnimations, useDraco, useMeshopt, useKtx2 } from '@threlte/extras';
 	import { AutoColliders } from '@threlte/rapier';
 	import { LoopRepeat, LoopOnce } from 'three';
+	import { SkeletonHelper, REVISION, type Group, type Mesh } from 'three/webgpu';
 	import { untrack } from 'svelte';
 	import { gltfViewerActions } from './gltfViewer.svelte';
-	import { logGltf } from '$extensions/logger/logger.svelte';
+	import { logGltf } from '$extensions/logger';
 	import type { GltfViewerModel } from './types';
 
 	let { model }: { model: GltfViewerModel } = $props();
 
+	// DRACO/KTX2 decoders fetch on demand from jsdelivr pinned to the installed three
+	// version; cached module-side by threlte, so N instances cost one fetch. Meshopt is
+	// bundled. Uncompressed models never touch the decoders. See gltf-viewer/CLAUDE.md.
+	const threeCdn = `https://cdn.jsdelivr.net/npm/three@0.${REVISION}`;
+	const dracoLoader = useDraco(`${threeCdn}/examples/jsm/libs/draco/gltf/`);
+	const meshoptDecoder = useMeshopt();
+	const ktx2Loader = useKtx2(`${threeCdn}/examples/jsm/libs/basis/`);
+
 	// untrack: URL is intentionally fixed per instance (keyed by model.id in parent {#each})
-	const gltf = useGltf(untrack(() => model.url));
+	const gltf = useGltf(
+		untrack(() => model.url),
+		{
+			dracoLoader,
+			meshoptDecoder,
+			ktx2Loader
+		}
+	);
 	const { actions } = useGltfAnimations(gltf);
+	const { scene, invalidate } = useThrelte();
+
+	let group = $state.raw<Group>();
 
 	// Track which clips were active on the previous effect run so we can diff for fade in/out
 	let prevActive = new Set<string>();
@@ -39,6 +58,42 @@
 				clips.map((c) => c.name)
 			);
 		}
+	});
+
+	// Rig overlay, gated on model.visible (a detached mesh stops updating bone matrices —
+	// see "Show Rig" in CLAUDE.md). Bone-less meshes render nothing and are skipped.
+	$effect(() => {
+		const gltfScene = $gltf?.scene;
+		if (!gltfScene || !model.showRig || !model.visible) return;
+
+		const helper = new SkeletonHelper(gltfScene);
+		if (helper.bones.length === 0) {
+			helper.dispose();
+			return;
+		}
+		helper.userData = { selectable: false, hideInTree: true };
+		scene.add(helper);
+
+		return () => {
+			helper.removeFromParent();
+			helper.dispose();
+		};
+	});
+
+	// Shadow casting/receiving — flips castShadow/receiveShadow on every mesh of the loaded scene
+	$effect(() => {
+		const gltfScene = $gltf?.scene;
+		if (!gltfScene) return;
+
+		const cast = model.castShadows;
+		const receive = model.receiveShadows;
+		gltfScene.traverse((obj) => {
+			const mesh = obj as Mesh;
+			if (mesh.isMesh) {
+				mesh.castShadow = cast;
+				mesh.receiveShadow = receive;
+			}
+		});
 	});
 
 	// Drive animation playback reactively from model state
@@ -83,10 +138,22 @@
 
 		prevActive = currentActive;
 	});
+
+	// Spins the wrapper group (not the GLTF scene root — would fight the mixer). The only
+	// task in the app that invalidates unconditionally every frame — see "Auto Rotate" in
+	// CLAUDE.md for what that costs the render loop.
+	useTask(
+		(delta) => {
+			if (!group || !model.autoRotate) return;
+			group.rotation.y += model.autoRotateSpeed * delta;
+			invalidate();
+		},
+		{ autoInvalidate: false }
+	);
 </script>
 
 {#if model.visible && $gltf}
-	<T.Group name={model.name}>
+	<T.Group name={model.name} bind:ref={group}>
 		{#if model.colliderEnabled}
 			<AutoColliders shape={model.colliderShape}>
 				<T is={$gltf.scene} />

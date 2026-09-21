@@ -1,0 +1,671 @@
+diff --git a/dist/components/Gizmo/Gizmo.svelte b/dist/components/Gizmo/Gizmo.svelte
+index 2655f8ee8cac6e0e535be7a325c30c8fd62f92ed..5f1ff14ea90797047c2c63b52de5634713a32228 100644
+--- a/dist/components/Gizmo/Gizmo.svelte
++++ b/dist/components/Gizmo/Gizmo.svelte
+@@ -1,7 +1,9 @@
+ <script lang="ts">
+   import { useTask, useThrelte, useParent, observe } from '@threlte/core'
++  import { untrack } from 'svelte'
+   import {
+     NoToneMapping,
++    Vector2,
+     Vector4,
+     type OrthographicCamera,
+     type PerspectiveCamera,
+@@ -9,6 +11,8 @@
+   } from 'three'
+   import type { GizmoProps, Controls } from './types.js'
+   import { ViewportGizmo } from 'three-viewport-gizmo'
++  // PATCH (spaceplate): see `useWebGPULineMaterial` below.
++  import { Line2NodeMaterial } from 'three/webgpu'
+   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+   import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js'
+ 
+@@ -25,14 +29,80 @@
+   const parent = useParent()
+   const { camera, renderer, dom, autoRenderTask, shouldRender, size, invalidate } = useThrelte()
+ 
++  // PATCH (spaceplate): gates every WebGPU-specific workaround below.
++  const isWebGPU = (renderer as unknown as { isWebGPURenderer?: boolean }).isWebGPURenderer === true
++
++  // PATCH (spaceplate): WebGPU compat -- draw the axis stems with a node material.
++  //
++  // three-viewport-gizmo vendors its own copy of three's fat-line stack. Its
++  // `LineMaterial` extends raw `ShaderMaterial`, which `NodeLibrary` has no mapping
++  // for, so under WebGPURenderer three logs `Material "LineMaterial" is not compatible`
++  // and substitutes a blank NodeMaterial -- the stems silently vanish and you get bare
++  // floating axis handles.
++  //
++  // three r185 ships `Line2NodeMaterial`, the node-based equivalent, and it is a
++  // drop-in here: it reads the same `instanceStart` / `instanceEnd` /
++  // `instanceColorStart` attributes the vendored geometry already provides, so only
++  // the material is swapped and the library's own object and geometry stay untouched.
++  //
++  // Two details that make the in-place swap safe:
++  //  - The vendored `LineSegments2.onBeforeRender` pushes the viewport size into
++  //    `material.uniforms.resolution`, but it is guarded on `material.uniforms` being
++  //    present. `Line2NodeMaterial` has no `.uniforms`, so it no-ops -- and it does not
++  //    need the hint: `Line2NodeMaterial` derives the resolution from the `viewport`
++  //    node itself, which is already the gizmo's own small viewport at draw time. That
++  //    keeps `linewidth` in pixels, exactly as before.
++  //  - The vendored `raycast()` would read `material.resolution`, which is absent here,
++  //    but the gizmo only ever raycasts its handle meshes (`_intersections`); the stems
++  //    are never picked.
++  const useWebGPULineMaterial = (target: ViewportGizmo) => {
++    for (const child of target.children) {
++      const line = child as unknown as {
++        isLineSegments2?: boolean
++        material?: { linewidth?: number; dispose?: () => void }
++      }
++      if (line.isLineSegments2 !== true) continue
++      const previous = line.material
++      line.material = new Line2NodeMaterial({
++        linewidth: previous?.linewidth ?? 4,
++        vertexColors: true
++      })
++      previous?.dispose?.()
++    }
++  }
++
++  // PATCH (spaceplate): WebGPU compat.
++  //
++  // `camera.current` was read tracked here, so every camera swap rebuilt the whole
++  // ViewportGizmo and ran `dispose()` on the old one. Studio swaps `camera.current`
++  // between its editor camera and the app camera, so this fires during normal use.
++  //
++  // `ViewportGizmo.dispose()` calls `geometry.dispose()` / `material.dispose()`, which
++  // under WebGPURenderer destroys the backing GPUBuffers immediately -- while the
++  // frames that reference them are still queued. The result is an endless
++  //   "[Buffer (unlabeled)] used in submit while destroyed"
++  // validation flood, and (once the render-object cache is poisoned) a gizmo that
++  // never draws again.
++  //
++  // The rebuild was redundant regardless: the `$effect.pre` further down already
++  // reassigns `gizmo.camera` whenever the camera changes, and `gizmo.camera` is a
++  // plain field the library reads per frame. Reading it untracked keeps the
++  // constructor argument correct on first build without making it a dependency, so
++  // the gizmo is now built once and only rebuilt if its *options* actually change.
+   const gizmo = $derived.by(() => {
+     invalidate()
+-    return new ViewportGizmo(camera.current as PerspectiveCamera | OrthographicCamera, renderer, {
+-      container: dom,
+-      placement: 'bottom-left',
+-      size: 86,
+-      ...rest
+-    })
++    const instance = new ViewportGizmo(
++      untrack(() => camera.current) as PerspectiveCamera | OrthographicCamera,
++      renderer,
++      {
++        container: dom,
++        placement: 'bottom-left',
++        size: 86,
++        ...rest
++      }
++    )
++    if (isWebGPU) useWebGPULineMaterial(instance)
++    return instance
+   })
+ 
+   $effect.pre(() => {
+@@ -43,6 +113,40 @@
+ 
+   const viewport = new Vector4()
+ 
++  // PATCH (spaceplate): WebGPU compat.
++  //
++  // WebGL's `gl.viewport` has its origin at the BOTTOM-left of the drawing buffer;
++  // WebGPU's `GPURenderPassEncoder.setViewport` has its origin at the TOP-left. three's
++  // WebGPU backend passes `viewportValue` straight through to `renderPass.setViewport`
++  // without flipping (see common/Renderer.js `_getRenderContext`), so viewport maths
++  // written for WebGL lands mirrored vertically under WebGPURenderer.
++  //
++  // three-viewport-gizmo computes its viewport in `domUpdate()` as
++  //   y = domElement.clientHeight - (rect.top + rect.height)
++  // i.e. the WebGL convention. With `placement: 'bottom-left'` that put the gizmo in the
++  // TOP-left under WebGPU, hidden behind the Studio toolbar -- it renders fine, just in
++  // the wrong corner. Flipping y back recovers the DOM-space top offset:
++  //   H - y - h === H - (H - top - h) - h === top
++  //
++  // Applied around `render()` only, and restored afterwards, because `domUpdate()`
++  // recomputes `_viewport` from the DOM on every `update()`.
++  const gizmoSize = new Vector2()
++  const renderGizmo = () => {
++    if (!isWebGPU) {
++      gizmo.render()
++      return
++    }
++    const gizmoViewport = (gizmo as unknown as { _viewport: number[] })._viewport
++    const originalY = gizmoViewport[1]
++    renderer.getSize(gizmoSize)
++    gizmoViewport[1] = gizmoSize.y - originalY - gizmoViewport[3]
++    try {
++      gizmo.render()
++    } finally {
++      gizmoViewport[1] = originalY
++    }
++  }
++
+   const cameraControls = $derived(controls ?? ($parent as Controls))
+ 
+   useTask(
+@@ -52,12 +156,34 @@
+         const toneMapping = renderer.toneMapping
+ 
+         renderer.getViewport(viewport)
+-        renderer.toneMapping = NoToneMapping
++        // PATCH (spaceplate): WebGPU compat -- do not touch `toneMapping` here.
++        //
++        // Under WebGPURenderer tone mapping is not a per-material concern: it is applied
++        // once, by the "Output Color Transform" quad in `Renderer._renderOutput()`. That
++        // quad is cached against `NodeManager.getOutputCacheKey()`, which is literally
++        //   `renderer.toneMapping + ',' + currentColorSpace + ',' + xr.isPresenting`.
++        //
++        // So flipping toneMapping to NoToneMapping and back around the gizmo render
++        // changed the output cache key twice per frame. Each flip set
++        // `quad.material.needsUpdate`, and `RenderObjects.get()` responds to a changed
++        // cache key by calling `renderObject.dispose()` -> `_destroyBindings()` ->
++        // `GPUBuffer.destroy()` -- destroying the output pass's uniform buffers *while
++        // the command encoder for the frame in flight still references them*. WebGPU
++        // reports that every frame, forever:
++        //   "[Buffer (unlabeled)] used in submit while destroyed"
++        // (~240 buffer destroys/second in a 60fps session -- it also churns the whole
++        // render-object cache for nothing).
++        //
++        // Skipping the swap costs nothing visually, because the swap never did anything
++        // under WebGPU in the first place: the output transform runs after this task
++        // with whatever value is set *then*, i.e. the restored one. The gizmo has always
++        // been tone mapped here.
++        if (!isWebGPU) renderer.toneMapping = NoToneMapping
+ 
+-        gizmo.render()
++        renderGizmo()
+ 
+         renderer.setViewport(viewport)
+-        renderer.toneMapping = toneMapping
++        if (!isWebGPU) renderer.toneMapping = toneMapping
+       }
+     },
+     {
+@@ -137,7 +263,52 @@
+     }
+   )
+ 
++  // PATCH (spaceplate): WebGPU compat.
++  //
++  // Two problems with `ViewportGizmo.dispose()`:
++  //
++  // 1. It disposes the geometry of every child, and its axis labels are `THREE.Sprite`s.
++  //    All sprites in a page share one module-global `BufferGeometry` created lazily in
++  //    the `Sprite` constructor (three/src/objects/Sprite.js) and never rebuilt, so
++  //    disposing it destroys the 80-byte interleaved vertex buffer and 24-byte index
++  //    buffer that back *every* sprite in the app. WebGL quietly re-uploads; WebGPU
++  //    reports the next sprite draw as
++  //      "In a draw command ... Buffer with '' label has been destroyed"
++  //    Skipping sprite geometry here leaves nothing leaked -- that geometry was never
++  //    the gizmo's to free.
++  //
++  // 2. three's WebGPU backend answers `dispose` events with an immediate
++  //    `GPUBuffer.destroy()`, while the frame that last drew the gizmo is typically
++  //    still queued -- the "used in submit while destroyed" variant of the same error.
++  //    Draining the queue first removes that race. `onSubmittedWorkDone()` settles
++  //    within about a frame, and the only thing outliving the component meanwhile is
++  //    the gizmo's transparent pointer-capture <div> (removed by the same `dispose()`),
++  //    so there is nothing to see and nothing left rendering.
++  const disposeGizmo = (target: ViewportGizmo) => {
++    for (const child of target.children) {
++      if ((child as { isSprite?: boolean }).isSprite) {
++        // `dispose()` reads `child.geometry` with optional chaining, so clearing it
++        // makes the shared sprite geometry invisible to the walk. Materials and their
++        // canvas textures are per-instance and still get freed.
++        ;(child as unknown as { geometry?: unknown }).geometry = undefined
++      }
++    }
++    target.dispose()
++  }
++
+   $effect.pre(() => {
+-    return () => gizmo.dispose()
++    const current = gizmo
++    return () => {
++      const queue = (
++        renderer as unknown as {
++          backend?: { device?: { queue?: { onSubmittedWorkDone?: () => Promise<unknown> } } }
++        }
++      ).backend?.device?.queue
++      if (!isWebGPU || typeof queue?.onSubmittedWorkDone !== 'function') {
++        disposeGizmo(current)
++        return
++      }
++      queue.onSubmittedWorkDone().then(() => disposeGizmo(current))
++    }
+   })
+ </script>
+diff --git a/dist/components/Grid/Grid.svelte b/dist/components/Grid/Grid.svelte
+index a28a61519ac4e1c4ec318ef009126520abb7481a..b5aad10d55ce60bc1449433875bb7fed0fdffc94 100644
+--- a/dist/components/Grid/Grid.svelte
++++ b/dist/components/Grid/Grid.svelte
+@@ -1,9 +1,14 @@
+ <!-- Credits to Fyrestar for the https://github.com/Fyrestar/THREE.InfiniteGridHelper  -->
+ <script lang="ts">
+   import { isInstanceOf, T, useTask, useThrelte } from '@threlte/core'
+-  import { Color, DoubleSide, Plane, Uniform, Vector3, Mesh, type ShaderMaterial } from 'three'
++  import { Color, DoubleSide, Plane, Vector3, Mesh } from 'three'
+   import type { GridProps } from './types.js'
+-  import { fragmentShader, vertexShader } from './gridShaders.js'
++  // PATCH (spaceplate): WebGPU compat -- the GLSL ShaderMaterial is replaced with a
++  // TSL NodeMaterial. See gridNodes.js for the port and why. TSL uniform() nodes
++  // expose .value exactly like THREE.Uniform, so all the reactive plumbing below is
++  // unchanged; only the uniform constructor and the material itself differ.
++  import { uniform } from 'three/tsl'
++  import { createGridMaterial } from './gridNodes.js'
+ 
+   let {
+     cellSize = 1,
+@@ -59,41 +64,57 @@
+     polar: 3
+   } as const
+ 
++  // PATCH (spaceplate): TSL uniform() nodes in place of THREE.Uniform. Both expose
++  // .value, so every $effect.pre below keeps working verbatim.
++  //
++  // coord0/1/2, gridType and lineGridCoord are gone: those selected shader branches
++  // and vector components by index, which WGSL cannot do dynamically. They are baked
++  // into the node graph instead, which is rebuilt when the props behind them change.
+   const uniforms = {
+-    cellSize: new Uniform(1),
+-    sectionSize: new Uniform(10),
+-    cellColor: new Uniform(new Color('#000000')),
+-    sectionColor: new Uniform(new Color('#0000ee')),
+-    backgroundColor: new Uniform(new Color('#dadada')),
+-    backgroundOpacity: new Uniform(0),
+-    fadeDistance: new Uniform(100),
+-    fadeStrength: new Uniform(1),
+-    fadeOrigin: new Uniform(new Vector3()),
+-    cellThickness: new Uniform(1),
+-    sectionThickness: new Uniform(2),
+-    infiniteGrid: new Uniform(false),
+-    followCamera: new Uniform(false),
+-    coord0: new Uniform(0),
+-    coord1: new Uniform(2),
+-    coord2: new Uniform(1),
+-    gridType: new Uniform<number>(gridType.grid),
+-    lineGridCoord: new Uniform<number>(axisToInt.x),
+-    circleGridMaxRadius: new Uniform(0),
+-    polarCellDividers: new Uniform(6),
+-    polarSectionDividers: new Uniform(2),
+-    worldCamProjPosition: new Uniform(new Vector3()),
+-    worldPlanePosition: new Uniform(new Vector3())
++    cellSize: uniform(1),
++    sectionSize: uniform(10),
++    cellColor: uniform(new Color('#000000')),
++    sectionColor: uniform(new Color('#0000ee')),
++    backgroundColor: uniform(new Color('#dadada')),
++    backgroundOpacity: uniform(0),
++    fadeDistance: uniform(100),
++    fadeStrength: uniform(1),
++    fadeOrigin: uniform(new Vector3()),
++    cellThickness: uniform(1),
++    sectionThickness: uniform(2),
++    circleGridMaxRadius: uniform(0),
++    polarCellDividers: uniform(6),
++    polarSectionDividers: uniform(2),
++    worldCamProjPosition: uniform(new Vector3()),
++    worldPlanePosition: uniform(new Vector3())
+   }
+ 
++  // Rebuilt only when a structural option changes -- numeric and colour changes flow
++  // through the uniforms above without touching the graph.
++  const material = $derived(
++    createGridMaterial(uniforms, {
++      plane,
++      type,
++      axis,
++      infiniteGrid,
++      followCamera,
++      maxRadius,
++      cellDividers,
++      sectionDividers,
++      hasBackground: backgroundOpacity > 0,
++      side
++    })
++  )
++
++  $effect(() => {
++    const current = material
++    return () => current.dispose()
++  })
++
+   $effect.pre(() => {
+-    // convert axis string to int indexes xzy = [0,2,1]
+-    const { axes, normal } = planeConfig[plane]
+-    const c0 = axes.charAt(0) as 'x' | 'y' | 'z'
+-    const c1 = axes.charAt(1) as 'x' | 'y' | 'z'
+-    const c2 = axes.charAt(2) as 'x' | 'y' | 'z'
+-    uniforms.coord0.value = axisToInt[c0]
+-    uniforms.coord1.value = axisToInt[c1]
+-    uniforms.coord2.value = axisToInt[c2]
++    // PATCH (spaceplate): the coord0/1/2 uniforms are baked into the node graph now;
++    // only the plane normal still needs updating here.
++    const { normal } = planeConfig[plane]
+     gridPlaneNormal.set(normal[0], normal[1], normal[2])
+     invalidate()
+   })
+@@ -148,18 +169,11 @@
+     uniforms.sectionThickness.value = sectionThickness
+     invalidate()
+   })
+-  $effect.pre(() => {
+-    uniforms.followCamera.value = followCamera
+-    invalidate()
+-  })
+-  $effect.pre(() => {
+-    uniforms.infiniteGrid.value = infiniteGrid
+-    invalidate()
+-  })
++  // PATCH (spaceplate): followCamera, infiniteGrid, gridType and lineGridCoord are
++  // baked into the node graph (see the $derived material above), so they no longer
++  // have uniforms to update here.
+ 
+   $effect.pre(() => {
+-    uniforms.gridType.value = gridType[type]
+-    uniforms.lineGridCoord.value = axisToInt[axis as 'x' | 'y' | 'z']
+     uniforms.circleGridMaxRadius.value = maxRadius
+     uniforms.polarCellDividers.value = cellDividers
+     uniforms.polarSectionDividers.value = sectionDividers
+@@ -172,10 +186,9 @@
+         .setFromNormalAndCoplanarPoint(gridPlaneNormal, zeroVector)
+         .applyMatrix4(mesh.matrixWorld)
+ 
+-      const material = mesh.material as ShaderMaterial
+-      const worldCamProjPosition = material.uniforms.worldCamProjPosition as Uniform<Vector3>
+-      const worldPlanePosition = material.uniforms.worldPlanePosition as Uniform<Vector3>
+-      const uFadeOrigin = material.uniforms.fadeOrigin as Uniform<Vector3>
++      // PATCH (spaceplate): read the TSL uniform nodes directly rather than going
++      // through material.uniforms, which only exists on ShaderMaterial.
++      const { worldCamProjPosition, worldPlanePosition, fadeOrigin: uFadeOrigin } = uniforms
+ 
+       const projectedPoint = gridPlane.projectPoint(
+         camera.current.position,
+@@ -198,12 +211,9 @@
+   frustumCulled={false}
+   {...props}
+ >
+-  <T.ShaderMaterial
+-    {fragmentShader}
+-    {vertexShader}
+-    {uniforms}
+-    transparent
+-    {side}
++  <T
++    is={material}
++    attach="material"
+   />
+   {#if children}
+     {@render children({ ref: mesh })}
+diff --git a/dist/components/Grid/gridNodes.js b/dist/components/Grid/gridNodes.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..04cc68dec72b688edcfd7d05c44424f293d49540
+--- /dev/null
++++ b/dist/components/Grid/gridNodes.js
+@@ -0,0 +1,260 @@
++// PATCH (spaceplate): WebGPU compat.
++//
++// TSL port of gridShaders.js. The original is a raw ShaderMaterial; three's
++// NodeLibrary has no ShaderMaterial mapping, so on WebGPURenderer it is silently
++// replaced with a blank NodeMaterial ("Material \"ShaderMaterial\" is not
++// compatible") and the grid never draws.
++//
++// Credits to Evan Wallace https://madebyevan.com/shaders/grid/ for the original.
++//
++// Structural options (plane, type, axis, infiniteGrid, followCamera, maxRadius,
++// dividers, whether a background is drawn) are baked into the graph in JS rather
++// than branched on in the shader. They are plain props that change rarely, and it
++// avoids dynamic component indexing -- which GLSL allowed via position[coord0] but
++// WGSL will not do against a uniform index.
++import { NodeMaterial } from 'three/webgpu';
++import {
++	Discard,
++	Fn,
++	abs,
++	atan,
++	clamp,
++	float,
++	fract,
++	fwidth,
++	length,
++	max,
++	min,
++	mix,
++	modelWorldMatrixInverse,
++	pow,
++	positionLocal,
++	positionWorld,
++	select,
++	smoothstep,
++	varying,
++	vec2,
++	vec3,
++	vec4
++} from 'three/tsl';
++
++const PI = 3.141592653589793;
++const COMPONENTS = ['x', 'y', 'z'];
++
++const AXIS_TO_INT = { x: 0, y: 1, z: 2 };
++
++const PLANE_CONFIG = {
++	xz: { axes: 'xzy', normal: [0, 1, 0] },
++	xy: { axes: 'xyz', normal: [0, 0, 1] },
++	zy: { axes: 'zyx', normal: [1, 0, 0] }
++};
++
++export const planeConfig = PLANE_CONFIG;
++export const axisToInt = AXIS_TO_INT;
++
++/** Reorders a vec3's components, mirroring `vec3(v[c0], v[c1], v[c2])` in GLSL. */
++const swizzle = (node, [c0, c1, c2]) =>
++	vec3(node[COMPONENTS[c0]], node[COMPONENTS[c1]], node[COMPONENTS[c2]]);
++
++const coordsForPlane = (plane) => {
++	const { axes } = PLANE_CONFIG[plane] ?? PLANE_CONFIG.xz;
++	return [AXIS_TO_INT[axes.charAt(0)], AXIS_TO_INT[axes.charAt(1)], AXIS_TO_INT[axes.charAt(2)]];
++};
++
++/**
++ * Builds the grid NodeMaterial.
++ *
++ * @param u        TSL uniform nodes, shared with the component's reactive plumbing
++ * @param options  Structural options baked into the graph
++ */
++export const createGridMaterial = (u, options) => {
++	const {
++		plane = 'xz',
++		type = 'grid',
++		axis = 'x',
++		infiniteGrid = false,
++		followCamera = false,
++		maxRadius = 0,
++		cellDividers = 6,
++		sectionDividers = 2,
++		hasBackground = false,
++		side
++	} = options;
++
++	const coords = coordsForPlane(plane);
++	const lineComponent = COMPONENTS[AXIS_TO_INT[axis] ?? 0];
++
++	const material = new NodeMaterial();
++	material.transparent = true;
++	material.side = side;
++
++	// --- vertex ------------------------------------------------------------
++	// Mirrors the original vertex shader. Assigning positionNode lets the default
++	// model-view-projection path run, and keeps positionWorld consistent with the
++	// remapped position (the fragment stage needs it for distance fade).
++	const localPosition = Fn(() => {
++		const local = swizzle(positionLocal, coords).toVar();
++
++		if (infiniteGrid) {
++			local.mulAssign(float(1).add(u.fadeDistance));
++		}
++
++		if (followCamera) {
++			// The original offsets in world space then maps back through
++			// inverse(modelMatrix). Transforming the offset as a direction (w = 0)
++			// is the equivalent, done once instead of per-vertex round-tripping.
++			const worldOffset = u.worldCamProjPosition.sub(u.worldPlanePosition);
++			local.addAssign(modelWorldMatrixInverse.mul(vec4(worldOffset, 0)).xyz);
++		}
++
++		return local;
++	})();
++
++	material.positionNode = localPosition;
++
++	// The fragment stage re-applies the same swizzle to the (already swizzled)
++	// local position, exactly as the original shader does.
++	const vLocalPosition = varying(localPosition, 'vGridLocalPosition');
++
++	// --- grid patterns -----------------------------------------------------
++	const getSquareGrid = (size, thickness, localPos) => {
++		const coord = localPos.xy.div(size);
++		const grid = abs(fract(coord.sub(0.5)).sub(0.5)).div(fwidth(coord));
++		const line = min(grid.x, grid.y).add(1).sub(thickness);
++		return float(1).sub(min(line, 1));
++	};
++
++	const getLinesGrid = (size, thickness, localPos) => {
++		const coord = localPos[lineComponent].div(size);
++		const line = abs(fract(coord.sub(0.5)).sub(0.5))
++			.div(fwidth(coord))
++			.sub(thickness.mul(0.2));
++		return float(1).sub(min(line, 1));
++	};
++
++	// Both masks collapse to a constant when the grid is infinite or unbounded,
++	// which is the common case and keeps those branches out of the shader.
++	const bounded = !infiniteGrid && maxRadius > 0;
++
++	const getRadiusMask = (radius) => {
++		if (!bounded) return float(1);
++		const width = max(fwidth(radius), 0.0001);
++		return float(1).sub(smoothstep(u.circleGridMaxRadius, u.circleGridMaxRadius.add(width), radius));
++	};
++
++	const getPolarDividerMask = (radius) => {
++		if (!bounded) return float(1);
++		const width = max(fwidth(radius), 0.0001);
++		return float(1).sub(smoothstep(u.circleGridMaxRadius.sub(width), u.circleGridMaxRadius, radius));
++	};
++
++	const getCirclesGrid = (size, thickness, radius) => {
++		const coord = radius.div(size);
++		const line = abs(fract(coord.sub(0.5)).sub(0.5))
++			.div(fwidth(coord))
++			.sub(thickness.mul(0.2));
++		return float(1).sub(min(line, 1));
++	};
++
++	const getPolarGrid = (size, thickness, dividers, dividerCount, localPos, radius) => {
++		if (dividerCount <= 0) return getCirclesGrid(size, thickness, radius);
++
++		const rad = radius.div(size);
++		const angle = atan(localPos.x, localPos.y).mul(dividers).div(PI);
++		const coord = vec2(rad, angle);
++
++		const span = dividers.mul(2);
++		const wrapped = vec2(coord.x, fract(coord.y.div(span)).mul(span));
++
++		const coordWidth = fwidth(coord);
++		const wrappedWidth = fwidth(wrapped);
++		const half = dividers.mul(0.5);
++		const useWrapped = coord.y.lessThan(half.negate()).or(coord.y.greaterThan(half));
++		const width = select(useWrapped, wrappedWidth, coordWidth).mul(
++			float(1).add(thickness.mul(0.25))
++		);
++
++		const grid = abs(fract(coord.sub(0.5)).sub(0.5)).div(width);
++		const circle = float(1).sub(min(grid.x, 1));
++		const divider = float(1).sub(min(grid.y, 1));
++
++		return max(circle, divider.mul(getPolarDividerMask(radius)));
++	};
++
++	// --- fragment ----------------------------------------------------------
++	const result = Fn(() => {
++		const localPos = swizzle(vLocalPosition, coords);
++
++		let g1 = float(0);
++		let g2 = float(0);
++		let radiusMask = float(1);
++
++		if (type === 'lines') {
++			g1 = getLinesGrid(u.cellSize, u.cellThickness, localPos);
++			g2 = getLinesGrid(u.sectionSize, u.sectionThickness, localPos);
++		} else if (type === 'circular') {
++			const radius = length(localPos.xy);
++			g1 = getCirclesGrid(u.cellSize, u.cellThickness, radius);
++			g2 = getCirclesGrid(u.sectionSize, u.sectionThickness, radius);
++			radiusMask = getRadiusMask(radius);
++		} else if (type === 'polar') {
++			const radius = length(localPos.xy);
++			g1 = getPolarGrid(
++				u.cellSize,
++				u.cellThickness,
++				u.polarCellDividers,
++				cellDividers,
++				localPos,
++				radius
++			);
++			g2 = getPolarGrid(
++				u.sectionSize,
++				u.sectionThickness,
++				u.polarSectionDividers,
++				sectionDividers,
++				localPos,
++				radius
++			);
++			radiusMask = getRadiusMask(radius);
++		} else {
++			g1 = getSquareGrid(u.cellSize, u.cellThickness, localPos);
++			g2 = getSquareGrid(u.sectionSize, u.sectionThickness, localPos);
++		}
++
++		const dist = length(u.fadeOrigin.sub(positionWorld));
++		const d = float(1).sub(min(dist.div(u.fadeDistance), 1));
++		const fadeFactor = pow(d, u.fadeStrength).mul(0.95);
++
++		const color = mix(u.cellColor, u.sectionColor, min(u.sectionThickness.mul(g2), 1));
++
++		let rgb;
++		let alpha;
++
++		if (hasBackground) {
++			const linesAlpha = clamp(g1.add(g2).mul(fadeFactor), 0, 1);
++			rgb = mix(u.backgroundColor, color, linesAlpha);
++			alpha = max(linesAlpha, u.backgroundOpacity.mul(fadeFactor));
++		} else {
++			const baseAlpha = g1.add(g2).mul(pow(d, u.fadeStrength));
++			rgb = color;
++			// Sections stay at full strength while cells are damped to 75%.
++			alpha = mix(baseAlpha.mul(0.75), baseAlpha, g2);
++		}
++
++		const finalAlpha = alpha.mul(radiusMask).toVar();
++
++		// Matches the original's `discard`. Without it an infinite grid would write
++		// depth across the whole plane even where nothing is drawn.
++		Discard(finalAlpha.lessThanEqual(0));
++
++		return vec4(rgb, finalAlpha);
++	})();
++
++	// colorNode/opacityNode rather than fragmentNode: the original ended with
++	// <tonemapping_fragment> and <colorspace_fragment>, so output processing must
++	// still run.
++	material.colorNode = result.xyz;
++	material.opacityNode = result.w;
++
++	return material;
++};
