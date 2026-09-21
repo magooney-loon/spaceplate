@@ -11,10 +11,14 @@
 // and a colour-shift — and it KEEPS the GLB's material name so the shadow
 // policy (PlayerCar.svelte's CAR_NON_CASTERS) still reads it. One instance,
 // never disposed: useGltf caches the scene, so a remount finds it already on
-// the panels and reuses it. Metalness stays modest on purpose — the scene has
-// no environment map (sky key + fill lights only), and a high metalness with
-// nothing to reflect just darkens the colour; the flake reads through the
-// clearcoat highlights.
+// the panels and reuses it. Metalness is NOT held back for lack of something
+// to reflect — the procedural sky (core/skybox, mounted engine-wide by
+// App.svelte's <Skybox />) bakes a live cube map onto scene.environment every
+// scene gets for free, so a metallic flake genuinely has a sky to catch. Each
+// finish carries its own envMapIntensity (below) so the metal/pearl/shift
+// flake reads brighter than a solid's clearcoat-only sheen, without touching
+// scene.environmentIntensity — that constant is tuned for the whole renderer
+// and paired with the sun's own intensity (core/skybox/Sky.svelte).
 
 import * as THREE from 'three/webgpu';
 import type { CarSpec, PaintFinish, PaintOption } from './types';
@@ -29,6 +33,11 @@ const FINISHES: Record<
 		iridescence: number;
 		iridescenceIOR: number;
 		iridescenceThicknessRange: [number, number];
+		/** Scales the sky's baked reflection for THIS finish only — solid stays
+		 *  near the material default (its shine is the clearcoat, not the flake),
+		 *  the flake finishes push past it so the metal/pearl/shift actually
+		 *  outshines a plain solid under the same sky. */
+		envMapIntensity: number;
 	}
 > = {
 	solid: {
@@ -38,34 +47,38 @@ const FINISHES: Record<
 		clearcoatRoughness: 0.1,
 		iridescence: 0,
 		iridescenceIOR: 1.3,
-		iridescenceThicknessRange: [100, 400]
+		iridescenceThicknessRange: [100, 400],
+		envMapIntensity: 1
 	},
 	metallic: {
-		metalness: 0.55,
-		roughness: 0.46,
-		clearcoat: 1,
-		clearcoatRoughness: 0.08,
-		iridescence: 0,
-		iridescenceIOR: 1.3,
-		iridescenceThicknessRange: [100, 400]
-	},
-	pearl: {
-		metalness: 0.45,
-		roughness: 0.42,
+		metalness: 0.7,
+		roughness: 0.4,
 		clearcoat: 1,
 		clearcoatRoughness: 0.07,
-		iridescence: 0.3,
+		iridescence: 0,
+		iridescenceIOR: 1.3,
+		iridescenceThicknessRange: [100, 400],
+		envMapIntensity: 1.5
+	},
+	pearl: {
+		metalness: 0.55,
+		roughness: 0.38,
+		clearcoat: 1,
+		clearcoatRoughness: 0.06,
+		iridescence: 0.35,
 		iridescenceIOR: 1.5,
-		iridescenceThicknessRange: [120, 420]
+		iridescenceThicknessRange: [120, 420],
+		envMapIntensity: 1.3
 	},
 	shift: {
-		metalness: 0.5,
-		roughness: 0.36,
+		metalness: 0.65,
+		roughness: 0.3,
 		clearcoat: 1,
-		clearcoatRoughness: 0.05,
+		clearcoatRoughness: 0.04,
 		iridescence: 1,
-		iridescenceIOR: 1.9,
-		iridescenceThicknessRange: [100, 800]
+		iridescenceIOR: 2,
+		iridescenceThicknessRange: [100, 800],
+		envMapIntensity: 1.6
 	}
 };
 
@@ -101,4 +114,5 @@ export function applyBodyPaint(
 	bodyPaint.iridescence = style.iridescence;
 	bodyPaint.iridescenceIOR = style.iridescenceIOR;
 	bodyPaint.iridescenceThicknessRange = style.iridescenceThicknessRange;
+	bodyPaint.envMapIntensity = style.envMapIntensity;
 }
