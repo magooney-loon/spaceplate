@@ -19,9 +19,39 @@
 // flake reads brighter than a solid's clearcoat-only sheen, without touching
 // scene.environmentIntensity — that constant is tuned for the whole renderer
 // and paired with the sun's own intensity (core/skybox/Sky.svelte).
+//
+// Two textures give the surface itself some grain instead of a perfectly flat
+// clearcoat: the same voronoi/perlin PNGs fx/noiseTextures.ts already ships
+// for TireSmoke/SkidMarks/CarExhaustFlames, as a bumpMap (the flake) and a
+// clearcoatRoughnessMap (the orange peel). NOT loaded through that module's
+// shared cache, though — its whole point is one texture OBJECT reused by
+// consumers that each compute their own tiling UV by hand, at the object's
+// default repeat (1,1); this file needs its OWN repeat instead, and a clone()
+// taken before that shared PNG finishes decoding would never see the image
+// the loader later writes onto the ORIGINAL object. Loading the two files
+// again under their own tiling costs nothing over the network — the browser
+// already has them cached from whichever fx component asked first.
 
 import * as THREE from 'three/webgpu';
+import { BASE_URL } from '$extensions/settings';
 import type { CarSpec, PaintFinish, PaintOption } from './types';
+
+/** Repeats across the body's own UV unwrap — tuned by eye, not measured off
+ *  any car's actual UV scale (the three cars don't share one). Flake wants to
+ *  read as grain from driving distance; orange peel wants a few slow waves
+ *  across a panel, not a repeating tile you can count. */
+const FLAKE_REPEAT = 36;
+const ORANGE_PEEL_REPEAT = 3;
+
+function tiledNoiseTexture(file: string, repeat: number, invalidate: () => void): THREE.Texture {
+	const texture = new THREE.TextureLoader().load(`${BASE_URL}textures/noises/${file}`, () =>
+		invalidate()
+	);
+	texture.wrapS = THREE.RepeatWrapping;
+	texture.wrapT = THREE.RepeatWrapping;
+	texture.repeat.set(repeat, repeat);
+	return texture;
+}
 
 const FINISHES: Record<
 	PaintFinish,
@@ -38,6 +68,22 @@ const FINISHES: Record<
 		 *  the flake finishes push past it so the metal/pearl/shift actually
 		 *  outshines a plain solid under the same sky. */
 		envMapIntensity: number;
+		/** bumpMap strength — how much the flake texture perturbs the surface
+		 *  normal. 0 on solid: a solid coat has no metal flake to catch light,
+		 *  so the flake texture must not touch it (it would just read as a dirty
+		 *  windshield). */
+		bumpScale: number;
+		/** The sheen layer — a soft, velvety grazing-angle highlight distinct from
+		 *  clearcoat specular or iridescence. Only pearl uses it: a pearl coat's
+		 *  mica flake has that fabric-like glow ON TOP OF its colour-shift, which
+		 *  iridescence alone doesn't produce. 0 everywhere else. */
+		sheen: number;
+		sheenRoughness: number;
+		/** sheenColor defaults to black on MeshPhysicalMaterial — sheen is a
+		 *  no-op until this is non-black, so every finish sets it explicitly
+		 *  (matching black) rather than leaving pearl's tint to leak into the
+		 *  next finish picked on the same shared material instance. */
+		sheenColorHex: string;
 	}
 > = {
 	solid: {
@@ -48,7 +94,11 @@ const FINISHES: Record<
 		iridescence: 0,
 		iridescenceIOR: 1.3,
 		iridescenceThicknessRange: [100, 400],
-		envMapIntensity: 1
+		envMapIntensity: 1,
+		bumpScale: 0,
+		sheen: 0,
+		sheenRoughness: 1,
+		sheenColorHex: '#000000'
 	},
 	metallic: {
 		metalness: 0.7,
@@ -58,7 +108,11 @@ const FINISHES: Record<
 		iridescence: 0,
 		iridescenceIOR: 1.3,
 		iridescenceThicknessRange: [100, 400],
-		envMapIntensity: 1.5
+		envMapIntensity: 1.5,
+		bumpScale: 0.06,
+		sheen: 0,
+		sheenRoughness: 1,
+		sheenColorHex: '#000000'
 	},
 	pearl: {
 		metalness: 0.55,
@@ -68,7 +122,11 @@ const FINISHES: Record<
 		iridescence: 0.35,
 		iridescenceIOR: 1.5,
 		iridescenceThicknessRange: [120, 420],
-		envMapIntensity: 1.3
+		envMapIntensity: 1.3,
+		bumpScale: 0.05,
+		sheen: 0.4,
+		sheenRoughness: 0.35,
+		sheenColorHex: '#ffffff'
 	},
 	shift: {
 		metalness: 0.65,
@@ -78,12 +136,22 @@ const FINISHES: Record<
 		iridescence: 1,
 		iridescenceIOR: 2,
 		iridescenceThicknessRange: [100, 800],
-		envMapIntensity: 1.6
+		envMapIntensity: 1.6,
+		bumpScale: 0.07,
+		sheen: 0,
+		sheenRoughness: 1,
+		sheenColorHex: '#000000'
 	}
 };
 
-export function createBodyPaintMaterial(spec: CarSpec): THREE.MeshPhysicalMaterial {
-	return new THREE.MeshPhysicalMaterial({ name: spec.model.paintMaterial });
+export function createBodyPaintMaterial(
+	spec: CarSpec,
+	invalidate: () => void
+): THREE.MeshPhysicalMaterial {
+	const material = new THREE.MeshPhysicalMaterial({ name: spec.model.paintMaterial });
+	material.bumpMap = tiledNoiseTexture('voronoi.png', FLAKE_REPEAT, invalidate);
+	material.clearcoatRoughnessMap = tiledNoiseTexture('perlin.png', ORANGE_PEEL_REPEAT, invalidate);
+	return material;
 }
 
 /** Re-run on model load AND on every paint-shop selection (the caller's effect
@@ -115,4 +183,8 @@ export function applyBodyPaint(
 	bodyPaint.iridescenceIOR = style.iridescenceIOR;
 	bodyPaint.iridescenceThicknessRange = style.iridescenceThicknessRange;
 	bodyPaint.envMapIntensity = style.envMapIntensity;
+	bodyPaint.bumpScale = style.bumpScale;
+	bodyPaint.sheen = style.sheen;
+	bodyPaint.sheenRoughness = style.sheenRoughness;
+	bodyPaint.sheenColor.set(style.sheenColorHex);
 }

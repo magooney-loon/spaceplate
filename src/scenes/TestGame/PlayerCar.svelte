@@ -235,7 +235,7 @@
 	// applying that to the loaded GLB is scene work (cars/paintMaterial.ts —
 	// its header has the why). One material instance, never disposed: useGltf
 	// caches the scene, so a remount finds it already on the panels and reuses it.
-	const bodyPaint = createBodyPaintMaterial(car);
+	const bodyPaint = createBodyPaintMaterial(car, invalidate);
 
 	// Re-runs on model load AND on every paint-shop selection (the option read
 	// tracks carPaint.id, the finish read tracks carPaint.finish — colour and
