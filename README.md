@@ -3,6 +3,8 @@
   <p>Svelte 5 + Threlte + SpacetimeDB boilerplate for real-time 3D web apps</p>
 </div>
 
+[![Tech Demo](https://img.youtube.com/vi/CJAuBGVZVs8/0.jpg)](https://www.youtube.com/watch?v=CJAuBGVZVs8)   
+
 <div align="center">
   <table>
     <tr>
